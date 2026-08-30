@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/foundata/conclear/schemas/record-v1.json",
+  "title": "ConClear public record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordType", "createdAt", "runId", "ruleset", "source", "repositoryConfiguration", "tools", "verdict", "payload"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordType": {"enum": ["platformQualification", "releaseCandidate", "releaseVerification", "rescanResult"]},
+    "createdAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
+    "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
+    "ruleset": {"$ref": "#/$defs/ruleset"},
+    "source": {"$ref": "#/$defs/source"},
+    "repositoryConfiguration": {"$ref": "#/$defs/configuration"},
+    "tools": {"type": "array", "items": {"$ref": "#/$defs/tool"}},
+    "verdict": {"enum": ["accepted", "rejected", "incomplete"]},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {"if": {"properties": {"recordType": {"const": "platformQualification"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/platformQualification"}}}},
+    {"if": {"properties": {"recordType": {"const": "releaseCandidate"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/releaseCandidate"}}}},
+    {"if": {"properties": {"recordType": {"const": "releaseVerification"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/releaseVerification"}}}},
+    {"if": {"properties": {"recordType": {"const": "rescanResult"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/rescanResult"}}}}
+  ],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "platform": {"type": "string", "pattern": "^[a-z0-9._-]+/[a-z0-9._-]+(?:/[a-z0-9._-]+)?$"},
+    "stringArray": {"type": "array", "items": {"type": "string"}},
+    "digestArray": {"type": "array", "items": {"$ref": "#/$defs/digest"}},
+    "ruleset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conclearVersion", "conclearRevision", "guideTitle", "guideRepository", "guidePath", "guideRevision"],
+      "properties": {
+        "conclearVersion": {"type": "string"},
+        "conclearRevision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "guideTitle": {"const": "OCI container image build and release guide"},
+        "guideRepository": {"const": "https://github.com/foundata/guidelines"},
+        "guidePath": {"const": "oci-container-image-guide.md"},
+        "guideRevision": {"const": "909794089dbabbf6c8d8e50fcf47bb2b6fd315b9"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "revision"],
+      "properties": {
+        "repository": {"type": "string", "pattern": "^https://"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"const": "conclear.toml"}, "sha256": {"$ref": "#/$defs/digest"}}
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "executableDigest": {"$ref": "#/$defs/digest"},
+        "imageDigest": {"$ref": "#/$defs/digest"}
+      },
+      "oneOf": [
+        {"required": ["executableDigest"]},
+        {"required": ["imageDigest"]}
+      ]
+    },
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mediaType", "digest", "size"],
+      "properties": {
+        "mediaType": {"type": "string"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 0},
+        "platform": {"type": "object"},
+        "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetPlatform", "hostArchitecture", "executionArchitecture", "mechanism"],
+      "properties": {
+        "targetPlatform": {"$ref": "#/$defs/platform"},
+        "hostArchitecture": {"type": "string"},
+        "executionArchitecture": {"type": "string"},
+        "mechanism": {"enum": ["native", "qemu-user", "cross-build"]}
+      }
+    },
+    "platformQualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageId", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "buildExecution", "testExecution", "runtimeConstraints", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest"],
+      "properties": {
+        "imageId": {"type": "string"},
+        "platform": {"$ref": "#/$defs/platform"},
+        "layoutDescriptor": {"$ref": "#/$defs/descriptor"},
+        "manifestDigest": {"$ref": "#/$defs/digest"},
+        "containerfileDigest": {"$ref": "#/$defs/digest"},
+        "contextDigest": {"$ref": "#/$defs/digest"},
+        "buildArguments": {"type": "object", "additionalProperties": {"type": "string"}},
+        "externalImages": {"type": "array", "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}},
+        "buildExecution": {"$ref": "#/$defs/execution"},
+        "testExecution": {"$ref": "#/$defs/execution"},
+        "runtimeConstraints": {"type": "object"},
+        "testResults": {"type": "array", "items": {"type": "object"}},
+        "sbom": {"type": "object", "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"type": "string"}}},
+        "scans": {"type": "array", "items": {"type": "object"}},
+        "appliedExceptions": {"type": "array", "items": {"type": "object"}},
+        "payloadDigests": {"$ref": "#/$defs/digestArray"},
+        "databaseDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "releaseCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageId", "repository", "requiredPlatforms", "acceptedPlatforms", "qualifications", "platformManifests", "subjectDescriptor", "candidateTag"],
+      "properties": {
+        "imageId": {"type": "string"},
+        "repository": {"type": "string"},
+        "requiredPlatforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
+        "acceptedPlatforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
+        "qualifications": {"type": "array", "items": {"type": "object", "required": ["platform", "recordDigest", "payloadDigests"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "recordDigest": {"$ref": "#/$defs/digest"}, "payloadDigests": {"$ref": "#/$defs/digestArray"}}}},
+        "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
+        "subjectDescriptor": {"$ref": "#/$defs/descriptor"},
+        "candidateTag": {"type": "string", "pattern": "candidate\\.[0-9a-hjkmnp-tv-z]{26}"}
+      }
+    },
+    "releaseVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "platformDigests", "releaseEnvironment", "signer", "evidence"],
+      "properties": {
+        "subject": {"type": "object", "required": ["repository", "digest"], "properties": {"repository": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}},
+        "platformDigests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
+        "releaseEnvironment": {"type": "object", "required": ["mode", "hostArchitecture", "runId"], "properties": {"mode": {"enum": ["local", "ci"]}, "hostArchitecture": {"type": "string"}, "runId": {"type": "string"}, "ciIdentity": {"type": "object"}}},
+        "signer": {"type": "object", "required": ["mode", "keyId"], "properties": {"mode": {"enum": ["managed-key", "kms", "hsm"]}, "keyId": {"type": "string"}}},
+        "evidence": {"type": "object", "required": ["platformQualifications", "scanResults", "sboms", "provenance", "candidateRecord"], "properties": {"platformQualifications": {"$ref": "#/$defs/digestArray"}, "scanResults": {"$ref": "#/$defs/digestArray"}, "sboms": {"$ref": "#/$defs/digestArray"}, "provenance": {"$ref": "#/$defs/digest"}, "candidateRecord": {"$ref": "#/$defs/digest"}}}
+      }
+    },
+    "rescanResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "platformManifests", "scanner", "databaseDigest", "scope", "findings", "triage", "previousResultDigest", "authoritative"],
+      "properties": {
+        "subject": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+        "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
+        "scanner": {"type": "string"},
+        "databaseDigest": {"$ref": "#/$defs/digest"},
+        "scope": {"enum": ["sbom-vulnerabilities", "full-image"]},
+        "findings": {"type": "array", "items": {"type": "object"}},
+        "triage": {"type": "array", "items": {"type": "object"}},
+        "previousResultDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "authoritative": {"type": "boolean"}
+      }
+    }
+  }
+}

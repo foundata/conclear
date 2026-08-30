@@ -1,0 +1,66 @@
+import io
+import tarfile
+import tempfile
+import zipfile
+from pathlib import Path
+
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+
+from conclear.errors import InvalidInvocationError
+from conclear.path_safety import (
+    contained_path,
+    extract_tar_safely,
+    extract_zip_safely,
+)
+
+
+@given(depth=st.integers(min_value=1, max_value=20))
+def test_contained_path_rejects_parent_traversal(depth: int) -> None:
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory) / "root"
+        root.mkdir()
+        with pytest.raises(InvalidInvocationError):
+            contained_path(root, "/".join([".."] * depth), must_exist=False)
+
+
+def test_contained_path_rejects_symlink_escape(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / "escape").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(InvalidInvocationError, match="escapes"):
+        contained_path(root, "escape/value", must_exist=False)
+
+
+@pytest.mark.parametrize("member_name", ["../escape", "/absolute", "a/../../escape"])
+def test_tar_extraction_rejects_traversal(member_name: str, tmp_path: Path) -> None:
+    archive_path = tmp_path / "input.tar"
+    with tarfile.open(archive_path, "w") as archive:
+        member = tarfile.TarInfo(member_name)
+        member.size = 1
+        archive.addfile(member, io.BytesIO(b"x"))
+    with pytest.raises(InvalidInvocationError, match="Unsafe archive member"):
+        extract_tar_safely(archive_path, tmp_path / "output")
+    assert not (tmp_path / "escape").exists()
+
+
+def test_tar_extraction_rejects_symbolic_links(tmp_path: Path) -> None:
+    archive_path = tmp_path / "input.tar"
+    with tarfile.open(archive_path, "w") as archive:
+        member = tarfile.TarInfo("link")
+        member.type = tarfile.SYMTYPE
+        member.linkname = "../escape"
+        archive.addfile(member)
+    with pytest.raises(InvalidInvocationError, match="not a regular file"):
+        extract_tar_safely(archive_path, tmp_path / "output")
+
+
+def test_zip_extraction_rejects_traversal(tmp_path: Path) -> None:
+    archive_path = tmp_path / "input.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("../escape", "x")
+    with pytest.raises(InvalidInvocationError, match="Unsafe archive member"):
+        extract_zip_safely(archive_path, tmp_path / "output")

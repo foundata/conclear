@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/foundata/conclear/schemas/result-v1.json",
+  "title": "ConClear command result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "command", "status", "message", "findings", "data"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "command": {"type": "string", "minLength": 1},
+    "status": {"enum": ["success", "ruleRejection", "operationalFailure", "invalidInvocation"]},
+    "message": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checkId", "severity", "message"],
+        "properties": {
+          "checkId": {"pattern": "^CC[0-9]{4}$"},
+          "severity": {"enum": ["error", "warning", "info"]},
+          "message": {"type": "string", "minLength": 1},
+          "location": {"type": "string"}
+        }
+      }
+    },
+    "data": {"type": "object"}
+  }
+}

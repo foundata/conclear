@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/foundata/conclear/schemas/config-v1.json",
+  "title": "ConClear repository configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "images"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "project": {"$ref": "#/$defs/project"},
+    "images": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/image"}
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "duration": {"type": "string", "pattern": "^[1-9][0-9]*[hHdDwW]$"},
+    "platform": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)?$"
+    },
+    "command": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "source": {"type": "string", "format": "uri", "pattern": "^https://"}
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["immutable_tags", "moving_tags"],
+      "properties": {
+        "immutable_tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "pattern": "^(?:[A-Za-z0-9_.-]+|\\{version\\})+$"}
+        },
+        "moving_tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$"}
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "user", "read_only", "memory", "cpus", "pids", "nofile"],
+      "properties": {
+        "profile": {"enum": ["service", "one-shot", "scratch"]},
+        "user": {"type": "integer", "minimum": 1, "maximum": 4294967294},
+        "read_only": {"const": true},
+        "writable_mounts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/[^.].*"}
+        },
+        "memory": {"type": "string", "pattern": "^[1-9][0-9]*(?:KiB|MiB|GiB)$"},
+        "cpus": {"type": "number", "exclusiveMinimum": 0},
+        "pids": {"type": "integer", "minimum": 1},
+        "nofile": {"type": "integer", "minimum": 1},
+        "health_command": {"$ref": "#/$defs/command"},
+        "immutable_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^/"}
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^CAP_[A-Z0-9_]+$"}
+        },
+        "startup_timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
+        "shutdown_timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 300}
+      }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "command"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "command": {"$ref": "#/$defs/command"},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "required": {"type": "boolean"}
+      }
+    },
+    "pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "tag_intent"],
+      "properties": {
+        "reference": {"type": "string", "pattern": "^\\S+:[^@]+@sha256:[0-9a-f]{64}$"},
+        "tag_intent": {"enum": ["immutable-version", "moving-release-line"]}
+      }
+    },
+    "exception": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "component", "advisory", "rationale", "reachability", "exposure", "compensating_controls", "owner", "expires", "review_trigger"],
+      "properties": {
+        "image": {"$ref": "#/$defs/nonEmptyString"},
+        "component": {"$ref": "#/$defs/nonEmptyString"},
+        "advisory": {"$ref": "#/$defs/nonEmptyString"},
+        "rationale": {"$ref": "#/$defs/nonEmptyString"},
+        "reachability": {"$ref": "#/$defs/nonEmptyString"},
+        "exposure": {"$ref": "#/$defs/nonEmptyString"},
+        "compensating_controls": {"$ref": "#/$defs/nonEmptyString"},
+        "owner": {"$ref": "#/$defs/nonEmptyString"},
+        "expires": {"type": "string", "format": "date"},
+        "review_trigger": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pin_freshness": {"$ref": "#/$defs/duration"},
+        "pin_divergence": {"$ref": "#/$defs/duration"},
+        "candidate_lifetime": {"$ref": "#/$defs/duration"},
+        "remediation": {"$ref": "#/$defs/duration"}
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "containerfile", "context", "repository", "platforms", "native_test_platforms", "release", "runtime"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "containerfile": {"$ref": "#/$defs/relativePath"},
+        "context": {"$ref": "#/$defs/relativePath"},
+        "repository": {"type": "string", "pattern": "^quay\\.io/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+$"},
+        "platforms": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
+        "native_test_platforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
+        "arm64_omission_reason": {"type": "string", "minLength": 1},
+        "candidate_lifetime": {"$ref": "#/$defs/duration"},
+        "scanner": {"enum": ["trivy", "syft-grype"]},
+        "release": {"$ref": "#/$defs/release"},
+        "runtime": {"$ref": "#/$defs/runtime"},
+        "hooks": {"type": "array", "items": {"$ref": "#/$defs/hook"}},
+        "pins": {"type": "array", "items": {"$ref": "#/$defs/pin"}},
+        "vulnerability_exceptions": {"type": "array", "items": {"$ref": "#/$defs/exception"}},
+        "limits": {"$ref": "#/$defs/limits"}
+      }
+    }
+  }
+}

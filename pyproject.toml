@@ -1,0 +1,107 @@
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"
+
+[project]
+name = "conclear"
+version = "0.1.0"
+description = "Build and release OCI container images through digest-bound policy gates"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+authors = [
+  { name = "foundata GmbH", email = "info@foundata.com" },
+]
+dependencies = [
+  "click>=8.2.1",
+  "httpx>=0.28.1",
+  "jsonschema>=4.25.1",
+  "python-ulid>=3.1.0",
+]
+
+[project.scripts]
+conclear = "conclear.cli:main"
+
+[project.urls]
+Documentation = "https://github.com/foundata/conclear"
+Repository = "https://github.com/foundata/conclear"
+
+[dependency-groups]
+dev = [
+  "hypothesis>=6.138.15",
+  "mypy>=1.17.1",
+  "pytest>=9.0.0",
+  "pytest-cov>=6.2.1",
+  "ruff>=0.12.11",
+  "types-jsonschema>=4.25.1.20250822",
+]
+
+[tool.uv.build-backend]
+module-name = "conclear"
+module-root = "src"
+wheel-exclude = ["src/conclear/_development_identity.py"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "E4",
+  "E7",
+  "E9",
+  "F",
+  "I",
+  "B",
+  "C4",
+  "UP",
+  "RUF",
+  "A",
+  "D",
+  "DTZ",
+  "G",
+  "LOG",
+  "N",
+  "PTH",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+indent-style = "space"
+line-ending = "lf"
+quote-style = "double"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+enable_error_code = ["explicit-override"]
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+]
+filterwarnings = ["error"]
+strict = true
+testpaths = ["tests"]
+markers = [
+  "unit: hermetic tests that require no external tools or services",
+  "local_integration: opt-in tests using local rootless container tools",
+  "emulation: opt-in tests that execute a non-native platform",
+  "network: opt-in tests that access disposable remote services",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["conclear"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
