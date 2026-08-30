@@ -119,6 +119,32 @@ class CosignAdapter(ToolAdapter):
             secret_paths=(sbom,),
         )
 
+    def attest_statement(
+        self,
+        *,
+        subject: OCIReference,
+        statement: Path,
+        private_key: str,
+        passphrase: str | None,
+    ) -> SignatureObservation:
+        """Attach one caller-validated in-toto Statement with public log inclusion."""
+        self._require_digest(subject)
+        result = self._cosign_write(
+            (
+                "attest",
+                "--yes",
+                "--use-signing-config=true",
+                "--key",
+                private_key,
+                "--statement",
+                str(statement),
+                str(subject),
+            ),
+            passphrase=passphrase,
+            secret_paths=(statement,),
+        )
+        return SignatureObservation(subject, result)
+
     def verify(
         self, *, subject: OCIReference, public_key: Path
     ) -> VerificationObservation:

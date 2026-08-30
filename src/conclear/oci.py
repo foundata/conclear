@@ -314,7 +314,6 @@ def graph_fingerprint(graph: OCIGraph) -> tuple[tuple[object, ...], ...]:
                 descriptor.media_type,
                 str(descriptor.digest),
                 descriptor.size,
-                str(descriptor.platform) if descriptor.platform is not None else None,
             )
             for descriptor in graph.descriptors
         )
