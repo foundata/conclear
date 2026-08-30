@@ -31,6 +31,14 @@ class OperationalError(ConClearError):
     error_type = "operationalFailure"
 
 
+class CommandTimeoutError(OperationalError):
+    """Report an external command that exceeded its explicit timeout."""
+
+
+class CommandExecutionError(OperationalError):
+    """Report an external command that returned a failure status."""
+
+
 class RuleRejectionError(ConClearError):
     """Report observed content that violates an effective rule."""
 
