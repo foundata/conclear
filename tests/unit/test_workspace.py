@@ -99,6 +99,7 @@ def test_resource_journal_records_intent_before_mutation(tmp_path: Path) -> None
     )
     assert entry.status is ResourceStatus.PLANNED
     assert workspace.journal.entries() == (entry,)
+    assert workspace.journal.cleanup_candidates() == (entry,)
 
     with pytest.raises(InvalidInvocationError, match="valid JSON"):
         workspace.journal.update(

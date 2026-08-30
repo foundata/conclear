@@ -30,6 +30,22 @@ class ContainerObservation:
     exit_code: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeControlObservation:
+    """Effective runtime controls observed from Podman state."""
+
+    user: str
+    read_only: bool
+    memory_bytes: int
+    nano_cpus: int
+    pids_limit: int
+    nofile_soft: int
+    nofile_hard: int
+    cap_add: tuple[str, ...]
+    cap_drop: tuple[str, ...]
+    security_options: tuple[str, ...]
+
+
 class PodmanAdapter(ToolAdapter):
     """Import exact layouts and run constrained rootless containers."""
 
@@ -186,6 +202,53 @@ class PodmanAdapter(ToolAdapter):
             timeout_seconds=timeout_seconds,
         ).stdout
 
+    def inspect_controls(
+        self, *, root: Path, runroot: Path, name: str
+    ) -> RuntimeControlObservation:
+        """Observe resource and hardening controls from Podman's stored state."""
+        output = self._run(
+            (
+                *self._storage(root, runroot),
+                "container",
+                "inspect",
+                "--format",
+                "json",
+                name,
+            ),
+            timeout_seconds=120,
+        ).stdout
+        value = json_value(output, label="Podman inspect")
+        if not isinstance(value, list) or len(value) != 1:
+            raise OperationalError("Podman inspect must return one container")
+        item = object_value(value[0], label="Podman container")
+        config = object_value(item.get("Config"), label="Podman container config")
+        host = object_value(item.get("HostConfig"), label="Podman host config")
+        ulimits = host.get("Ulimits")
+        if not isinstance(ulimits, list):
+            raise OperationalError("Podman ulimit observation is malformed")
+        nofile = [
+            entry
+            for entry in ulimits
+            if isinstance(entry, dict) and entry.get("Name") == "RLIMIT_NOFILE"
+        ]
+        if len(nofile) != 1:
+            raise OperationalError("Podman did not report exactly one nofile limit")
+        limit = object_value(nofile[0], label="Podman nofile limit")
+        return RuntimeControlObservation(
+            user=string_value(config.get("User"), label="Podman effective user"),
+            read_only=_bool(host.get("ReadonlyRootfs"), "Podman read-only root"),
+            memory_bytes=_int(host.get("Memory"), "Podman memory limit"),
+            nano_cpus=_int(host.get("NanoCpus"), "Podman CPU limit"),
+            pids_limit=_int(host.get("PidsLimit"), "Podman PID limit"),
+            nofile_soft=_int(limit.get("Soft"), "Podman nofile soft limit"),
+            nofile_hard=_int(limit.get("Hard"), "Podman nofile hard limit"),
+            cap_add=_strings(host.get("CapAdd"), "Podman added capabilities"),
+            cap_drop=_strings(host.get("CapDrop"), "Podman dropped capabilities"),
+            security_options=_strings(
+                host.get("SecurityOpt"), "Podman security options"
+            ),
+        )
+
     def signal(self, *, root: Path, runroot: Path, name: str, signal_name: str) -> None:
         """Send one named signal to the container's PID 1."""
         self._run(
@@ -218,3 +281,23 @@ class PodmanAdapter(ToolAdapter):
             arguments.append("--force")
         arguments.append(name)
         self._run(arguments, timeout_seconds=120, operation=OperationKind.WRITE)
+
+
+def _int(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise OperationalError(f"{label} is malformed")
+    return value
+
+
+def _bool(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise OperationalError(f"{label} is malformed")
+    return value
+
+
+def _strings(value: object, label: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise OperationalError(f"{label} are malformed")
+    return tuple(value)

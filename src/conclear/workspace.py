@@ -395,7 +395,12 @@ class ResourceJournal:
             entry
             for entry in self.entries()
             if entry.ephemeral
-            and entry.status in {ResourceStatus.CREATED, ResourceStatus.FAILED}
+            and entry.status
+            in {
+                ResourceStatus.PLANNED,
+                ResourceStatus.CREATED,
+                ResourceStatus.FAILED,
+            }
         )
 
     def _write(self, entries: list[ResourceEntry]) -> None:
