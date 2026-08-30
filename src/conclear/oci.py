@@ -105,6 +105,7 @@ class ManifestObservation:
     platform: Platform
     config: Descriptor
     layers: tuple[Descriptor, ...]
+    config_data: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +265,7 @@ class LayoutValidator:
             platform=platform,
             config=config,
             layers=layers,
+            config_data=config_value,
         )
 
     def _read_blob(self, descriptor: Descriptor) -> bytes:
@@ -302,6 +304,21 @@ class LayoutValidator:
             raise InvalidInvocationError(
                 f"Unable to decode OCI JSON file {path}"
             ) from exc
+
+
+def graph_fingerprint(graph: OCIGraph) -> tuple[tuple[object, ...], ...]:
+    """Return the complete descriptor graph in a representation-safe form."""
+    return tuple(
+        sorted(
+            (
+                descriptor.media_type,
+                str(descriptor.digest),
+                descriptor.size,
+                str(descriptor.platform) if descriptor.platform is not None else None,
+            )
+            for descriptor in graph.descriptors
+        )
+    )
 
 
 def validate_layout(layout_path: Path, *, reference: str | None = None) -> OCIGraph:

@@ -10,6 +10,7 @@ from conclear.schema import load_schema, validate_schema
     [
         "config.schema.json",
         "profile.schema.json",
+        "provenance.schema.json",
         "record.schema.json",
         "result.schema.json",
     ],

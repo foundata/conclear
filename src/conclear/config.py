@@ -5,7 +5,7 @@ import re
 import stat
 import tomllib
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -272,6 +272,7 @@ def load_release_profile(
 
 
 def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
+    image_id = _string(value["id"])
     platforms = tuple(Platform.parse(item) for item in _string_list(value["platforms"]))
     if len(platforms) != len(set(platforms)):
         raise InvalidInvocationError("An image cannot declare duplicate platforms")
@@ -332,8 +333,21 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             "Release repositories must be untagged quay.io repository names"
         )
+    exceptions = tuple(
+        _parse_exception(_object(item))
+        for item in _list(value.get("vulnerability_exceptions", []))
+    )
+    if any(item.image != image_id for item in exceptions):
+        raise InvalidInvocationError(
+            f"Vulnerability exceptions for {image_id} must name that image exactly"
+        )
+    exception_keys = [(item.component, item.advisory) for item in exceptions]
+    if len(exception_keys) != len(set(exception_keys)):
+        raise InvalidInvocationError(
+            f"Vulnerability exceptions for {image_id} must be unique"
+        )
     return ImageConfig(
-        image_id=_string(value["id"]),
+        image_id=image_id,
         containerfile=contained_path(source_root, _string(value["containerfile"])),
         context=contained_path(source_root, _string(value["context"])),
         repository=repository,
@@ -350,10 +364,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
             _parse_hook(_object(item)) for item in _list(value.get("hooks", []))
         ),
         pins=tuple(_parse_pin(_object(item)) for item in _list(value.get("pins", []))),
-        vulnerability_exceptions=tuple(
-            _parse_exception(_object(item))
-            for item in _list(value.get("vulnerability_exceptions", []))
-        ),
+        vulnerability_exceptions=exceptions,
         limits=limits,
     )
 
@@ -397,6 +408,13 @@ def _parse_pin(value: dict[str, Any]) -> PinConfig:
 
 
 def _parse_exception(value: dict[str, Any]) -> VulnerabilityException:
+    expires = _string(value["expires"])
+    try:
+        date.fromisoformat(expires)
+    except ValueError as exc:
+        raise InvalidInvocationError(
+            f"Vulnerability exception expiry is not an ISO date: {expires}"
+        ) from exc
     return VulnerabilityException(
         image=_string(value["image"]),
         component=_string(value["component"]),
@@ -406,7 +424,7 @@ def _parse_exception(value: dict[str, Any]) -> VulnerabilityException:
         exposure=_string(value["exposure"]),
         compensating_controls=_string(value["compensating_controls"]),
         owner=_string(value["owner"]),
-        expires=_string(value["expires"]),
+        expires=expires,
         review_trigger=_string(value["review_trigger"]),
     )
 
