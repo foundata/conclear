@@ -190,6 +190,29 @@ class TrivyAdapter(ToolAdapter):
             raise OperationalError(f"Unsupported SPDX document version: {version}")
         return observation
 
+    def scan_sbom(
+        self,
+        *,
+        sbom_path: Path,
+        report_path: Path,
+        cache_root: Path,
+    ) -> ScanObservation:
+        """Match current vulnerability data against one retained SPDX inventory."""
+        return self._scan(
+            (
+                "sbom",
+                "--cache-dir",
+                str(cache_root),
+                "--skip-db-update",
+                "--format",
+                "json",
+                "--output",
+                str(report_path),
+                str(sbom_path),
+            ),
+            report_path,
+        )
+
     def _scan(self, arguments: tuple[str, ...], output_path: Path) -> ScanObservation:
         self._run(arguments, timeout_seconds=1800)
         value = load_json(output_path)
