@@ -246,7 +246,9 @@ class ProcessRunner:
         if timed_out:
             timeout_failure = CommandTimeoutError(
                 f"External command timed out after {request.timeout_seconds:g}s: "
-                f"{redacted_argv[0]}"
+                f"{redacted_argv[0]}",
+                stdout=stdout_text,
+                stderr=stderr_text,
             )
             self._write_failure_log(
                 request,
@@ -263,7 +265,10 @@ class ProcessRunner:
             suffix = f": {detail}" if detail else ""
             execution_failure = CommandExecutionError(
                 f"External command failed with status {process.returncode}: "
-                f"{redacted_argv[0]}{suffix}"
+                f"{redacted_argv[0]}{suffix}",
+                returncode=process.returncode,
+                stdout=stdout_text,
+                stderr=stderr_text,
             )
             self._write_failure_log(
                 request,

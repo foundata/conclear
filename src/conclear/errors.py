@@ -34,9 +34,29 @@ class OperationalError(ConClearError):
 class CommandTimeoutError(OperationalError):
     """Report an external command that exceeded its explicit timeout."""
 
+    def __init__(self, message: str, *, stdout: str = "", stderr: str = "") -> None:
+        """Retain only already redacted bounded command output."""
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
+
 
 class CommandExecutionError(OperationalError):
     """Report an external command that returned a failure status."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        returncode: int | None = None,
+        stdout: str = "",
+        stderr: str = "",
+    ) -> None:
+        """Retain only already redacted bounded command output."""
+        super().__init__(message)
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 class RuleRejectionError(ConClearError):
