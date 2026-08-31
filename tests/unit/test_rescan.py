@@ -16,6 +16,8 @@ from conclear.attestations import (
     RESCAN_TYPE,
     STATEMENT_TYPE,
 )
+from conclear.config import VulnerabilityException
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import atomic_write_json, canonical_json_bytes, load_json
 from conclear.oci import (
@@ -26,8 +28,14 @@ from conclear.oci import (
     ManifestObservation,
     OCIGraph,
 )
-from conclear.records import RecordEnvelope, SourceIdentity, Verdict
-from conclear.services.rescan import RescanSigning, rescan_release
+from conclear.records import (
+    RecordEnvelope,
+    SourceIdentity,
+    ToolIdentity,
+    Verdict,
+)
+from conclear.services.rescan import RescanResult, RescanSigning, rescan_release
+from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
 
@@ -81,6 +89,7 @@ class FakeRegistry:
 class FakeSigner:
     def __init__(self) -> None:
         self.statements: dict[tuple[str, str], list[dict[str, object]]] = {}
+        self.fail_rescan_verification = False
 
     def verify_attestation(
         self,
@@ -91,6 +100,8 @@ class FakeSigner:
     ) -> VerificationObservation:
         assert public_key.is_file()
         assert (str(subject), predicate_type) in self.statements
+        if self.fail_rescan_verification and predicate_type == RESCAN_TYPE:
+            raise OperationalError("post-attachment verification failed")
         return VerificationObservation(subject, ({"verified": True},))
 
     def download_attestations(
@@ -161,7 +172,7 @@ class FakeScanner:
         self.sbom_scans += 1
         assert sbom_path.is_file()
         assert cache_root.is_dir()
-        value: dict[str, object] = {"Results": []}
+        value = _scan_report()
         digest = atomic_write_json(report_path, value)
         return ScanObservation(report_path, digest, value)
 
@@ -175,14 +186,61 @@ class FakeScanner:
         assert layout_path
         assert cache_root.is_dir()
         self.layout_scans += 1
-        value: dict[str, object] = {"Results": []}
+        value = _scan_report()
         digest = atomic_write_json(report_path, value)
         return ScanObservation(report_path, digest, value)
 
 
-@pytest.mark.parametrize("scope", ["sbom-vulnerabilities", "full-image"])
+def _scan_report() -> dict[str, object]:
+    return {
+        "Results": [
+            {
+                "Target": "app",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2026-0001",
+                        "PkgName": "libssl",
+                        "Severity": "CRITICAL",
+                        "FixedVersion": "2.0",
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def _exception() -> VulnerabilityException:
+    return VulnerabilityException(
+        image="app",
+        component="libssl",
+        advisory="CVE-2026-0001",
+        rationale="Not reachable",
+        reachability="No call path",
+        exposure="Local only",
+        compensating_controls="Seccomp",
+        owner="security@example.com",
+        expires="2026-12-31",
+        review_trigger="Package update",
+    )
+
+
+@pytest.mark.parametrize(
+    ("scope", "fail_post_verification", "triage_platform", "wrong_release_name"),
+    [
+        ("sbom-vulnerabilities", False, "linux/amd64", False),
+        ("full-image", False, "linux/amd64", False),
+        ("sbom-vulnerabilities", True, "linux/amd64", False),
+        ("sbom-vulnerabilities", False, "linux/arm64", False),
+        ("sbom-vulnerabilities", False, "linux/amd64", True),
+    ],
+)
 def test_authoritative_rescan_verifies_complete_retained_inventory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scope: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+    fail_post_verification: bool,
+    triage_platform: str,
+    wrong_release_name: bool,
 ) -> None:
     monkeypatch.setattr(
         records_module,
@@ -253,6 +311,16 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     ).to_dict()
     signer = FakeSigner()
     signer.add(subject, RELEASE_VERIFICATION_TYPE, release_record)
+    if wrong_release_name:
+        release_statement = signer.statements[
+            (str(subject), RELEASE_VERIFICATION_TYPE)
+        ][0]
+        release_statement["subject"] = [
+            {
+                "name": "quay.io/example/other",
+                "digest": {"sha256": root_digest.encoded},
+            }
+        ]
     signer.add(
         manifest_subject,
         "spdxjson",
@@ -263,6 +331,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         },
     )
     signer.add(subject, RESCAN_TYPE, {"historical": True})
+    signer.fail_rescan_verification = fail_post_verification
     public_key = tmp_path / "cosign.pub"
     public_key.write_text("test", encoding="utf-8")
     cache = tmp_path / "trivy-cache"
@@ -270,32 +339,84 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     database = DatabaseObservation(cache, "sha256:" + "6" * 64, DATABASE_METADATA)
 
     scanner = FakeScanner()
-    result = rescan_release(
-        subject,
-        workspace=run,
-        registry=FakeRegistry(graph),
-        signer=signer,
-        scanner=scanner,
-        database=database,
-        public_key=public_key,
-        auth_file=None,
-        tools=(),
-        image_id="app",
-        expected_configuration_digest=configuration_digest,
-        scope=scope,
-        exceptions=(),
-        triage=(),
-        previous_result_digest=None,
-        signing=RescanSigning("test.key", public_key, "secret"),
-        now=datetime(2026, 2, 1, tzinfo=UTC),
+    triage = (
+        TriageDecision(
+            subject=subject,
+            platform=Platform.parse(triage_platform),
+            component="libssl",
+            advisory="CVE-2026-0001",
+            decision="not-applicable",
+            rationale="The vulnerable function is not reachable.",
+            owner="security@example.com",
+            decided_at="2026-02-01T00:00:00Z",
+            remediating_digest=None,
+        ),
     )
+
+    def run_rescan() -> RescanResult:
+        return rescan_release(
+            subject,
+            workspace=run,
+            registry=FakeRegistry(graph),
+            signer=signer,
+            scanner=scanner,
+            database=database,
+            public_key=public_key,
+            auth_file=None,
+            tools=(
+                ToolIdentity("trivy", "0.69.3", executable_digest="sha256:" + "7" * 64),
+            ),
+            image_id="app",
+            expected_configuration_digest=configuration_digest,
+            scope=scope,
+            exceptions=(_exception(),),
+            triage=triage,
+            previous_result_digest=None,
+            signing=RescanSigning("test.key", public_key, "secret"),
+            now=datetime(2026, 2, 1, tzinfo=UTC),
+            clock=lambda: datetime(2026, 2, 1, 0, 5, tzinfo=UTC),
+        )
+
+    if wrong_release_name:
+        with pytest.raises(OperationalError, match="exactly one"):
+            run_rescan()
+        assert run.journal.entries() == ()
+        return
+    if triage_platform == "linux/arm64":
+        with pytest.raises(InvalidInvocationError, match="outside the released"):
+            run_rescan()
+        assert run.journal.entries() == ()
+        return
+    if fail_post_verification:
+        with pytest.raises(OperationalError, match="post-attachment"):
+            run_rescan()
+        entry = run.journal.entries()[0]
+        assert entry.status is ResourceStatus.FAILED
+        assert "verifiedAt" not in entry.metadata
+        return
+
+    result = run_rescan()
 
     assert result.authoritative
     assert result.verdict is Verdict.ACCEPTED
     assert result.statement_path is not None
-    assert load_json(result.record_path)["payload"]["databaseDigest"] == database.digest
+    record = load_json(result.record_path)
+    assert record["payload"]["databaseDigest"] == database.digest
+    assert record["payload"]["scanner"] == "trivy 0.69.3"
+    assert record["payload"]["appliedExceptions"] == [
+        {
+            "platform": "linux/amd64",
+            "image": "app",
+            "component": "libssl",
+            "advisory": "CVE-2026-0001",
+            "expires": "2026-12-31",
+        }
+    ]
+    assert record["payload"]["triage"] == [triage[0].to_dict()]
     assert scanner.sbom_scans == (1 if scope == "sbom-vulnerabilities" else 0)
     assert scanner.layout_scans == (1 if scope == "full-image" else 0)
     entry = run.journal.entries()[0]
     assert entry.resource_id == "rescan-result"
     assert entry.status is ResourceStatus.CREATED
+    assert entry.metadata["verifiedAt"] == "2026-02-01T00:05:00Z"
+    assert result.verified_at == "2026-02-01T00:05:00Z"

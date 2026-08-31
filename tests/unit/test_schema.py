@@ -13,6 +13,7 @@ from conclear.schema import load_schema, validate_schema
         "provenance.schema.json",
         "record.schema.json",
         "result.schema.json",
+        "triage.schema.json",
     ],
 )
 def test_shipped_schema_is_valid_draft_2020_12(name: str) -> None:
@@ -25,3 +26,4 @@ def test_shipped_schema_is_valid_draft_2020_12(name: str) -> None:
 def test_schema_files_are_packaged() -> None:
     schema_files = files("conclear.schemas")
     assert schema_files.joinpath("config.schema.json").is_file()
+    assert schema_files.joinpath("triage.schema.json").is_file()

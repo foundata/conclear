@@ -64,6 +64,12 @@ def test_every_documented_command_has_help(command: str) -> None:
     assert result.stderr == ""
 
 
+def test_rescan_help_exposes_external_triage_input() -> None:
+    result = CliRunner().invoke(root, ["rescan", "--help"])
+    assert result.exit_code == 0
+    assert "--triage-file" in result.stdout
+
+
 def test_root_version_reports_full_identity() -> None:
     result = CliRunner().invoke(root, ["--version"])
     assert result.exit_code == 0

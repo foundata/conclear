@@ -29,7 +29,7 @@ The composable commands are `doctor`, `check`, `pins check`, `build`, `test`, `e
 
 Every command that produces a result supports `--format json`. JSON mode writes exactly one schema-validated object to standard output. Exit status `0` is success, `1` is operational failure, `2` is rule rejection and `64` is invalid invocation or configuration.
 
-Public qualification, candidate, verification and rescan records use record schema version 2. Repository configuration and command-result objects use their independent version 1 schemas.
+Public qualification, candidate, verification and rescan records use record schema version 3. Repository configuration, rescan-triage input and command-result objects use their independent version 1 schemas.
 
 ## Supported tools
 
@@ -46,6 +46,31 @@ The initial supported host-tool matrix is intentionally exact:
 | Cosign | 3.1.3 |
 
 Production signing always uses Cosign 3 public Rekor logging and verifies log inclusion. ConClear exposes no release option that disables upload or ignores the transparency log. Manual no-service signing experiments stay outside ConClear and use disposable keys, a no-service signing configuration, `--bundle`, and `--insecure-ignore-tlog=true` as specified by the guide.
+
+## Rescan triage
+
+`rescan` accepts externally owned vulnerability decisions through `--triage-file`. Each decision must name the exact immutable rescan subject and one platform in that subject, and duplicate platform, component and advisory identities are rejected.
+
+```json
+{
+  "schemaVersion": 1,
+  "decisions": [
+    {
+      "subject": "quay.io/example/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "platform": "linux/amd64",
+      "component": "openssl",
+      "advisory": "CVE-2026-0001",
+      "decision": "remediation-planned",
+      "rationale": "The fixed base-image rebuild is scheduled.",
+      "owner": "security@example.com",
+      "decidedAt": "2026-08-31T12:34:56Z",
+      "remediatingDigest": null
+    }
+  ]
+}
+```
+
+Triage is recorded as evidence and never suppresses a current scanner rejection. Only an exact, unexpired vulnerability exception in the release configuration changes the scanner verdict, and every applied exception is included in the new linked rescan record. An authoritative rescan reports and journals the post-attachment verification time that starts the remediation clock.
 
 ## Release profiles
 

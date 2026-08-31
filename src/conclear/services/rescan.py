@@ -1,7 +1,8 @@
 """Digest-bound released-image rescan workflow."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -28,6 +29,7 @@ from conclear.records import (
     validate_record,
 )
 from conclear.scan_policy import evaluate_trivy_report
+from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference
 from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
 
@@ -121,6 +123,7 @@ class RescanResult:
     statement_digest: str | None
     authoritative: bool
     verdict: Verdict
+    verified_at: str | None
 
 
 def rescan_release(
@@ -138,10 +141,11 @@ def rescan_release(
     expected_configuration_digest: str,
     scope: str,
     exceptions: tuple[VulnerabilityException, ...],
-    triage: tuple[dict[str, object], ...],
+    triage: tuple[TriageDecision, ...],
     previous_result_digest: str | None,
     signing: RescanSigning | None,
     now: datetime,
+    clock: Callable[[], datetime],
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if subject.digest is None or subject.tag is not None:
@@ -160,7 +164,7 @@ def rescan_release(
             subject=subject, predicate_type=RELEASE_VERIFICATION_TYPE
         ),
         predicate_type=RELEASE_VERIFICATION_TYPE,
-        subject_digest=subject.digest,
+        subject=subject,
     )
     release_record = _object(release_statement.get("predicate"), "release record")
     validate_record(release_record)
@@ -168,8 +172,11 @@ def rescan_release(
         raise OperationalError("Verified release predicate has the wrong record type")
     payload = _object(release_record.get("payload"), "release payload")
     release_subject = _object(payload.get("subject"), "released subject")
-    if release_subject.get("digest") != str(subject.digest):
-        raise OperationalError("Release verification names another subject digest")
+    if release_subject != {
+        "repository": subject.repository_name,
+        "digest": str(subject.digest),
+    }:
+        raise OperationalError("Release verification names another subject")
     repository_configuration = _object(
         release_record.get("repositoryConfiguration"), "repository configuration"
     )
@@ -205,6 +212,14 @@ def rescan_release(
     expected_platforms = {
         str(platform): str(digest) for platform, digest in manifest_map.items()
     }
+    unknown_triage_platforms = sorted(
+        {str(item.platform) for item in triage if item.platform not in manifest_map}
+    )
+    if unknown_triage_platforms:
+        raise InvalidInvocationError(
+            "Rescan triage names platforms outside the released subject: "
+            + ", ".join(unknown_triage_platforms)
+        )
     if recorded_platforms != expected_platforms:
         raise OperationalError(
             "Released platform graph differs from release verification"
@@ -212,6 +227,7 @@ def rescan_release(
     report_root = workspace.root / "reports" / image_id / "rescan"
     report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     findings: list[dict[str, object]] = []
+    applied_exceptions: list[dict[str, object]] = []
     for platform, digest in sorted(manifest_map.items()):
         if platform is None:
             raise AssertionError("platform coverage checked above")
@@ -226,7 +242,7 @@ def rescan_release(
                 subject=manifest_subject, predicate_type="spdxjson"
             ),
             predicate_type="spdxjson",
-            subject_digest=digest,
+            subject=manifest_subject,
         )
         sbom = _object(statement.get("predicate"), f"SBOM for {platform}")
         if sbom.get("spdxVersion") != "SPDX-2.3":
@@ -270,6 +286,10 @@ def rescan_release(
             }
             for finding in evaluation.findings
         )
+        applied_exceptions.extend(
+            {"platform": str(platform), **item.to_dict()}
+            for item in evaluation.applied_exceptions
+        )
     verdict = (
         Verdict.REJECTED
         if any(item.get("severity") == "error" for item in findings)
@@ -286,12 +306,13 @@ def rescan_release(
         payload={
             "subject": str(subject),
             "platformManifests": expected_platforms,
-            "scanner": "trivy",
+            "scanner": _scanner_identity(tools),
             "databaseDigest": database.digest,
             "databaseMetadata": database.metadata,
             "scope": scope,
             "findings": findings,
-            "triage": list(triage),
+            "appliedExceptions": applied_exceptions,
+            "triage": [item.to_dict() for item in triage],
             "previousResultDigest": previous_result_digest,
             "authoritative": signing is not None,
         },
@@ -299,7 +320,9 @@ def rescan_release(
     record_path = workspace.root / "records" / "rescan-result.json"
     record_digest = record.write(record_path)
     if signing is None:
-        return RescanResult(record_path, record_digest, None, None, False, verdict)
+        return RescanResult(
+            record_path, record_digest, None, None, False, verdict, None
+        )
     statement_path = workspace.root / "records" / "rescan-statement.json"
     statement_digest = write_statement(
         subject_name=subject.repository_name,
@@ -325,21 +348,26 @@ def rescan_release(
             private_key=signing.private_key,
             passphrase=signing.passphrase,
         )
+        signer.verify_attestation(
+            subject=subject,
+            public_key=signing.public_key,
+            predicate_type=RESCAN_TYPE,
+        )
+        expected_statement = _object(load_json(statement_path), "rescan statement")
+        _exact_statement(
+            signer.download_attestations(subject=subject, predicate_type=RESCAN_TYPE),
+            predicate_type=RESCAN_TYPE,
+            subject=subject,
+            expected=expected_statement,
+        )
     except Exception:
         workspace.journal.update("rescan-result", ResourceStatus.FAILED)
         raise
-    workspace.journal.update("rescan-result", ResourceStatus.CREATED)
-    signer.verify_attestation(
-        subject=subject,
-        public_key=signing.public_key,
-        predicate_type=RESCAN_TYPE,
-    )
-    expected_statement = _object(load_json(statement_path), "rescan statement")
-    _exact_statement(
-        signer.download_attestations(subject=subject, predicate_type=RESCAN_TYPE),
-        predicate_type=RESCAN_TYPE,
-        subject_digest=subject.digest,
-        expected=expected_statement,
+    verified_at = _timestamp(clock())
+    workspace.journal.update(
+        "rescan-result",
+        ResourceStatus.CREATED,
+        metadata={"verifiedAt": verified_at},
     )
     return RescanResult(
         record_path,
@@ -348,20 +376,36 @@ def rescan_release(
         statement_digest,
         True,
         verdict,
+        verified_at,
     )
+
+
+def _scanner_identity(tools: tuple[ToolIdentity, ...]) -> str:
+    matches = [tool for tool in tools if tool.name == "trivy"]
+    if len(matches) != 1:
+        raise OperationalError(
+            "Rescan evidence requires exactly one Trivy tool identity"
+        )
+    return f"trivy {matches[0].version}"
+
+
+def _timestamp(value: datetime) -> str:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise OperationalError("Rescan verification clock returned a naive timestamp")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _one_statement(
     envelopes: tuple[object, ...],
     *,
     predicate_type: str,
-    subject_digest: Digest,
+    subject: OCIReference,
 ) -> dict[str, object]:
     matches = [
         statement
         for statement in decode_dsse_statements(envelopes)
         if statement.get("predicateType") == predicate_type
-        and _has_subject(statement, subject_digest)
+        and _has_subject(statement, subject)
     ]
     if len(matches) != 1:
         raise OperationalError(
@@ -374,14 +418,14 @@ def _exact_statement(
     envelopes: tuple[object, ...],
     *,
     predicate_type: str,
-    subject_digest: Digest,
+    subject: OCIReference,
     expected: dict[str, object],
 ) -> dict[str, object]:
     matches = [
         statement
         for statement in decode_dsse_statements(envelopes)
         if statement.get("predicateType") == predicate_type
-        and _has_subject(statement, subject_digest)
+        and _has_subject(statement, subject)
         and statement == expected
     ]
     if len(matches) != 1:
@@ -392,10 +436,14 @@ def _exact_statement(
     return matches[0]
 
 
-def _has_subject(statement: dict[str, object], digest: Digest) -> bool:
+def _has_subject(statement: dict[str, object], subject: OCIReference) -> bool:
+    if subject.digest is None:
+        raise AssertionError("Statement subjects require an immutable digest")
     subjects = statement.get("subject")
     return isinstance(subjects, list) and any(
-        isinstance(item, dict) and item.get("digest") == {"sha256": digest.encoded}
+        isinstance(item, dict)
+        and item.get("name") == subject.repository_name
+        and item.get("digest") == {"sha256": subject.digest.encoded}
         for item in subjects
     )
 

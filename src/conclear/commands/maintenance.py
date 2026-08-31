@@ -21,6 +21,7 @@ from conclear.services.doctor import diagnose_environment
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
 from conclear.services.rescan import RescanSigning, rescan_release
 from conclear.tools import ToolName
+from conclear.triage import load_triage
 from conclear.values import OCIReference
 from conclear.workspace import RunWorkspace
 
@@ -210,6 +211,7 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
 @click.option("authoritative", "--authoritative", is_flag=True)
 @click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))
 @click.option("previous_result", "--previous-result")
+@click.option("triage_path", "--triage-file", type=click.Path(path_type=Path))
 @_format_option
 def rescan_command(
     subject_text: str,
@@ -219,6 +221,7 @@ def rescan_command(
     authoritative: bool,
     passphrase_fd: int | None,
     previous_result: str | None,
+    triage_path: Path | None,
     output_format: str,
 ) -> None:
     """Re-evaluate retained SBOMs for one immutable released subject."""
@@ -235,6 +238,7 @@ def rescan_command(
             "Rescan subject repository differs from the selected image"
         )
     configuration_digest = sha256_bytes(repository.raw_bytes)
+    triage = () if triage_path is None else load_triage(triage_path, subject=subject)
     if authoritative and selected.cosign_private_key is None:
         raise InvalidInvocationError("Authoritative rescan requires a signing key")
     passphrase = signing_passphrase(selected, passphrase_fd, required=authoritative)
@@ -287,10 +291,11 @@ def rescan_command(
         expected_configuration_digest=configuration_digest,
         scope=image.rescan_scope,
         exceptions=image.vulnerability_exceptions,
-        triage=(),
+        triage=triage,
         previous_result_digest=previous_result,
         signing=signing,
         now=datetime.now(UTC),
+        clock=lambda: datetime.now(UTC),
     )
     emit(
         CommandResult(
@@ -306,6 +311,7 @@ def rescan_command(
                 "record": str(result.record_path),
                 "recordDigest": result.record_digest,
                 "authoritative": result.authoritative,
+                "verifiedAt": result.verified_at,
             },
         ),
         output_format,

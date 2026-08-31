@@ -43,6 +43,7 @@ def _record() -> RecordEnvelope:
             },
             "scope": "sbom-vulnerabilities",
             "findings": [],
+            "appliedExceptions": [],
             "triage": [],
             "previousResultDigest": None,
             "authoritative": False,
