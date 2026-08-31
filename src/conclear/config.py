@@ -338,6 +338,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         )
 
     release_value = _object(value["release"])
+    release = _parse_release_tags(release_value)
     runtime_value = _object(value["runtime"])
     limits_value = _object(value.get("limits", {}))
     candidate_value = value.get(
@@ -401,10 +402,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         arm64_omission_reason=omission_reason,
         scanner=_string(value.get("scanner", "trivy")),
         rescan_scope=_string(value.get("rescan_scope", "sbom-vulnerabilities")),
-        release=ReleaseTags(
-            immutable_tags=tuple(_string_list(release_value["immutable_tags"])),
-            moving_tags=tuple(_string_list(release_value["moving_tags"])),
-        ),
+        release=release,
         runtime=_parse_runtime(runtime_value),
         hooks=tuple(
             _parse_hook(_object(item)) for item in _list(value.get("hooks", []))
@@ -412,6 +410,22 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         pins=tuple(_parse_pin(_object(item)) for item in _list(value.get("pins", []))),
         vulnerability_exceptions=exceptions,
         limits=limits,
+    )
+
+
+def _parse_release_tags(value: dict[str, Any]) -> ReleaseTags:
+    immutable_tags = tuple(_string_list(value["immutable_tags"]))
+    moving_tags = tuple(_string_list(value["moving_tags"]))
+    reserved = tuple(
+        tag for tag in (*immutable_tags, *moving_tags) if "-candidate." in tag
+    )
+    if reserved:
+        raise InvalidInvocationError(
+            "Release tags cannot use the ConClear-owned -candidate. namespace"
+        )
+    return ReleaseTags(
+        immutable_tags=immutable_tags,
+        moving_tags=moving_tags,
     )
 
 

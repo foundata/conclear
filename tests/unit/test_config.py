@@ -51,6 +51,32 @@ def test_repository_configuration_cannot_extend_builtin_limits(
 
 
 @pytest.mark.parametrize(
+    ("configured", "replacement"),
+    (
+        (
+            'immutable_tags = ["{version}"]',
+            'immutable_tags = ["{version}-candidate.manual"]',
+        ),
+        ('moving_tags = ["stable"]', 'moving_tags = ["stable-candidate.manual"]'),
+    ),
+)
+def test_repository_configuration_reserves_candidate_tag_namespace(
+    repository_factory: Callable[..., Path],
+    configured: str,
+    replacement: str,
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(configured, replacement),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match=r"owned -candidate\."):
+        load_repository_config(path)
+
+
+@pytest.mark.parametrize(
     "source",
     (
         "https://user:secret@github.com/example/app",
