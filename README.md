@@ -29,7 +29,7 @@ The composable commands are `doctor`, `check`, `pins check`, `build`, `test`, `e
 
 Every command that produces a result supports `--format json`. JSON mode writes exactly one schema-validated object to standard output. Exit status `0` is success, `1` is operational failure, `2` is rule rejection and `64` is invalid invocation or configuration.
 
-Public qualification, candidate, verification and rescan records use record schema version 3. Repository configuration, rescan-triage input and command-result objects use their independent version 1 schemas.
+Public qualification, candidate, verification and rescan records use record schema version 5. Repository configuration, rescan-triage input and command-result objects use their independent version 1 schemas.
 
 ## Supported tools
 
@@ -70,7 +70,9 @@ Production signing always uses Cosign 3 public Rekor logging and verifies log in
 }
 ```
 
-Triage is recorded as evidence and never suppresses a current scanner rejection. Only an exact, unexpired vulnerability exception in the release configuration changes the scanner verdict, and every applied exception is included in the new linked rescan record. An authoritative rescan reports and journals the post-attachment verification time that starts the remediation clock.
+An exact `not-applicable` decision suppresses only its matching platform, component and advisory finding. An exact `remediated` decision closes deadline tracking for its matching finding and must name the immutable remediating digest, but it does not erase the scanner observation. `affected` and `remediation-planned` findings remain active. Exact, unexpired vulnerability exceptions from the release configuration are evaluated separately and every applied exception is included in the new linked rescan record.
+
+An authoritative rescan reports and durably journals the successful post-attachment verification time that starts the remediation clock. Later authoritative and diagnostic rescans must link the exact latest result from protected state outside the checkout, preserve the original start time while a finding remains active and reject an active fixable finding at or beyond its configured deadline of at most 30 days.
 
 ## Release profiles
 
