@@ -202,6 +202,15 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             "appliedExceptions": [],
             "payloadDigests": [payload_digest],
             "databaseDigest": digest,
+            "databaseMetadata": {
+                name: {
+                    "schemaVersion": version,
+                    "updatedAt": "2026-01-01T00:00:00Z",
+                    "nextUpdate": "2026-01-02T00:00:00Z",
+                    "downloadedAt": "2026-01-01T00:01:00Z",
+                }
+                for name, version in (("vulnerability", 2), ("java", 1))
+            },
         },
     )
     record_path = tmp_path / "qualification.json"

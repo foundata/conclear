@@ -8,13 +8,20 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO
 
 from conclear.adapters.base import ToolAdapter
 from conclear.adapters.parsing import object_value, string_value
 from conclear.errors import OperationalError
-from conclear.jsonutil import atomic_write_json, load_json, sha256_file
+from conclear.jsonutil import (
+    atomic_write_json,
+    canonical_json_bytes,
+    load_json,
+    sha256_bytes,
+    sha256_file,
+)
 from conclear.process import OperationKind
 
 
@@ -53,15 +60,12 @@ class TrivyAdapter(ToolAdapter):
         if re.fullmatch(r"[0-9a-f]{64}", snapshot_name) is None:
             raise OperationalError("Trivy DB snapshot name is malformed")
         snapshot = cache_root / "snapshots" / snapshot_name
-        current = snapshot / "db" / "trivy.db"
-        metadata_path = snapshot / "db" / "metadata.json"
-        metadata = object_value(load_json(metadata_path), label="Trivy DB metadata")
-        digest = sha256_file(current)
-        if digest != expected_digest:
+        observation = _database_observation(snapshot)
+        if observation.digest != expected_digest:
             raise OperationalError(
                 "Trivy database snapshot digest does not match pointer"
             )
-        return DatabaseObservation(snapshot, digest, metadata)
+        return observation
 
     def refresh_database(self, cache_root: Path) -> DatabaseObservation:
         """Refresh in a same-filesystem directory and atomically install the snapshot."""
@@ -74,13 +78,18 @@ class TrivyAdapter(ToolAdapter):
                     timeout_seconds=900,
                     operation=OperationKind.WRITE,
                 )
-                database = temporary / "db" / "trivy.db"
-                metadata_path = temporary / "db" / "metadata.json"
-                metadata = object_value(
-                    load_json(metadata_path), label="Trivy DB metadata"
+                self._run(
+                    (
+                        "image",
+                        "--download-java-db-only",
+                        "--cache-dir",
+                        str(temporary),
+                    ),
+                    timeout_seconds=900,
+                    operation=OperationKind.WRITE,
                 )
-                digest = sha256_file(database)
-                snapshot_name = digest.removeprefix("sha256:")
+                observation = _database_observation(temporary)
+                snapshot_name = observation.digest.removeprefix("sha256:")
                 snapshots = cache_root / "snapshots"
                 snapshots.mkdir(mode=0o700, parents=True, exist_ok=True)
                 installed = snapshots / snapshot_name
@@ -91,7 +100,7 @@ class TrivyAdapter(ToolAdapter):
                     cache_root / "current.json",
                     {
                         "schemaVersion": 1,
-                        "databaseDigest": digest,
+                        "databaseDigest": observation.digest,
                         "snapshot": snapshot_name,
                     },
                 )
@@ -100,7 +109,9 @@ class TrivyAdapter(ToolAdapter):
                     os.fsync(directory)
                 finally:
                     os.close(directory)
-                return DatabaseObservation(installed, digest, metadata)
+                return DatabaseObservation(
+                    installed, observation.digest, observation.metadata
+                )
             except OSError as exc:
                 raise OperationalError(
                     "Unable to install refreshed Trivy database"
@@ -124,6 +135,9 @@ class TrivyAdapter(ToolAdapter):
                 "--cache-dir",
                 str(cache_root),
                 "--skip-db-update",
+                "--skip-java-db-update",
+                "--skip-check-update",
+                "--offline-scan",
                 "--scanners",
                 ",".join(scanners),
                 "--format",
@@ -151,6 +165,9 @@ class TrivyAdapter(ToolAdapter):
                 "--cache-dir",
                 str(cache_root),
                 "--skip-db-update",
+                "--skip-java-db-update",
+                "--skip-check-update",
+                "--offline-scan",
                 "--scanners",
                 "vuln,secret,misconfig",
                 "--format",
@@ -177,6 +194,9 @@ class TrivyAdapter(ToolAdapter):
                 "--cache-dir",
                 str(cache_root),
                 "--skip-db-update",
+                "--skip-java-db-update",
+                "--skip-check-update",
+                "--offline-scan",
                 "--format",
                 "spdx-json",
                 "--output",
@@ -204,6 +224,8 @@ class TrivyAdapter(ToolAdapter):
                 "--cache-dir",
                 str(cache_root),
                 "--skip-db-update",
+                "--skip-java-db-update",
+                "--offline-scan",
                 "--format",
                 "json",
                 "--output",
@@ -231,3 +253,58 @@ def _locked_file(path: Path) -> Iterator[IO[bytes]]:
     finally:
         if "stream" in locals():
             stream.close()
+
+
+def _database_observation(snapshot: Path) -> DatabaseObservation:
+    components = {
+        "vulnerability": (
+            snapshot / "db" / "trivy.db",
+            snapshot / "db" / "metadata.json",
+        ),
+        "java": (
+            snapshot / "java-db" / "trivy-java.db",
+            snapshot / "java-db" / "metadata.json",
+        ),
+    }
+    digests: dict[str, str] = {}
+    metadata: dict[str, object] = {}
+    for name, (database_path, metadata_path) in components.items():
+        digests[name] = sha256_file(database_path)
+        metadata[name] = _database_metadata(
+            object_value(load_json(metadata_path), label=f"Trivy {name} DB metadata"),
+            label=f"Trivy {name} DB metadata",
+        )
+    digest = sha256_bytes(canonical_json_bytes(digests))
+    return DatabaseObservation(snapshot, digest, metadata)
+
+
+def _database_metadata(value: dict[str, object], *, label: str) -> dict[str, object]:
+    version = value.get("Version", value.get("version"))
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise OperationalError(f"{label} version is malformed")
+    return {
+        "schemaVersion": version,
+        "updatedAt": _metadata_timestamp(
+            value.get("UpdatedAt", value.get("updatedAt")), label, "updated-at"
+        ),
+        "nextUpdate": _metadata_timestamp(
+            value.get("NextUpdate", value.get("nextUpdate")), label, "next-update"
+        ),
+        "downloadedAt": _metadata_timestamp(
+            value.get("DownloadedAt", value.get("downloadedAt")),
+            label,
+            "downloaded-at",
+        ),
+    }
+
+
+def _metadata_timestamp(value: object, label: str, field: str) -> str:
+    if not isinstance(value, str):
+        raise OperationalError(f"{label} {field} time is malformed")
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise OperationalError(f"{label} {field} time is malformed") from exc
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise OperationalError(f"{label} {field} time lacks a timezone")
+    return timestamp.astimezone(UTC).isoformat().replace("+00:00", "Z")

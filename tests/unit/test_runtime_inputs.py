@@ -22,6 +22,18 @@ class IdFactory:
         return "01arz3ndektsv4rrffq69g5fav"
 
 
+def database_metadata(next_update: str) -> dict[str, object]:
+    return {
+        name: {
+            "schemaVersion": version,
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "nextUpdate": next_update,
+            "downloadedAt": "2026-01-01T00:01:00Z",
+        }
+        for name, version in (("vulnerability", 2), ("java", 1))
+    }
+
+
 class FakeDatabase:
     def __init__(
         self, selected: DatabaseObservation | Exception, refreshed: DatabaseObservation
@@ -46,12 +58,12 @@ def test_database_refreshes_stale_snapshot_once(tmp_path: Path) -> None:
     stale = DatabaseObservation(
         tmp_path,
         "sha256:" + "a" * 64,
-        {"NextUpdate": "2025-12-31T00:00:00Z"},
+        database_metadata("2025-12-31T00:00:00Z"),
     )
     fresh = DatabaseObservation(
         tmp_path,
         "sha256:" + "b" * 64,
-        {"NextUpdate": "2026-01-02T00:00:00Z"},
+        database_metadata("2026-01-02T00:00:00Z"),
     )
     adapter = FakeDatabase(stale, fresh)
 
@@ -67,7 +79,7 @@ def test_database_rejects_stale_refresh(tmp_path: Path) -> None:
     stale = DatabaseObservation(
         tmp_path,
         "sha256:" + "a" * 64,
-        {"NextUpdate": "2025-12-31T00:00:00Z"},
+        database_metadata("2025-12-31T00:00:00Z"),
     )
     adapter = FakeDatabase(OperationalError("missing"), stale)
 

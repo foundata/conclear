@@ -29,6 +29,8 @@ The composable commands are `doctor`, `check`, `pins check`, `build`, `test`, `e
 
 Every command that produces a result supports `--format json`. JSON mode writes exactly one schema-validated object to standard output. Exit status `0` is success, `1` is operational failure, `2` is rule rejection and `64` is invalid invocation or configuration.
 
+Public qualification, candidate, verification and rescan records use record schema version 2. Repository configuration and command-result objects use their independent version 1 schemas.
+
 ## Supported tools
 
 The initial supported host-tool matrix is intentionally exact:

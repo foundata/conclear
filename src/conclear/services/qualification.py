@@ -619,6 +619,7 @@ def qualify_platform(
         ],
         "payloadDigests": list(payload_digests),
         "databaseDigest": database.digest,
+        "databaseMetadata": database.metadata,
     }
     record = RecordEnvelope(
         record_type="platformQualification",

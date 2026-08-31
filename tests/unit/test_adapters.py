@@ -29,6 +29,17 @@ type ResponseFactory = Callable[[CommandRequest], ProcessResult]
 type Response = ProcessResult | Exception | ResponseFactory
 
 
+def trivy_metadata(version: int) -> str:
+    return json.dumps(
+        {
+            "Version": version,
+            "UpdatedAt": "2026-01-01T00:00:00Z",
+            "NextUpdate": "2026-01-02T00:00:00Z",
+            "DownloadedAt": "2026-01-01T00:01:00Z",
+        }
+    )
+
+
 def result(stdout: str = "", stderr: str = "") -> ProcessResult:
     return ProcessResult(
         argv=("/tool",),
@@ -161,14 +172,21 @@ def test_trivy_database_refresh_installs_content_addressed_snapshot(
 ) -> None:
     def create_database(request: CommandRequest) -> ProcessResult:
         cache = Path(request.argv[request.argv.index("--cache-dir") + 1])
-        (cache / "db").mkdir(parents=True)
-        (cache / "db" / "trivy.db").write_bytes(b"database")
-        (cache / "db" / "metadata.json").write_text(
-            '{"UpdatedAt":"2026-01-01T00:00:00Z"}', encoding="utf-8"
-        )
+        if "--download-db-only" in request.argv:
+            (cache / "db").mkdir(parents=True)
+            (cache / "db" / "trivy.db").write_bytes(b"database")
+            (cache / "db" / "metadata.json").write_text(
+                trivy_metadata(2), encoding="utf-8"
+            )
+        else:
+            (cache / "java-db").mkdir(parents=True)
+            (cache / "java-db" / "trivy-java.db").write_bytes(b"java-database")
+            (cache / "java-db" / "metadata.json").write_text(
+                trivy_metadata(1), encoding="utf-8"
+            )
         return result()
 
-    runner = FakeRunner(create_database)
+    runner = FakeRunner(create_database, create_database)
     adapter = adapter_arguments(tmp_path, ToolName.TRIVY, runner).create(TrivyAdapter)
     cache_root = tmp_path / "cache"
 
@@ -188,7 +206,12 @@ def test_trivy_database_selection_rejects_pointer_digest_mismatch(
     snapshot = tmp_path / "cache" / "snapshots" / ("a" * 64)
     (snapshot / "db").mkdir(parents=True)
     (snapshot / "db" / "trivy.db").write_bytes(b"database")
-    (snapshot / "db" / "metadata.json").write_text("{}", encoding="utf-8")
+    (snapshot / "db" / "metadata.json").write_text(trivy_metadata(2), encoding="utf-8")
+    (snapshot / "java-db").mkdir(parents=True)
+    (snapshot / "java-db" / "trivy-java.db").write_bytes(b"java-database")
+    (snapshot / "java-db" / "metadata.json").write_text(
+        trivy_metadata(1), encoding="utf-8"
+    )
     (tmp_path / "cache" / "current.json").write_text(
         json.dumps(
             {
@@ -202,6 +225,34 @@ def test_trivy_database_selection_rejects_pointer_digest_mismatch(
 
     with pytest.raises(OperationalError, match="does not match pointer"):
         adapter.select_database(tmp_path / "cache")
+
+
+def test_trivy_scans_cannot_update_or_query_outside_selected_snapshot(
+    tmp_path: Path,
+) -> None:
+    def write_report(request: CommandRequest) -> ProcessResult:
+        report = Path(request.argv[request.argv.index("--output") + 1])
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text('{"Results":[]}', encoding="utf-8")
+        return result()
+
+    runner = FakeRunner(write_report)
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, runner).create(TrivyAdapter)
+    adapter.scan_filesystem(
+        path=tmp_path,
+        report_path=tmp_path / "report.json",
+        cache_root=tmp_path / "snapshot",
+        scanners=("secret", "misconfig"),
+    )
+
+    arguments = runner.requests[0].argv
+    for option in (
+        "--skip-db-update",
+        "--skip-java-db-update",
+        "--skip-check-update",
+        "--offline-scan",
+    ):
+        assert option in arguments
 
 
 def test_cosign_release_signing_keeps_public_log_policy_enabled(

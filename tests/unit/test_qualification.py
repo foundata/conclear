@@ -183,6 +183,17 @@ class NoopRunner:
         raise AssertionError(f"Unexpected hook: {request.argv}")
 
 
+DATABASE_METADATA: dict[str, object] = {
+    name: {
+        "schemaVersion": version,
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "nextUpdate": "2026-01-02T00:00:00Z",
+        "downloadedAt": "2026-01-01T00:01:00Z",
+    }
+    for name, version in (("vulnerability", 2), ("java", 1))
+}
+
+
 def inputs(repository: Path, tmp_path: Path) -> QualificationInputs:
     config = load_repository_config(repository / "conclear.toml")
     workspace = RunWorkspace.create(
@@ -236,7 +247,9 @@ def test_qualification_writes_accepted_digest_bound_record(
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
-        database=DatabaseObservation(database_path, "sha256:" + "e" * 64, {}),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
         pin_observations=(),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
@@ -258,7 +271,9 @@ def test_qualification_records_label_rule_rejection(
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
-        database=DatabaseObservation(database_path, "sha256:" + "e" * 64, {}),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
         pin_observations=(),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )

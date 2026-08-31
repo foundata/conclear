@@ -32,6 +32,15 @@ def _record() -> RecordEnvelope:
             "platformManifests": {"linux/amd64": digest},
             "scanner": "trivy 0.69.3",
             "databaseDigest": digest,
+            "databaseMetadata": {
+                name: {
+                    "schemaVersion": version,
+                    "updatedAt": "2026-08-31T09:00:00Z",
+                    "nextUpdate": "2026-09-01T09:00:00Z",
+                    "downloadedAt": "2026-08-31T09:01:00Z",
+                }
+                for name, version in (("vulnerability", 2), ("java", 1))
+            },
             "scope": "sbom-vulnerabilities",
             "findings": [],
             "triage": [],

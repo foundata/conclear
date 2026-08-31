@@ -37,6 +37,17 @@ class IdFactory:
         return "01arz3ndektsv4rrffq69g5fav"
 
 
+DATABASE_METADATA: dict[str, object] = {
+    name: {
+        "schemaVersion": version,
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "nextUpdate": "2026-02-02T00:00:00Z",
+        "downloadedAt": "2026-02-01T00:01:00Z",
+    }
+    for name, version in (("vulnerability", 2), ("java", 1))
+}
+
+
 class FakeRegistry:
     def __init__(self, graph: OCIGraph) -> None:
         self.graph = graph
@@ -256,7 +267,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     public_key.write_text("test", encoding="utf-8")
     cache = tmp_path / "trivy-cache"
     cache.mkdir()
-    database = DatabaseObservation(cache, "sha256:" + "6" * 64, {})
+    database = DatabaseObservation(cache, "sha256:" + "6" * 64, DATABASE_METADATA)
 
     scanner = FakeScanner()
     result = rescan_release(

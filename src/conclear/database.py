@@ -40,15 +40,25 @@ def select_fresh_database(
 
 
 def _fresh(database: DatabaseObservation, now: datetime) -> bool:
-    value = database.metadata.get("NextUpdate")
-    if not isinstance(value, str):
-        value = database.metadata.get("nextUpdate")
-    if not isinstance(value, str):
-        raise OperationalError("Trivy database metadata has no next-update time")
-    try:
-        next_update = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise OperationalError("Trivy database next-update time is malformed") from exc
-    if next_update.tzinfo is None or next_update.utcoffset() is None:
-        raise OperationalError("Trivy database next-update time lacks a timezone")
-    return now.astimezone(UTC) < next_update.astimezone(UTC)
+    next_updates: list[datetime] = []
+    for name in ("vulnerability", "java"):
+        component = database.metadata.get(name)
+        if not isinstance(component, dict):
+            raise OperationalError(f"Trivy {name} database metadata is malformed")
+        value = component.get("nextUpdate")
+        if not isinstance(value, str):
+            raise OperationalError(
+                f"Trivy {name} database metadata has no next-update time"
+            )
+        try:
+            next_update = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise OperationalError(
+                f"Trivy {name} database next-update time is malformed"
+            ) from exc
+        if next_update.tzinfo is None or next_update.utcoffset() is None:
+            raise OperationalError(
+                f"Trivy {name} database next-update time lacks a timezone"
+            )
+        next_updates.append(next_update)
+    return all(now.astimezone(UTC) < item.astimezone(UTC) for item in next_updates)

@@ -288,6 +288,7 @@ def rescan_release(
             "platformManifests": expected_platforms,
             "scanner": "trivy",
             "databaseDigest": database.digest,
+            "databaseMetadata": database.metadata,
             "scope": scope,
             "findings": findings,
             "triage": list(triage),
