@@ -8,6 +8,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.jsonutil import structure_depth_is_bounded
 
 
 def load_schema(name: str) -> dict[str, Any]:
@@ -15,9 +16,9 @@ def load_schema(name: str) -> dict[str, Any]:
     resource = files("conclear.schemas").joinpath(name)
     try:
         value: Any = json.loads(resource.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise OperationalError(f"Unable to load shipped schema {name}") from exc
-    if not isinstance(value, dict):
+    if not isinstance(value, dict) or not structure_depth_is_bounded(value):
         raise OperationalError(f"Shipped schema {name} is not a JSON object")
     return value
 
@@ -34,8 +35,15 @@ def validate_schema(name: str) -> None:
 
 def validate_external(value: object, schema_name: str, *, label: str) -> None:
     """Validate untrusted data and report the first deterministic error."""
+    if not structure_depth_is_bounded(value):
+        raise InvalidInvocationError(f"Invalid {label}: nesting limit exceeded")
     validator = Draft202012Validator(load_schema(schema_name))
-    errors = sorted(validator.iter_errors(value), key=_validation_error_key)
+    try:
+        errors = sorted(validator.iter_errors(value), key=_validation_error_key)
+    except RecursionError as exc:
+        raise InvalidInvocationError(
+            f"Invalid {label}: nesting limit exceeded"
+        ) from exc
     if not errors:
         return
     error = errors[0]

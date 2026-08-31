@@ -4,14 +4,18 @@ import json
 from typing import Any
 
 from conclear.errors import OperationalError
+from conclear.jsonutil import structure_depth_is_bounded
 
 
 def json_value(text: str, *, label: str) -> object:
     """Decode tool JSON output without claiming a trusted type."""
     try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
+        value: object = json.loads(text)
+    except (json.JSONDecodeError, RecursionError) as exc:
         raise OperationalError(f"{label} did not return valid JSON") from exc
+    if not structure_depth_is_bounded(value):
+        raise OperationalError(f"{label} JSON exceeds the nesting limit")
+    return value
 
 
 def object_value(value: object, *, label: str) -> dict[str, Any]:

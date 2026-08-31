@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.jsonutil import structure_depth_is_bounded
 from conclear.values import Digest, Platform
 
 OCI_INDEX = "application/vnd.oci.image.index.v1+json"
@@ -376,8 +377,13 @@ class LayoutValidator:
                 raise InvalidInvocationError(
                     f"OCI JSON file exceeds the size limit: {path}"
                 )
-            return json.loads(content.decode("utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            value: object = json.loads(content.decode("utf-8"))
+            if not structure_depth_is_bounded(value):
+                raise InvalidInvocationError(
+                    f"OCI JSON file exceeds the nesting limit: {path}"
+                )
+            return value
+        except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:
             raise InvalidInvocationError(
                 f"Unable to decode OCI JSON file {path}"
             ) from exc
@@ -407,9 +413,14 @@ def validate_layout(layout_path: Path, *, reference: str | None = None) -> OCIGr
 
 def _decode_json(content: bytes, digest: Digest) -> object:
     try:
-        return json.loads(content.decode("utf-8"))
-    except (UnicodeError, json.JSONDecodeError) as exc:
+        value: object = json.loads(content.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise InvalidInvocationError(f"OCI JSON blob is malformed: {digest}") from exc
+    if not structure_depth_is_bounded(value):
+        raise InvalidInvocationError(
+            f"OCI JSON blob exceeds the nesting limit: {digest}"
+        )
+    return value
 
 
 def _object(value: object, label: str) -> dict[str, Any]:

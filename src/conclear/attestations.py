@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from conclear.errors import OperationalError
-from conclear.jsonutil import atomic_write_json
+from conclear.jsonutil import atomic_write_json, structure_depth_is_bounded
 from conclear.values import Digest
 
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
@@ -61,8 +61,15 @@ def decode_dsse_statements(
         try:
             decoded = base64.b64decode(payload, validate=True)
             value = json.loads(decoded.decode("utf-8"))
-        except (binascii.Error, UnicodeError, json.JSONDecodeError) as exc:
+        except (
+            binascii.Error,
+            UnicodeError,
+            json.JSONDecodeError,
+            RecursionError,
+        ) as exc:
             raise OperationalError("Cosign DSSE payload is malformed") from exc
+        if not structure_depth_is_bounded(value):
+            raise OperationalError("Cosign DSSE payload exceeds the nesting limit")
         statement = _object(value, "in-toto Statement")
         if statement.get("_type") != STATEMENT_TYPE:
             raise OperationalError("Cosign payload is not an in-toto Statement v1")

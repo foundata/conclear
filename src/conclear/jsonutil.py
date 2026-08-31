@@ -11,6 +11,32 @@ from typing import Any
 from conclear.errors import OperationalError
 
 MAX_JSON_BYTES = 256 * 1024 * 1024
+MAX_STRUCTURE_DEPTH = 64
+
+
+def structure_depth_is_bounded(
+    value: object, *, maximum_depth: int = MAX_STRUCTURE_DEPTH
+) -> bool:
+    """Return whether nested JSON/TOML containers stay within a fixed depth."""
+    if maximum_depth < 0:
+        raise ValueError("maximum depth cannot be negative")
+    ancestors: set[int] = set()
+    pending: list[tuple[object, int, bool]] = [(value, 0, False)]
+    while pending:
+        current, depth, exiting = pending.pop()
+        if not isinstance(current, (dict, list)):
+            continue
+        identity = id(current)
+        if exiting:
+            ancestors.remove(identity)
+            continue
+        if depth > maximum_depth or identity in ancestors:
+            return False
+        ancestors.add(identity)
+        pending.append((current, depth, True))
+        children = current.values() if isinstance(current, dict) else current
+        pending.extend((child, depth + 1, False) for child in children)
+    return True
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -121,8 +147,11 @@ def load_json(path: Path, *, maximum_bytes: int = MAX_JSON_BYTES) -> Any:
             content.extend(chunk)
         if len(content) > maximum_bytes:
             raise OperationalError(f"JSON file exceeds the size limit: {path}")
-        return json.loads(content.decode("utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        value: Any = json.loads(content.decode("utf-8"))
+        if not structure_depth_is_bounded(value):
+            raise OperationalError(f"JSON file exceeds the nesting limit: {path}")
+        return value
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise OperationalError(f"Unable to decode JSON file {path}") from exc
     finally:
         if descriptor is not None:

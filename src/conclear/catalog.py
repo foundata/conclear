@@ -9,7 +9,7 @@ from typing import Any
 
 from conclear.errors import OperationalError
 from conclear.identity import GUIDE_REVISION, GUIDE_TITLE
-from conclear.jsonutil import atomic_write_bytes
+from conclear.jsonutil import atomic_write_bytes, structure_depth_is_bounded
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,9 +44,9 @@ def load_catalog() -> CheckCatalog:
     resource = files("conclear.data").joinpath("checks.json")
     try:
         untrusted: Any = json.loads(resource.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise OperationalError("Unable to load the shipped check catalog") from exc
-    if not isinstance(untrusted, dict):
+    if not isinstance(untrusted, dict) or not structure_depth_is_bounded(untrusted):
         raise OperationalError("Check catalog must be a JSON object")
     if untrusted.get("schemaVersion") != 1:
         raise OperationalError("Unsupported check catalog schema")

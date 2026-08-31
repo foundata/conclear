@@ -10,6 +10,7 @@ from conclear.config import ImageConfig
 from conclear.context import MAX_CONTAINERIGNORE_BYTES
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.fileio import read_regular_file
+from conclear.jsonutil import structure_depth_is_bounded
 from conclear.presentation import Finding
 from conclear.values import OCIReference
 
@@ -390,7 +391,9 @@ def _check_exec_form(
     argument = instruction.argument.strip()
     try:
         value = json.loads(argument)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, RecursionError):
+        value = None
+    if not structure_depth_is_bounded(value):
         value = None
     if (
         not isinstance(value, list)

@@ -206,7 +206,7 @@ def load_repository_config(path: Path) -> RepositoryConfig:
         raw_bytes = _read_repository_file(path)
         decoded = raw_bytes.decode("utf-8")
         value: Any = tomllib.loads(decoded)
-    except (UnicodeError, tomllib.TOMLDecodeError) as exc:
+    except (UnicodeError, tomllib.TOMLDecodeError, RecursionError) as exc:
         raise InvalidInvocationError(
             f"Unable to read repository configuration {path}"
         ) from exc
@@ -277,7 +277,7 @@ def load_release_profile(
     try:
         profile_bytes = read_protected_file(path, maximum_bytes=MAX_PROFILE_BYTES)
         value: Any = tomllib.loads(profile_bytes.decode("utf-8"))
-    except (UnicodeError, tomllib.TOMLDecodeError) as exc:
+    except (UnicodeError, tomllib.TOMLDecodeError, RecursionError) as exc:
         raise InvalidInvocationError(f"Unable to read release profile {path}") from exc
     validate_external(value, "profile.schema.json", label="release profile")
     profile = _object(value)

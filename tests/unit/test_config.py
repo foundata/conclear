@@ -1,4 +1,5 @@
 import os
+import tomllib
 from collections.abc import Callable
 from datetime import timedelta
 from pathlib import Path
@@ -142,6 +143,36 @@ def test_repository_configuration_read_is_bounded(
     monkeypatch.setattr(config_module, "MAX_CONFIG_BYTES", path.stat().st_size - 1)
 
     with pytest.raises(InvalidInvocationError, match="exceeds the size limit"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_excessive_toml_nesting(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    nested_table = ".".join(f"level{index}" for index in range(66))
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\n[{nested_table}]\nvalue = true\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="nesting limit"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_classifies_parser_recursion(
+    repository_factory: Callable[..., Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = repository_factory() / "conclear.toml"
+
+    def fail_parse(value: str) -> object:
+        del value
+        raise RecursionError("injected parser recursion")
+
+    monkeypatch.setattr(tomllib, "loads", fail_parse)
+
+    with pytest.raises(InvalidInvocationError, match="Unable to read"):
         load_repository_config(path)
 
 
