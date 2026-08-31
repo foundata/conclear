@@ -54,10 +54,9 @@ class SkopeoAdapter(ToolAdapter):
         try:
             return self.resolve_digest(reference, auth_file=auth_file)
         except CommandExecutionError as exc:
-            message = str(exc).lower()
+            diagnostic = "\n".join((exc.stdout, exc.stderr)).lower()
             if any(
-                marker in message
-                for marker in ("manifest unknown", "name unknown", "not found")
+                marker in diagnostic for marker in ("manifest unknown", "name unknown")
             ):
                 return None
             raise

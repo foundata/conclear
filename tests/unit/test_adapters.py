@@ -301,6 +301,36 @@ def test_skopeo_adapter_uses_explicit_auth_and_fully_qualified_transport(
     assert auth_file in runner.requests[0].secret_paths
 
 
+def test_skopeo_optional_resolution_accepts_only_registry_absence(
+    tmp_path: Path,
+) -> None:
+    reference = OCIReference.parse("quay.io/foundata/example:missing")
+    absent = CommandExecutionError(
+        "Skopeo inspect failed",
+        returncode=1,
+        stderr=(
+            "FATA[0000] Error parsing image name: reading manifest missing in "
+            "quay.io/foundata/example: manifest unknown\n"
+        ),
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.SKOPEO, FakeRunner(absent)).create(
+        SkopeoAdapter
+    )
+
+    assert adapter.resolve_optional(reference) is None
+
+    ambiguous = CommandExecutionError(
+        "Skopeo inspect failed",
+        returncode=1,
+        stderr="dial tcp: lookup quay.io: host not found\n",
+    )
+    adapter = adapter_arguments(
+        tmp_path, ToolName.SKOPEO, FakeRunner(ambiguous)
+    ).create(SkopeoAdapter)
+    with pytest.raises(CommandExecutionError, match="Skopeo inspect failed"):
+        adapter.resolve_optional(reference)
+
+
 def test_trivy_database_refresh_installs_content_addressed_snapshot(
     tmp_path: Path,
 ) -> None:
@@ -583,6 +613,7 @@ def test_quay_adapter_sets_and_verifies_expiration_without_leaking_token() -> No
     assert observed.expiration == expiration
     assert all("protected-token" not in str(request.url) for request in requests)
     assert requests[0].headers["Authorization"] == "Bearer protected-token"
+    assert requests[0].read() == b'{"expiration":1767312000}'
     client.close()
 
 

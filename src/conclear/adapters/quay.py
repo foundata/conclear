@@ -108,7 +108,7 @@ class QuayAdapter:
             raise OperationalError("Candidate expiration must be timezone-aware")
         epoch = int(expiration.astimezone(UTC).timestamp())
         self._write_with_observation(
-            repository, tag, {"expiration": str(epoch)}, expected_digest=None
+            repository, tag, {"expiration": epoch}, expected_digest=None
         )
         observed = self._required_tag(repository, tag)
         if observed.expiration is None or int(observed.expiration.timestamp()) != epoch:
