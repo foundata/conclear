@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/foundata/conclear/schemas/record-v5.json",
+  "$id": "https://github.com/foundata/conclear/schemas/record-v6.json",
   "title": "ConClear public record",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "recordType", "createdAt", "runId", "ruleset", "source", "repositoryConfiguration", "tools", "verdict", "payload"],
   "properties": {
-    "schemaVersion": {"const": 5},
+    "schemaVersion": {"const": 6},
     "recordType": {"enum": ["platformQualification", "releaseCandidate", "releaseVerification", "rescanResult"]},
     "createdAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
     "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
@@ -211,7 +211,7 @@
     "runtimeObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["user", "readOnly", "writableMounts", "memoryBytes", "nanoCpus", "pidsLimit", "nofile", "capAdd", "capDrop", "securityOptions"],
+      "required": ["user", "readOnly", "writableMounts", "memoryBytes", "nanoCpus", "pidsLimit", "nofile", "capAdd", "capDrop", "effectiveCapabilities", "securityOptions"],
       "properties": {
         "user": {"type": "string"},
         "readOnly": {"type": "boolean"},
@@ -222,6 +222,7 @@
         "nofile": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "integer"}], "items": false},
         "capAdd": {"$ref": "#/$defs/stringArray"},
         "capDrop": {"$ref": "#/$defs/stringArray"},
+        "effectiveCapabilities": {"$ref": "#/$defs/stringArray"},
         "securityOptions": {"$ref": "#/$defs/stringArray"}
       }
     },

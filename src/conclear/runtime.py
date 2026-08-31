@@ -1,6 +1,6 @@
 """Run-owned external-tool environment and adapter construction."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
@@ -24,6 +24,12 @@ class ApplicationRuntime:
     environment: dict[str, str]
     runner: ProcessRunner
     tools: dict[ToolName, ResolvedTool]
+    _adapters: dict[ToolName, ToolAdapter] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     @classmethod
     def create(
@@ -101,12 +107,19 @@ class ApplicationRuntime:
         return self._adapter(CosignAdapter, ToolName.COSIGN)
 
     def _adapter[T: ToolAdapter](self, adapter: type[T], name: ToolName) -> T:
+        cached = self._adapters.get(name)
+        if cached is not None:
+            if not isinstance(cached, adapter):  # pragma: no cover - internal invariant
+                raise AssertionError(f"Runtime adapter type changed for {name.value}")
+            return cached
         tool = self.tools.get(name)
         if tool is None:
             raise ValueError(f"Runtime did not resolve {name.value}")
-        return adapter(
+        value = adapter(
             tool=tool,
             runner=self.runner,
             environment=self.environment,
             log_directory=self.root / "logs",
         )
+        self._adapters[name] = value
+        return value

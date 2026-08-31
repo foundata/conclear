@@ -5,6 +5,7 @@ from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
 from conclear.adapters.parsing import json_value, object_value
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.oci import OCIGraph, validate_layout
 from conclear.process import OperationKind
 from conclear.values import Platform
@@ -57,6 +58,28 @@ class BuildahAdapter(ToolAdapter):
         auth_file: Path | None,
     ) -> BuildObservation:
         """Build and export a digest-preserving OCI image layout."""
+        try:
+            layout_path.lstat()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise OperationalError(
+                f"Unable to inspect build output layout {layout_path}"
+            ) from exc
+        else:
+            raise InvalidInvocationError(
+                f"Build output layout already exists: {layout_path}"
+            )
+        try:
+            layout_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if not layout_path.parent.is_dir() or layout_path.parent.is_symlink():
+                raise InvalidInvocationError(
+                    f"Build output parent is not a regular directory: {layout_path.parent}"
+                )
+        except OSError as exc:
+            raise OperationalError(
+                f"Unable to create build output parent {layout_path.parent}"
+            ) from exc
         arguments: list[str] = [
             "--root",
             str(root),
@@ -69,8 +92,7 @@ class BuildahAdapter(ToolAdapter):
             str(platform),
             "--timestamp",
             str(source_epoch),
-            "--pull",
-            "always",
+            "--pull=always",
             "--file",
             str(containerfile),
             "--tag",

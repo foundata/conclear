@@ -134,9 +134,16 @@ class Builder:
 
 
 class Runtime:
-    def __init__(self, *, fail_health: bool = False, fail_remove: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_health: bool = False,
+        fail_remove: bool = False,
+        effective_capabilities: tuple[str, ...] = (),
+    ) -> None:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
+        self.effective_capabilities = effective_capabilities
         self.removals = 0
 
     def import_layout(self, **values: Any) -> ImportObservation:
@@ -158,7 +165,8 @@ class Runtime:
             nofile_soft=1024,
             nofile_hard=1024,
             cap_add=(),
-            cap_drop=("ALL",),
+            cap_drop=("CHOWN", "SETUID"),
+            effective_capabilities=self.effective_capabilities,
             security_options=("no-new-privileges",),
         )
 
@@ -378,6 +386,25 @@ def test_runtime_failure_attempts_cleanup_without_replacing_original_error(
         if entry.resource_id == "podman-linux-amd64"
     )
     assert status is (ResourceStatus.FAILED if fail_remove else ResourceStatus.REMOVED)
+
+
+def test_runtime_rejects_observed_effective_capabilities(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    build = build_platform(value, Builder())
+
+    evidence = run_platform_tests(
+        value,
+        build,
+        Runtime(effective_capabilities=("CAP_NET_RAW",)),
+        hook_runner(value),
+    )
+
+    assert any(
+        finding.check_id == "CC0401" and "capability" in finding.message
+        for finding in evidence.findings
+    )
 
 
 def test_qualification_rejects_stale_pin_resolution(

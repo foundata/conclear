@@ -44,6 +44,7 @@ class RuntimeControlObservation:
     nofile_hard: int
     cap_add: tuple[str, ...]
     cap_drop: tuple[str, ...]
+    effective_capabilities: tuple[str, ...]
     security_options: tuple[str, ...]
 
 
@@ -237,6 +238,10 @@ class PodmanAdapter(ToolAdapter):
         if not isinstance(value, list) or len(value) != 1:
             raise OperationalError("Podman inspect must return one container")
         item = object_value(value[0], label="Podman container")
+        if "EffectiveCaps" not in item:
+            raise OperationalError(
+                "Podman did not report effective container capabilities"
+            )
         config = object_value(item.get("Config"), label="Podman container config")
         host = object_value(item.get("HostConfig"), label="Podman host config")
         ulimits = host.get("Ulimits")
@@ -263,6 +268,9 @@ class PodmanAdapter(ToolAdapter):
             nofile_hard=_int(limit.get("Hard"), "Podman nofile hard limit"),
             cap_add=_strings(host.get("CapAdd"), "Podman added capabilities"),
             cap_drop=_strings(host.get("CapDrop"), "Podman dropped capabilities"),
+            effective_capabilities=_strings(
+                item.get("EffectiveCaps"), "Podman effective capabilities"
+            ),
             security_options=_strings(
                 host.get("SecurityOpt"), "Podman security options"
             ),

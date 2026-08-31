@@ -19,12 +19,13 @@ from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
 from conclear.errors import (
     CommandExecutionError,
+    InvalidInvocationError,
     OperationalError,
     UnsupportedOperationError,
 )
 from conclear.process import CommandRequest, ProcessResult
 from conclear.tools import ResolvedTool, ToolName
-from conclear.values import Digest, OCIReference
+from conclear.values import Digest, OCIReference, Platform
 
 type ResponseFactory = Callable[[CommandRequest], ProcessResult]
 type Response = ProcessResult | Exception | ResponseFactory
@@ -118,12 +119,65 @@ def test_buildah_info_uses_supported_go_template_json(tmp_path: Path) -> None:
     assert "{{json .}}" in runner.requests[0].argv
 
 
+def test_buildah_build_uses_unambiguous_pull_option(tmp_path: Path) -> None:
+    runner = FakeRunner(CommandExecutionError("stop after command observation"))
+    adapter = adapter_arguments(tmp_path, ToolName.BUILDAH, runner).create(
+        BuildahAdapter
+    )
+
+    with pytest.raises(CommandExecutionError):
+        adapter.build(
+            root=tmp_path / "root",
+            runroot=tmp_path / "runroot",
+            containerfile=tmp_path / "Containerfile",
+            context=tmp_path,
+            platform=Platform.parse("linux/amd64"),
+            image_name="localhost/example:fixture",
+            layout_path=tmp_path / "outputs" / "layout",
+            layout_reference="fixture",
+            source_epoch=946684800,
+            build_arguments={},
+            auth_file=None,
+        )
+
+    assert "--pull=always" in runner.requests[0].argv
+    assert "--pull" not in runner.requests[0].argv
+    assert (tmp_path / "outputs").is_dir()
+
+
+def test_buildah_build_rejects_dangling_output_symlink(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    adapter = adapter_arguments(tmp_path, ToolName.BUILDAH, runner).create(
+        BuildahAdapter
+    )
+    output = tmp_path / "layout"
+    output.symlink_to(tmp_path / "missing")
+
+    with pytest.raises(InvalidInvocationError, match="already exists"):
+        adapter.build(
+            root=tmp_path / "root",
+            runroot=tmp_path / "runroot",
+            containerfile=tmp_path / "Containerfile",
+            context=tmp_path,
+            platform=Platform.parse("linux/amd64"),
+            image_name="localhost/example:fixture",
+            layout_path=output,
+            layout_reference="fixture",
+            source_epoch=946684800,
+            build_arguments={},
+            auth_file=None,
+        )
+
+    assert not runner.requests
+
+
 def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> None:
     runner = FakeRunner(
         result(
             json.dumps(
                 [
                     {
+                        "EffectiveCaps": [],
                         "Config": {"User": "10001:10001"},
                         "HostConfig": {
                             "ReadonlyRootfs": True,
@@ -157,6 +211,21 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
     )
 
     assert observation.writable_mounts == ("/run", "/tmp")
+    assert not observation.effective_capabilities
+
+
+def test_podman_controls_require_effective_capability_observation(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(result(json.dumps([{"Config": {}, "HostConfig": {}}])))
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    with pytest.raises(OperationalError, match="effective container capabilities"):
+        adapter.inspect_controls(
+            root=tmp_path / "root",
+            runroot=tmp_path / "runroot",
+            name="test",
+        )
 
 
 def test_podman_cleanup_is_idempotent_and_resets_only_selected_storage(

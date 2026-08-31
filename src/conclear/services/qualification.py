@@ -838,11 +838,13 @@ def _control_findings(
         for value in observed.security_options
     ):
         mismatches.append("no-new-privileges")
-    cap_drop = {item.removeprefix("CAP_").upper() for item in observed.cap_drop}
-    if "ALL" not in cap_drop:
-        mismatches.append("capability drop")
     cap_add = {item.removeprefix("CAP_").upper() for item in observed.cap_add}
     expected_add = {item.removeprefix("CAP_") for item in expected.capabilities}
+    effective = {
+        item.removeprefix("CAP_").upper() for item in observed.effective_capabilities
+    }
+    if not effective.issubset(expected_add):
+        mismatches.append("capability drop")
     if cap_add != expected_add:
         mismatches.append("added capabilities")
     return tuple(
@@ -916,6 +918,7 @@ def _controls_dict(value: RuntimeControlObservation) -> dict[str, object]:
         "nofile": [value.nofile_soft, value.nofile_hard],
         "capAdd": list(value.cap_add),
         "capDrop": list(value.cap_drop),
+        "effectiveCapabilities": list(value.effective_capabilities),
         "securityOptions": list(value.security_options),
     }
 

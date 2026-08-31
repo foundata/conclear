@@ -58,8 +58,10 @@ Read the local testing instructions before running opt-in tests. Use a unique ru
 Run read-only and run-owned local tool tests with:
 
 ```sh
-uv run pytest -m local_integration --strict-markers --strict-config
+CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration --strict-markers --strict-config
 ```
+
+The local suite compiles network-free `scratch` fixtures with Go, uses isolated Buildah and Podman storage, copies only between local OCI layouts with Skopeo and creates disposable Cosign key material under the run workspace. Its manual no-log Cosign check stays outside the production adapter and follows the guide's no-service signing configuration, bundle and verification flags. Record the workspace and all created resources in the external run manifest before invoking it, then record the observed assertions and cleanup result.
 
 Network tests need an explicitly authorized disposable Quay repository, narrow credentials and dedicated test signing keys. Production release keys and shared repositories are never test inputs.
 
