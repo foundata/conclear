@@ -269,7 +269,10 @@ def publish_candidate(
         kind=ResourceKind.CANDIDATE_REFERENCE,
         identifier=str(tagged),
         ephemeral=True,
-        metadata={"expiration": _timestamp(expiration)},
+        metadata={
+            "digest": str(candidate.observation.graph.digest),
+            "expiration": _timestamp(expiration),
+        },
     )
     try:
         registry.copy_layout_to_registry(
@@ -283,6 +286,11 @@ def publish_candidate(
             raise OperationalError(
                 f"Published digest {remote_digest} differs from accepted {candidate.observation.graph.digest}"
             )
+        expiration_observation = quay.set_expiration(
+            image.repository, candidate.candidate_tag, expiration
+        )
+        if expiration_observation.digest != remote_digest:
+            raise OperationalError("Quay expiration update observed another digest")
         immutable = image.repository.with_digest(remote_digest)
         remote = registry.copy_registry_to_layout(
             source=immutable,
@@ -294,11 +302,6 @@ def publish_candidate(
             auth_file=auth_file,
         )
         _require_same_graph(candidate.observation.graph, remote.graph)
-        expiration_observation = quay.set_expiration(
-            image.repository, candidate.candidate_tag, expiration
-        )
-        if expiration_observation.digest != remote_digest:
-            raise OperationalError("Quay expiration update observed another digest")
         immutable_enabled = False
         try:
             immutable_observation = quay.set_immutable(
@@ -337,6 +340,9 @@ def _resume_published_candidate(
     auth_file: Path | None,
     now: datetime,
 ) -> PublishedCandidate:
+    expected_value = entry.metadata.get("digest")
+    if expected_value != str(candidate.observation.graph.digest):
+        raise InvalidInvocationError("Candidate digest journal is malformed")
     observed = registry.resolve_optional(tagged, auth_file=auth_file)
     if observed != candidate.observation.graph.digest:
         raise InvalidInvocationError(

@@ -125,6 +125,7 @@ class FakeRegistry:
             raise TypeError("graph must be an OCIGraph")
         self.graph = graph
         self.tags = tags
+        self.fail_graph_copy = False
 
     def resolve_digest(
         self, reference: OCIReference, *, auth_file: Path | None = None
@@ -163,6 +164,8 @@ class FakeRegistry:
         auth_file: Path | None,
     ) -> RegistryCopyObservation:
         del auth_file
+        if self.fail_graph_copy:
+            raise OperationalError("injected remote graph failure")
         return RegistryCopyObservation(source, layout_path, self.graph)
 
 
@@ -321,6 +324,66 @@ class FakeSigner:
         statement: dict[str, object],
     ) -> None:
         self.statements.setdefault((str(subject), predicate_type), []).append(statement)
+
+
+def test_failed_publication_retains_digest_ownership_and_expiration(
+    tmp_path: Path,
+    repository_factory: Callable[..., Path],
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+    image = repository.image("app")
+    workspace = RunWorkspace.create(
+        state_home=tmp_path / "state",
+        immutable_inputs={"sourceRevision": "b" * 40},
+        id_factory=IdFactory(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    workspace.transition(RunState.QUALIFIED)
+    workspace.transition(RunState.ASSEMBLED)
+    layout = platform_layout(tmp_path / "qualified", "amd64")
+    observation = assemble_layout(
+        (PlatformLayout(Platform.parse("linux/amd64"), layout, "qualified"),),
+        output_path=tmp_path / "candidate",
+        output_reference="candidate",
+    )
+    candidate_record = workspace.root / "records" / "release-candidate.json"
+    candidate_digest = atomic_write_json(candidate_record, {"accepted": True})
+    tag = candidate_tag(
+        version="1.2.3",
+        run_id=workspace.run_id,
+        source_revision="b" * 40,
+    )
+    candidate = CandidateResult(
+        candidate_record,
+        candidate_digest,
+        observation,
+        tag,
+        (),
+        (),
+    )
+    tags: dict[str, Digest] = {}
+    registry = FakeRegistry(observation.graph, tags)
+    registry.fail_graph_copy = True
+    quay = FakeQuay(tags)
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+
+    with pytest.raises(OperationalError, match="injected remote graph failure"):
+        publish_candidate(
+            candidate,
+            image=image,
+            workspace=workspace,
+            registry=registry,
+            quay=quay,
+            auth_file=None,
+            now=now,
+        )
+
+    entry = workspace.journal.entries()[0]
+    assert entry.status is ResourceStatus.FAILED
+    assert entry.metadata["digest"] == str(observation.graph.digest)
+    assert entry.metadata["expiration"] == "2026-01-08T00:00:00Z"
+    assert quay.expirations[tag] == datetime(2026, 1, 8, tzinfo=UTC)
+    assert tags[tag] == observation.graph.digest
 
 
 def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
