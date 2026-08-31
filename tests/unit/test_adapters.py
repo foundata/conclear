@@ -159,6 +159,23 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
     assert observation.writable_mounts == ("/run", "/tmp")
 
 
+def test_podman_cleanup_is_idempotent_and_resets_only_selected_storage(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(result(), result())
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+    root = tmp_path / "root"
+    runroot = tmp_path / "runroot"
+
+    adapter.remove(root=root, runroot=runroot, name="owned", force=True)
+    adapter.remove_storage(root=root, runroot=runroot)
+
+    assert runner.requests[0].argv[-4:] == ("rm", "--ignore", "--force", "owned")
+    assert runner.requests[1].argv[-3:] == ("system", "reset", "--force")
+    assert str(root) in runner.requests[1].argv
+    assert str(runroot) in runner.requests[1].argv
+
+
 def test_git_adapter_observes_full_source_facts(tmp_path: Path) -> None:
     revision = "a" * 40
     runner = FakeRunner(

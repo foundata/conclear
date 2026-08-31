@@ -15,6 +15,7 @@ from conclear.adapters.podman import (
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.artifacts import qualification_transport
 from conclear.config import load_repository_config
+from conclear.errors import OperationalError
 from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
@@ -32,9 +33,14 @@ from conclear.records import (
     Verdict,
     validate_record,
 )
-from conclear.services.qualification import QualificationInputs, qualify_platform
+from conclear.services.qualification import (
+    QualificationInputs,
+    build_platform,
+    qualify_platform,
+)
+from conclear.services.qualification import test_platform as run_platform_tests
 from conclear.values import Platform
-from conclear.workspace import RunWorkspace
+from conclear.workspace import ResourceStatus, RunWorkspace
 
 
 class IdFactory:
@@ -128,6 +134,11 @@ class Builder:
 
 
 class Runtime:
+    def __init__(self, *, fail_health: bool = False, fail_remove: bool = False) -> None:
+        self.fail_health = fail_health
+        self.fail_remove = fail_remove
+        self.removals = 0
+
     def import_layout(self, **values: Any) -> ImportObservation:
         return ImportObservation(str(values["image_name"]), values["expected_digest"])
 
@@ -152,6 +163,8 @@ class Runtime:
         )
 
     def exec(self, **values: Any) -> str:
+        if self.fail_health:
+            raise OperationalError("injected health failure")
         return ""
 
     def signal(self, **values: Any) -> None:
@@ -161,6 +174,12 @@ class Runtime:
         return 0
 
     def remove(self, **values: Any) -> None:
+        self.removals += 1
+        if self.fail_remove:
+            raise OperationalError("injected removal failure")
+        return None
+
+    def remove_storage(self, **values: Any) -> None:
         return None
 
 
@@ -337,6 +356,28 @@ def test_qualification_records_label_rule_rejection(
     assert result.findings[0].check_id == "CC0113"
     record = json.loads(result.record_path.read_text(encoding="utf-8"))
     assert record["payload"]["findings"][0]["checkId"] == "CC0113"
+
+
+@pytest.mark.parametrize("fail_remove", [False, True])
+def test_runtime_failure_attempts_cleanup_without_replacing_original_error(
+    repository_factory: Any,
+    tmp_path: Path,
+    fail_remove: bool,
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    build = build_platform(value, Builder())
+    runtime = Runtime(fail_health=True, fail_remove=fail_remove)
+
+    with pytest.raises(OperationalError, match="injected health failure"):
+        run_platform_tests(value, build, runtime, hook_runner(value))
+
+    assert runtime.removals == 1
+    status = next(
+        entry.status
+        for entry in value.workspace.journal.entries()
+        if entry.resource_id == "podman-linux-amd64"
+    )
+    assert status is (ResourceStatus.FAILED if fail_remove else ResourceStatus.REMOVED)
 
 
 def test_qualification_rejects_stale_pin_resolution(

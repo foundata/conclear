@@ -295,11 +295,19 @@ class PodmanAdapter(ToolAdapter):
         self, *, root: Path, runroot: Path, name: str, force: bool = False
     ) -> None:
         """Remove one run-owned container."""
-        arguments = [*self._storage(root, runroot), "rm"]
+        arguments = [*self._storage(root, runroot), "rm", "--ignore"]
         if force:
             arguments.append("--force")
         arguments.append(name)
         self._run(arguments, timeout_seconds=120, operation=OperationKind.WRITE)
+
+    def remove_storage(self, *, root: Path, runroot: Path) -> None:
+        """Reset one isolated Podman storage root after container removal."""
+        self._run(
+            (*self._storage(root, runroot), "system", "reset", "--force"),
+            timeout_seconds=300,
+            operation=OperationKind.WRITE,
+        )
 
 
 def _int(value: object, label: str) -> int:

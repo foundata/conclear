@@ -34,6 +34,10 @@ class RuntimeStorage(Protocol):
         """Remove one isolated runtime container."""
         ...
 
+    def remove_storage(self, *, root: Path, runroot: Path) -> None:
+        """Reset one isolated run-owned Podman storage root."""
+        ...
+
 
 class CandidateRegistry(Protocol):
     """Candidate tag cleanup boundary."""
@@ -140,12 +144,14 @@ def _cleanup_entry(
         return True
     if entry.kind is ResourceKind.PODMAN_IMPORT:
         storage = _metadata_path(workspace, entry, "storageRoot")
+        runroot = storage.parent / "runroot"
         podman.remove(
             root=storage,
-            runroot=storage.parent / "runroot",
+            runroot=runroot,
             name=entry.identifier,
             force=True,
         )
+        podman.remove_storage(root=storage, runroot=runroot)
         _remove_local(storage.parent)
         return True
     if entry.kind is ResourceKind.CANDIDATE_REFERENCE:

@@ -30,6 +30,7 @@ class FakeBuildah:
 class FakePodman:
     def __init__(self) -> None:
         self.removed: list[str] = []
+        self.reset: list[tuple[Path, Path]] = []
 
     def remove(
         self, *, root: Path, runroot: Path, name: str, force: bool = False
@@ -37,6 +38,9 @@ class FakePodman:
         del root, runroot
         assert force
         self.removed.append(name)
+
+    def remove_storage(self, *, root: Path, runroot: Path) -> None:
+        self.reset.append((root, runroot))
 
 
 class FakeQuay:
@@ -95,6 +99,35 @@ def test_cleanup_removes_only_journaled_ephemeral_resources(tmp_path: Path) -> N
     assert result.removed == ("owned",)
     assert not owned.exists()
     assert durable.is_file()
+
+
+def test_cleanup_removes_container_and_isolated_podman_storage(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    storage = run.root / "podman" / "linux-amd64" / "root"
+    storage.mkdir(parents=True)
+    runroot = storage.parent / "runroot"
+    runroot.mkdir()
+    run.journal.plan(
+        resource_id="podman-linux-amd64",
+        kind=ResourceKind.PODMAN_IMPORT,
+        identifier="owned-container",
+        ephemeral=True,
+        metadata={"storageRoot": str(storage)},
+    )
+    run.journal.update("podman-linux-amd64", ResourceStatus.CREATED)
+    podman = FakePodman()
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=podman,
+        quay=None,
+    )
+
+    assert result.removed == ("podman-linux-amd64",)
+    assert podman.removed == ["owned-container"]
+    assert podman.reset == [(storage, runroot)]
+    assert not storage.parent.exists()
 
 
 def test_cleanup_refuses_candidate_when_recorded_digest_changed(tmp_path: Path) -> None:

@@ -121,6 +121,10 @@ class RuntimeAdapter(Protocol):
         """Remove one run-owned container."""
         ...
 
+    def remove_storage(self, *, root: Path, runroot: Path) -> None:
+        """Reset one isolated run-owned Podman storage root."""
+        ...
+
 
 class Scanner(Protocol):
     """Trivy adapter boundary used by qualification."""
@@ -331,107 +335,48 @@ def test_platform(
             platform=inputs.platform,
         )
         inputs.workspace.journal.update(resource_id, ResourceStatus.CREATED)
-    except Exception:
+    except BaseException:
         _mark_failed(inputs.workspace, resource_id)
+        _remove_test_container(
+            inputs,
+            runtime,
+            storage_root=storage_root,
+            runroot=runroot,
+            container_name=container_name,
+            resource_id=resource_id,
+            preserve_failure=True,
+        )
         raise
-    findings: list[Finding] = []
-    results: list[dict[str, object]] = [
-        {
-            "name": "importDigest",
-            "status": "passed",
-            "digest": str(imported.digest),
-        }
-    ]
-    controls = runtime.inspect_controls(
-        root=storage_root, runroot=runroot, name=container_name
-    )
-    findings.extend(_control_findings(inputs.image, controls))
-    results.append(
-        {
-            "name": "runtimeControls",
-            "status": "passed" if not findings else "failed",
-            "observed": _controls_dict(controls),
-        }
-    )
-    native = (
-        _normalized_architecture(inputs.host_architecture)
-        == inputs.platform.architecture
-    )
-    if inputs.platform in inputs.image.native_test_platforms and not native:
-        findings.append(
-            Finding(
-                "CC0403",
-                "error",
-                f"Platform {inputs.platform} requires native runtime testing",
-            )
-        )
-    profile = inputs.image.runtime.profile
-    if profile == "service":
-        if container.status != "running" or container.pid <= 0:
-            findings.append(
-                Finding("CC0403", "error", "Service did not remain running")
-            )
-        else:
-            results.append({"name": "startup", "status": "passed"})
-        if inputs.image.runtime.health_command:
-            runtime.exec(
-                root=storage_root,
-                runroot=runroot,
-                name=container_name,
-                command=inputs.image.runtime.health_command,
-                timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
-            )
-            results.append({"name": "health", "status": "passed"})
-        _check_immutable_paths(
-            inputs, runtime, storage_root, runroot, container_name, findings
-        )
-        runtime.signal(
-            root=storage_root,
+    try:
+        findings, results, native = _exercise_container(
+            inputs,
+            runtime,
+            imported,
+            container,
+            storage_root=storage_root,
             runroot=runroot,
-            name=container_name,
-            signal_name="TERM",
+            container_name=container_name,
         )
-        exit_status = runtime.wait(
-            root=storage_root,
+    except BaseException:
+        _remove_test_container(
+            inputs,
+            runtime,
+            storage_root=storage_root,
             runroot=runroot,
-            name=container_name,
-            timeout_seconds=inputs.image.runtime.shutdown_timeout_seconds,
+            container_name=container_name,
+            resource_id=resource_id,
+            preserve_failure=True,
         )
-        if exit_status != 0:
-            findings.append(
-                Finding(
-                    "CC0403",
-                    "error",
-                    f"Service returned {exit_status} after graceful termination",
-                )
-            )
-        results.append(
-            {
-                "name": "signalAndShutdown",
-                "status": "passed" if exit_status == 0 else "failed",
-                "exitStatus": exit_status,
-            }
-        )
-    else:
-        exit_status = runtime.wait(
-            root=storage_root,
-            runroot=runroot,
-            name=container_name,
-            timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
-        )
-        if exit_status != 0:
-            findings.append(
-                Finding("CC0403", "error", f"One-shot image exited with {exit_status}")
-            )
-        results.append(
-            {
-                "name": "oneShotExit",
-                "status": "passed" if exit_status == 0 else "failed",
-                "exitStatus": exit_status,
-            }
-        )
-    runtime.remove(root=storage_root, runroot=runroot, name=container_name, force=True)
-    inputs.workspace.journal.update(resource_id, ResourceStatus.REMOVED)
+        raise
+    _remove_test_container(
+        inputs,
+        runtime,
+        storage_root=storage_root,
+        runroot=runroot,
+        container_name=container_name,
+        resource_id=resource_id,
+        preserve_failure=False,
+    )
     hook_results = tuple(
         hooks.run(
             hook,
@@ -476,6 +421,161 @@ def test_platform(
         hooks=hook_results,
         incomplete=incomplete,
     )
+
+
+def _exercise_container(
+    inputs: QualificationInputs,
+    runtime: RuntimeAdapter,
+    imported: ImportObservation,
+    container: ContainerObservation,
+    *,
+    storage_root: Path,
+    runroot: Path,
+    container_name: str,
+) -> tuple[list[Finding], list[dict[str, object]], bool]:
+    findings: list[Finding] = []
+    results: list[dict[str, object]] = [
+        {
+            "name": "importDigest",
+            "status": "passed",
+            "digest": str(imported.digest),
+        }
+    ]
+    controls = runtime.inspect_controls(
+        root=storage_root, runroot=runroot, name=container_name
+    )
+    findings.extend(_control_findings(inputs.image, controls))
+    results.append(
+        {
+            "name": "runtimeControls",
+            "status": "passed" if not findings else "failed",
+            "observed": _controls_dict(controls),
+        }
+    )
+    native = (
+        _normalized_architecture(inputs.host_architecture)
+        == inputs.platform.architecture
+    )
+    if inputs.platform in inputs.image.native_test_platforms and not native:
+        findings.append(
+            Finding(
+                "CC0403",
+                "error",
+                f"Platform {inputs.platform} requires native runtime testing",
+            )
+        )
+    if inputs.image.runtime.profile == "service":
+        _exercise_service(
+            inputs,
+            runtime,
+            container,
+            storage_root=storage_root,
+            runroot=runroot,
+            container_name=container_name,
+            findings=findings,
+            results=results,
+        )
+    else:
+        exit_status = runtime.wait(
+            root=storage_root,
+            runroot=runroot,
+            name=container_name,
+            timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
+        )
+        if exit_status != 0:
+            findings.append(
+                Finding("CC0403", "error", f"One-shot image exited with {exit_status}")
+            )
+        results.append(
+            {
+                "name": "oneShotExit",
+                "status": "passed" if exit_status == 0 else "failed",
+                "exitStatus": exit_status,
+            }
+        )
+    return findings, results, native
+
+
+def _exercise_service(
+    inputs: QualificationInputs,
+    runtime: RuntimeAdapter,
+    container: ContainerObservation,
+    *,
+    storage_root: Path,
+    runroot: Path,
+    container_name: str,
+    findings: list[Finding],
+    results: list[dict[str, object]],
+) -> None:
+    if container.status != "running" or container.pid <= 0:
+        findings.append(Finding("CC0403", "error", "Service did not remain running"))
+    else:
+        results.append({"name": "startup", "status": "passed"})
+    if inputs.image.runtime.health_command:
+        runtime.exec(
+            root=storage_root,
+            runroot=runroot,
+            name=container_name,
+            command=inputs.image.runtime.health_command,
+            timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
+        )
+        results.append({"name": "health", "status": "passed"})
+    _check_immutable_paths(
+        inputs, runtime, storage_root, runroot, container_name, findings
+    )
+    runtime.signal(
+        root=storage_root,
+        runroot=runroot,
+        name=container_name,
+        signal_name="TERM",
+    )
+    exit_status = runtime.wait(
+        root=storage_root,
+        runroot=runroot,
+        name=container_name,
+        timeout_seconds=inputs.image.runtime.shutdown_timeout_seconds,
+    )
+    if exit_status != 0:
+        findings.append(
+            Finding(
+                "CC0403",
+                "error",
+                f"Service returned {exit_status} after graceful termination",
+            )
+        )
+    results.append(
+        {
+            "name": "signalAndShutdown",
+            "status": "passed" if exit_status == 0 else "failed",
+            "exitStatus": exit_status,
+        }
+    )
+
+
+def _remove_test_container(
+    inputs: QualificationInputs,
+    runtime: RuntimeAdapter,
+    *,
+    storage_root: Path,
+    runroot: Path,
+    container_name: str,
+    resource_id: str,
+    preserve_failure: bool,
+) -> None:
+    try:
+        runtime.remove(
+            root=storage_root,
+            runroot=runroot,
+            name=container_name,
+            force=True,
+        )
+        runtime.remove_storage(root=storage_root, runroot=runroot)
+    except BaseException:
+        _mark_failed(inputs.workspace, resource_id)
+        if not preserve_failure:
+            raise
+    else:
+        inputs.workspace.journal.update(resource_id, ResourceStatus.REMOVED)
 
 
 def generate_evidence(
@@ -860,5 +960,5 @@ def _mark_failed(workspace: RunWorkspace, *resource_ids: str) -> None:
     for resource_id in resource_ids:
         try:
             workspace.journal.update(resource_id, ResourceStatus.FAILED)
-        except Exception:
+        except BaseException:
             continue
