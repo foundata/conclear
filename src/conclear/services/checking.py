@@ -27,7 +27,7 @@ def check_image(image: ImageConfig, hadolint: HadolintAdapter) -> CheckOutcome:
         severity = "warning" if item.level in {"warning", "info", "style"} else "error"
         findings.append(
             Finding(
-                check_id="CC0101",
+                check_id="CC0114",
                 severity=severity,
                 message=f"Hadolint {item.code}: {item.message}",
                 location=f"{image.containerfile}:{item.line}:{item.column}",
