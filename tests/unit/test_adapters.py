@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from conclear.adapters.base import ToolAdapter
+from conclear.adapters.buildah import BuildahAdapter
 from conclear.adapters.cosign import CosignAdapter
 from conclear.adapters.git import GitAdapter
 from conclear.adapters.hadolint import HadolintAdapter
@@ -91,6 +92,18 @@ def adapter_arguments(
         environment={"PATH": "/usr/bin", "HOME": str(tmp_path / "home")},
         log_directory=tmp_path / "logs",
     )
+
+
+def test_buildah_info_uses_supported_go_template_json(tmp_path: Path) -> None:
+    runner = FakeRunner(result('{"store": {}}'))
+    adapter = adapter_arguments(tmp_path, ToolName.BUILDAH, runner).create(
+        BuildahAdapter
+    )
+
+    assert adapter.info(root=tmp_path / "root", runroot=tmp_path / "runroot") == {
+        "store": {}
+    }
+    assert "{{json .}}" in runner.requests[0].argv
 
 
 def test_git_adapter_observes_full_source_facts(tmp_path: Path) -> None:

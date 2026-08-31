@@ -33,7 +33,7 @@ class BuildahAdapter(ToolAdapter):
                 str(runroot),
                 "info",
                 "--format",
-                "json",
+                "{{json .}}",
             ),
             timeout_seconds=120,
         ).stdout

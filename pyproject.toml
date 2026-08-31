@@ -97,6 +97,8 @@ warn_unreachable = true
 [tool.pytest.ini_options]
 addopts = [
   "--import-mode=importlib",
+  "-m",
+  "unit",
 ]
 filterwarnings = ["error"]
 strict = true
