@@ -56,6 +56,67 @@ def test_static_checks_report_security_boundaries(tmp_path: Path) -> None:
     }.issubset(identifiers)
 
 
+def test_non_root_user_must_be_set_in_the_final_stage(tmp_path: Path) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        'FROM scratch AS build\nUSER 1000\nFROM scratch\nENTRYPOINT ["/app"]\n',
+        encoding="utf-8",
+    )
+
+    identifiers = {finding.check_id for finding in analyze_containerfile(path).findings}
+
+    assert "CC0110" in identifiers
+
+
+def test_non_root_uid_may_use_root_gid_in_the_final_stage(tmp_path: Path) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        'FROM scratch\nUSER 1000:0\nENTRYPOINT ["/app"]\n',
+        encoding="utf-8",
+    )
+
+    identifiers = {finding.check_id for finding in analyze_containerfile(path).findings}
+
+    assert "CC0110" not in identifiers
+
+
+def test_world_writable_numeric_and_symbolic_modes_are_rejected(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        "FROM scratch\n"
+        "RUN chmod 646 /one && chmod 707 /two && chmod 757 /three; "
+        "chmod o+w /four; chmod a+w /five; chmod +w /six\n"
+        "USER 1000\n"
+        'ENTRYPOINT ["/app"]\n',
+        encoding="utf-8",
+    )
+
+    findings = [
+        finding
+        for finding in analyze_containerfile(path).findings
+        if finding.check_id == "CC0109"
+    ]
+
+    assert len(findings) == 1
+
+
+def test_safe_chmod_modes_are_not_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        "FROM scratch\n"
+        "RUN chmod 755 /one && chmod 640 /two && chmod u+w,o-w /three\n"
+        "USER 1000\n"
+        'ENTRYPOINT ["/app"]\n',
+        encoding="utf-8",
+    )
+
+    identifiers = {finding.check_id for finding in analyze_containerfile(path).findings}
+
+    assert "CC0109" not in identifiers
+
+
 def test_hadolint_diagnostics_use_the_adapter_check_identifier(
     repository_factory: Callable[..., Path],
 ) -> None:

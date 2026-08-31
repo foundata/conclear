@@ -2,6 +2,7 @@
 
 import json
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,10 +22,7 @@ _CURL_PIPE_PATTERN = re.compile(
     r"\b(?:curl|wget)\b[^|;&]*(?:\||\|&)[ \t]*(?:sh|bash|dash|zsh|python[0-9.]*)\b",
     re.IGNORECASE,
 )
-_WORLD_WRITABLE_PATTERN = re.compile(
-    r"\bchmod\b[^;&\n]*(?:777|666|[2367][2367][2367])\b"
-)
-_SET_ID_PATTERN = re.compile(r"\bchmod\b[^;&\n]*(?:[2467][0-7]{3}|[ug]\+s)\b")
+_CHMOD_COMMAND_PATTERN = re.compile(r"\bchmod\b(?P<arguments>[^;&\n]*)")
 MAX_CONTAINERFILE_BYTES = 4 * 1024 * 1024
 
 
@@ -93,6 +91,7 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
         keyword = instruction.keyword.upper()
         argument = instruction.argument.strip()
         if keyword == "FROM":
+            final_user = None
             reference, stage_name = _parse_from(argument, line_location, findings)
             if reference is not None and reference != "scratch":
                 if reference not in stage_names:
@@ -143,9 +142,7 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
                         line_location,
                     )
                 )
-            if _WORLD_WRITABLE_PATTERN.search(argument) or _SET_ID_PATTERN.search(
-                argument
-            ):
+            if _has_unsafe_chmod(argument):
                 findings.append(
                     _finding(
                         "CC0109",
@@ -179,8 +176,7 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
 
     if (
         final_user is None
-        or re.fullmatch(r"[1-9][0-9]*(?::[1-9][0-9]*)?", final_user.argument.strip())
-        is None
+        or re.fullmatch(r"[1-9][0-9]*(?::[0-9]+)?", final_user.argument.strip()) is None
     ):
         user_location = (
             f"{path}:{final_user.line_number}" if final_user is not None else str(path)
@@ -263,6 +259,44 @@ def validate_image_labels(
         if not isinstance(value, str) or not value:
             findings.append(_finding("CC0113", f"Image label {key} is required"))
     return tuple(findings)
+
+
+def _has_unsafe_chmod(argument: str) -> bool:
+    for match in _CHMOD_COMMAND_PATTERN.finditer(argument):
+        try:
+            tokens = shlex.split(match.group("arguments"), comments=False, posix=True)
+        except ValueError:
+            continue
+        mode = next(
+            (
+                token
+                for token in tokens
+                if token == "+w" or token == "+s" or not token.startswith("-")
+            ),
+            None,
+        )
+        if mode is not None and _unsafe_chmod_mode(mode):
+            return True
+    return False
+
+
+def _unsafe_chmod_mode(mode: str) -> bool:
+    if re.fullmatch(r"[0-7]{3,5}", mode):
+        world_writable = int(mode[-1], 8) & 0o2 != 0
+        special = mode[-4] if len(mode) >= 4 else "0"
+        return world_writable or special in "2467"
+    for clause in mode.split(","):
+        operation = "+" if "+" in clause else "=" if "=" in clause else None
+        if operation is None:
+            continue
+        who, permissions = clause.split(operation, maxsplit=1)
+        affects_world = not who or "a" in who or "o" in who
+        if affects_world and "w" in permissions:
+            return True
+        affects_set_id = not who or "a" in who or "u" in who or "g" in who
+        if affects_set_id and "s" in permissions:
+            return True
+    return False
 
 
 def _logical_instructions(text: str, path: Path) -> tuple[Instruction, ...]:
