@@ -2,7 +2,7 @@
 
 import stat
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from conclear.assembly import (
@@ -24,6 +24,7 @@ from conclear.records import (
 )
 from conclear.values import (
     Digest,
+    OCIReference,
     Platform,
     candidate_tag,
     validate_source_revision,
@@ -65,6 +66,8 @@ class _Qualification:
     ruleset: dict[str, object]
     tools: tuple[tuple[str, str], ...]
     database_digest: str
+    pin_references: tuple[str, ...]
+    effective_limits: tuple[tuple[str, int], ...]
     manifest_digest: Digest
     transport: QualificationTransport
 
@@ -105,6 +108,23 @@ def assemble_candidate(
         raise InvalidInvocationError("Qualifications belong to another release run")
     if any(item.image_id != image.image_id for item in qualifications):
         raise InvalidInvocationError("Qualifications do not match the selected image")
+    expected_pins = tuple(sorted(str(item.reference) for item in image.pins))
+    if any(item.pin_references != expected_pins for item in qualifications):
+        raise InvalidInvocationError(
+            "Qualifications do not match configured external image pins"
+        )
+    expected_limits = tuple(
+        sorted(
+            {
+                "pinFreshnessSeconds": int(image.limits.pin_freshness.total_seconds()),
+                "pinDivergenceSeconds": int(
+                    image.limits.pin_divergence.total_seconds()
+                ),
+            }.items()
+        )
+    )
+    if any(item.effective_limits != expected_limits for item in qualifications):
+        raise InvalidInvocationError("Qualifications do not match effective pin limits")
     if first.source.repository != repository.project.source:
         raise InvalidInvocationError(
             "Qualifications do not match the selected source repository"
@@ -273,6 +293,106 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         raise InvalidInvocationError("Qualification contains duplicate tool identities")
     database_digest = _string(payload.get("databaseDigest"), "database digest")
     Digest(database_digest)
+    record_created_at = _timestamp(record.get("createdAt"), "record creation time")
+    pin_references = tuple(
+        sorted(_strings(payload.get("externalImages"), "external images"))
+    )
+    if len(pin_references) != len(set(pin_references)):
+        raise InvalidInvocationError("Qualification repeats an external image")
+    parsed_references = {
+        OCIReference.parse(
+            reference,
+            require_tag=True,
+            require_digest=True,
+            allow_localhost=False,
+        ): reference
+        for reference in pin_references
+    }
+    limits_value = _object(payload.get("effectiveLimits"), "effective limits")
+    effective_limits: list[tuple[str, int]] = []
+    for name in ("pinFreshnessSeconds", "pinDivergenceSeconds"):
+        item = limits_value.get(name)
+        if not isinstance(item, int) or isinstance(item, bool):
+            raise InvalidInvocationError("Qualification effective limits are malformed")
+        effective_limits.append((name, item))
+    limit_map = dict(effective_limits)
+    raw_observations = payload.get("pinObservations")
+    if not isinstance(raw_observations, list):
+        raise InvalidInvocationError("Qualification pin observations are malformed")
+    observation_references: set[str] = set()
+    for raw_observation in raw_observations:
+        observation = _object(raw_observation, "pin observation")
+        reference_text = _string(
+            observation.get("reference"), "pin observation reference"
+        )
+        reference = OCIReference.parse(
+            reference_text,
+            require_tag=True,
+            require_digest=True,
+            allow_localhost=False,
+        )
+        if reference not in parsed_references:
+            raise InvalidInvocationError(
+                "Qualification observes an undeclared external image"
+            )
+        if observation.get("pinnedDigest") != str(reference.digest):
+            raise InvalidInvocationError(
+                "Qualification pin observation has another pinned digest"
+            )
+        pinned_digest = reference.digest
+        if pinned_digest is None:  # parser invariant
+            raise AssertionError("Required pin digest is absent")
+        observed_digest = Digest(
+            _string(observation.get("observedDigest"), "observed pin digest")
+        )
+        checked_at = _timestamp(observation.get("checkedAt"), "pin observation time")
+        age = record_created_at - checked_at
+        if age < timedelta(0) or age > timedelta(
+            seconds=limit_map["pinFreshnessSeconds"]
+        ):
+            raise InvalidInvocationError(
+                "Qualification pin observation exceeds its freshness limit"
+            )
+        divergence_value = observation.get("divergenceSince")
+        if observed_digest == pinned_digest:
+            if divergence_value is not None:
+                raise InvalidInvocationError(
+                    "Matching pin observation has a divergence timestamp"
+                )
+        else:
+            divergence_since = _timestamp(divergence_value, "pin divergence time")
+            divergence_age = checked_at - divergence_since
+            if divergence_age < timedelta(0) or divergence_age >= timedelta(
+                seconds=limit_map["pinDivergenceSeconds"]
+            ):
+                raise InvalidInvocationError(
+                    "Qualification pin divergence exceeds its effective limit"
+                )
+        observation_findings = observation.get("findings")
+        if not isinstance(observation_findings, list) or any(
+            not isinstance(item, dict) for item in observation_findings
+        ):
+            raise InvalidInvocationError("Qualification pin findings are malformed")
+        if any(item.get("severity") == "error" for item in observation_findings):
+            raise InvalidInvocationError(
+                "Accepted qualification contains a rejecting pin finding"
+            )
+        observation_references.add(reference_text)
+    if observation_references != set(pin_references) or len(raw_observations) != len(
+        observation_references
+    ):
+        raise InvalidInvocationError(
+            "Qualification pin observations do not exactly cover external images"
+        )
+    findings = payload.get("findings")
+    if not isinstance(findings, list) or any(
+        not isinstance(item, dict) for item in findings
+    ):
+        raise InvalidInvocationError("Qualification findings are malformed")
+    if any(item.get("severity") == "error" for item in findings):
+        raise InvalidInvocationError(
+            "Accepted qualification contains a rejecting finding"
+        )
     configuration_digest = _string(configuration.get("sha256"), "configuration digest")
     Digest(configuration_digest)
     return _Qualification(
@@ -291,6 +411,8 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         ruleset=ruleset,
         tools=tuple(sorted(normalized_tools)),
         database_digest=database_digest,
+        pin_references=pin_references,
+        effective_limits=tuple(sorted(effective_limits)),
         manifest_digest=manifest_digest,
         transport=transport,
     )
@@ -324,3 +446,14 @@ def _strings(value: object, label: str) -> list[str]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise InvalidInvocationError(f"{label} must be an array of strings")
     return value
+
+
+def _timestamp(value: object, label: str) -> datetime:
+    text = _string(value, label)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise InvalidInvocationError(f"{label} is malformed") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise InvalidInvocationError(f"{label} lacks a timezone")
+    return parsed.astimezone(UTC)

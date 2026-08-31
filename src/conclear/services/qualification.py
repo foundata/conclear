@@ -566,6 +566,7 @@ def qualify_platform(
     scan_evidence = generate_evidence(
         inputs, build, scanner, database, today=now.date()
     )
+    pin_findings = _pin_findings(inputs.image, pin_observations, now=now)
     findings = tuple(
         sorted(
             (
@@ -575,6 +576,7 @@ def qualify_platform(
                     for observation in pin_observations
                     for finding in observation.findings
                 ),
+                *pin_findings,
                 *build.findings,
                 *runtime_evidence.findings,
                 *scan_evidence.findings,
@@ -611,6 +613,20 @@ def qualify_platform(
         "contextDigest": build.context.digest,
         "buildArguments": dict(sorted(build.build_arguments.items())),
         "externalImages": [str(pin.reference) for pin in inputs.image.pins],
+        "pinObservations": [
+            observation.to_dict()
+            for observation in sorted(
+                pin_observations, key=lambda item: str(item.reference)
+            )
+        ],
+        "effectiveLimits": {
+            "pinFreshnessSeconds": int(
+                inputs.image.limits.pin_freshness.total_seconds()
+            ),
+            "pinDivergenceSeconds": int(
+                inputs.image.limits.pin_divergence.total_seconds()
+            ),
+        },
         "buildExecution": {
             "targetPlatform": str(inputs.platform),
             "hostArchitecture": inputs.host_architecture,
@@ -636,6 +652,7 @@ def qualify_platform(
         "payloadDigests": list(payload_digests),
         "databaseDigest": database.digest,
         "databaseMetadata": database.metadata,
+        "findings": [finding.to_dict() for finding in findings],
     }
     record = RecordEnvelope(
         record_type="platformQualification",
@@ -661,6 +678,37 @@ def qualify_platform(
         verdict=verdict,
         findings=findings,
     )
+
+
+def _pin_findings(
+    image: ImageConfig,
+    observations: tuple[PinObservation, ...],
+    *,
+    now: datetime,
+) -> tuple[Finding, ...]:
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("Qualification time must be timezone-aware")
+    configured = {pin.reference for pin in image.pins}
+    observed = {item.reference for item in observations}
+    if len(observations) != len(observed) or observed != configured:
+        raise OperationalError(
+            "Pin observations do not exactly cover configured image inputs"
+        )
+    findings: list[Finding] = []
+    for observation in observations:
+        age = now.astimezone(UTC) - observation.checked_at.astimezone(UTC)
+        if age.total_seconds() < 0:
+            raise OperationalError("Pin resolution time is in the future")
+        if age > image.limits.pin_freshness:
+            findings.append(
+                Finding(
+                    "CC0204",
+                    "error",
+                    "Successful pin resolution exceeded the effective freshness limit",
+                    str(observation.reference),
+                )
+            )
+    return tuple(findings)
 
 
 def _control_findings(

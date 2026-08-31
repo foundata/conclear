@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/foundata/conclear/schemas/record-v3.json",
+  "$id": "https://github.com/foundata/conclear/schemas/record-v4.json",
   "title": "ConClear public record",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "recordType", "createdAt", "runId", "ruleset", "source", "repositoryConfiguration", "tools", "verdict", "payload"],
   "properties": {
-    "schemaVersion": {"const": 3},
+    "schemaVersion": {"const": 4},
     "recordType": {"enum": ["platformQualification", "releaseCandidate", "releaseVerification", "rescanResult"]},
     "createdAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
     "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
@@ -239,6 +239,40 @@
         "expires": {"type": "string", "format": "date"}
       }
     },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkId", "severity", "message"],
+      "properties": {
+        "checkId": {"type": "string", "pattern": "^CC[0-9]{4}$"},
+        "severity": {"enum": ["error", "warning", "info"]},
+        "message": {"type": "string", "minLength": 1},
+        "location": {"type": "string"}
+      }
+    },
+    "pinObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference", "pinnedDigest", "observedDigest", "checkedAt", "divergenceSince", "historyInitialized", "findings"],
+      "properties": {
+        "reference": {"type": "string", "pattern": "^[^@\\s]+:[^@\\s]+@sha256:[0-9a-f]{64}$"},
+        "pinnedDigest": {"$ref": "#/$defs/digest"},
+        "observedDigest": {"$ref": "#/$defs/digest"},
+        "checkedAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
+        "divergenceSince": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
+        "historyInitialized": {"type": "boolean"},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
+      }
+    },
+    "effectiveLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pinFreshnessSeconds", "pinDivergenceSeconds"],
+      "properties": {
+        "pinFreshnessSeconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "pinDivergenceSeconds": {"type": "integer", "minimum": 1, "maximum": 604800}
+      }
+    },
     "ciIdentity": {
       "oneOf": [
         {
@@ -272,7 +306,7 @@
     "platformQualification": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageId", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "buildExecution", "testExecution", "runtimeConstraints", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest", "databaseMetadata"],
+      "required": ["imageId", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "buildExecution", "testExecution", "runtimeConstraints", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest", "databaseMetadata", "findings"],
       "properties": {
         "imageId": {"type": "string"},
         "platform": {"$ref": "#/$defs/platform"},
@@ -282,6 +316,8 @@
         "contextDigest": {"$ref": "#/$defs/digest"},
         "buildArguments": {"type": "object", "additionalProperties": {"type": "string"}},
         "externalImages": {"type": "array", "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}},
+        "pinObservations": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/pinObservation"}},
+        "effectiveLimits": {"$ref": "#/$defs/effectiveLimits"},
         "buildExecution": {"$ref": "#/$defs/execution"},
         "testExecution": {"$ref": "#/$defs/execution"},
         "runtimeConstraints": {"$ref": "#/$defs/runtimeConstraints"},
@@ -291,7 +327,8 @@
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
         "payloadDigests": {"$ref": "#/$defs/digestArray"},
         "databaseDigest": {"$ref": "#/$defs/digest"},
-        "databaseMetadata": {"$ref": "#/$defs/databaseMetadata"}
+        "databaseMetadata": {"$ref": "#/$defs/databaseMetadata"},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
       }
     },
     "releaseCandidate": {

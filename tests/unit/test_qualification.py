@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,7 @@ from conclear.jsonutil import (
     sha256_file,
 )
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, validate_layout
+from conclear.pins import PinObservation
 from conclear.process import CommandRequest, ProcessResult
 from conclear.records import (
     SourceIdentity,
@@ -247,6 +248,26 @@ def hook_runner(value: QualificationInputs) -> HookRunner:
     )
 
 
+def pin_observations(
+    value: QualificationInputs,
+    *,
+    checked_at: datetime = datetime(2026, 1, 1, tzinfo=UTC),
+) -> tuple[PinObservation, ...]:
+    reference = value.image.pins[0].reference
+    assert reference.digest is not None
+    return (
+        PinObservation(
+            reference=reference,
+            pinned_digest=reference.digest,
+            observed_digest=reference.digest,
+            checked_at=checked_at,
+            divergence_since=None,
+            history_initialized=True,
+            findings=(),
+        ),
+    )
+
+
 @pytest.fixture(autouse=True)
 def embedded_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
@@ -271,13 +292,17 @@ def test_qualification_writes_accepted_digest_bound_record(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=(),
+        pin_observations=pin_observations(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert result.verdict is Verdict.ACCEPTED
     assert result.record_digest == sha256_file(result.record_path)
-    validate_record(json.loads(result.record_path.read_text(encoding="utf-8")))
+    record = json.loads(result.record_path.read_text(encoding="utf-8"))
+    validate_record(record)
+    assert record["payload"]["pinObservations"] == [
+        pin_observations(value)[0].to_dict()
+    ]
     transport = qualification_transport(value.workspace, value.image, value.platform)
     assert transport.payload_paths[0] == (
         value.workspace.root / "reports" / "app" / "linux-amd64" / "tests.json"
@@ -304,9 +329,36 @@ def test_qualification_records_label_rule_rejection(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=(),
+        pin_observations=pin_observations(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert result.verdict is Verdict.REJECTED
     assert result.findings[0].check_id == "CC0113"
+    record = json.loads(result.record_path.read_text(encoding="utf-8"))
+    assert record["payload"]["findings"][0]["checkId"] == "CC0113"
+
+
+def test_qualification_rejects_stale_pin_resolution(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+    checked_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        pin_observations=pin_observations(value, checked_at=checked_at),
+        now=checked_at + timedelta(hours=25),
+    )
+
+    assert result.verdict is Verdict.REJECTED
+    assert any(item.check_id == "CC0204" for item in result.findings)

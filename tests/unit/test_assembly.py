@@ -172,7 +172,26 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             "containerfileDigest": digest,
             "contextDigest": digest,
             "buildArguments": {},
-            "externalImages": [],
+            "externalImages": [str(repository.image("app").pins[0].reference)],
+            "pinObservations": [
+                {
+                    "reference": str(repository.image("app").pins[0].reference),
+                    "pinnedDigest": str(
+                        repository.image("app").pins[0].reference.digest
+                    ),
+                    "observedDigest": str(
+                        repository.image("app").pins[0].reference.digest
+                    ),
+                    "checkedAt": "2026-01-01T00:00:00Z",
+                    "divergenceSince": None,
+                    "historyInitialized": True,
+                    "findings": [],
+                }
+            ],
+            "effectiveLimits": {
+                "pinFreshnessSeconds": 86400,
+                "pinDivergenceSeconds": 604800,
+            },
             "buildExecution": {
                 "targetPlatform": "linux/amd64",
                 "hostArchitecture": "x86_64",
@@ -211,6 +230,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
                 }
                 for name, version in (("vulnerability", 2), ("java", 1))
             },
+            "findings": [],
         },
     )
     record_path = tmp_path / "qualification.json"

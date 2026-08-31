@@ -84,7 +84,7 @@ class RecordEnvelope:
             ) from exc
         created_at = self.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
         value: dict[str, object] = {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "recordType": self.record_type,
             "createdAt": created_at,
             "runId": self.run_id,

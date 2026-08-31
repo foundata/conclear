@@ -37,6 +37,24 @@ class PinObservation:
     history_initialized: bool
     findings: tuple[Finding, ...]
 
+    def __post_init__(self) -> None:
+        """Validate temporal and digest relationships in one observation."""
+        if self.reference.digest is None or self.reference.tag is None:
+            raise ValueError("Pin observations require a tagged digest reference")
+        if self.pinned_digest != self.reference.digest:
+            raise ValueError("Pin observation digest differs from its reference")
+        if self.checked_at.tzinfo is None or self.checked_at.utcoffset() is None:
+            raise ValueError("Pin observation time must be timezone-aware")
+        if self.divergence_since is not None and (
+            self.divergence_since.tzinfo is None
+            or self.divergence_since.utcoffset() is None
+        ):
+            raise ValueError("Pin divergence time must be timezone-aware")
+        if (self.observed_digest == self.pinned_digest) != (
+            self.divergence_since is None
+        ):
+            raise ValueError("Pin divergence time does not match observed digest")
+
     @property
     def accepted(self) -> bool:
         """Return whether the observation has no rejecting error finding."""
@@ -49,11 +67,14 @@ class PinObservation:
             "pinnedDigest": str(self.pinned_digest),
             "observedDigest": str(self.observed_digest),
             "checkedAt": _timestamp(self.checked_at),
+            "divergenceSince": (
+                None
+                if self.divergence_since is None
+                else _timestamp(self.divergence_since)
+            ),
             "historyInitialized": self.history_initialized,
             "findings": [finding.to_dict() for finding in self.findings],
         }
-        if self.divergence_since is not None:
-            value["divergenceSince"] = _timestamp(self.divergence_since)
         return value
 
 
@@ -88,6 +109,8 @@ class PinStore:
         self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
         with _locked_file(path.with_suffix(".lock")):
             previous = self._load_optional(path, reference)
+            if previous is not None and previous.checked_at > now.astimezone(UTC):
+                raise OperationalError("Pin observation time is in the future")
             initialized = previous is None
             divergence_since: datetime | None = None
             if observed != reference.digest:
@@ -95,6 +118,8 @@ class PinStore:
                     divergence_since = previous.divergence_since
                 if divergence_since is None:
                     divergence_since = now
+                elif divergence_since > now.astimezone(UTC):
+                    raise OperationalError("Pin divergence start time is in the future")
             findings = _evaluate_divergence(
                 pin,
                 observed=observed,
