@@ -8,7 +8,7 @@ from conclear.adapters.trivy import DatabaseObservation
 from conclear.ci import observe_ci_identity
 from conclear.database import select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.jsonutil import sha256_file
+from conclear.jsonutil import load_json, sha256_file
 from conclear.secrets import MAX_SECRET_BYTES, read_secret_fd, read_secret_file
 from conclear.workspace import (
     ResourceKind,
@@ -113,6 +113,18 @@ def test_file_hash_rejects_symbolic_link(tmp_path: Path) -> None:
 
     with pytest.raises(OperationalError, match="Unable to hash"):
         sha256_file(link)
+
+
+def test_json_reader_rejects_symlinks_and_oversized_files(tmp_path: Path) -> None:
+    target = tmp_path / "target.json"
+    target.write_text('{"ok":true}', encoding="utf-8")
+    link = tmp_path / "link.json"
+    link.symlink_to(target)
+
+    with pytest.raises(OperationalError, match="Unable to decode JSON file"):
+        load_json(link)
+    with pytest.raises(OperationalError, match="exceeds the size limit"):
+        load_json(target, maximum_bytes=4)
 
 
 def test_ci_identity_requires_complete_validated_provider_values() -> None:

@@ -10,6 +10,8 @@ from typing import Any
 
 from conclear.errors import OperationalError
 
+MAX_JSON_BYTES = 256 * 1024 * 1024
+
 
 def canonical_json_bytes(value: object) -> bytes:
     """Serialize a JSON-compatible value deterministically."""
@@ -91,10 +93,31 @@ def atomic_write_json(path: Path, value: object, *, mode: int = 0o600) -> str:
     return sha256_bytes(content)
 
 
-def load_json(path: Path) -> Any:
-    """Decode a UTF-8 JSON file without claiming a validated type."""
+def load_json(path: Path, *, maximum_bytes: int = MAX_JSON_BYTES) -> Any:
+    """Decode bounded UTF-8 JSON from a regular file without following a symlink."""
+    if maximum_bytes < 1:
+        raise ValueError("JSON size limit must be positive")
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor: int | None = None
     try:
-        with path.open("r", encoding="utf-8") as stream:
-            return json.load(stream)
+        descriptor = os.open(path, flags)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OperationalError(f"Unable to decode non-regular JSON file {path}")
+        content = bytearray()
+        while len(content) <= maximum_bytes:
+            chunk = os.read(
+                descriptor, min(1024 * 1024, maximum_bytes + 1 - len(content))
+            )
+            if not chunk:
+                break
+            content.extend(chunk)
+        if len(content) > maximum_bytes:
+            raise OperationalError(f"JSON file exceeds the size limit: {path}")
+        return json.loads(content.decode("utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise OperationalError(f"Unable to decode JSON file {path}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
