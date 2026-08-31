@@ -174,6 +174,7 @@ class FakeQuay:
         self.tags = tags
         self.expirations: dict[str, datetime] = {}
         self.immutable: set[str] = set()
+        self.fail_delete = False
 
     def get_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation | None:
         del repository
@@ -214,6 +215,8 @@ class FakeQuay:
 
     def delete_tag(self, repository: OCIReference, tag: str) -> None:
         del repository
+        if self.fail_delete:
+            raise OperationalError("injected candidate deletion failure")
         self.tags.pop(tag, None)
         self.expirations.pop(tag, None)
         self.immutable.discard(tag)
@@ -386,10 +389,12 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
     assert tags[tag] == observation.graph.digest
 
 
+@pytest.mark.parametrize("delete_fails", [False, True])
 def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     tmp_path: Path,
     repository_factory: Callable[..., Path],
     monkeypatch: pytest.MonkeyPatch,
+    delete_fails: bool,
 ) -> None:
     identity = ApplicationIdentity(source_revision="c" * 40)
     monkeypatch.setattr(records_module, "IDENTITY", identity)
@@ -588,6 +593,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         },
     )
     workspace.journal.update("tag-1.2.3", ResourceStatus.FAILED)
+    quay.fail_delete = delete_fails
     promoted = promote_candidate(
         published,
         verification,
@@ -607,7 +613,16 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         ("1.2.3", observation.graph.digest),
         ("stable", observation.graph.digest),
     )
-    assert tag not in tags
+    assert promoted.candidate_deleted is not delete_fails
+    assert (tag in tags) is delete_fails
     assert tags["1.2.3"] == observation.graph.digest
     assert "1.2.3" in quay.immutable
+    candidate_entry = next(
+        entry
+        for entry in workspace.journal.entries()
+        if entry.kind is ResourceKind.CANDIDATE_REFERENCE
+    )
+    assert candidate_entry.status is (
+        ResourceStatus.CREATED if delete_fails else ResourceStatus.REMOVED
+    )
     assert sha256_file(verification.record_path) == verification.record_digest

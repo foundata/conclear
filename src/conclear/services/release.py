@@ -81,6 +81,7 @@ class ReleaseResult:
     workspace: Path
     subject: str
     tags: tuple[tuple[str, str], ...]
+    candidate_deleted: bool
 
 
 class AuthenticatedPinResolver(PinResolver):
@@ -553,7 +554,13 @@ def _write_summary(
         },
         mode=0o644,
     )
-    return ReleaseResult(workspace.run_id, workspace.root, str(subject), tags)
+    return ReleaseResult(
+        workspace.run_id,
+        workspace.root,
+        str(subject),
+        tags,
+        promotion.candidate_deleted,
+    )
 
 
 def _finish_failure(

@@ -938,15 +938,14 @@ def promote_candidate(
             immutable=False,
         )
         observed.append((tag, published.graph.digest))
+    workspace.transition(RunState.PROMOTED, now=now)
     try:
         quay.delete_tag(image.repository, published.reference.tag or "")
         workspace.journal.update("candidate", ResourceStatus.REMOVED)
-    except Exception as exc:
-        raise OperationalError(
-            "Release was promoted, but candidate tag cleanup failed"
-        ) from exc
-    workspace.transition(RunState.PROMOTED, now=now)
-    return PromotionResult(tuple(observed), True)
+    except Exception:
+        return PromotionResult(tuple(observed), False)
+    else:
+        return PromotionResult(tuple(observed), True)
 
 
 def _write_release_tag(

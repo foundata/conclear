@@ -288,7 +288,11 @@ def promote_command(
         CommandResult(
             "promote",
             ResultStatus.SUCCESS,
-            "Verified digest promoted",
+            (
+                "Verified digest promoted"
+                if result.candidate_deleted
+                else "Verified digest promoted; candidate cleanup failed"
+            ),
             data={
                 "tags": [
                     {"tag": tag, "digest": str(digest)} for tag, digest in result.tags
@@ -364,12 +368,17 @@ def release_command(
         CommandResult(
             "release",
             ResultStatus.SUCCESS,
-            "Release completed and verified digest promoted",
+            (
+                "Release completed and verified digest promoted"
+                if result.candidate_deleted
+                else "Verified digest promoted; candidate cleanup failed"
+            ),
             data={
                 "runId": result.run_id,
                 "workspace": str(result.workspace),
                 "subject": result.subject,
                 "tags": [{"tag": tag, "digest": digest} for tag, digest in result.tags],
+                "candidateDeleted": result.candidate_deleted,
             },
         ),
         output_format,
