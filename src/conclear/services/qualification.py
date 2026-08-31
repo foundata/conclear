@@ -348,7 +348,7 @@ def test_platform(
         )
         raise
     try:
-        findings, results, native = _exercise_container(
+        findings, results, execution = _exercise_container(
             inputs,
             runtime,
             imported,
@@ -411,12 +411,7 @@ def test_platform(
     return RuntimeEvidence(
         test_results=tuple(results),
         test_report_digest=report_digest,
-        execution={
-            "targetPlatform": str(inputs.platform),
-            "hostArchitecture": inputs.host_architecture,
-            "executionArchitecture": inputs.platform.architecture,
-            "mechanism": "native" if native else "qemu-user",
-        },
+        execution=execution,
         findings=tuple(findings),
         hooks=hook_results,
         incomplete=incomplete,
@@ -432,7 +427,7 @@ def _exercise_container(
     storage_root: Path,
     runroot: Path,
     container_name: str,
-) -> tuple[list[Finding], list[dict[str, object]], bool]:
+) -> tuple[list[Finding], list[dict[str, object]], dict[str, object]]:
     findings: list[Finding] = []
     results: list[dict[str, object]] = [
         {
@@ -493,7 +488,7 @@ def _exercise_container(
                 "exitStatus": exit_status,
             }
         )
-    return findings, results, native
+    return findings, results, _execution_observation(inputs)
 
 
 def _exercise_service(
@@ -727,17 +722,7 @@ def qualify_platform(
                 inputs.image.limits.pin_divergence.total_seconds()
             ),
         },
-        "buildExecution": {
-            "targetPlatform": str(inputs.platform),
-            "hostArchitecture": inputs.host_architecture,
-            "executionArchitecture": inputs.platform.architecture,
-            "mechanism": (
-                "native"
-                if _normalized_architecture(inputs.host_architecture)
-                == inputs.platform.architecture
-                else "cross-build"
-            ),
-        },
+        "buildExecution": _execution_observation(inputs),
         "testExecution": runtime_evidence.execution,
         "runtimeConstraints": _runtime_constraints(inputs.image),
         "testResults": list(runtime_evidence.test_results),
@@ -948,6 +933,20 @@ def _memory_bytes(value: str) -> int:
 
 def _normalized_architecture(value: str) -> str:
     return {"x86_64": "amd64", "aarch64": "arm64"}.get(value, value)
+
+
+def _execution_observation(inputs: QualificationInputs) -> dict[str, object]:
+    """Describe the execution mode selected for this platform workflow."""
+    native = (
+        _normalized_architecture(inputs.host_architecture)
+        == inputs.platform.architecture
+    )
+    return {
+        "targetPlatform": str(inputs.platform),
+        "hostArchitecture": inputs.host_architecture,
+        "executionArchitecture": inputs.platform.architecture,
+        "mechanism": "native" if native else "qemu-user",
+    }
 
 
 def _timestamp(value: datetime) -> str:

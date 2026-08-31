@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -69,6 +70,8 @@ class Builder:
         )
         build_arguments = values["build_arguments"]
         assert isinstance(build_arguments, dict)
+        platform = values["platform"]
+        assert isinstance(platform, Platform)
         labels = {
             "org.opencontainers.image.source": "https://github.com/example/app",
             "org.opencontainers.image.revision": build_arguments["IMAGE_REVISION"],
@@ -83,7 +86,7 @@ class Builder:
             layout,
             canonical_json_bytes(
                 {
-                    "architecture": "amd64",
+                    "architecture": platform.architecture,
                     "os": "linux",
                     "config": {"User": "10001", "Labels": labels},
                     "rootfs": {"type": "layers", "diff_ids": []},
@@ -114,7 +117,10 @@ class Builder:
                             "mediaType": OCI_MANIFEST,
                             "digest": manifest,
                             "size": manifest_size,
-                            "platform": {"os": "linux", "architecture": "amd64"},
+                            "platform": {
+                                "os": platform.os,
+                                "architecture": platform.architecture,
+                            },
                             "annotations": {
                                 "org.opencontainers.image.ref.name": "qualified"
                             },
@@ -339,6 +345,40 @@ def test_qualification_writes_accepted_digest_bound_record(
         "containerfile-scan.json",
         "image-scan.json",
     ]
+
+
+def test_foreign_build_and_test_record_the_same_qemu_execution_mode(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = replace(
+        inputs(repository_factory(), tmp_path),
+        platform=Platform.parse("linux/arm64"),
+    )
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        pin_observations=pin_observations(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    payload = json.loads(result.record_path.read_text(encoding="utf-8"))["payload"]
+    expected = {
+        "targetPlatform": "linux/arm64",
+        "hostArchitecture": "x86_64",
+        "executionArchitecture": "arm64",
+        "mechanism": "qemu-user",
+    }
+    assert payload["buildExecution"] == expected
+    assert payload["testExecution"] == expected
 
 
 def test_qualification_records_label_rule_rejection(
