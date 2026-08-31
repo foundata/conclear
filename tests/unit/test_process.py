@@ -120,7 +120,10 @@ def test_redactor_handles_flags_headers_urls_and_known_paths(tmp_path: Path) -> 
         ("tool", "--password", "top-secret", f"--authfile={tmp_path}")
     )
     output = redactor.text(
-        "Authorization: Bearer token\nhttps://x.invalid/?access_token=value"
+        "Authorization: Bearer token\n"
+        "https://x.invalid/?access_token=value\n"
+        "https://user:password@registry.invalid/image\n"
+        "https://registry.invalid/path@digest"
     )
 
     assert arguments == (
@@ -130,7 +133,10 @@ def test_redactor_handles_flags_headers_urls_and_known_paths(tmp_path: Path) -> 
         "--authfile=[REDACTED]",
     )
     assert output == (
-        "Authorization: [REDACTED]\nhttps://x.invalid/?access_token=[REDACTED]"
+        "Authorization: [REDACTED]\n"
+        "https://x.invalid/?access_token=[REDACTED]\n"
+        "https://[REDACTED]@registry.invalid/image\n"
+        "https://registry.invalid/path@digest"
     )
 
 

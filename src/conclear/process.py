@@ -30,6 +30,7 @@ _AUTHORIZATION = re.compile(
 _URL_SECRET = re.compile(
     r"(?i)(?P<label>[?&](?:access_token|password|secret|token)=)[^&#\s]+"
 )
+_URL_USERINFO = re.compile(r"(?i)(?P<scheme>\b[a-z][a-z0-9+.-]*://)[^/@\s]+@")
 
 
 class OperationKind(StrEnum):
@@ -156,7 +157,8 @@ class Redactor:
         for secret in self._values:
             redacted = redacted.replace(secret, "[REDACTED]")
         redacted = _AUTHORIZATION.sub(r"\g<label>[REDACTED]", redacted)
-        return _URL_SECRET.sub(r"\g<label>[REDACTED]", redacted)
+        redacted = _URL_SECRET.sub(r"\g<label>[REDACTED]", redacted)
+        return _URL_USERINFO.sub(r"\g<scheme>[REDACTED]@", redacted)
 
     def argv(self, arguments: Sequence[str]) -> tuple[str, ...]:
         """Redact sensitive flag values while preserving argument boundaries."""
