@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.jsonutil import atomic_write_bytes
+from conclear.jsonutil import atomic_write_bytes, atomic_write_json, load_json
 from conclear.workspace import (
     ResourceKind,
     ResourceStatus,
@@ -73,6 +73,27 @@ def test_workspace_rejects_repeated_terminal_transition(
 
     with pytest.raises(InvalidInvocationError, match="already in terminal state"):
         workspace.transition(terminal_state)
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    (
+        "not-a-timestamp",
+        "2026-13-01T00:00:00Z",
+        "2026-01-01T00:00:00+00:00",
+    ),
+)
+def test_workspace_rejects_malformed_persisted_timestamp(
+    tmp_path: Path, timestamp: str
+) -> None:
+    workspace = create_workspace(tmp_path)
+    state = load_json(workspace.root / "run.json")
+    assert isinstance(state, dict)
+    state["updatedAt"] = timestamp
+    atomic_write_json(workspace.root / "run.json", state)
+
+    with pytest.raises(OperationalError, match="timestamp"):
+        workspace.load()
 
 
 def test_workspace_open_rejects_symlinked_run(tmp_path: Path) -> None:

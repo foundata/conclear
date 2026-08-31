@@ -2,6 +2,7 @@
 
 import fcntl
 import os
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -15,6 +16,10 @@ from ulid import ULID
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json, canonical_json_bytes, load_json
 from conclear.values import validate_run_id
+
+_TIMESTAMP_PATTERN = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$"
+)
 
 
 class IdFactory(Protocol):
@@ -503,8 +508,8 @@ def _parse_snapshot(value: object) -> RunSnapshot:
         return RunSnapshot(
             run_id=validate_run_id(_string(value.get("runId"), "runId")),
             state=state,
-            created_at=_string(value.get("createdAt"), "createdAt"),
-            updated_at=_string(value.get("updatedAt"), "updatedAt"),
+            created_at=_state_timestamp(value.get("createdAt"), "createdAt"),
+            updated_at=_state_timestamp(value.get("updatedAt"), "updatedAt"),
             immutable_inputs=inputs,
             resume_state=resume_state,
         )
@@ -539,6 +544,17 @@ def _timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
         raise OperationalError("Workspace timestamps must be timezone-aware")
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _state_timestamp(value: object, name: str) -> str:
+    timestamp = _string(value, name)
+    if _TIMESTAMP_PATTERN.fullmatch(timestamp) is None:
+        raise OperationalError(f"State field {name} must be a UTC RFC 3339 timestamp")
+    try:
+        datetime.fromisoformat(timestamp.removesuffix("Z") + "+00:00")
+    except ValueError as exc:
+        raise OperationalError(f"State field {name} timestamp is malformed") from exc
+    return timestamp
 
 
 def _string(value: object, name: str) -> str:
