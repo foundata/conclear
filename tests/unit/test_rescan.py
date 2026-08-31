@@ -1,5 +1,5 @@
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -33,6 +33,10 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
+)
+from conclear.rescan_history import (
+    RemediationFindingKey,
+    RescanHistoryEntry,
 )
 from conclear.services.rescan import RescanResult, RescanSigning, rescan_release
 from conclear.triage import TriageDecision
@@ -413,6 +417,28 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             remediating_digest=None,
         ),
     )
+    previous_result_digest = (
+        "sha256:" + "8" * 64
+        if triage_decision == "affected" and not use_exception
+        else None
+    )
+    remediation_history = (
+        (
+            RescanHistoryEntry(
+                record_digest=previous_result_digest,
+                verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+                active_findings=(
+                    RemediationFindingKey(
+                        platform=platform,
+                        component="libssl",
+                        advisory="CVE-2026-0001",
+                    ),
+                ),
+            ),
+        )
+        if previous_result_digest is not None
+        else ()
+    )
 
     def run_rescan() -> RescanResult:
         return rescan_release(
@@ -432,7 +458,9 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             scope=scope,
             exceptions=((_exception(),) if use_exception else ()),
             triage=triage,
-            previous_result_digest=None,
+            previous_result_digest=previous_result_digest,
+            remediation_limit=timedelta(days=30),
+            remediation_history=remediation_history,
             signing=RescanSigning("test.key", public_key, "secret"),
             now=datetime(2026, 2, 1, tzinfo=UTC),
             clock=lambda: datetime(2026, 2, 1, 0, 5, tzinfo=UTC),
@@ -485,9 +513,28 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         else []
     )
     assert record["payload"]["appliedExceptions"] == expected_exceptions
-    assert len(record["payload"]["findings"]) == (
-        1 if triage_decision == "affected" and not use_exception else 0
+    expected_finding_count = (
+        2 if triage_decision == "affected" and not use_exception else 0
     )
+    assert len(record["payload"]["findings"]) == expected_finding_count
+    expected_remediation = (
+        [
+            {
+                "platform": "linux/amd64",
+                "component": "libssl",
+                "advisory": "CVE-2026-0001",
+                "startedAt": "2026-01-01T00:00:00Z",
+                "deadline": "2026-01-31T00:00:00Z",
+                "overdue": True,
+            }
+        ]
+        if triage_decision == "affected" and not use_exception
+        else []
+    )
+    assert record["payload"]["remediation"] == {
+        "limitSeconds": 2592000,
+        "findings": expected_remediation,
+    }
     assert record["payload"]["triage"] == [triage[0].to_dict()]
     assert scanner.sbom_scans == (1 if scope == "sbom-vulnerabilities" else 0)
     assert scanner.layout_scans == (1 if scope == "full-image" else 0)

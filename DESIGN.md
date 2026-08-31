@@ -366,7 +366,7 @@ An SBOM rescan is explicitly recorded as vulnerability matching against retained
 
 The rescan result records the released subject, platform manifests, scanner and database identity, ConClear and guide identity, repository-configuration digest, findings, triage state, previous result digest and verdict. A change in triage, remediation or exception state produces a new linked result and never mutates an earlier result.
 
-An authoritative rescan signs and attaches its result to the released digest, after which ConClear retrieves and verifies it. The successful post-attachment verification time starts the remediation clock. An invocation without signing authority emits a local diagnostic only. Scheduling, the supported-release inventory, triage, advisory publication and rebuilds remain external responsibilities.
+An authoritative rescan signs and attaches its result to the released digest, after which ConClear retrieves and verifies it. The successful post-attachment verification time starts the remediation clock. ConClear stores authoritative rescan history in protected durable state outside the project checkout and requires each later authoritative or diagnostic rescan to link the exact latest result, so omitting a prior result cannot reset a finding's clock. The result records each active fixable finding's effective deadline when a prior authoritative observation started its clock and rejects an overdue finding. An invocation without signing authority emits a local diagnostic only and does not advance the history. Scheduling, the supported-release inventory, triage, advisory publication and rebuilds remain external responsibilities.
 
 
 

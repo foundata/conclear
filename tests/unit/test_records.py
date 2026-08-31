@@ -47,6 +47,7 @@ def _record() -> RecordEnvelope:
             "triage": [],
             "previousResultDigest": None,
             "authoritative": False,
+            "remediation": {"limitSeconds": 2592000, "findings": []},
         },
     )
 

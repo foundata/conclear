@@ -14,6 +14,7 @@ from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import sha256_bytes
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
+from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime
 from conclear.secrets import token_provider
 from conclear.services.cleanup import cleanup_run
@@ -239,6 +240,8 @@ def rescan_command(
         )
     configuration_digest = sha256_bytes(repository.raw_bytes)
     triage = () if triage_path is None else load_triage(triage_path, subject=subject)
+    history_store = RescanHistoryStore(state_home())
+    remediation_history = history_store.linked_history(subject, previous_result)
     if authoritative and selected.cosign_private_key is None:
         raise InvalidInvocationError("Authoritative rescan requires a signing key")
     passphrase = signing_passphrase(selected, passphrase_fd, required=authoritative)
@@ -293,10 +296,24 @@ def rescan_command(
         exceptions=image.vulnerability_exceptions,
         triage=triage,
         previous_result_digest=previous_result,
+        remediation_limit=image.limits.remediation,
+        remediation_history=remediation_history,
         signing=signing,
         now=datetime.now(UTC),
         clock=lambda: datetime.now(UTC),
     )
+    if result.authoritative:
+        if result.verified_at is None:
+            raise AssertionError("Authoritative rescan has no verification time")
+        history_store.record(
+            subject,
+            RescanHistoryEntry(
+                record_digest=result.record_digest,
+                verified_at=_timestamp(result.verified_at),
+                active_findings=result.active_findings,
+            ),
+            expected_previous=previous_result,
+        )
     emit(
         CommandResult(
             "rescan",
@@ -316,3 +333,13 @@ def rescan_command(
         ),
         output_format,
     )
+
+
+def _timestamp(value: str) -> datetime:
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise InvalidInvocationError("Rescan verification time is malformed") from exc
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise InvalidInvocationError("Rescan verification time lacks a timezone")
+    return timestamp.astimezone(UTC)

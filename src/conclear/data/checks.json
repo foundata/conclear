@@ -53,7 +53,7 @@
     {"id": "CC0703", "summary": "Verify SBOM, provenance and release-verification attestations", "severity": "error", "behavior": "automated", "anchor": "release-evidence-and-retention"},
     {"id": "CC0704", "summary": "Keep builder, signer and source identities distinct", "severity": "error", "behavior": "automated", "anchor": "provenance"},
     {"id": "CC0801", "summary": "Verify complete platform coverage before an authoritative rescan", "severity": "error", "behavior": "automated", "anchor": "rescans-and-remediation"},
-    {"id": "CC0802", "summary": "Record rescan scope, triage and immutable result linkage", "severity": "error", "behavior": "automated", "anchor": "rescans-and-remediation"},
+    {"id": "CC0802", "summary": "Link immutable rescans and enforce remediation deadlines", "severity": "error", "behavior": "automated", "anchor": "rescans-and-remediation"},
     {"id": "CC9001", "summary": "Review whether the selected base image fits the application lifecycle", "severity": "info", "behavior": "manual", "anchor": "choosing-a-base-image"},
     {"id": "CC9002", "summary": "Review an immutable-version tag digest change as a supply-chain event", "severity": "info", "behavior": "manual", "anchor": "updating-pinned-references"},
     {"id": "CC9003", "summary": "Review vulnerability exceptions through repository security ownership", "severity": "info", "behavior": "manual", "anchor": "vulnerability-and-configuration-scanning"},

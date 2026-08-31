@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -18,7 +18,7 @@ from conclear.attestations import (
     decode_dsse_statements,
     write_statement,
 )
-from conclear.config import VulnerabilityException
+from conclear.config import MAX_REMEDIATION, VulnerabilityException
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json, load_json
 from conclear.records import (
@@ -27,6 +27,10 @@ from conclear.records import (
     ToolIdentity,
     Verdict,
     validate_record,
+)
+from conclear.rescan_history import (
+    RemediationFindingKey,
+    RescanHistoryEntry,
 )
 from conclear.scan_policy import evaluate_trivy_report
 from conclear.spdx import validate_spdx_document
@@ -125,6 +129,7 @@ class RescanResult:
     authoritative: bool
     verdict: Verdict
     verified_at: str | None
+    active_findings: tuple[RemediationFindingKey, ...]
 
 
 def rescan_release(
@@ -144,6 +149,8 @@ def rescan_release(
     exceptions: tuple[VulnerabilityException, ...],
     triage: tuple[TriageDecision, ...],
     previous_result_digest: str | None,
+    remediation_limit: timedelta,
+    remediation_history: tuple[RescanHistoryEntry, ...],
     signing: RescanSigning | None,
     now: datetime,
     clock: Callable[[], datetime],
@@ -155,8 +162,19 @@ def rescan_release(
         raise InvalidInvocationError("Rescan subject must be an immutable digest")
     if scope not in {"sbom-vulnerabilities", "full-image"}:
         raise InvalidInvocationError("Unsupported rescan scope")
+    if remediation_limit <= timedelta(0) or remediation_limit > MAX_REMEDIATION:
+        raise InvalidInvocationError(
+            "Rescan remediation limit must be positive and at most 30 days"
+        )
     if previous_result_digest is not None:
         Digest(previous_result_digest)
+    history_digest = (
+        remediation_history[-1].record_digest if remediation_history else None
+    )
+    if history_digest != previous_result_digest:
+        raise InvalidInvocationError(
+            "Rescan remediation history does not match the previous result"
+        )
     signer.verify_attestation(
         subject=subject,
         public_key=public_key,
@@ -240,6 +258,7 @@ def rescan_release(
     report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     findings: list[dict[str, object]] = []
     applied_exceptions: list[dict[str, object]] = []
+    active_findings: set[RemediationFindingKey] = set()
     for platform, digest in sorted(manifest_map.items()):
         if platform is None:
             raise AssertionError("platform coverage checked above")
@@ -302,6 +321,16 @@ def rescan_release(
                 and triage_decision.decision == "not-applicable"
             ):
                 suppressed.add(vulnerability.finding)
+            elif vulnerability.finding is not None and not (
+                triage_decision is not None and triage_decision.decision == "remediated"
+            ):
+                active_findings.add(
+                    RemediationFindingKey(
+                        platform=platform,
+                        component=vulnerability.component,
+                        advisory=vulnerability.advisory,
+                    )
+                )
         findings.extend(
             {
                 "platform": str(platform),
@@ -314,6 +343,33 @@ def rescan_release(
             {"platform": str(platform), **item.to_dict()}
             for item in evaluation.applied_exceptions
         )
+    remediation_findings: list[dict[str, object]] = []
+    for finding in sorted(active_findings):
+        started_at = _remediation_start(finding, remediation_history)
+        deadline = None if started_at is None else started_at + remediation_limit
+        overdue = deadline is not None and now.astimezone(UTC) >= deadline
+        remediation_findings.append(
+            {
+                **finding.to_dict(),
+                "startedAt": (None if started_at is None else _timestamp(started_at)),
+                "deadline": None if deadline is None else _timestamp(deadline),
+                "overdue": overdue,
+            }
+        )
+        if overdue:
+            findings.append(
+                {
+                    "platform": str(finding.platform),
+                    "checkId": "CC0802",
+                    "severity": "error",
+                    "message": (
+                        "Fixable vulnerability exceeded the effective "
+                        f"remediation deadline: {finding.advisory} in "
+                        f"{finding.component}"
+                    ),
+                    "location": finding.component,
+                }
+            )
     verdict = (
         Verdict.REJECTED
         if any(item.get("severity") == "error" for item in findings)
@@ -339,13 +395,24 @@ def rescan_release(
             "triage": [item.to_dict() for item in triage],
             "previousResultDigest": previous_result_digest,
             "authoritative": signing is not None,
+            "remediation": {
+                "limitSeconds": int(remediation_limit.total_seconds()),
+                "findings": remediation_findings,
+            },
         },
     )
     record_path = workspace.root / "records" / "rescan-result.json"
     record_digest = record.write(record_path)
     if signing is None:
         return RescanResult(
-            record_path, record_digest, None, None, False, verdict, None
+            record_path,
+            record_digest,
+            None,
+            None,
+            False,
+            verdict,
+            None,
+            tuple(sorted(active_findings)),
         )
     statement_path = workspace.root / "records" / "rescan-statement.json"
     statement_digest = write_statement(
@@ -401,7 +468,20 @@ def rescan_release(
         True,
         verdict,
         verified_at,
+        tuple(sorted(active_findings)),
     )
+
+
+def _remediation_start(
+    finding: RemediationFindingKey,
+    history: tuple[RescanHistoryEntry, ...],
+) -> datetime | None:
+    started_at: datetime | None = None
+    for entry in reversed(history):
+        if finding not in entry.active_findings:
+            break
+        started_at = entry.verified_at
+    return started_at
 
 
 def _scanner_identity(tools: tuple[ToolIdentity, ...]) -> str:
