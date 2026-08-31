@@ -11,7 +11,11 @@ from conclear.adapters.cosign import (
 )
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
-from conclear.attestations import RELEASE_VERIFICATION_TYPE, STATEMENT_TYPE
+from conclear.attestations import (
+    RELEASE_VERIFICATION_TYPE,
+    RESCAN_TYPE,
+    STATEMENT_TYPE,
+)
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import atomic_write_json, canonical_json_bytes, load_json
 from conclear.oci import (
@@ -247,6 +251,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             "name": "app",
         },
     )
+    signer.add(subject, RESCAN_TYPE, {"historical": True})
     public_key = tmp_path / "cosign.pub"
     public_key.write_text("test", encoding="utf-8")
     cache = tmp_path / "trivy-cache"

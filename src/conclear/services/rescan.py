@@ -333,13 +333,13 @@ def rescan_release(
         public_key=signing.public_key,
         predicate_type=RESCAN_TYPE,
     )
-    retrieved = _one_statement(
+    expected_statement = _object(load_json(statement_path), "rescan statement")
+    _exact_statement(
         signer.download_attestations(subject=subject, predicate_type=RESCAN_TYPE),
         predicate_type=RESCAN_TYPE,
         subject_digest=subject.digest,
+        expected=expected_statement,
     )
-    if retrieved != _object(load_json(statement_path), "rescan statement"):
-        raise OperationalError("Retrieved rescan result differs from signed evidence")
     return RescanResult(
         record_path,
         record_digest,
@@ -365,6 +365,28 @@ def _one_statement(
     if len(matches) != 1:
         raise OperationalError(
             f"Expected exactly one {predicate_type} attestation, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _exact_statement(
+    envelopes: tuple[object, ...],
+    *,
+    predicate_type: str,
+    subject_digest: Digest,
+    expected: dict[str, object],
+) -> dict[str, object]:
+    matches = [
+        statement
+        for statement in decode_dsse_statements(envelopes)
+        if statement.get("predicateType") == predicate_type
+        and _has_subject(statement, subject_digest)
+        and statement == expected
+    ]
+    if len(matches) != 1:
+        raise OperationalError(
+            "Expected exactly one copy of the newly attached rescan result, "
+            f"found {len(matches)}"
         )
     return matches[0]
 
