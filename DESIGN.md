@@ -104,7 +104,7 @@ The release state advances monotonically through `created`, `qualified`, `assemb
 5. `conclear.toml` may narrow built-in rules but cannot relax an unconditional `MUST` or `MUST NOT` or extend a built-in maximum.
 6. A local release and a CI release use the same state machine and can produce equally authoritative evidence.
 7. Source identity comes from the isolated Git checkout, builder identity comes from ConClear's embedded version data, and signer identity comes from the configured signing key. Caller-provided labels cannot replace these observations.
-8. A candidate reference is generated once, used for at most one publication attempt and never reused after an ambiguous or failed registry write.
+8. A candidate reference is generated once and is reused after an ambiguous write only when the registry resolves it conclusively to the unchanged expected digest within its recorded lifetime; otherwise the release requires a new run and candidate reference.
 9. Promotion writes only the digest accepted by release verification and verifies every written tag by resolving it again.
 10. ConClear deletes only local and remote resources recorded as owned by the current release run.
 11. Secrets are never accepted as command-line literals, stored in repository configuration, included in evidence or written to logs.
@@ -324,7 +324,7 @@ The default candidate lives in the final release repository so signatures and OC
 
 `publish` checks that the candidate tag is unused, then copies the accepted manifest or index with Skopeo's digest-preserving path, including every platform for an index. It resolves the remote index, platform manifests and referenced content and compares the complete graph with the local candidate. Registries do not provide a portable compare-and-swap operation, so pre-write checks detect ordinary collisions while post-write verification determines success.
 
-Immediately after a successful copy, ConClear sets the candidate expiration through the Quay API. Failure to set or verify expiration stops the release before attestation. ConClear enables tag immutability when the Quay repository and credentials support it and otherwise records that the recommended control was unavailable. A failed or ambiguous publication is recorded for cleanup and its tag is never reused. Candidate content and evidence must be safe for public disclosure; later Quay garbage collection is outside the release verdict.
+Immediately after a successful copy, ConClear sets the candidate expiration through the Quay API. Failure to set or verify expiration stops the release before attestation. ConClear enables tag immutability when the Quay repository and credentials support it and otherwise records that the recommended control was unavailable. A failed or ambiguous publication is recorded for cleanup; resume reuses its tag only after conclusively resolving it to the unchanged expected digest within its lifetime. Candidate content and evidence must be safe for public disclosure; later Quay garbage collection is outside the release verdict.
 
 Promotion first confirms that the candidate has not expired, then resolves and verifies the signed release-verification attestation. It refuses to replace an immutable version tag that already names another digest. It writes only the verified digest to each requested immutable or moving tag, resolves every tag afterward and records the observed result separately. A partial multi-tag update is an operational failure and is never hidden by rollback or repointing.
 
@@ -350,7 +350,7 @@ No ConClear command signs before `publish`. In particular, `check`, `build`, `te
 
 `attest` resolves the remote subject again, attaches one signed SBOM attestation to each platform manifest, attaches provenance covering the index and platforms, and signs the index digest and every platform-manifest digest. Every operation obtains public transparency-log inclusion. A single-platform release signs its manifest once. Partial attachment, signing or log inclusion leaves an unverified candidate and blocks promotion; retry first verifies the unchanged expected subject graph.
 
-ConClear also publishes each raw SPDX JSON document as repository-scoped OCI evidence associated with its platform subject, using `application/spdx+json` as its artifact and payload media type, and records its descriptor digest. This preserves a directly consumable SBOM in addition to the signed attestation without requiring a separate public artifact service.
+The signed SPDX attestation is the repository-scoped consumer copy. ConClear retrieves and validates its predicate through Cosign during verification and rescans; it does not use Cosign's deprecated unsigned raw SBOM attachment command.
 
 `verify` starts from the candidate digest rather than its tag. It recursively compares the registry graph with the candidate, verifies every required image signature and transparency-log inclusion against the external trust root, retrieves and verifies one SBOM per platform, validates the recorded SPDX version, verifies provenance subject coverage, signer identities and log inclusion, and checks that all evidence digests match the qualification records.
 

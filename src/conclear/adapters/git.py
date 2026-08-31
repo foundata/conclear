@@ -65,6 +65,21 @@ class GitAdapter(ToolAdapter):
             operation=OperationKind.WRITE,
         )
 
+    def read_text(self, repository: Path, revision: str, relative_path: str) -> str:
+        """Read one UTF-8 repository file from an observed commit without checkout."""
+        validate_source_revision(revision)
+        if (
+            not relative_path
+            or relative_path.startswith("/")
+            or ".." in Path(relative_path).parts
+            or "\\" in relative_path
+        ):
+            raise ValueError("Git object path must be a safe relative path")
+        return self._run(
+            ("-C", str(repository), "show", f"{revision}:{relative_path}"),
+            timeout_seconds=30,
+        ).stdout
+
     def remove_worktree(self, repository: Path, destination: Path) -> None:
         """Remove one run-owned worktree without affecting the ordinary checkout."""
         self._run(

@@ -47,6 +47,14 @@ class CandidateRegistry(Protocol):
         ...
 
 
+class SourceWorktree(Protocol):
+    """Git worktree cleanup boundary."""
+
+    def remove_worktree(self, repository: Path, destination: Path) -> None:
+        """Remove one detached worktree through Git."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class CleanupResult:
     """Resources removed or deliberately retained by cleanup."""
@@ -61,15 +69,29 @@ def cleanup_run(
     buildah: BuildStorage,
     podman: RuntimeStorage,
     quay: CandidateRegistry | None,
+    git: SourceWorktree | None = None,
+    statuses: frozenset[ResourceStatus] | None = None,
+    excluded_kinds: frozenset[ResourceKind] | None = None,
+    excluded_resource_ids: frozenset[str] | None = None,
 ) -> CleanupResult:
     """Remove only ephemeral resources whose ownership is established by the run."""
     removed: list[str] = []
     retained: list[str] = []
     failures: list[str] = []
+    selected_statuses = statuses or frozenset(
+        {ResourceStatus.PLANNED, ResourceStatus.CREATED, ResourceStatus.FAILED}
+    )
+    exclusions = excluded_kinds or frozenset()
+    excluded_ids = excluded_resource_ids or frozenset()
     for entry in workspace.journal.cleanup_candidates():
+        if entry.status not in selected_statuses:
+            continue
+        if entry.kind in exclusions or entry.resource_id in excluded_ids:
+            retained.append(entry.resource_id)
+            continue
         try:
             did_remove = _cleanup_entry(
-                workspace, entry, buildah=buildah, podman=podman, quay=quay
+                workspace, entry, buildah=buildah, podman=podman, quay=quay, git=git
             )
         except Exception as exc:
             failures.append(f"{entry.resource_id}: {exc}")
@@ -92,10 +114,24 @@ def _cleanup_entry(
     buildah: BuildStorage,
     podman: RuntimeStorage,
     quay: CandidateRegistry | None,
+    git: SourceWorktree | None,
 ) -> bool:
     if entry.kind is ResourceKind.LOCAL_PATH:
         path = _owned_path(workspace, entry.identifier)
         _remove_local(path)
+        return True
+    if entry.kind is ResourceKind.GIT_WORKTREE:
+        if git is None:
+            raise OperationalError("Worktree cleanup requires Git")
+        destination = _owned_path(workspace, entry.identifier)
+        repository_value = entry.metadata.get("repository")
+        if not isinstance(repository_value, str):
+            raise OperationalError("Journaled worktree has no source repository")
+        repository = Path(repository_value).resolve(strict=True)
+        expected_source = workspace.load().immutable_inputs.get("sourceRoot")
+        if expected_source is None or repository != Path(expected_source):
+            raise OperationalError("Journaled worktree repository is not run-owned")
+        git.remove_worktree(repository, destination)
         return True
     if entry.kind is ResourceKind.BUILDAH_STORAGE:
         root = _owned_path(workspace, entry.identifier)
@@ -124,13 +160,13 @@ def _cleanup_entry(
                 "Candidate ownership is uncertain because no digest was recorded"
             )
         expected = Digest(expected_value)
-        repository = OCIReference(reference.registry, reference.repository)
-        observed = quay.get_tag(repository, reference.tag)
+        candidate_repository = OCIReference(reference.registry, reference.repository)
+        observed = quay.get_tag(candidate_repository, reference.tag)
         if observed is None:
             return True
         if observed.digest != expected:
             raise OperationalError("Candidate now names an unowned digest")
-        quay.delete_tag(repository, reference.tag)
+        quay.delete_tag(candidate_repository, reference.tag)
         return True
     return False
 

@@ -55,6 +55,7 @@ class CandidateResult:
 
 @dataclass(frozen=True, slots=True)
 class _Qualification:
+    run_id: str
     image_id: str
     platform: Platform
     record_digest: str
@@ -80,6 +81,10 @@ def assemble_candidate(
 ) -> CandidateResult:
     """Verify every transported byte and assemble exact required platform coverage."""
     qualifications = tuple(_read_qualification(item) for item in transports)
+    snapshot = workspace.load()
+    recorded_version = snapshot.immutable_inputs.get("version") or None
+    if version != recorded_version:
+        raise InvalidInvocationError("Assembly version differs from the release run")
     accepted_platforms = {item.platform for item in qualifications}
     required_platforms = set(image.platforms)
     if accepted_platforms != required_platforms:
@@ -96,11 +101,17 @@ def assemble_candidate(
             "Assembly received duplicate platform qualifications"
         )
     first = qualifications[0]
+    if any(item.run_id != workspace.run_id for item in qualifications):
+        raise InvalidInvocationError("Qualifications belong to another release run")
     if any(item.image_id != image.image_id for item in qualifications):
         raise InvalidInvocationError("Qualifications do not match the selected image")
     if first.source.repository != repository.project.source:
         raise InvalidInvocationError(
             "Qualifications do not match the selected source repository"
+        )
+    if first.source.revision != snapshot.immutable_inputs.get("sourceRevision"):
+        raise InvalidInvocationError(
+            "Qualifications do not match the release-run source revision"
         )
     if first.configuration_digest != sha256_bytes(repository.raw_bytes):
         raise InvalidInvocationError(
@@ -168,6 +179,12 @@ def assemble_candidate(
         },
         "subjectDescriptor": observation.graph.root.to_dict(),
         "candidateTag": tag,
+        "candidateNaming": {
+            "version": version,
+            "runId": workspace.run_id,
+            "sourceRevision": first.source.revision,
+            "tag": tag,
+        },
     }
     record = RecordEnvelope(
         record_type="releaseCandidate",
@@ -259,6 +276,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
     configuration_digest = _string(configuration.get("sha256"), "configuration digest")
     Digest(configuration_digest)
     return _Qualification(
+        run_id=_string(record.get("runId"), "qualification run id"),
         image_id=_string(payload.get("imageId"), "image id"),
         platform=platform,
         record_digest=sha256_file(transport.record_path),

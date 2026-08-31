@@ -61,3 +61,55 @@ def test_release_profile_rejects_group_writable_file(tmp_path: Path) -> None:
     assert os.getuid() == profile.stat().st_uid
     with pytest.raises(InvalidInvocationError, match="permissions are unsafe"):
         load_release_profile("release", config_home=config_home)
+
+
+def test_release_profile_rejects_credentials_in_hsm_handle(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    profile = profile_directory / "release.toml"
+    profile.write_text(
+        "\n".join(
+            (
+                'mode = "local"',
+                f'cosign_public_key = "{public_key}"',
+                'cosign_private_key = "pkcs11:token=test;pin-value=secret"',
+            )
+        ),
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError, match="must not contain credentials"):
+        load_release_profile("release", config_home=config_home)
+
+
+def test_release_profile_resolves_file_signing_key(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    private_key = tmp_path / "cosign.key"
+    private_key.write_text("private", encoding="utf-8")
+    private_key.chmod(0o600)
+    profile = profile_directory / "release.toml"
+    profile.write_text(
+        "\n".join(
+            (
+                'mode = "local"',
+                f'cosign_public_key = "{public_key}"',
+                f'cosign_private_key = "{private_key}"',
+            )
+        ),
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    selected = load_release_profile("release", config_home=config_home)
+
+    assert selected.cosign_private_key == str(private_key.resolve())

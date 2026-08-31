@@ -1,0 +1,112 @@
+"""Run-owned external-tool environment and adapter construction."""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from conclear.adapters.base import ToolAdapter
+from conclear.adapters.buildah import BuildahAdapter
+from conclear.adapters.cosign import CosignAdapter
+from conclear.adapters.git import GitAdapter
+from conclear.adapters.hadolint import HadolintAdapter
+from conclear.adapters.podman import PodmanAdapter
+from conclear.adapters.skopeo import SkopeoAdapter
+from conclear.adapters.trivy import TrivyAdapter
+from conclear.process import ProcessEnvironment, ProcessRunner
+from conclear.records import ToolIdentity
+from conclear.tools import ResolvedTool, ToolName, ToolResolver
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationRuntime:
+    """Resolved tools and adapters held immutable for one command or release run."""
+
+    root: Path
+    environment: dict[str, str]
+    runner: ProcessRunner
+    tools: dict[ToolName, ResolvedTool]
+
+    @classmethod
+    def create(
+        cls,
+        root: Path,
+        *,
+        names: tuple[ToolName, ...] = tuple(ToolName),
+    ) -> "ApplicationRuntime":
+        """Create isolated XDG paths and resolve the requested supported tools."""
+        paths = {
+            "home": root / "home",
+            "config": root / "config",
+            "cache": root / "cache",
+            "state": root / "state",
+            "runtime": root / "runtime",
+            "logs": root / "logs",
+        }
+        for path in paths.values():
+            path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        process_environment = ProcessEnvironment(
+            home=paths["home"],
+            config_home=paths["config"],
+            cache_home=paths["cache"],
+            state_home=paths["state"],
+            runtime_dir=paths["runtime"],
+        ).values()
+        runner = ProcessRunner()
+        resolved = ToolResolver(runner=runner).resolve_all(
+            environment=process_environment,
+            names=names,
+        )
+        return cls(
+            root=root,
+            environment=process_environment,
+            runner=runner,
+            tools={item.name: item for item in resolved},
+        )
+
+    @property
+    def identities(self) -> tuple[ToolIdentity, ...]:
+        """Return sorted public identities for every selected executable."""
+        return tuple(self.tools[name].record_identity() for name in sorted(self.tools))
+
+    def assert_unchanged(self) -> None:
+        """Recheck every selected executable before a later phase uses it."""
+        for tool in self.tools.values():
+            tool.assert_unchanged()
+
+    def git(self) -> GitAdapter:
+        """Return the resolved Git adapter."""
+        return self._adapter(GitAdapter, ToolName.GIT)
+
+    def buildah(self) -> BuildahAdapter:
+        """Return the resolved Buildah adapter."""
+        return self._adapter(BuildahAdapter, ToolName.BUILDAH)
+
+    def podman(self) -> PodmanAdapter:
+        """Return the resolved Podman adapter."""
+        return self._adapter(PodmanAdapter, ToolName.PODMAN)
+
+    def skopeo(self) -> SkopeoAdapter:
+        """Return the resolved Skopeo adapter."""
+        return self._adapter(SkopeoAdapter, ToolName.SKOPEO)
+
+    def hadolint(self) -> HadolintAdapter:
+        """Return the resolved Hadolint adapter."""
+        return self._adapter(HadolintAdapter, ToolName.HADOLINT)
+
+    def trivy(self) -> TrivyAdapter:
+        """Return the resolved Trivy adapter."""
+        return self._adapter(TrivyAdapter, ToolName.TRIVY)
+
+    def cosign(self) -> CosignAdapter:
+        """Return the resolved Cosign adapter."""
+        return self._adapter(CosignAdapter, ToolName.COSIGN)
+
+    def _adapter[T: ToolAdapter](self, adapter: type[T], name: ToolName) -> T:
+        tool = self.tools.get(name)
+        if tool is None:
+            raise ValueError(f"Runtime did not resolve {name.value}")
+        return adapter(
+            tool=tool,
+            runner=self.runner,
+            environment=self.environment,
+            log_directory=self.root / "logs",
+        )

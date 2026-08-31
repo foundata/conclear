@@ -27,7 +27,7 @@
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "platform": {"type": "string", "pattern": "^[a-z0-9._-]+/[a-z0-9._-]+(?:/[a-z0-9._-]+)?$"},
     "stringArray": {"type": "array", "items": {"type": "string"}},
-    "digestArray": {"type": "array", "items": {"$ref": "#/$defs/digest"}},
+    "digestArray": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}},
     "ruleset": {
       "type": "object",
       "additionalProperties": false,
@@ -79,7 +79,16 @@
         "mediaType": {"type": "string"},
         "digest": {"$ref": "#/$defs/digest"},
         "size": {"type": "integer", "minimum": 0},
-        "platform": {"type": "object"},
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "architecture"],
+          "properties": {
+            "os": {"type": "string", "minLength": 1},
+            "architecture": {"type": "string", "minLength": 1},
+            "variant": {"type": "string", "minLength": 1}
+          }
+        },
         "annotations": {"type": "object", "additionalProperties": {"type": "string"}}
       }
     },
@@ -93,6 +102,104 @@
         "executionArchitecture": {"type": "string"},
         "mechanism": {"enum": ["native", "qemu-user", "cross-build"]}
       }
+    },
+    "runtimeConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "user", "readOnly", "writableMounts", "memory", "cpus", "pids", "nofile", "capabilities"],
+      "properties": {
+        "profile": {"enum": ["service", "one-shot", "scratch"]},
+        "user": {"type": "integer", "minimum": 1},
+        "readOnly": {"const": true},
+        "writableMounts": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "memory": {"type": "string", "pattern": "^[1-9][0-9]*(?:KiB|MiB|GiB)$"},
+        "cpus": {"type": "number", "exclusiveMinimum": 0},
+        "pids": {"type": "integer", "minimum": 1},
+        "nofile": {"type": "integer", "minimum": 1},
+        "capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+      }
+    },
+    "runtimeObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user", "readOnly", "memoryBytes", "nanoCpus", "pidsLimit", "nofile", "capAdd", "capDrop", "securityOptions"],
+      "properties": {
+        "user": {"type": "string"},
+        "readOnly": {"type": "boolean"},
+        "memoryBytes": {"type": "integer"},
+        "nanoCpus": {"type": "integer"},
+        "pidsLimit": {"type": "integer"},
+        "nofile": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "integer"}], "items": false},
+        "capAdd": {"$ref": "#/$defs/stringArray"},
+        "capDrop": {"$ref": "#/$defs/stringArray"},
+        "securityOptions": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "testResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["passed", "failed", "skipped"]},
+        "digest": {"$ref": "#/$defs/digest"},
+        "observed": {"$ref": "#/$defs/runtimeObservation"},
+        "exitStatus": {"type": "integer"},
+        "required": {"type": "boolean"},
+        "executable": {"type": ["string", "null"]},
+        "executableDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "outputDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "path"],
+      "properties": {
+        "digest": {"$ref": "#/$defs/digest"},
+        "path": {"type": "string", "pattern": "^[^/\\\\]+$"}
+      }
+    },
+    "appliedException": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "component", "advisory", "expires"],
+      "properties": {
+        "image": {"type": "string", "minLength": 1},
+        "component": {"type": "string", "minLength": 1},
+        "advisory": {"type": "string", "minLength": 1},
+        "expires": {"type": "string", "format": "date"}
+      }
+    },
+    "ciIdentity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "server", "repository", "workflow", "runId", "revision"],
+          "properties": {
+            "provider": {"const": "github-actions"},
+            "server": {"type": "string", "pattern": "^https://"},
+            "repository": {"type": "string", "minLength": 1},
+            "workflow": {"type": "string", "minLength": 1},
+            "runId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+            "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "server", "repository", "pipelineId", "jobId", "revision"],
+          "properties": {
+            "provider": {"const": "gitlab-ci"},
+            "server": {"type": "string", "pattern": "^https://"},
+            "repository": {"type": "string", "minLength": 1},
+            "pipelineId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+            "jobId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+            "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
+          }
+        }
+      ]
     },
     "platformQualification": {
       "type": "object",
@@ -109,11 +216,11 @@
         "externalImages": {"type": "array", "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}},
         "buildExecution": {"$ref": "#/$defs/execution"},
         "testExecution": {"$ref": "#/$defs/execution"},
-        "runtimeConstraints": {"type": "object"},
-        "testResults": {"type": "array", "items": {"type": "object"}},
-        "sbom": {"type": "object", "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"type": "string"}}},
-        "scans": {"type": "array", "items": {"type": "object"}},
-        "appliedExceptions": {"type": "array", "items": {"type": "object"}},
+        "runtimeConstraints": {"$ref": "#/$defs/runtimeConstraints"},
+        "testResults": {"type": "array", "items": {"$ref": "#/$defs/testResult"}},
+        "sbom": {"type": "object", "additionalProperties": false, "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"const": "SPDX-2.3"}}},
+        "scans": {"type": "array", "items": {"$ref": "#/$defs/scan"}},
+        "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
         "payloadDigests": {"$ref": "#/$defs/digestArray"},
         "databaseDigest": {"$ref": "#/$defs/digest"}
       }
@@ -121,16 +228,27 @@
     "releaseCandidate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageId", "repository", "requiredPlatforms", "acceptedPlatforms", "qualifications", "platformManifests", "subjectDescriptor", "candidateTag"],
+      "required": ["imageId", "repository", "requiredPlatforms", "acceptedPlatforms", "qualifications", "platformManifests", "subjectDescriptor", "candidateTag", "candidateNaming"],
       "properties": {
         "imageId": {"type": "string"},
         "repository": {"type": "string"},
         "requiredPlatforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
         "acceptedPlatforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
-        "qualifications": {"type": "array", "items": {"type": "object", "required": ["platform", "recordDigest", "payloadDigests"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "recordDigest": {"$ref": "#/$defs/digest"}, "payloadDigests": {"$ref": "#/$defs/digestArray"}}}},
+        "qualifications": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "recordDigest", "payloadDigests"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "recordDigest": {"$ref": "#/$defs/digest"}, "payloadDigests": {"$ref": "#/$defs/digestArray"}}}},
         "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
         "subjectDescriptor": {"$ref": "#/$defs/descriptor"},
-        "candidateTag": {"type": "string", "pattern": "candidate\\.[0-9a-hjkmnp-tv-z]{26}"}
+        "candidateTag": {"type": "string", "pattern": "candidate\\.[0-9a-hjkmnp-tv-z]{26}"},
+        "candidateNaming": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "runId", "sourceRevision", "tag"],
+          "properties": {
+            "version": {"type": ["string", "null"]},
+            "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
+            "sourceRevision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+            "tag": {"type": "string", "pattern": "candidate\\.[0-9a-hjkmnp-tv-z]{26}"}
+          }
+        }
       }
     },
     "releaseVerification": {
@@ -138,11 +256,11 @@
       "additionalProperties": false,
       "required": ["subject", "platformDigests", "releaseEnvironment", "signer", "evidence"],
       "properties": {
-        "subject": {"type": "object", "required": ["repository", "digest"], "properties": {"repository": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}},
+        "subject": {"type": "object", "additionalProperties": false, "required": ["repository", "digest"], "properties": {"repository": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}},
         "platformDigests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
-        "releaseEnvironment": {"type": "object", "required": ["mode", "hostArchitecture", "runId"], "properties": {"mode": {"enum": ["local", "ci"]}, "hostArchitecture": {"type": "string"}, "runId": {"type": "string"}, "ciIdentity": {"type": "object"}}},
-        "signer": {"type": "object", "required": ["mode", "keyId"], "properties": {"mode": {"enum": ["managed-key", "kms", "hsm"]}, "keyId": {"type": "string"}}},
-        "evidence": {"type": "object", "required": ["platformQualifications", "scanResults", "sboms", "provenance", "candidateRecord"], "properties": {"platformQualifications": {"$ref": "#/$defs/digestArray"}, "scanResults": {"$ref": "#/$defs/digestArray"}, "sboms": {"$ref": "#/$defs/digestArray"}, "provenance": {"$ref": "#/$defs/digest"}, "candidateRecord": {"$ref": "#/$defs/digest"}}}
+        "releaseEnvironment": {"type": "object", "additionalProperties": false, "required": ["mode", "hostArchitecture", "runId"], "properties": {"mode": {"enum": ["local", "ci"]}, "hostArchitecture": {"type": "string"}, "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"}, "ciIdentity": {"$ref": "#/$defs/ciIdentity"}}},
+        "signer": {"type": "object", "additionalProperties": false, "required": ["mode", "keyId"], "properties": {"mode": {"enum": ["managed-key", "kms", "hsm"]}, "keyId": {"type": "string", "minLength": 1}}},
+        "evidence": {"type": "object", "additionalProperties": false, "required": ["platformQualifications", "scanResults", "sboms", "provenance", "candidateRecord"], "properties": {"platformQualifications": {"$ref": "#/$defs/digestArray"}, "scanResults": {"$ref": "#/$defs/digestArray"}, "sboms": {"$ref": "#/$defs/digestArray"}, "provenance": {"$ref": "#/$defs/digest"}, "candidateRecord": {"$ref": "#/$defs/digest"}}}
       }
     },
     "rescanResult": {

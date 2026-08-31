@@ -8,6 +8,7 @@ from conclear.adapters.base import ToolAdapter
 from conclear.adapters.parsing import array_value, json_value
 from conclear.errors import OperationalError
 from conclear.process import OperationKind
+from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
 from conclear.values import OCIReference
 
 _FORBIDDEN_RELEASE_OPTIONS = frozenset(
@@ -40,13 +41,18 @@ class VerificationObservation:
 class CosignAdapter(ToolAdapter):
     """Sign and verify with isolated configuration and default public Rekor use."""
 
+    def initialize(self) -> None:
+        """Initialize and verify access to default public Sigstore trust data."""
+        self._execute_release(("initialize",))
+
     @staticmethod
     def public_key_fingerprint(public_key: Path) -> str:
         """Return the approved public key's SHA-256 fingerprint."""
-        try:
-            content = public_key.read_bytes()
-        except OSError as exc:
-            raise OperationalError("Unable to read approved Cosign public key") from exc
+        content = read_protected_file(
+            public_key,
+            maximum_bytes=MAX_PROFILE_BYTES,
+            allow_group_read=True,
+        )
         return "sha256:" + hashlib.sha256(content).hexdigest()
 
     def sign(
@@ -99,25 +105,6 @@ class CosignAdapter(ToolAdapter):
             secret_paths=(predicate,),
         )
         return SignatureObservation(subject, result)
-
-    def attach_spdx(self, *, subject: OCIReference, sbom: Path) -> None:
-        """Publish raw repository-scoped SPDX JSON alongside its signed attestation."""
-        self._require_digest(subject)
-        self._execute_release(
-            (
-                "attach",
-                "sbom",
-                "--type",
-                "spdx",
-                "--input-format",
-                "json",
-                "--sbom",
-                str(sbom),
-                str(subject),
-            ),
-            operation=OperationKind.WRITE,
-            secret_paths=(sbom,),
-        )
 
     def attest_statement(
         self,
@@ -200,6 +187,16 @@ class CosignAdapter(ToolAdapter):
                 values.append(json_value(line, label="Cosign attestation"))
         return tuple(values)
 
+    def download_signatures(self, *, subject: OCIReference) -> tuple[object, ...]:
+        """Download signature payloads for conclusive retry recovery."""
+        self._require_digest(subject)
+        output = self._execute_release(("download", "signature", str(subject)))
+        values: list[object] = []
+        for line in output.splitlines():
+            if line.strip():
+                values.append(json_value(line, label="Cosign signature"))
+        return tuple(values)
+
     def _cosign_write(
         self,
         arguments: tuple[str, ...],
@@ -233,6 +230,7 @@ class CosignAdapter(ToolAdapter):
             arguments,
             timeout_seconds=600,
             operation=operation,
+            retries=2 if operation is OperationKind.READ else 0,
             extra_environment=extra_environment,
             secret_values=secret_values,
             secret_paths=secret_paths,

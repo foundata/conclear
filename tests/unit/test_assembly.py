@@ -7,6 +7,7 @@ import pytest
 
 import conclear.records as records_module
 import conclear.services.assembly as assembly_service_module
+from conclear.artifacts import load_candidate
 from conclear.assembly import PlatformLayout, assemble_layout
 from conclear.config import load_repository_config
 from conclear.errors import InvalidInvocationError
@@ -136,7 +137,13 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
     repository = load_repository_config(repository_factory() / "conclear.toml")
     workspace = RunWorkspace.create(
         state_home=tmp_path / "state",
-        immutable_inputs={"sourceRevision": "b" * 40, "image": "app"},
+        immutable_inputs={
+            "sourceRevision": "b" * 40,
+            "sourceRepository": repository.project.source,
+            "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "image": "app",
+            "version": "1.2.3",
+        },
         id_factory=IdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -178,7 +185,17 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
                 "executionArchitecture": "amd64",
                 "mechanism": "native",
             },
-            "runtimeConstraints": {},
+            "runtimeConstraints": {
+                "profile": "service",
+                "user": 10001,
+                "readOnly": True,
+                "writableMounts": [],
+                "memory": "512MiB",
+                "cpus": 1.0,
+                "pids": 128,
+                "nofile": 1024,
+                "capabilities": [],
+            },
             "testResults": [],
             "sbom": {"digest": payload_digest, "spdxVersion": "SPDX-2.3"},
             "scans": [],
@@ -210,11 +227,24 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
     assert candidate.record_digest == sha256_file(candidate.record_path)
     assert candidate.observation.graph.digest == graph.digest
     assert workspace.load().state is RunState.ASSEMBLED
+    assert load_candidate(workspace, repository.image("app")).candidate_tag == (
+        candidate.candidate_tag
+    )
+
+    candidate_record = json.loads(candidate.record_path.read_text(encoding="utf-8"))
+    candidate_record["payload"]["candidateNaming"]["version"] = "9.9.9"
+    candidate.record_path.write_text(json.dumps(candidate_record), encoding="utf-8")
+    with pytest.raises(InvalidInvocationError, match="naming inputs"):
+        load_candidate(workspace, repository.image("app"))
 
     payload_file.write_text("changed\n", encoding="utf-8")
     second_workspace = RunWorkspace.create(
         state_home=tmp_path / "other-state",
-        immutable_inputs={"sourceRevision": "b" * 40, "image": "app"},
+        immutable_inputs={
+            "sourceRevision": "b" * 40,
+            "image": "app",
+            "version": "1.2.3",
+        },
         id_factory=IdFactory(),
     )
     second_workspace.transition(RunState.QUALIFIED)

@@ -15,7 +15,11 @@ from conclear.adapters.hadolint import HadolintAdapter
 from conclear.adapters.quay import QuayAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
-from conclear.errors import CommandExecutionError, OperationalError
+from conclear.errors import (
+    CommandExecutionError,
+    OperationalError,
+    UnsupportedOperationError,
+)
 from conclear.process import CommandRequest, ProcessResult
 from conclear.tools import ResolvedTool, ToolName
 from conclear.values import Digest, OCIReference
@@ -289,4 +293,20 @@ def test_quay_adapter_resolves_ambiguous_tag_write_by_digest() -> None:
 
     assert observed.digest == digest
     assert writes == 1
+    client.close()
+
+
+def test_quay_adapter_classifies_unsupported_immutability() -> None:
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(403))
+    )
+    adapter = QuayAdapter(
+        api_url="https://quay.io/api/v1",
+        token_provider=lambda: "token",
+        client=client,
+    )
+
+    with pytest.raises(UnsupportedOperationError, match="immutability is unavailable"):
+        adapter.set_immutable(quay_repository(), "candidate")
+
     client.close()

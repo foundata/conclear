@@ -31,6 +31,10 @@ class OperationalError(ConClearError):
     error_type = "operationalFailure"
 
 
+class UnsupportedOperationError(OperationalError):
+    """Report an optional external control that is conclusively unsupported."""
+
+
 class CommandTimeoutError(OperationalError):
     """Report an external command that exceeded its explicit timeout."""
 

@@ -8,6 +8,7 @@ import pytest
 
 import conclear.provenance as provenance_module
 import conclear.records as records_module
+import conclear.services.publication as publication_module
 from conclear.adapters.cosign import (
     SignatureObservation,
     VerificationObservation,
@@ -15,8 +16,9 @@ from conclear.adapters.cosign import (
 from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.assembly import PlatformLayout, assemble_layout
-from conclear.attestations import STATEMENT_TYPE
+from conclear.attestations import RELEASE_VERIFICATION_TYPE, STATEMENT_TYPE
 from conclear.config import ReleaseMode, ReleaseProfile, load_repository_config
+from conclear.errors import OperationalError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
     atomic_write_json,
@@ -30,13 +32,19 @@ from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.services.assembly import CandidateResult
 from conclear.services.publication import (
     ReleaseEvidence,
+    VerificationResult,
     attest_candidate,
     promote_candidate,
     publish_candidate,
     verify_candidate,
 )
 from conclear.values import Digest, OCIReference, Platform, candidate_tag
-from conclear.workspace import RunState, RunWorkspace
+from conclear.workspace import (
+    ResourceKind,
+    ResourceStatus,
+    RunState,
+    RunWorkspace,
+)
 
 
 class IdFactory:
@@ -208,6 +216,7 @@ class FakeSigner:
     def __init__(self) -> None:
         self.statements: dict[tuple[str, str], list[dict[str, object]]] = {}
         self.signatures: set[str] = set()
+        self.fail_once: str | None = None
 
     def sign(
         self, *, subject: OCIReference, private_key: str, passphrase: str | None
@@ -258,10 +267,6 @@ class FakeSigner:
         self._store(subject, predicate_type, typed)
         return SignatureObservation(subject, "attested")
 
-    def attach_spdx(self, *, subject: OCIReference, sbom: Path) -> None:
-        assert subject.digest is not None
-        assert sbom.is_file()
-
     def verify(
         self, *, subject: OCIReference, public_key: Path
     ) -> VerificationObservation:
@@ -278,6 +283,9 @@ class FakeSigner:
     ) -> VerificationObservation:
         assert public_key.is_file()
         assert (str(subject), predicate_type) in self.statements
+        if self.fail_once == predicate_type:
+            self.fail_once = None
+            raise OperationalError("injected verification interruption")
         return VerificationObservation(subject, ({"verified": True},))
 
     def download_attestations(
@@ -292,6 +300,9 @@ class FakeSigner:
             }
             for statement in self.statements.get((str(subject), predicate_type), [])
         )
+
+    def download_signatures(self, *, subject: OCIReference) -> tuple[object, ...]:
+        return ({"signature": "present"},) if str(subject) in self.signatures else ()
 
     def _store(
         self,
@@ -310,11 +321,17 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     identity = ApplicationIdentity(source_revision="c" * 40)
     monkeypatch.setattr(records_module, "IDENTITY", identity)
     monkeypatch.setattr(provenance_module, "IDENTITY", identity)
+    monkeypatch.setattr(publication_module, "IDENTITY", identity)
     repository = load_repository_config(repository_factory() / "conclear.toml")
     image = repository.image("app")
     workspace = RunWorkspace.create(
         state_home=tmp_path / "state",
-        immutable_inputs={"sourceRevision": "b" * 40, "image": "app"},
+        immutable_inputs={
+            "sourceRevision": "b" * 40,
+            "image": "app",
+            "version": "1.2.3",
+            "mode": "local",
+        },
         id_factory=IdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -379,6 +396,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         scan_digests=("sha256:" + "3" * 64,),
         provenance_path=provenance,
         provenance_digest=provenance_digest,
+        provenance_materials=(),
         candidate_record_digest=candidate_digest,
         qualification_digests=candidate.qualification_digests,
     )
@@ -393,6 +411,8 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         cosign_public_key=public_key,
         passphrase_file=None,
         quay_api_url="https://quay.io/api/v1",
+        configuration_digest="sha256:" + "4" * 64,
+        public_key_digest="sha256:" + "5" * 64,
     )
     tags: dict[str, Digest] = {}
     registry = FakeRegistry(observation.graph, tags)
@@ -407,35 +427,76 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
     )
+    platform_subject = published.reference.with_digest(
+        observation.graph.manifests[0].descriptor.digest
+    )
+    signer.attest(
+        subject=platform_subject,
+        predicate=sbom,
+        predicate_type="spdxjson",
+        private_key="test.key",
+        passphrase="secret",
+    )
+    workspace.journal.plan(
+        resource_id="sbom-linux-amd64",
+        kind=ResourceKind.ATTESTATION,
+        identifier=str(platform_subject),
+        ephemeral=False,
+        metadata={"predicateType": "spdxjson", "payloadDigest": sbom_digest},
+    )
+    workspace.journal.update("sbom-linux-amd64", ResourceStatus.FAILED)
     attest_candidate(
         published,
         evidence,
+        image=image,
         workspace=workspace,
         signer=signer,
         private_key="test.key",
+        public_key=public_key,
         passphrase="secret",
         registry=registry,
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 3, tzinfo=UTC),
     )
-    verification = verify_candidate(
-        published,
-        candidate,
-        evidence,
-        workspace=workspace,
-        image=image,
-        profile=profile,
-        signer=signer,
-        registry=registry,
-        auth_file=None,
-        private_key="test.key",
-        passphrase="secret",
-        signer_mode="managed-key",
-        signer_key_id="sha256:" + "4" * 64,
-        host_architecture="x86_64",
-        ci_identity=None,
-        now=datetime(2026, 1, 1, 0, 4, tzinfo=UTC),
+    assert len(signer.statements[(str(platform_subject), "spdxjson")]) == 1
+
+    def run_verification(now: datetime) -> VerificationResult:
+        return verify_candidate(
+            published,
+            candidate,
+            evidence,
+            workspace=workspace,
+            image=image,
+            profile=profile,
+            signer=signer,
+            registry=registry,
+            auth_file=None,
+            private_key="test.key",
+            passphrase="secret",
+            signer_mode="managed-key",
+            signer_key_id="sha256:" + "4" * 64,
+            host_architecture="x86_64",
+            ci_identity=None,
+            now=now,
+        )
+
+    signer.fail_once = RELEASE_VERIFICATION_TYPE
+    with pytest.raises(OperationalError, match="injected"):
+        run_verification(datetime(2026, 1, 1, 0, 4, tzinfo=UTC))
+    verification = run_verification(datetime(2026, 1, 1, 0, 5, tzinfo=UTC))
+    tags["1.2.3"] = observation.graph.digest
+    quay.immutable.add("1.2.3")
+    workspace.journal.plan(
+        resource_id="tag-1.2.3",
+        kind=ResourceKind.TAG_WRITE,
+        identifier=str(image.repository.with_tag("1.2.3")),
+        ephemeral=False,
+        metadata={
+            "digest": str(observation.graph.digest),
+            "immutable": True,
+        },
     )
+    workspace.journal.update("tag-1.2.3", ResourceStatus.FAILED)
     promoted = promote_candidate(
         published,
         verification,
@@ -447,7 +508,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         signer=signer,
         public_key=public_key,
         auth_file=None,
-        now=datetime(2026, 1, 1, 0, 5, tzinfo=UTC),
+        now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
     )
 
     assert workspace.load().state is RunState.PROMOTED

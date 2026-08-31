@@ -1,0 +1,416 @@
+"""Provenance, registry publication and complete release commands."""
+
+import platform as host_platform
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import click
+
+from conclear.artifacts import (
+    load_candidate,
+    load_provenance_materials,
+    load_published,
+    load_release_evidence,
+    load_verification,
+)
+from conclear.config import ImageConfig, ReleaseProfile
+from conclear.errors import InvalidInvocationError
+from conclear.jsonutil import sha256_bytes
+from conclear.presentation import CommandResult, ResultStatus
+from conclear.provenance import ProvenanceInput, generate_provenance
+from conclear.services.publication import (
+    attest_candidate,
+    promote_candidate,
+    publish_candidate,
+    verify_candidate,
+)
+from conclear.services.release import (
+    ReleaseRequest,
+    execute_release,
+    profile_inputs,
+    quay_adapter,
+    resume_release,
+    signer_identity,
+)
+from conclear.services.run_context import SourceRun, open_source_run
+from conclear.tools import ToolName
+from conclear.values import Digest
+from conclear.workspace import RunState
+
+from .common import (
+    cache_home,
+    ci_identity,
+    emit,
+    profile,
+    signing_passphrase,
+    state_home,
+)
+
+
+def _format_option[FC: Callable[..., Any]](function: FC) -> FC:
+    return click.option(
+        "output_format",
+        "--format",
+        type=click.Choice(["human", "json"], case_sensitive=True),
+        default="human",
+        show_default=True,
+    )(function)
+
+
+def _profile_options[FC: Callable[..., Any]](function: FC) -> FC:
+    function = click.option(
+        "passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3)
+    )(function)
+    return click.option("profile_name", "--profile", required=True)(function)
+
+
+@click.command("provenance")
+@click.argument("run_id")
+@_format_option
+def provenance_command(run_id: str, output_format: str) -> None:
+    """Generate SLSA Provenance v1 for one accepted candidate."""
+    source_run = open_source_run(state_home=state_home(), run_id=run_id, names=())
+    if source_run.workspace.load().state is not RunState.ASSEMBLED:
+        raise InvalidInvocationError("Provenance requires assembled state")
+    snapshot = source_run.workspace.load()
+    image = source_run.repository.image(snapshot.immutable_inputs["image"])
+    candidate = load_candidate(source_run.workspace, image)
+    materials = load_provenance_materials(source_run.workspace, image)
+    path = source_run.workspace.root / "records" / "provenance.json"
+    if path.is_file():
+        digest = load_release_evidence(source_run.workspace, image).provenance_digest
+    else:
+        digest = generate_provenance(
+            ProvenanceInput(
+                subject_name=image.repository.repository_name,
+                subject_digest=candidate.observation.graph.digest,
+                platform_manifests=candidate.observation.platform_manifests,
+                source_repository=source_run.source.repository,
+                source_revision=source_run.source.revision,
+                configuration_digest=Digest(
+                    sha256_bytes(source_run.repository.raw_bytes)
+                ),
+                image_id=image.image_id,
+                version=snapshot.immutable_inputs.get("version") or None,
+                run_id=source_run.workspace.run_id,
+                mode=snapshot.immutable_inputs.get("mode", "local"),
+                started_at=_timestamp(snapshot.created_at),
+                finished_at=datetime.now(UTC),
+                materials=materials,
+            ),
+            path,
+        )
+    emit(
+        CommandResult(
+            "provenance",
+            ResultStatus.SUCCESS,
+            "Release provenance generated",
+            data={"path": str(path), "digest": digest},
+        ),
+        output_format,
+    )
+
+
+@click.command("publish")
+@click.argument("run_id")
+@click.option("profile_name", "--profile", required=True)
+@_format_option
+def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
+    """Publish one accepted candidate and verify its complete remote graph."""
+    source_run, selected = _remote_run(run_id, profile_name)
+    image = _image(source_run)
+    candidate = load_candidate(source_run.workspace, image)
+    load_release_evidence(source_run.workspace, image)
+    quay = quay_adapter(selected)
+    try:
+        result = publish_candidate(
+            candidate,
+            image=image,
+            workspace=source_run.workspace,
+            registry=source_run.runtime.skopeo(),
+            quay=quay,
+            auth_file=selected.auth_file,
+            now=datetime.now(UTC),
+        )
+    finally:
+        quay.close()
+    emit(
+        CommandResult(
+            "publish",
+            ResultStatus.SUCCESS,
+            "Candidate published and graph-verified",
+            data={
+                "reference": str(result.reference),
+                "digest": str(result.graph.digest),
+                "expiration": result.expiration.isoformat(),
+                "immutabilityEnabled": result.immutability_enabled,
+            },
+        ),
+        output_format,
+    )
+
+
+@click.command("attest")
+@click.argument("run_id")
+@_profile_options
+@_format_option
+def attest_command(
+    run_id: str,
+    profile_name: str,
+    passphrase_fd: int | None,
+    output_format: str,
+) -> None:
+    """Attach SPDX and provenance and sign every unique subject digest."""
+    source_run, selected = _remote_run(run_id, profile_name)
+    key = _private_key(selected)
+    passphrase = signing_passphrase(selected, passphrase_fd, required=True)
+    image = _image(source_run)
+    candidate = load_candidate(source_run.workspace, image)
+    published = load_published(source_run.workspace, candidate, image)
+    evidence = load_release_evidence(source_run.workspace, image)
+    attest_candidate(
+        published,
+        evidence,
+        image=image,
+        workspace=source_run.workspace,
+        signer=source_run.runtime.cosign(),
+        private_key=key,
+        public_key=selected.cosign_public_key,
+        passphrase=passphrase,
+        registry=source_run.runtime.skopeo(),
+        auth_file=selected.auth_file,
+        now=datetime.now(UTC),
+    )
+    emit(
+        CommandResult(
+            "attest",
+            ResultStatus.SUCCESS,
+            "Candidate evidence and signatures attached",
+            data={"subject": str(published.immutable_reference)},
+        ),
+        output_format,
+    )
+
+
+@click.command("verify")
+@click.argument("run_id")
+@_profile_options
+@_format_option
+def verify_command(
+    run_id: str,
+    profile_name: str,
+    passphrase_fd: int | None,
+    output_format: str,
+) -> None:
+    """Verify remote evidence and attach signed release verification."""
+    source_run, selected = _remote_run(run_id, profile_name)
+    key = _private_key(selected)
+    passphrase = signing_passphrase(selected, passphrase_fd, required=True)
+    image = _image(source_run)
+    candidate = load_candidate(source_run.workspace, image)
+    published = load_published(source_run.workspace, candidate, image)
+    evidence = load_release_evidence(source_run.workspace, image)
+    signer = source_run.runtime.cosign()
+    mode, key_id = signer_identity(selected, signer)
+    result = verify_candidate(
+        published,
+        candidate,
+        evidence,
+        workspace=source_run.workspace,
+        image=image,
+        profile=selected,
+        signer=signer,
+        registry=source_run.runtime.skopeo(),
+        auth_file=selected.auth_file,
+        private_key=key,
+        passphrase=passphrase,
+        signer_mode=mode,
+        signer_key_id=key_id,
+        host_architecture=host_platform.machine(),
+        ci_identity=ci_identity(selected),
+        now=datetime.now(UTC),
+    )
+    emit(
+        CommandResult(
+            "verify",
+            ResultStatus.SUCCESS,
+            "Candidate and release evidence verified",
+            data={"record": str(result.record_path), "digest": result.record_digest},
+        ),
+        output_format,
+    )
+
+
+@click.command("promote")
+@click.argument("run_id")
+@click.option("release_version", "--version")
+@click.option("profile_name", "--profile", required=True)
+@_format_option
+def promote_command(
+    run_id: str,
+    release_version: str | None,
+    profile_name: str,
+    output_format: str,
+) -> None:
+    """Apply release tags to only the verified digest and remove the candidate."""
+    source_run, selected = _remote_run(run_id, profile_name)
+    image = _image(source_run)
+    candidate = load_candidate(source_run.workspace, image)
+    published = load_published(source_run.workspace, candidate, image)
+    verification = load_verification(
+        source_run.workspace, image, published.immutable_reference
+    )
+    quay = quay_adapter(selected)
+    try:
+        recorded_version = (
+            source_run.workspace.load().immutable_inputs.get("version") or None
+        )
+        if release_version is not None and release_version != recorded_version:
+            raise click.UsageError("--version differs from the recorded run input")
+        result = promote_candidate(
+            published,
+            verification,
+            image=image,
+            version=recorded_version,
+            workspace=source_run.workspace,
+            quay=quay,
+            registry=source_run.runtime.skopeo(),
+            signer=source_run.runtime.cosign(),
+            public_key=selected.cosign_public_key,
+            auth_file=selected.auth_file,
+            now=datetime.now(UTC),
+        )
+    finally:
+        quay.close()
+    emit(
+        CommandResult(
+            "promote",
+            ResultStatus.SUCCESS,
+            "Verified digest promoted",
+            data={
+                "tags": [
+                    {"tag": tag, "digest": str(digest)} for tag, digest in result.tags
+                ],
+                "candidateDeleted": result.candidate_deleted,
+            },
+        ),
+        output_format,
+    )
+
+
+@click.command("release")
+@click.option(
+    "source_root",
+    "--source",
+    type=click.Path(path_type=Path),
+    default=Path(),
+    show_default=True,
+)
+@click.option("selector", "--revision")
+@click.option("image_id", "--image")
+@click.option("release_version", "--version")
+@click.option("profile_name", "--profile", required=True)
+@click.option("resume_id", "--resume")
+@click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))
+@_format_option
+def release_command(
+    source_root: Path,
+    selector: str | None,
+    image_id: str | None,
+    release_version: str | None,
+    profile_name: str,
+    resume_id: str | None,
+    passphrase_fd: int | None,
+    output_format: str,
+) -> None:
+    """Execute or resume the complete isolated release through promotion."""
+    selected = profile(profile_name)
+    _private_key(selected)
+    passphrase = signing_passphrase(selected, passphrase_fd, required=True)
+    observed_ci = ci_identity(selected)
+    if resume_id is not None:
+        if selector is not None or image_id is not None or release_version is not None:
+            raise click.UsageError(
+                "--resume uses recorded revision, image and version inputs"
+            )
+        result = resume_release(
+            resume_id,
+            repository=source_root,
+            profile=selected,
+            state_home=state_home(),
+            cache_home=cache_home(),
+            passphrase=passphrase,
+            ci_identity=observed_ci,
+        )
+    else:
+        if selector is None or image_id is None:
+            raise click.UsageError("--revision and --image are required")
+        result = execute_release(
+            ReleaseRequest(
+                repository=source_root,
+                revision=selector,
+                image_id=image_id,
+                version=release_version,
+                profile=selected,
+                state_home=state_home(),
+                cache_home=cache_home(),
+                passphrase=passphrase,
+                ci_identity=observed_ci,
+            )
+        )
+    emit(
+        CommandResult(
+            "release",
+            ResultStatus.SUCCESS,
+            "Release completed and verified digest promoted",
+            data={
+                "runId": result.run_id,
+                "workspace": str(result.workspace),
+                "subject": result.subject,
+                "tags": [{"tag": tag, "digest": digest} for tag, digest in result.tags],
+            },
+        ),
+        output_format,
+    )
+
+
+def _remote_run(run_id: str, profile_name: str) -> tuple[SourceRun, ReleaseProfile]:
+    selected = profile(profile_name)
+    source_run = open_source_run(
+        state_home=state_home(), run_id=run_id, names=tuple(ToolName)
+    )
+    inputs = source_run.workspace.load().immutable_inputs
+    if (
+        inputs.get("profile") != selected.name
+        or inputs.get("mode") != selected.mode.value
+    ):
+        raise InvalidInvocationError("Release profile differs from recorded run input")
+    if any(inputs.get(key) != value for key, value in profile_inputs(selected).items()):
+        raise InvalidInvocationError(
+            "Release trust profile differs from recorded input"
+        )
+    return source_run, selected
+
+
+def _image(source_run: SourceRun) -> ImageConfig:
+    image_id = source_run.workspace.load().immutable_inputs["image"]
+    return source_run.repository.image(image_id)
+
+
+def _private_key(selected: ReleaseProfile) -> str:
+    key = selected.cosign_private_key
+    if key is None:
+        raise InvalidInvocationError("Release profile has no Cosign signing key")
+    return key
+
+
+def _timestamp(value: str) -> datetime:
+    try:
+        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise InvalidInvocationError("Run creation timestamp is malformed") from exc
+    if result.tzinfo is None or result.utcoffset() is None:
+        raise InvalidInvocationError("Run creation timestamp lacks a timezone")
+    return result

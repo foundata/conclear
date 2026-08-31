@@ -52,6 +52,21 @@ class PodmanAdapter(ToolAdapter):
     def _storage(self, root: Path, runroot: Path) -> tuple[str, ...]:
         return ("--root", str(root), "--runroot", str(runroot))
 
+    def info(self, *, root: Path, runroot: Path) -> dict[str, object]:
+        """Validate access to isolated rootless Podman storage."""
+        output = self._run(
+            (*self._storage(root, runroot), "info", "--format", "json"),
+            timeout_seconds=120,
+        ).stdout
+        value = object_value(
+            json_value(output, label="Podman info"), label="Podman info"
+        )
+        host = object_value(value.get("host"), label="Podman host info")
+        security = object_value(host.get("security"), label="Podman security info")
+        if security.get("rootless") is not True:
+            raise OperationalError("Podman did not report rootless execution")
+        return value
+
     def import_layout(
         self,
         *,

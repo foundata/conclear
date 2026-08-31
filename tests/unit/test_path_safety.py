@@ -64,3 +64,23 @@ def test_zip_extraction_rejects_traversal(tmp_path: Path) -> None:
         archive.writestr("../escape", "x")
     with pytest.raises(InvalidInvocationError, match="Unsafe archive member"):
         extract_zip_safely(archive_path, tmp_path / "output")
+
+
+@given(depth=st.integers(min_value=1, max_value=20))
+def test_archive_extractors_reject_generated_parent_traversal(depth: int) -> None:
+    member_name = "/".join([".."] * depth + ["escape"])
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory)
+        tar_path = root / "input.tar"
+        with tarfile.open(tar_path, "w") as archive:
+            member = tarfile.TarInfo(member_name)
+            member.size = 1
+            archive.addfile(member, io.BytesIO(b"x"))
+        with pytest.raises(InvalidInvocationError, match="Unsafe archive member"):
+            extract_tar_safely(tar_path, root / "tar-output")
+
+        zip_path = root / "input.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr(member_name, "x")
+        with pytest.raises(InvalidInvocationError, match="Unsafe archive member"):
+            extract_zip_safely(zip_path, root / "zip-output")

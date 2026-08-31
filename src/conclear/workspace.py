@@ -76,6 +76,7 @@ class ResourceKind(StrEnum):
     """Kinds of resources that a run may own."""
 
     LOCAL_PATH = "localPath"
+    GIT_WORKTREE = "gitWorktree"
     BUILDAH_STORAGE = "buildahStorage"
     PODMAN_IMPORT = "podmanImport"
     CANDIDATE_REFERENCE = "candidateReference"
@@ -165,7 +166,6 @@ class RunWorkspace:
         try:
             root.mkdir(mode=0o700, parents=True, exist_ok=False)
             for relative in (
-                "source",
                 "logs",
                 "layouts",
                 "reports",
@@ -231,6 +231,40 @@ class RunWorkspace:
                 f"Run {self.run_id} immutable inputs changed: {', '.join(changed)}"
             )
         return snapshot
+
+    def bind_immutable_inputs(
+        self, additions: dict[str, str], *, now: datetime | None = None
+    ) -> RunSnapshot:
+        """Bind newly observed startup inputs before the run leaves created state."""
+        if not additions or any(
+            not key or not value for key, value in additions.items()
+        ):
+            raise InvalidInvocationError("Immutable input additions cannot be empty")
+        with _locked_file(self.root / ".run.lock"):
+            snapshot = self.load()
+            if snapshot.state is not RunState.CREATED:
+                raise InvalidInvocationError(
+                    "Immutable inputs can only be bound while a run is created"
+                )
+            conflicts = [
+                key
+                for key, value in additions.items()
+                if key in snapshot.immutable_inputs
+                and snapshot.immutable_inputs[key] != value
+            ]
+            if conflicts:
+                raise InvalidInvocationError(
+                    "Immutable inputs conflict: " + ", ".join(sorted(conflicts))
+                )
+            updated = RunSnapshot(
+                run_id=snapshot.run_id,
+                state=snapshot.state,
+                created_at=snapshot.created_at,
+                updated_at=_timestamp(now or datetime.now(UTC)),
+                immutable_inputs={**snapshot.immutable_inputs, **additions},
+            )
+            atomic_write_json(self.root / "run.json", updated.to_dict())
+            return updated
 
     def resume(
         self,
@@ -336,10 +370,21 @@ class ResourceJournal:
         )
         with _locked_file(self._lock_path):
             entries = list(self.entries())
-            if any(existing.resource_id == resource_id for existing in entries):
-                raise InvalidInvocationError(
-                    f"Resource id is already recorded: {resource_id}"
-                )
+            matches = [item for item in entries if item.resource_id == resource_id]
+            if matches:
+                previous = matches[0]
+                if (
+                    previous.status is not ResourceStatus.REMOVED
+                    or previous.kind is not kind
+                    or previous.identifier != identifier
+                    or previous.ephemeral is not ephemeral
+                ):
+                    raise InvalidInvocationError(
+                        f"Resource id is already recorded: {resource_id}"
+                    )
+                entries[entries.index(previous)] = entry
+                self._write(entries)
+                return entry
             entries.append(entry)
             self._write(entries)
         return entry

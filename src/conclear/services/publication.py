@@ -13,6 +13,7 @@ from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
+    STATEMENT_TYPE,
     decode_dsse_statements,
     write_statement,
 )
@@ -21,20 +22,24 @@ from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
+    UnsupportedOperationError,
 )
+from conclear.identity import IDENTITY
 from conclear.jsonutil import load_json, sha256_file
 from conclear.oci import OCIGraph, graph_fingerprint
-from conclear.provenance import SLSA_PROVENANCE_TYPE
+from conclear.provenance import SLSA_PROVENANCE_TYPE, ProvenanceMaterial
 from conclear.records import (
     RecordEnvelope,
     SourceIdentity,
     ToolIdentity,
     Verdict,
+    validate_record,
 )
 from conclear.schema import validate_external
 from conclear.services.assembly import CandidateResult
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import (
+    ResourceEntry,
     ResourceKind,
     ResourceStatus,
     RunState,
@@ -140,10 +145,6 @@ class Signer(Protocol):
         """Attach one complete statement with public log inclusion."""
         ...
 
-    def attach_spdx(self, *, subject: OCIReference, sbom: Path) -> None:
-        """Attach raw repository-scoped SPDX JSON."""
-        ...
-
     def verify(
         self, *, subject: OCIReference, public_key: Path
     ) -> VerificationObservation:
@@ -164,6 +165,10 @@ class Signer(Protocol):
         self, *, subject: OCIReference, predicate_type: str
     ) -> tuple[object, ...]:
         """Download matching DSSE envelopes."""
+        ...
+
+    def download_signatures(self, *, subject: OCIReference) -> tuple[object, ...]:
+        """Download signatures for conclusive retry recovery."""
         ...
 
 
@@ -189,6 +194,7 @@ class ReleaseEvidence:
     scan_digests: tuple[str, ...]
     provenance_path: Path
     provenance_digest: str
+    provenance_materials: tuple[ProvenanceMaterial, ...]
     candidate_record_digest: str
     qualification_digests: tuple[str, ...]
 
@@ -234,12 +240,26 @@ def publish_candidate(
         and item.identifier == str(tagged)
     ]
     if existing_entries:
-        raise InvalidInvocationError("Candidate reference has already been attempted")
+        if len(existing_entries) != 1:
+            raise InvalidInvocationError("Candidate ownership journal is ambiguous")
+        return _resume_published_candidate(
+            candidate,
+            tagged=tagged,
+            entry=existing_entries[0],
+            image=image,
+            workspace=workspace,
+            registry=registry,
+            quay=quay,
+            auth_file=auth_file,
+            now=now,
+        )
     if registry.resolve_optional(tagged, auth_file=auth_file) is not None:
         raise RuleRejectionError(
             f"Generated candidate tag is already in use: {tagged}", code="CC0601"
         )
-    expiration = now.astimezone(UTC) + image.limits.candidate_lifetime
+    expiration = (
+        now.astimezone(UTC).replace(microsecond=0) + image.limits.candidate_lifetime
+    )
     workspace.journal.plan(
         resource_id="candidate",
         kind=ResourceKind.CANDIDATE_REFERENCE,
@@ -281,7 +301,7 @@ def publish_candidate(
                 image.repository, candidate.candidate_tag
             )
             immutable_enabled = immutable_observation.immutable
-        except OperationalError:
+        except UnsupportedOperationError:
             immutable_enabled = False
     except Exception:
         _mark_failed(workspace, "candidate")
@@ -301,13 +321,78 @@ def publish_candidate(
     )
 
 
+def _resume_published_candidate(
+    candidate: CandidateResult,
+    *,
+    tagged: OCIReference,
+    entry: ResourceEntry,
+    image: ImageConfig,
+    workspace: RunWorkspace,
+    registry: Registry,
+    quay: Quay,
+    auth_file: Path | None,
+    now: datetime,
+) -> PublishedCandidate:
+    observed = registry.resolve_optional(tagged, auth_file=auth_file)
+    if observed != candidate.observation.graph.digest:
+        raise InvalidInvocationError(
+            "Attempted candidate cannot be reused; start a new release run"
+        )
+    expiration_value = entry.metadata.get("expiration")
+    if not isinstance(expiration_value, str):
+        raise InvalidInvocationError("Candidate expiration journal is malformed")
+    try:
+        expiration = datetime.fromisoformat(expiration_value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise InvalidInvocationError(
+            "Candidate expiration journal is malformed"
+        ) from exc
+    if expiration.tzinfo is None or now.astimezone(UTC) >= expiration.astimezone(UTC):
+        raise RuleRejectionError("Candidate expired before resume", code="CC0603")
+    tag_observation = quay.get_tag(image.repository, candidate.candidate_tag)
+    if tag_observation is None or tag_observation.digest != observed:
+        raise OperationalError("Quay candidate state differs during resume")
+    if tag_observation.expiration != expiration:
+        tag_observation = quay.set_expiration(
+            image.repository, candidate.candidate_tag, expiration
+        )
+        if tag_observation.digest != observed:
+            raise OperationalError("Quay expiration update observed another digest")
+    immutable = image.repository.with_digest(observed)
+    remote = registry.copy_registry_to_layout(
+        source=immutable,
+        layout_path=workspace.root
+        / "reports"
+        / image.image_id
+        / "remote-published-resume",
+        layout_reference="published",
+        auth_file=auth_file,
+    )
+    _require_same_graph(candidate.observation.graph, remote.graph)
+    workspace.journal.update(
+        "candidate",
+        ResourceStatus.CREATED,
+        metadata={
+            "digest": str(observed),
+            "expiration": _timestamp(expiration),
+            "immutabilityEnabled": tag_observation.immutable,
+        },
+    )
+    workspace.transition(RunState.PUBLISHED, now=now)
+    return PublishedCandidate(
+        tagged, immutable, remote.graph, expiration, tag_observation.immutable
+    )
+
+
 def attest_candidate(
     published: PublishedCandidate,
     evidence: ReleaseEvidence,
     *,
+    image: ImageConfig,
     workspace: RunWorkspace,
     signer: Signer,
     private_key: str,
+    public_key: Path,
     passphrase: str | None,
     registry: Registry,
     auth_file: Path | None,
@@ -336,15 +421,44 @@ def attest_candidate(
             )
         subject = published.reference.with_digest(digest)
         resource = f"sbom-{platform.key}"
-        workspace.journal.plan(
+        metadata: dict[str, object] = {
+            "predicateType": "spdxjson",
+            "payloadDigest": expected_digest,
+        }
+        existing = _retry_entry(
+            workspace,
             resource_id=resource,
             kind=ResourceKind.ATTESTATION,
             identifier=str(subject),
-            ephemeral=False,
-            metadata={"predicateType": "spdxjson", "payloadDigest": expected_digest},
+            metadata=metadata,
         )
+        if existing is not None:
+            if _has_downloaded_predicate(
+                signer,
+                subject=subject,
+                predicate_type="spdxjson",
+                expected=sbom,
+            ):
+                signer.verify_attestation(
+                    subject=subject,
+                    public_key=public_key,
+                    predicate_type="spdxjson",
+                )
+                workspace.journal.update(resource, ResourceStatus.CREATED)
+                continue
+            if existing.status is ResourceStatus.CREATED:
+                raise OperationalError(
+                    f"Recorded SBOM attestation is missing: {platform}"
+                )
+        else:
+            workspace.journal.plan(
+                resource_id=resource,
+                kind=ResourceKind.ATTESTATION,
+                identifier=str(subject),
+                ephemeral=False,
+                metadata=metadata,
+            )
         try:
-            signer.attach_spdx(subject=subject, sbom=sbom_path)
             signer.attest(
                 subject=subject,
                 predicate=sbom_path,
@@ -359,28 +473,61 @@ def attest_candidate(
     if sha256_file(evidence.provenance_path) != evidence.provenance_digest:
         raise InvalidInvocationError("Provenance digest changed before attestation")
     provenance = _object(load_json(evidence.provenance_path), "provenance")
-    _validate_provenance(provenance, published)
-    workspace.journal.plan(
+    validate_release_provenance(
+        provenance,
+        published.graph,
+        evidence=evidence,
+        workspace=workspace,
+        image=image,
+    )
+    provenance_metadata: dict[str, object] = {
+        "predicateType": SLSA_PROVENANCE_TYPE,
+        "payloadDigest": evidence.provenance_digest,
+    }
+    existing_provenance = _retry_entry(
+        workspace,
         resource_id="provenance",
         kind=ResourceKind.ATTESTATION,
         identifier=str(published.immutable_reference),
-        ephemeral=False,
-        metadata={
-            "predicateType": SLSA_PROVENANCE_TYPE,
-            "payloadDigest": evidence.provenance_digest,
-        },
+        metadata=provenance_metadata,
     )
-    try:
-        signer.attest_statement(
+    provenance_complete = False
+    if existing_provenance is not None:
+        provenance_complete = _has_downloaded_statement(
+            signer,
             subject=published.immutable_reference,
-            statement=evidence.provenance_path,
-            private_key=private_key,
-            passphrase=passphrase,
+            predicate_type=SLSA_PROVENANCE_TYPE,
+            expected=provenance,
         )
-        workspace.journal.update("provenance", ResourceStatus.CREATED)
-    except Exception:
-        _mark_failed(workspace, "provenance")
-        raise
+        if provenance_complete:
+            signer.verify_attestation(
+                subject=published.immutable_reference,
+                public_key=public_key,
+                predicate_type=SLSA_PROVENANCE_TYPE,
+            )
+            workspace.journal.update("provenance", ResourceStatus.CREATED)
+        elif existing_provenance.status is ResourceStatus.CREATED:
+            raise OperationalError("Recorded provenance attestation is missing")
+    else:
+        workspace.journal.plan(
+            resource_id="provenance",
+            kind=ResourceKind.ATTESTATION,
+            identifier=str(published.immutable_reference),
+            ephemeral=False,
+            metadata=provenance_metadata,
+        )
+    if not provenance_complete:
+        try:
+            signer.attest_statement(
+                subject=published.immutable_reference,
+                statement=evidence.provenance_path,
+                private_key=private_key,
+                passphrase=passphrase,
+            )
+            workspace.journal.update("provenance", ResourceStatus.CREATED)
+        except Exception:
+            _mark_failed(workspace, "provenance")
+            raise
     subjects = {
         published.graph.digest,
         *(manifest.descriptor.digest for manifest in published.graph.manifests),
@@ -388,12 +535,28 @@ def attest_candidate(
     for index, digest in enumerate(sorted(subjects)):
         resource = f"signature-{index}"
         subject = published.reference.with_digest(digest)
-        workspace.journal.plan(
+        existing_signature = _retry_entry(
+            workspace,
             resource_id=resource,
             kind=ResourceKind.SIGNATURE,
             identifier=str(subject),
-            ephemeral=False,
+            metadata={},
         )
+        if existing_signature is not None:
+            downloaded = signer.download_signatures(subject=subject)
+            if downloaded:
+                signer.verify(subject=subject, public_key=public_key)
+                workspace.journal.update(resource, ResourceStatus.CREATED)
+                continue
+            if existing_signature.status is ResourceStatus.CREATED:
+                raise OperationalError("Recorded image signature is missing")
+        else:
+            workspace.journal.plan(
+                resource_id=resource,
+                kind=ResourceKind.SIGNATURE,
+                identifier=str(subject),
+                ephemeral=False,
+            )
         try:
             signer.sign(
                 subject=subject,
@@ -482,7 +645,13 @@ def verify_candidate(
             expected=load_json(path),
         )
     provenance = _object(load_json(evidence.provenance_path), "provenance")
-    _validate_provenance(provenance, published)
+    validate_release_provenance(
+        provenance,
+        published.graph,
+        evidence=evidence,
+        workspace=workspace,
+        image=image,
+    )
     signer.verify_attestation(
         subject=published.immutable_reference,
         public_key=profile.cosign_public_key,
@@ -528,25 +697,90 @@ def verify_candidate(
         payload=payload,
     )
     record_path = workspace.root / "records" / "release-verification.json"
-    record_digest = record.write(record_path)
     statement_path = workspace.root / "records" / "release-verification-statement.json"
-    statement_digest = write_statement(
-        subject_name=image.repository.repository_name,
-        subject_digest=published.graph.digest,
-        predicate_type=RELEASE_VERIFICATION_TYPE,
-        predicate=record.to_dict(),
-        path=statement_path,
-    )
-    workspace.journal.plan(
+    current_record = record.to_dict()
+    matches = [
+        entry
+        for entry in workspace.journal.entries()
+        if entry.resource_id == "release-verification"
+    ]
+    if matches:
+        stored_record = _object(load_json(record_path), "release verification record")
+        validate_record(stored_record)
+        if any(
+            stored_record.get(key) != value
+            for key, value in current_record.items()
+            if key != "createdAt"
+        ):
+            raise InvalidInvocationError("Release verification retry inputs changed")
+        record_digest = sha256_file(record_path)
+        statement = _object(load_json(statement_path), "release verification statement")
+        if (
+            statement.get("_type") != STATEMENT_TYPE
+            or statement.get("predicateType") != RELEASE_VERIFICATION_TYPE
+            or statement.get("predicate") != stored_record
+            or statement.get("subject")
+            != [
+                {
+                    "name": image.repository.repository_name,
+                    "digest": {"sha256": published.graph.digest.encoded},
+                }
+            ]
+        ):
+            raise InvalidInvocationError("Release verification statement changed")
+        statement_digest = sha256_file(statement_path)
+    else:
+        record_digest = record.write(record_path)
+        statement_digest = write_statement(
+            subject_name=image.repository.repository_name,
+            subject_digest=published.graph.digest,
+            predicate_type=RELEASE_VERIFICATION_TYPE,
+            predicate=current_record,
+            path=statement_path,
+        )
+        statement = _object(load_json(statement_path), "release verification statement")
+    verification_metadata: dict[str, object] = {
+        "predicateType": RELEASE_VERIFICATION_TYPE,
+        "payloadDigest": record_digest,
+    }
+    existing_verification = _retry_entry(
+        workspace,
         resource_id="release-verification",
         kind=ResourceKind.ATTESTATION,
         identifier=str(published.immutable_reference),
-        ephemeral=False,
-        metadata={
-            "predicateType": RELEASE_VERIFICATION_TYPE,
-            "payloadDigest": record_digest,
-        },
+        metadata=verification_metadata,
     )
+    if existing_verification is None:
+        workspace.journal.plan(
+            resource_id="release-verification",
+            kind=ResourceKind.ATTESTATION,
+            identifier=str(published.immutable_reference),
+            ephemeral=False,
+            metadata=verification_metadata,
+        )
+    elif _has_downloaded_statement(
+        signer,
+        subject=published.immutable_reference,
+        predicate_type=RELEASE_VERIFICATION_TYPE,
+        expected=statement,
+    ):
+        signer.verify_attestation(
+            subject=published.immutable_reference,
+            public_key=profile.cosign_public_key,
+            predicate_type=RELEASE_VERIFICATION_TYPE,
+        )
+        workspace.journal.update("release-verification", ResourceStatus.CREATED)
+        workspace.transition(RunState.VERIFIED, now=now)
+        return VerificationResult(
+            record_path,
+            record_digest,
+            statement_path,
+            statement_digest,
+            published.immutable_reference,
+            RELEASE_VERIFICATION_TYPE,
+        )
+    elif existing_verification.status is ResourceStatus.CREATED:
+        raise OperationalError("Recorded release verification attestation is missing")
     try:
         signer.attest_statement(
             subject=published.immutable_reference,
@@ -563,9 +797,7 @@ def verify_candidate(
             signer,
             subject=published.immutable_reference,
             predicate_type=RELEASE_VERIFICATION_TYPE,
-            expected=_object(
-                load_json(statement_path), "release verification statement"
-            ),
+            expected=statement,
         )
     except Exception:
         _mark_failed(workspace, "release-verification")
@@ -635,6 +867,23 @@ def promote_candidate(
                 code="CC0604",
             )
         if current is not None:
+            resource_id = f"tag-{tag}"
+            if any(
+                entry.resource_id == resource_id
+                for entry in workspace.journal.entries()
+            ):
+                _write_release_tag(
+                    tag,
+                    published.graph.digest,
+                    image,
+                    workspace,
+                    quay,
+                    registry,
+                    auth_file,
+                    immutable=True,
+                )
+                observed.append((tag, published.graph.digest))
+                continue
             if not current.immutable:
                 immutable_result = quay.set_immutable(image.repository, tag)
                 if not immutable_result.immutable:
@@ -666,7 +915,6 @@ def promote_candidate(
             immutable=False,
         )
         observed.append((tag, published.graph.digest))
-    workspace.transition(RunState.PROMOTED, now=now)
     try:
         quay.delete_tag(image.repository, published.reference.tag or "")
         workspace.journal.update("candidate", ResourceStatus.REMOVED)
@@ -674,6 +922,7 @@ def promote_candidate(
         raise OperationalError(
             "Release was promoted, but candidate tag cleanup failed"
         ) from exc
+    workspace.transition(RunState.PROMOTED, now=now)
     return PromotionResult(tuple(observed), True)
 
 
@@ -689,18 +938,44 @@ def _write_release_tag(
     immutable: bool,
 ) -> None:
     resource_id = f"tag-{tag}"
-    workspace.journal.plan(
+    tagged = image.repository.with_tag(tag)
+    metadata = {"digest": str(digest), "immutable": immutable}
+    existing = _retry_entry(
+        workspace,
         resource_id=resource_id,
         kind=ResourceKind.TAG_WRITE,
-        identifier=str(image.repository.with_tag(tag)),
-        ephemeral=False,
-        metadata={"digest": str(digest), "immutable": immutable},
+        identifier=str(tagged),
+        metadata=metadata,
     )
+    if existing is not None:
+        current = quay.get_tag(image.repository, tag)
+        if current is not None and current.digest == digest:
+            resolved = registry.resolve_digest(tagged, auth_file=auth_file)
+            if resolved != digest:
+                raise OperationalError(
+                    f"Release tag {tag} has conflicting registry observations"
+                )
+            if immutable and not current.immutable:
+                current = quay.set_immutable(image.repository, tag)
+                if current.digest != digest or not current.immutable:
+                    raise OperationalError(
+                        f"Immutable release tag was not protected: {tag}"
+                    )
+            workspace.journal.update(resource_id, ResourceStatus.CREATED)
+            return
+        if existing.status is ResourceStatus.CREATED:
+            raise OperationalError(f"Recorded release tag changed after write: {tag}")
+    else:
+        workspace.journal.plan(
+            resource_id=resource_id,
+            kind=ResourceKind.TAG_WRITE,
+            identifier=str(tagged),
+            ephemeral=False,
+            metadata=metadata,
+        )
     try:
         result = quay.write_tag(image.repository, tag, digest)
-        resolved = registry.resolve_digest(
-            image.repository.with_tag(tag), auth_file=auth_file
-        )
+        resolved = registry.resolve_digest(tagged, auth_file=auth_file)
         if result.digest != digest or resolved != digest:
             raise OperationalError(
                 f"Release tag {tag} did not resolve to verified digest"
@@ -738,6 +1013,69 @@ def _require_same_graph(expected: OCIGraph, observed: OCIGraph) -> None:
         )
 
 
+def _retry_entry(
+    workspace: RunWorkspace,
+    *,
+    resource_id: str,
+    kind: ResourceKind,
+    identifier: str,
+    metadata: dict[str, object],
+) -> ResourceEntry | None:
+    matches = [
+        entry
+        for entry in workspace.journal.entries()
+        if entry.resource_id == resource_id
+    ]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise InvalidInvocationError(f"Resource journal is ambiguous: {resource_id}")
+    entry = matches[0]
+    if (
+        entry.kind is not kind
+        or entry.identifier != identifier
+        or entry.ephemeral
+        or entry.metadata != metadata
+        or entry.status is ResourceStatus.REMOVED
+    ):
+        raise InvalidInvocationError(f"Resource retry inputs changed: {resource_id}")
+    return entry
+
+
+def _has_downloaded_predicate(
+    signer: Signer,
+    *,
+    subject: OCIReference,
+    predicate_type: str,
+    expected: object,
+) -> bool:
+    statements = decode_dsse_statements(
+        signer.download_attestations(
+            subject=subject,
+            predicate_type=predicate_type,
+        )
+    )
+    return any(
+        statement.get("predicateType") == predicate_type
+        and statement.get("predicate") == expected
+        and _statement_has_digest(statement, subject.digest)
+        for statement in statements
+    )
+
+
+def _has_downloaded_statement(
+    signer: Signer,
+    *,
+    subject: OCIReference,
+    predicate_type: str,
+    expected: dict[str, object],
+) -> bool:
+    statements = decode_dsse_statements(
+        signer.download_attestations(subject=subject, predicate_type=predicate_type)
+    )
+    return expected in statements
+
+
 def _require_downloaded_predicate(
     signer: Signer,
     *,
@@ -745,17 +1083,11 @@ def _require_downloaded_predicate(
     predicate_type: str,
     expected: object,
 ) -> None:
-    statements = decode_dsse_statements(
-        signer.download_attestations(
-            subject=subject,
-            predicate_type=predicate_type,
-        )
-    )
-    if not any(
-        statement.get("predicateType") == predicate_type
-        and statement.get("predicate") == expected
-        and _statement_has_digest(statement, subject.digest)
-        for statement in statements
+    if not _has_downloaded_predicate(
+        signer,
+        subject=subject,
+        predicate_type=predicate_type,
+        expected=expected,
     ):
         raise OperationalError(
             f"Downloaded {predicate_type} predicate does not match evidence"
@@ -769,38 +1101,90 @@ def _require_downloaded_statement(
     predicate_type: str,
     expected: dict[str, object],
 ) -> None:
-    statements = decode_dsse_statements(
-        signer.download_attestations(subject=subject, predicate_type=predicate_type)
-    )
-    if expected not in statements:
+    if not _has_downloaded_statement(
+        signer,
+        subject=subject,
+        predicate_type=predicate_type,
+        expected=expected,
+    ):
         raise OperationalError(
             f"Downloaded {predicate_type} Statement does not match evidence"
         )
 
 
-def _validate_provenance(
-    provenance: dict[str, object], published: PublishedCandidate
+def validate_release_provenance(
+    provenance: dict[str, object],
+    graph: OCIGraph,
+    *,
+    evidence: ReleaseEvidence,
+    workspace: RunWorkspace,
+    image: ImageConfig,
 ) -> None:
+    """Validate exact provenance subjects, inputs and builder identity."""
     validate_external(provenance, "provenance.schema.json", label="provenance")
-    expected = {
-        published.graph.digest,
-        *(item.descriptor.digest for item in published.graph.manifests),
-    }
-    subjects = provenance.get("subject")
-    if not isinstance(subjects, list):
-        raise InvalidInvocationError("Provenance subjects are malformed")
-    observed: set[Digest] = set()
-    for value in subjects:
-        subject = _object(value, "provenance subject")
-        digest = _object(subject.get("digest"), "provenance subject digest")
-        encoded = digest.get("sha256")
-        if not isinstance(encoded, str):
-            raise InvalidInvocationError("Provenance subject digest is malformed")
-        observed.add(Digest(f"sha256:{encoded}"))
-    if observed != expected:
+    expected_subjects: list[dict[str, object]] = [
+        {
+            "name": image.repository.repository_name,
+            "digest": {"sha256": graph.digest.encoded},
+        }
+    ]
+    expected_subjects.extend(
+        {
+            "name": f"{image.repository.repository_name}#{manifest.platform}",
+            "digest": {"sha256": manifest.descriptor.digest.encoded},
+        }
+        for manifest in sorted(graph.manifests, key=lambda value: value.platform)
+    )
+    if provenance.get("subject") != expected_subjects:
         raise InvalidInvocationError(
             "Provenance subject coverage does not match published graph"
         )
+    predicate = _object(provenance.get("predicate"), "provenance predicate")
+    definition = _object(
+        predicate.get("buildDefinition"), "provenance build definition"
+    )
+    snapshot = workspace.load()
+    expected_parameters = {
+        "imageId": image.image_id,
+        "version": snapshot.immutable_inputs.get("version") or None,
+        "runId": workspace.run_id,
+        "mode": snapshot.immutable_inputs.get("mode", "local"),
+        "platforms": [
+            str(manifest.platform)
+            for manifest in sorted(graph.manifests, key=lambda value: value.platform)
+        ],
+    }
+    if definition.get("externalParameters") != expected_parameters:
+        raise InvalidInvocationError("Provenance release parameters changed")
+    expected_dependencies: list[dict[str, object]] = [
+        {
+            "uri": evidence.source.repository,
+            "digest": {"gitCommit": evidence.source.revision},
+        },
+        {
+            "uri": "conclear.toml",
+            "digest": {
+                "sha256": Digest(evidence.configuration_digest).encoded,
+            },
+        },
+    ]
+    expected_dependencies.extend(
+        {
+            "uri": material.uri,
+            "digest": {"sha256": material.digest.encoded},
+        }
+        for material in evidence.provenance_materials
+    )
+    if definition.get("resolvedDependencies") != expected_dependencies:
+        raise InvalidInvocationError("Provenance resolved dependencies changed")
+    details = _object(predicate.get("runDetails"), "provenance run details")
+    if details.get("builder") != {
+        "id": f"https://github.com/foundata/conclear/commit/{IDENTITY.source_revision}"
+    }:
+        raise InvalidInvocationError("Provenance builder identity changed")
+    metadata = _object(details.get("metadata"), "provenance run metadata")
+    if metadata.get("invocationId") != workspace.run_id:
+        raise InvalidInvocationError("Provenance invocation identity changed")
 
 
 def _statement_has_digest(statement: dict[str, object], digest: Digest | None) -> bool:

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -32,12 +33,26 @@ def sha256_bytes(content: bytes) -> str:
 def sha256_file(path: Path) -> str:
     """Return an OCI-style SHA-256 digest for a regular file."""
     digest = hashlib.sha256()
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor: int | None = None
     try:
-        with path.open("rb") as stream:
+        descriptor = os.open(path, flags)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            os.close(descriptor)
+            descriptor = None
+            raise OperationalError(f"Unable to hash non-regular file {path}")
+        stream = os.fdopen(descriptor, "rb")
+        descriptor = None
+        with stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
     except OSError as exc:
         raise OperationalError(f"Unable to hash {path}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
     return f"sha256:{digest.hexdigest()}"
 
 

@@ -149,3 +149,52 @@ def test_cleanup_unlinks_owned_symlink_without_following_it(tmp_path: Path) -> N
 
     assert not link.exists()
     assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_cleanup_can_reserve_ambiguous_candidate_for_resume(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    reference = OCIReference.parse("quay.io/example/app:candidate")
+    run.journal.plan(
+        resource_id="candidate",
+        kind=ResourceKind.CANDIDATE_REFERENCE,
+        identifier=str(reference),
+        ephemeral=True,
+    )
+    run.journal.update("candidate", ResourceStatus.FAILED)
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=FakePodman(),
+        quay=FakeQuay(None),
+        statuses=frozenset({ResourceStatus.FAILED}),
+        excluded_kinds=frozenset({ResourceKind.CANDIDATE_REFERENCE}),
+    )
+
+    assert result.removed == ()
+    assert result.retained == ("candidate",)
+    assert run.journal.entries()[0].status is ResourceStatus.FAILED
+
+
+def test_cleanup_preserves_explicitly_revalidated_resource(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    layout = run.root / "layouts" / "accepted"
+    layout.mkdir(parents=True)
+    run.journal.plan(
+        resource_id="layout-linux-amd64",
+        kind=ResourceKind.LOCAL_PATH,
+        identifier=str(layout),
+        ephemeral=True,
+    )
+    run.journal.update("layout-linux-amd64", ResourceStatus.CREATED)
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=FakePodman(),
+        quay=None,
+        excluded_resource_ids=frozenset({"layout-linux-amd64"}),
+    )
+
+    assert result.retained == ("layout-linux-amd64",)
+    assert layout.is_dir()

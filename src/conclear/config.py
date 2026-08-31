@@ -9,10 +9,13 @@ from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from conclear.errors import InvalidInvocationError
+from conclear.jsonutil import sha256_bytes
 from conclear.path_safety import contained_path
 from conclear.schema import validate_external
+from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
 from conclear.values import OCIReference, Platform
 
 MAX_PIN_FRESHNESS = timedelta(hours=24)
@@ -127,6 +130,7 @@ class ImageConfig:
     native_test_platforms: tuple[Platform, ...]
     arm64_omission_reason: str | None
     scanner: str
+    rescan_scope: str
     release: ReleaseTags
     runtime: RuntimeConfig
     hooks: tuple[HookConfig, ...]
@@ -165,6 +169,8 @@ class ReleaseProfile:
     cosign_public_key: Path
     passphrase_file: Path | None
     quay_api_url: str
+    configuration_digest: str
+    public_key_digest: str
 
 
 def parse_duration(value: str, *, maximum: timedelta, field_name: str) -> timedelta:
@@ -244,21 +250,28 @@ def load_release_profile(
         os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
     )
     path = base / "conclear" / f"{name}.toml"
-    _require_private_file(path)
     try:
-        value: Any = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        profile_bytes = read_protected_file(path, maximum_bytes=MAX_PROFILE_BYTES)
+        value: Any = tomllib.loads(profile_bytes.decode("utf-8"))
+    except (UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise InvalidInvocationError(f"Unable to read release profile {path}") from exc
     validate_external(value, "profile.schema.json", label="release profile")
     profile = _object(value)
     auth_file = _optional_private_path(profile.get("auth_file"))
     token_file = _optional_private_path(profile.get("quay_token_file"))
     public_key = _private_path(profile["cosign_public_key"], allow_group_read=True)
+    public_key_bytes = read_protected_file(
+        public_key,
+        maximum_bytes=MAX_PROFILE_BYTES,
+        allow_group_read=True,
+    )
     passphrase_file = _optional_private_path(profile.get("passphrase_file"))
     private_key_value = profile.get("cosign_private_key")
-    private_key = _string(private_key_value) if private_key_value is not None else None
-    if private_key is not None and "://" not in private_key:
-        _require_private_file(Path(private_key))
+    private_key = (
+        _signing_key(_string(private_key_value))
+        if private_key_value is not None
+        else None
+    )
     return ReleaseProfile(
         name=name,
         mode=ReleaseMode(_string(profile["mode"])),
@@ -268,6 +281,8 @@ def load_release_profile(
         cosign_public_key=public_key,
         passphrase_file=passphrase_file,
         quay_api_url=_string(profile.get("quay_api_url", "https://quay.io/api/v1")),
+        configuration_digest=sha256_bytes(profile_bytes),
+        public_key_digest=sha256_bytes(public_key_bytes),
     )
 
 
@@ -333,6 +348,10 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             "Release repositories must be untagged quay.io repository names"
         )
+    if len(repository.repository.split("/")) != 2:
+        raise InvalidInvocationError(
+            "Quay release repositories must use namespace/repository form"
+        )
     exceptions = tuple(
         _parse_exception(_object(item))
         for item in _list(value.get("vulnerability_exceptions", []))
@@ -355,6 +374,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         native_test_platforms=native_platforms,
         arm64_omission_reason=omission_reason,
         scanner=_string(value.get("scanner", "trivy")),
+        rescan_scope=_string(value.get("rescan_scope", "sbom-vulnerabilities")),
         release=ReleaseTags(
             immutable_tags=tuple(_string_list(release_value["immutable_tags"])),
             moving_tags=tuple(_string_list(release_value["moving_tags"])),
@@ -459,6 +479,37 @@ def _private_path(value: object, *, allow_group_read: bool = False) -> Path:
 
 def _optional_private_path(value: object) -> Path | None:
     return None if value is None else _private_path(value)
+
+
+def _signing_key(value: str) -> str:
+    """Validate a protected file path or credential-free KMS/HSM handle."""
+    if value.startswith("pkcs11:") or "://" in value:
+        lowered = value.lower()
+        parsed = urlsplit(value)
+        if (
+            not value
+            or any(character.isspace() or ord(character) < 0x20 for character in value)
+            or any(
+                marker in lowered
+                for marker in (
+                    "pin-value=",
+                    "pin-source=",
+                    "password=",
+                    "passphrase=",
+                    "secret=",
+                    "token=",
+                )
+            )
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise InvalidInvocationError(
+                "Cosign KMS or HSM handle must not contain credentials"
+            )
+        return value
+    path = Path(value).expanduser()
+    _require_private_file(path)
+    return str(path.resolve(strict=True))
 
 
 def _object(value: object) -> dict[str, Any]:

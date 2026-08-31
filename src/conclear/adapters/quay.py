@@ -8,7 +8,7 @@ from urllib.parse import quote
 import httpx
 
 from conclear.adapters.parsing import object_value, string_value
-from conclear.errors import OperationalError
+from conclear.errors import OperationalError, UnsupportedOperationError
 from conclear.values import Digest, OCIReference
 
 
@@ -20,6 +20,14 @@ class QuayTagObservation:
     digest: Digest
     expiration: datetime | None
     immutable: bool
+
+
+class _QuayAPIError(OperationalError):
+    """Retain a non-secret HTTP status for operation-specific classification."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__(f"Quay API request failed with status {status_code}")
+        self.status_code = status_code
 
 
 class QuayAdapter:
@@ -103,9 +111,16 @@ class QuayAdapter:
 
     def set_immutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
         """Enable Quay tag immutability and verify the observed control."""
-        self._write_with_observation(
-            repository, tag, {"immutable": True}, expected_digest=None
-        )
+        try:
+            self._write_with_observation(
+                repository, tag, {"immutable": True}, expected_digest=None
+            )
+        except _QuayAPIError as exc:
+            if exc.status_code in {403, 404, 405}:
+                raise UnsupportedOperationError(
+                    "Quay tag immutability is unavailable for this repository"
+                ) from exc
+            raise
         observed = self._required_tag(repository, tag)
         if not observed.immutable:
             raise OperationalError("Quay did not retain tag immutability")
@@ -205,9 +220,7 @@ class QuayAdapter:
 
     @staticmethod
     def _raise_response(response: httpx.Response) -> None:
-        raise OperationalError(
-            f"Quay API request failed with status {response.status_code}"
-        )
+        raise _QuayAPIError(response.status_code)
 
     @staticmethod
     def _repository_parts(repository: OCIReference) -> tuple[str, str]:

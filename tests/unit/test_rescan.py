@@ -25,7 +25,7 @@ from conclear.oci import (
 from conclear.records import RecordEnvelope, SourceIdentity, Verdict
 from conclear.services.rescan import RescanSigning, rescan_release
 from conclear.values import Digest, OCIReference, Platform
-from conclear.workspace import RunWorkspace
+from conclear.workspace import ResourceStatus, RunWorkspace
 
 
 class IdFactory:
@@ -46,6 +46,20 @@ class FakeRegistry:
         auth_file: Path | None,
     ) -> RegistryCopyObservation:
         del layout_reference, auth_file
+        if source.digest != self.graph.root.digest:
+            manifests = tuple(
+                manifest
+                for manifest in self.graph.manifests
+                if manifest.descriptor.digest == source.digest
+            )
+            assert len(manifests) == 1
+            manifest = manifests[0]
+            graph = OCIGraph(
+                root=manifest.descriptor,
+                descriptors=(manifest.descriptor, manifest.config, *manifest.layers),
+                manifests=(manifest,),
+            )
+            return RegistryCopyObservation(source, layout_path, graph)
         return RegistryCopyObservation(source, layout_path, self.graph)
 
 
@@ -118,6 +132,10 @@ class FakeSigner:
 
 
 class FakeScanner:
+    def __init__(self) -> None:
+        self.sbom_scans = 0
+        self.layout_scans = 0
+
     def scan_sbom(
         self,
         *,
@@ -125,15 +143,31 @@ class FakeScanner:
         report_path: Path,
         cache_root: Path,
     ) -> ScanObservation:
+        self.sbom_scans += 1
         assert sbom_path.is_file()
         assert cache_root.is_dir()
         value: dict[str, object] = {"Results": []}
         digest = atomic_write_json(report_path, value)
         return ScanObservation(report_path, digest, value)
 
+    def scan_layout(
+        self,
+        *,
+        layout_path: Path,
+        report_path: Path,
+        cache_root: Path,
+    ) -> ScanObservation:
+        assert layout_path
+        assert cache_root.is_dir()
+        self.layout_scans += 1
+        value: dict[str, object] = {"Results": []}
+        digest = atomic_write_json(report_path, value)
+        return ScanObservation(report_path, digest, value)
 
+
+@pytest.mark.parametrize("scope", ["sbom-vulnerabilities", "full-image"])
 def test_authoritative_rescan_verifies_complete_retained_inventory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scope: str
 ) -> None:
     monkeypatch.setattr(
         records_module,
@@ -219,17 +253,20 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     cache.mkdir()
     database = DatabaseObservation(cache, "sha256:" + "6" * 64, {})
 
+    scanner = FakeScanner()
     result = rescan_release(
         subject,
         workspace=run,
         registry=FakeRegistry(graph),
         signer=signer,
-        scanner=FakeScanner(),
+        scanner=scanner,
         database=database,
         public_key=public_key,
         auth_file=None,
         tools=(),
         image_id="app",
+        expected_configuration_digest=configuration_digest,
+        scope=scope,
         exceptions=(),
         triage=(),
         previous_result_digest=None,
@@ -241,3 +278,8 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     assert result.verdict is Verdict.ACCEPTED
     assert result.statement_path is not None
     assert load_json(result.record_path)["payload"]["databaseDigest"] == database.digest
+    assert scanner.sbom_scans == (1 if scope == "sbom-vulnerabilities" else 0)
+    assert scanner.layout_scans == (1 if scope == "full-image" else 0)
+    entry = run.journal.entries()[0]
+    assert entry.resource_id == "rescan-result"
+    assert entry.status is ResourceStatus.CREATED

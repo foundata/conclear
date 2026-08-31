@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
+from conclear.adapters.parsing import json_value, object_value
 from conclear.oci import OCIGraph, validate_layout
 from conclear.process import OperationKind
 from conclear.values import Platform
@@ -21,6 +22,24 @@ class BuildObservation:
 
 class BuildahAdapter(ToolAdapter):
     """Build one platform using run-specific containers storage."""
+
+    def info(self, *, root: Path, runroot: Path) -> dict[str, object]:
+        """Validate access to one isolated rootless Buildah storage."""
+        output = self._run(
+            (
+                "--root",
+                str(root),
+                "--runroot",
+                str(runroot),
+                "info",
+                "--format",
+                "json",
+            ),
+            timeout_seconds=120,
+        ).stdout
+        return object_value(
+            json_value(output, label="Buildah info"), label="Buildah info"
+        )
 
     def build(
         self,

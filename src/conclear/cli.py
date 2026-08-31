@@ -8,6 +8,28 @@ from typing import Any
 
 import click
 
+from conclear.commands.local import (
+    assemble_command,
+    build_command,
+    check_command,
+    evidence_command,
+    qualify_command,
+    test_command,
+)
+from conclear.commands.maintenance import (
+    cleanup_command,
+    doctor_command,
+    pins_group,
+    rescan_command,
+)
+from conclear.commands.remote import (
+    attest_command,
+    promote_command,
+    provenance_command,
+    publish_command,
+    release_command,
+    verify_command,
+)
 from conclear.commands.version import version_command, write_version
 from conclear.errors import ConClearError, ExitStatus
 from conclear.presentation import CommandResult, ResultStatus
@@ -38,6 +60,22 @@ def root() -> None:
 
 
 root.add_command(version_command)
+root.add_command(doctor_command)
+root.add_command(check_command)
+root.add_command(pins_group)
+root.add_command(build_command)
+root.add_command(test_command)
+root.add_command(evidence_command)
+root.add_command(qualify_command)
+root.add_command(assemble_command)
+root.add_command(provenance_command)
+root.add_command(publish_command)
+root.add_command(attest_command)
+root.add_command(verify_command)
+root.add_command(promote_command)
+root.add_command(release_command)
+root.add_command(rescan_command)
+root.add_command(cleanup_command)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

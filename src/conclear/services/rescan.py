@@ -29,7 +29,7 @@ from conclear.records import (
 )
 from conclear.scan_policy import evaluate_trivy_report
 from conclear.values import Digest, OCIReference
-from conclear.workspace import RunWorkspace
+from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
 
 
 class Registry(Protocol):
@@ -91,6 +91,16 @@ class Scanner(Protocol):
         """Match current vulnerability data against retained inventory."""
         ...
 
+    def scan_layout(
+        self,
+        *,
+        layout_path: Path,
+        report_path: Path,
+        cache_root: Path,
+    ) -> ScanObservation:
+        """Repeat vulnerability, secret and configuration scans on image content."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class RescanSigning:
@@ -125,6 +135,8 @@ def rescan_release(
     auth_file: Path | None,
     tools: tuple[ToolIdentity, ...],
     image_id: str,
+    expected_configuration_digest: str,
+    scope: str,
     exceptions: tuple[VulnerabilityException, ...],
     triage: tuple[dict[str, object], ...],
     previous_result_digest: str | None,
@@ -134,6 +146,8 @@ def rescan_release(
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if subject.digest is None or subject.tag is not None:
         raise InvalidInvocationError("Rescan subject must be an immutable digest")
+    if scope not in {"sbom-vulnerabilities", "full-image"}:
+        raise InvalidInvocationError("Unsupported rescan scope")
     if previous_result_digest is not None:
         Digest(previous_result_digest)
     signer.verify_attestation(
@@ -163,6 +177,10 @@ def rescan_release(
         repository_configuration.get("sha256"), "repository configuration digest"
     )
     Digest(configuration_digest)
+    if configuration_digest != expected_configuration_digest:
+        raise InvalidInvocationError(
+            "Rescan repository configuration differs from release verification"
+        )
     source_value = _object(release_record.get("source"), "release source")
     source = SourceIdentity(
         _string(source_value.get("repository"), "source repository"),
@@ -215,11 +233,30 @@ def rescan_release(
             raise OperationalError(f"Unsupported retained SPDX version for {platform}")
         sbom_path = report_root / f"{platform.key}.spdx.json"
         atomic_write_json(sbom_path, sbom, mode=0o644)
-        scan = scanner.scan_sbom(
-            sbom_path=sbom_path,
-            report_path=report_root / f"{platform.key}-vulnerabilities.json",
-            cache_root=database.path,
-        )
+        report_path = report_root / f"{platform.key}-scan.json"
+        if scope == "full-image":
+            platform_layout = workspace.root / "layouts" / image_id / platform.key
+            platform_remote = registry.copy_registry_to_layout(
+                source=manifest_subject,
+                layout_path=platform_layout,
+                layout_reference="rescan-platform",
+                auth_file=auth_file,
+            )
+            if platform_remote.graph.digest != digest:
+                raise OperationalError(
+                    f"Retrieved rescan platform differs for {platform}"
+                )
+            scan = scanner.scan_layout(
+                layout_path=platform_layout,
+                report_path=report_path,
+                cache_root=database.path,
+            )
+        else:
+            scan = scanner.scan_sbom(
+                sbom_path=sbom_path,
+                report_path=report_path,
+                cache_root=database.path,
+            )
         evaluation = evaluate_trivy_report(
             scan.value,
             image_id=image_id,
@@ -251,7 +288,7 @@ def rescan_release(
             "platformManifests": expected_platforms,
             "scanner": "trivy",
             "databaseDigest": database.digest,
-            "scope": "sbom-vulnerabilities",
+            "scope": scope,
             "findings": findings,
             "triage": list(triage),
             "previousResultDigest": previous_result_digest,
@@ -270,12 +307,27 @@ def rescan_release(
         predicate=record.to_dict(),
         path=statement_path,
     )
-    signer.attest_statement(
-        subject=subject,
-        statement=statement_path,
-        private_key=signing.private_key,
-        passphrase=signing.passphrase,
+    workspace.journal.plan(
+        resource_id="rescan-result",
+        kind=ResourceKind.ATTESTATION,
+        identifier=str(subject),
+        ephemeral=False,
+        metadata={
+            "predicateType": RESCAN_TYPE,
+            "statementDigest": statement_digest,
+        },
     )
+    try:
+        signer.attest_statement(
+            subject=subject,
+            statement=statement_path,
+            private_key=signing.private_key,
+            passphrase=signing.passphrase,
+        )
+    except Exception:
+        workspace.journal.update("rescan-result", ResourceStatus.FAILED)
+        raise
+    workspace.journal.update("rescan-result", ResourceStatus.CREATED)
     signer.verify_attestation(
         subject=subject,
         public_key=signing.public_key,
