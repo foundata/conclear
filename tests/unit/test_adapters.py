@@ -370,6 +370,22 @@ def test_trivy_database_refresh_installs_content_addressed_snapshot(
         adapter.select_database_by_digest(cache_root, Digest(refreshed.digest))
 
 
+def test_trivy_database_refresh_rejects_symlinked_cache_lock(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, runner).create(TrivyAdapter)
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    target = tmp_path / "outside.lock"
+    target.write_text("protected", encoding="utf-8")
+    (cache_root / ".db.lock").symlink_to(target)
+
+    with pytest.raises(OperationalError, match="Unable to lock Trivy"):
+        adapter.refresh_database(cache_root)
+
+    assert target.read_text(encoding="utf-8") == "protected"
+    assert runner.requests == []
+
+
 def test_trivy_database_selection_rejects_pointer_digest_mismatch(
     tmp_path: Path,
 ) -> None:

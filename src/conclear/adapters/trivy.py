@@ -4,6 +4,7 @@ import fcntl
 import os
 import re
 import shutil
+import stat
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -254,16 +255,24 @@ class TrivyAdapter(ToolAdapter):
 
 @contextmanager
 def _locked_file(path: Path) -> Iterator[IO[bytes]]:
+    flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor: int | None = None
     try:
-        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+        descriptor = os.open(path, flags, 0o600)
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OperationalError("Trivy database cache lock is not a regular file")
         stream = os.fdopen(descriptor, "r+b")
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-        yield stream
+        descriptor = None
+        with stream:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            yield stream
     except OSError as exc:
         raise OperationalError(f"Unable to lock Trivy database cache {path}") from exc
     finally:
-        if "stream" in locals():
-            stream.close()
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _database_observation(snapshot: Path) -> DatabaseObservation:
