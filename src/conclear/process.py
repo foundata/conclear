@@ -63,6 +63,10 @@ class ProcessEnvironment:
         }
         if extra is not None:
             for key, value in extra.items():
+                if key in environment:
+                    raise OperationalError(
+                        f"Child environment cannot override sanitized variable: {key}"
+                    )
                 if not re.fullmatch(r"[A-Z_][A-Z0-9_]*", key):
                     raise OperationalError(f"Invalid child environment name: {key}")
                 if "\x00" in value:

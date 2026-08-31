@@ -99,6 +99,21 @@ def test_process_environment_does_not_inherit_ambient_secrets(tmp_path: Path) ->
     }
 
 
+def test_process_environment_rejects_sanitized_variable_override(
+    tmp_path: Path,
+) -> None:
+    process_environment = ProcessEnvironment(
+        home=tmp_path / "home",
+        config_home=tmp_path / "config",
+        cache_home=tmp_path / "cache",
+        state_home=tmp_path / "state",
+        runtime_dir=tmp_path / "runtime",
+    )
+
+    with pytest.raises(OperationalError, match=r"cannot override.*PATH"):
+        process_environment.values({"PATH": str(tmp_path / "untrusted")})
+
+
 def test_redactor_handles_flags_headers_urls_and_known_paths(tmp_path: Path) -> None:
     redactor = Redactor(secret_values=("top-secret",), secret_paths=(tmp_path,))
     arguments = redactor.argv(
