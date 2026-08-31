@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 
 import conclear.records as records_module
+from conclear.errors import InvalidInvocationError
 from conclear.identity import ApplicationIdentity
 from conclear.records import (
+    RECORD_SCHEMA_VERSIONS,
     RecordEnvelope,
     SourceIdentity,
     ToolIdentity,
@@ -64,8 +66,25 @@ def embedded_identity(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_record_serialization_is_deterministic_and_schema_valid() -> None:
     record = _record()
     assert record.content_bytes() == record.content_bytes()
+    assert record.to_dict()["schemaVersion"] == 1
     validate_record(record.to_dict())
     assert record.digest().startswith("sha256:")
+
+
+def test_each_public_record_type_has_an_independent_initial_version() -> None:
+    assert RECORD_SCHEMA_VERSIONS == {
+        "platformQualification": 1,
+        "releaseCandidate": 1,
+        "releaseVerification": 1,
+        "rescanResult": 1,
+    }
+
+
+def test_record_schema_rejects_a_version_from_another_generation() -> None:
+    value = _record().to_dict()
+    value["schemaVersion"] = 6
+    with pytest.raises(InvalidInvocationError, match="1 was expected"):
+        validate_record(value)
 
 
 def test_record_write_is_atomic_and_digest_bound(tmp_path: Path) -> None:

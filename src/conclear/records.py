@@ -15,6 +15,13 @@ from conclear.jsonutil import (
 from conclear.schema import validate_external
 from conclear.values import validate_run_id, validate_source_revision
 
+RECORD_SCHEMA_VERSIONS: dict[str, int] = {
+    "platformQualification": 1,
+    "releaseCandidate": 1,
+    "releaseVerification": 1,
+    "rescanResult": 1,
+}
+
 
 class Verdict(StrEnum):
     """Stable record verdicts."""
@@ -83,8 +90,14 @@ class RecordEnvelope:
                 "Public records require a staged build with embedded source identity"
             ) from exc
         created_at = self.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        try:
+            schema_version = RECORD_SCHEMA_VERSIONS[self.record_type]
+        except KeyError as exc:
+            raise OperationalError(
+                f"Unsupported public record type: {self.record_type}"
+            ) from exc
         value: dict[str, object] = {
-            "schemaVersion": 6,
+            "schemaVersion": schema_version,
             "recordType": self.record_type,
             "createdAt": created_at,
             "runId": self.run_id,

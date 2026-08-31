@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/foundata/conclear/schemas/record-v6.json",
+  "$id": "https://github.com/foundata/conclear/schemas/record.json",
   "title": "ConClear public record",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "recordType", "createdAt", "runId", "ruleset", "source", "repositoryConfiguration", "tools", "verdict", "payload"],
   "properties": {
-    "schemaVersion": {"const": 6},
+    "schemaVersion": {"type": "integer", "minimum": 1},
     "recordType": {"enum": ["platformQualification", "releaseCandidate", "releaseVerification", "rescanResult"]},
     "createdAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
     "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
@@ -18,10 +18,10 @@
     "payload": {"type": "object"}
   },
   "allOf": [
-    {"if": {"properties": {"recordType": {"const": "platformQualification"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/platformQualification"}}}},
-    {"if": {"properties": {"recordType": {"const": "releaseCandidate"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/releaseCandidate"}}}},
-    {"if": {"properties": {"recordType": {"const": "releaseVerification"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/releaseVerification"}}}},
-    {"if": {"properties": {"recordType": {"const": "rescanResult"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/rescanResult"}}}}
+    {"if": {"properties": {"recordType": {"const": "platformQualification"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/platformQualification"}}}},
+    {"if": {"properties": {"recordType": {"const": "releaseCandidate"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/releaseCandidate"}}}},
+    {"if": {"properties": {"recordType": {"const": "releaseVerification"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/releaseVerification"}}}},
+    {"if": {"properties": {"recordType": {"const": "rescanResult"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/rescanResult"}}}}
   ],
   "$defs": {
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -301,10 +301,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["provider", "server", "repository", "workflow", "runId", "revision"],
+          "required": ["provider", "repository", "workflow", "runId", "revision"],
           "properties": {
             "provider": {"const": "github-actions"},
-            "server": {"type": "string", "pattern": "^https://"},
+            "server": {"enum": ["https://github.com", "https://gitlab.com"]},
             "repository": {"type": "string", "minLength": 1},
             "workflow": {"type": "string", "minLength": 1},
             "runId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
@@ -314,10 +314,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["provider", "server", "repository", "pipelineId", "jobId", "revision"],
+          "required": ["provider", "repository", "pipelineId", "jobId", "revision"],
           "properties": {
             "provider": {"const": "gitlab-ci"},
-            "server": {"type": "string", "pattern": "^https://"},
+            "server": {"enum": ["https://github.com", "https://gitlab.com"]},
             "repository": {"type": "string", "minLength": 1},
             "pipelineId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
             "jobId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
