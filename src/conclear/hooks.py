@@ -10,7 +10,7 @@ from typing import Protocol
 
 from conclear.config import HookConfig
 from conclear.errors import CommandExecutionError, OperationalError
-from conclear.jsonutil import canonical_json_bytes, sha256_bytes
+from conclear.jsonutil import canonical_json_bytes, sha256_bytes, sha256_file
 from conclear.path_safety import contained_path
 from conclear.process import CommandRequest, ProcessResult
 
@@ -134,8 +134,4 @@ def _is_executable(path: Path) -> bool:
 
 
 def _hash_executable(path: Path) -> str:
-    try:
-        content = path.read_bytes()
-    except OSError as exc:
-        raise OperationalError(f"Unable to hash hook executable {path}") from exc
-    return sha256_bytes(content)
+    return sha256_file(path)

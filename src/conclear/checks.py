@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from conclear.config import ImageConfig
+from conclear.context import MAX_CONTAINERIGNORE_BYTES
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.fileio import read_regular_file
 from conclear.presentation import Finding
 from conclear.values import OCIReference
 
@@ -23,6 +25,7 @@ _WORLD_WRITABLE_PATTERN = re.compile(
     r"\bchmod\b[^;&\n]*(?:777|666|[2367][2367][2367])\b"
 )
 _SET_ID_PATTERN = re.compile(r"\bchmod\b[^;&\n]*(?:[2467][0-7]{3}|[ug]\+s)\b")
+MAX_CONTAINERFILE_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,10 +48,11 @@ class ContainerfileAnalysis:
 
 def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
     """Parse a Containerfile and return facts plus rule findings."""
-    try:
-        content = path.read_bytes()
-    except OSError as exc:
-        raise OperationalError(f"Unable to read Containerfile {path}") from exc
+    content = read_regular_file(
+        path,
+        maximum_bytes=MAX_CONTAINERFILE_BYTES,
+        label="Containerfile",
+    )
     findings: list[Finding] = []
     location = str(path)
     if content.startswith(b"\xef\xbb\xbf"):
@@ -379,8 +383,16 @@ def _check_context(context: Path) -> tuple[Finding, ...]:
             ),
         )
     try:
-        lines = ignore_path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as exc:
+        lines = (
+            read_regular_file(
+                ignore_path,
+                maximum_bytes=MAX_CONTAINERIGNORE_BYTES,
+                label=".containerignore",
+            )
+            .decode("utf-8")
+            .splitlines()
+        )
+    except UnicodeError as exc:
         raise OperationalError(f"Unable to read {ignore_path}") from exc
     patterns = {
         line.strip().rstrip("/")

@@ -8,6 +8,7 @@ from conclear.adapters.trivy import DatabaseObservation
 from conclear.ci import observe_ci_identity
 from conclear.database import select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.fileio import read_regular_file
 from conclear.jsonutil import load_json, sha256_file
 from conclear.secrets import MAX_SECRET_BYTES, read_secret_fd, read_secret_file
 from conclear.workspace import (
@@ -137,6 +138,20 @@ def test_json_reader_rejects_symlinks_and_oversized_files(tmp_path: Path) -> Non
         load_json(link)
     with pytest.raises(OperationalError, match="exceeds the size limit"):
         load_json(target, maximum_bytes=4)
+
+
+def test_regular_file_reader_rejects_symlink_and_oversized_file(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    target.write_bytes(b"payload")
+    link = tmp_path / "link"
+    link.symlink_to(target)
+
+    with pytest.raises(OperationalError, match="Unable to read test input"):
+        read_regular_file(link, maximum_bytes=32, label="test input")
+    with pytest.raises(InvalidInvocationError, match="size limit"):
+        read_regular_file(target, maximum_bytes=4, label="test input")
 
 
 def test_ci_identity_requires_complete_validated_provider_values() -> None:

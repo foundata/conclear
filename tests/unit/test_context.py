@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 
@@ -6,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from conclear.context import hash_build_context
-from conclear.errors import InvalidInvocationError
+from conclear.errors import InvalidInvocationError, OperationalError
 
 
 def test_context_hash_is_deterministic_and_excludes_ignored_content(
@@ -36,6 +37,53 @@ def test_context_hash_rejects_nonignored_symlink(tmp_path: Path) -> None:
     (tmp_path / "link").symlink_to(outside)
 
     with pytest.raises(InvalidInvocationError, match="symbolic link"):
+        hash_build_context(tmp_path)
+
+
+def test_context_hash_rejects_oversized_ignore_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".containerignore").write_bytes(b"x" * 17)
+    monkeypatch.setattr("conclear.context.MAX_CONTAINERIGNORE_BYTES", 16)
+
+    with pytest.raises(InvalidInvocationError, match="size limit"):
+        hash_build_context(tmp_path)
+
+
+def test_context_hash_rejects_excessive_path_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".containerignore").write_text(".git/\n", encoding="utf-8")
+    (tmp_path / "content").write_text("content", encoding="utf-8")
+    monkeypatch.setattr("conclear.context.MAX_CONTEXT_PATHS", 1)
+
+    with pytest.raises(InvalidInvocationError, match="path-count limit"):
+        hash_build_context(tmp_path)
+
+
+def test_context_hash_detects_file_replacement_during_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".containerignore").write_text(".git/\n", encoding="utf-8")
+    target = tmp_path / "content"
+    target.write_text("before", encoding="utf-8")
+    real_open = os.open
+
+    def replacing_open(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if path == "content" and dir_fd is not None:
+            replacement = tmp_path / "replacement"
+            replacement.write_text("after", encoding="utf-8")
+            replacement.replace(target)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr("conclear.context.os.open", replacing_open)
+    with pytest.raises(OperationalError, match="changed while hashing"):
         hash_build_context(tmp_path)
 
 
