@@ -24,6 +24,7 @@ from conclear.jsonutil import (
 )
 from conclear.process import OperationKind
 from conclear.spdx import validate_spdx_document
+from conclear.values import Digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,18 @@ class TrivyAdapter(ToolAdapter):
         if observation.digest != expected_digest:
             raise OperationalError(
                 "Trivy database snapshot digest does not match pointer"
+            )
+        return observation
+
+    def select_database_by_digest(
+        self, cache_root: Path, expected_digest: Digest
+    ) -> DatabaseObservation:
+        """Select a named snapshot and recompute its exact content digest."""
+        snapshot = cache_root / "snapshots" / expected_digest.encoded
+        observation = _database_observation(snapshot)
+        if observation.digest != str(expected_digest):
+            raise OperationalError(
+                "Trivy database snapshot content differs from the expected digest"
             )
         return observation
 

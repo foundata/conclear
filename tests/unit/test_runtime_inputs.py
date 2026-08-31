@@ -6,11 +6,12 @@ import pytest
 
 from conclear.adapters.trivy import DatabaseObservation
 from conclear.ci import observe_ci_identity
-from conclear.database import select_fresh_database
+from conclear.database import select_database_by_digest, select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.fileio import read_regular_file
 from conclear.jsonutil import load_json, sha256_file
 from conclear.secrets import MAX_SECRET_BYTES, read_secret_fd, read_secret_file
+from conclear.values import Digest
 from conclear.workspace import (
     ResourceKind,
     ResourceStatus,
@@ -42,6 +43,7 @@ class FakeDatabase:
         self.selected = selected
         self.refreshed = refreshed
         self.refreshes = 0
+        self.requested_digest: Digest | None = None
 
     def select_database(self, cache_root: Path) -> DatabaseObservation:
         del cache_root
@@ -53,6 +55,15 @@ class FakeDatabase:
         del cache_root
         self.refreshes += 1
         return self.refreshed
+
+    def select_database_by_digest(
+        self, cache_root: Path, expected_digest: Digest
+    ) -> DatabaseObservation:
+        del cache_root
+        self.requested_digest = expected_digest
+        if isinstance(self.selected, Exception):
+            raise self.selected
+        return self.selected
 
 
 def test_database_refreshes_stale_snapshot_once(tmp_path: Path) -> None:
@@ -86,6 +97,45 @@ def test_database_rejects_stale_refresh(tmp_path: Path) -> None:
 
     with pytest.raises(OperationalError, match="already stale"):
         select_fresh_database(adapter, tmp_path, now=datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_database_selects_distributed_snapshot_by_exact_digest(tmp_path: Path) -> None:
+    expected = Digest("sha256:" + "a" * 64)
+    selected = DatabaseObservation(
+        tmp_path,
+        str(expected),
+        database_metadata("2025-12-31T00:00:00Z"),
+    )
+    adapter = FakeDatabase(selected, selected)
+
+    result = select_database_by_digest(
+        adapter,
+        tmp_path,
+        expected_digest=expected,
+    )
+
+    assert result is selected
+    assert adapter.requested_digest == expected
+    assert adapter.refreshes == 0
+
+
+def test_database_rejects_distributed_snapshot_content_mismatch(
+    tmp_path: Path,
+) -> None:
+    expected = Digest("sha256:" + "a" * 64)
+    changed = DatabaseObservation(
+        tmp_path,
+        "sha256:" + "b" * 64,
+        database_metadata("2026-01-02T00:00:00Z"),
+    )
+    adapter = FakeDatabase(changed, changed)
+
+    with pytest.raises(OperationalError, match="does not match the expected digest"):
+        select_database_by_digest(
+            adapter,
+            tmp_path,
+            expected_digest=expected,
+        )
 
 
 def test_secret_descriptor_is_read_once_and_closed() -> None:

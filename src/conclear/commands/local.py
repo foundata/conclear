@@ -10,7 +10,7 @@ import click
 
 from conclear.artifacts import qualification_transports
 from conclear.config import ReleaseProfile, load_repository_config
-from conclear.database import select_fresh_database
+from conclear.database import select_database_by_digest, select_fresh_database
 from conclear.hooks import HookRunner
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
@@ -34,7 +34,7 @@ from conclear.services.run_context import (
     open_source_run,
 )
 from conclear.tools import ToolName
-from conclear.values import Platform
+from conclear.values import Digest, Platform
 from conclear.workspace import RunState
 
 from .common import cache_home, command_runtime, emit, profile, state_home
@@ -247,6 +247,7 @@ def evidence_command(run_id: str, platform_text: str, output_format: str) -> Non
 @_source_options
 @click.option("platform_text", "--platform", required=True)
 @click.option("profile_name", "--profile")
+@click.option("database_digest", "--database-digest")
 @_format_option
 def qualify_command(
     source_root: Path,
@@ -255,10 +256,15 @@ def qualify_command(
     version: str | None,
     platform_text: str,
     profile_name: str | None,
+    database_digest: str | None,
     output_format: str,
 ) -> None:
     """Run all local gates and emit one platform qualification."""
     selected = profile(profile_name) if profile_name else None
+    expected_database = None if database_digest is None else Digest(database_digest)
+    additional_inputs = {} if selected is None else profile_inputs(selected)
+    if expected_database is not None:
+        additional_inputs["databaseDigest"] = str(expected_database)
     source_run = create_source_run(
         source_root=source_root,
         selector=selector,
@@ -268,7 +274,7 @@ def qualify_command(
         names=tuple(ToolName),
         profile_name="none" if selected is None else selected.name,
         mode="local" if selected is None else selected.mode.value,
-        additional_inputs=None if selected is None else profile_inputs(selected),
+        additional_inputs=additional_inputs or None,
     )
     image = source_run.repository.image(image_id)
     inputs = _inputs(source_run, platform_text, selected)
@@ -301,10 +307,19 @@ def qualify_command(
             output_format,
         )
         return
-    database = select_fresh_database(
-        source_run.runtime.trivy(),
-        cache_home() / "conclear" / "trivy",
-        now=datetime.now(UTC),
+    database_cache = cache_home() / "conclear" / "trivy"
+    database = (
+        select_fresh_database(
+            source_run.runtime.trivy(),
+            database_cache,
+            now=datetime.now(UTC),
+        )
+        if expected_database is None
+        else select_database_by_digest(
+            source_run.runtime.trivy(),
+            database_cache,
+            expected_digest=expected_database,
+        )
     )
     hooks = HookRunner(
         runner=source_run.runtime.runner,
@@ -345,6 +360,7 @@ def qualify_command(
                 "record": str(result.record_path),
                 "recordDigest": result.record_digest,
                 "layout": str(result.layout_path),
+                "databaseDigest": database.digest,
             },
         ),
         output_format,

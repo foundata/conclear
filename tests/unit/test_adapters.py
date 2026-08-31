@@ -320,10 +320,18 @@ def test_trivy_database_refresh_installs_content_addressed_snapshot(
 
     refreshed = adapter.refresh_database(cache_root)
     selected = adapter.select_database(cache_root)
+    selected_by_digest = adapter.select_database_by_digest(
+        cache_root, Digest(refreshed.digest)
+    )
 
     assert refreshed.digest == selected.digest
+    assert refreshed.digest == selected_by_digest.digest
     assert selected.path.parent.name == "snapshots"
     assert (cache_root / "current.json").is_file()
+
+    (selected.path / "db" / "trivy.db").write_bytes(b"changed")
+    with pytest.raises(OperationalError, match="differs from the expected digest"):
+        adapter.select_database_by_digest(cache_root, Digest(refreshed.digest))
 
 
 def test_trivy_database_selection_rejects_pointer_digest_mismatch(

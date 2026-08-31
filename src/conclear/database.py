@@ -6,6 +6,7 @@ from typing import Protocol
 
 from conclear.adapters.trivy import DatabaseObservation
 from conclear.errors import OperationalError
+from conclear.values import Digest
 
 
 class DatabaseAdapter(Protocol):
@@ -17,6 +18,12 @@ class DatabaseAdapter(Protocol):
 
     def refresh_database(self, cache_root: Path) -> DatabaseObservation:
         """Refresh and atomically install one snapshot."""
+        ...
+
+    def select_database_by_digest(
+        self, cache_root: Path, expected_digest: Digest
+    ) -> DatabaseObservation:
+        """Select and validate one immutable snapshot by content digest."""
         ...
 
 
@@ -36,6 +43,21 @@ def select_fresh_database(
             raise OperationalError(
                 "Refreshed Trivy database is already stale"
             ) from None
+    return selected
+
+
+def select_database_by_digest(
+    adapter: DatabaseAdapter,
+    cache_root: Path,
+    *,
+    expected_digest: Digest,
+) -> DatabaseObservation:
+    """Select an exact distributed snapshot without consulting a mutable pointer."""
+    selected = adapter.select_database_by_digest(cache_root, expected_digest)
+    if selected.digest != str(expected_digest):
+        raise OperationalError(
+            "Selected Trivy database does not match the expected digest"
+        )
     return selected
 
 

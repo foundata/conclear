@@ -27,6 +27,8 @@ uv run conclear release --resume 01arz3ndektsv4rrffq69g5fav --profile foundata
 
 The composable commands are `doctor`, `check`, `pins check`, `build`, `test`, `evidence`, `qualify`, `assemble`, `provenance`, `publish`, `attest`, `verify`, `promote`, `release`, `rescan` and `cleanup`. Run any command with `--help` for its exact inputs.
 
+For distributed qualification, the coordinator takes `data.databaseDigest` from the first `qualify --format json` result and distributes `$XDG_CACHE_HOME/conclear/trivy/snapshots/<digest-without-sha256-prefix>` unchanged to every later worker. Each later worker invokes `qualify --database-digest sha256:<digest>`; ConClear selects that directory directly, recomputes its content digest and fails before building if it differs.
+
 Every command that produces a result supports `--format json`. JSON mode writes exactly one schema-validated object to standard output. Exit status `0` is success, `1` is operational failure, `2` is rule rejection and `64` is invalid invocation or configuration.
 
 Public qualification, candidate, verification and rescan records use record schema version 6. Repository configuration, rescan-triage input and command-result objects use their independent version 1 schemas.

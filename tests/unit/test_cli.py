@@ -70,6 +70,12 @@ def test_rescan_help_exposes_external_triage_input() -> None:
     assert "--triage-file" in result.stdout
 
 
+def test_qualify_help_exposes_distributed_database_digest() -> None:
+    result = CliRunner().invoke(root, ["qualify", "--help"])
+    assert result.exit_code == 0
+    assert "--database-digest" in result.stdout
+
+
 def test_root_version_reports_full_identity() -> None:
     result = CliRunner().invoke(root, ["--version"])
     assert result.exit_code == 0
