@@ -12,6 +12,14 @@ Exercise failure, interruption, resume and cleanup behavior when a change touche
 
 Run the checks in [DEVELOPMENT.md](DEVELOPMENT.md) before committing. Run the full clean-checkout release check when the change affects packaging, supported Python versions, the CLI entry point or distribution contents.
 
+## Design changes
+
+[DESIGN.md](DESIGN.md) is the behavioral contract, not a description of the current code. Put every DESIGN.md edit in its own commit whose subject names it as a contract change, such as `design: require a new run after an ambiguous candidate write`, and never fold one into a commit that also changes code. Give the reason in the commit body when the diff does not carry it.
+
+Do not amend the contract to match an implementation that turned out differently. When the code cannot meet a documented rule, leave the rule alone and report the conflict so the owner decides whether the design or the code changes.
+
+Report every contract change when reporting completed work. A summary that lists implemented behavior but omits an edit to DESIGN.md, a shipped schema, an exit status, a record layout or a `CCnnnn` identifier is incomplete.
+
 ## Compatibility
 
 ConClear follows Semantic Versioning. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses and stable check identifiers are compatibility surfaces. Change them deliberately and document the effect.
