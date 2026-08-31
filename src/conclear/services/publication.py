@@ -437,13 +437,15 @@ def attest_candidate(
     }
     sbom_map = {platform: (path, digest) for platform, path, digest in evidence.sboms}
     if set(sbom_map) != set(manifest_map):
-        raise InvalidInvocationError(
-            "SBOM platform coverage does not match published graph"
+        raise RuleRejectionError(
+            "SBOM platform coverage does not match published graph", code="CC0504"
         )
     for platform, digest in sorted(manifest_map.items()):
         sbom_path, expected_digest = sbom_map[platform]
         if sha256_file(sbom_path) != expected_digest:
-            raise InvalidInvocationError(f"SBOM digest changed for {platform}")
+            raise RuleRejectionError(
+                f"SBOM digest changed for {platform}", code="CC0504"
+            )
         sbom = validate_spdx_document(
             load_json(sbom_path), label=f"SBOM for {platform}"
         )
@@ -500,7 +502,9 @@ def attest_candidate(
             raise
         workspace.journal.update(resource, ResourceStatus.CREATED)
     if sha256_file(evidence.provenance_path) != evidence.provenance_digest:
-        raise InvalidInvocationError("Provenance digest changed before attestation")
+        raise RuleRejectionError(
+            "Provenance digest changed before attestation", code="CC0703"
+        )
     provenance = _object(load_json(evidence.provenance_path), "provenance")
     validate_release_provenance(
         provenance,
@@ -650,8 +654,8 @@ def verify_candidate(
         sha256_file(candidate.record_path) != candidate.record_digest
         or candidate.record_digest != evidence.candidate_record_digest
     ):
-        raise InvalidInvocationError(
-            "Release candidate record changed before verification"
+        raise RuleRejectionError(
+            "Release candidate record changed before verification", code="CC0602"
         )
     _require_remote_graph_unchanged(
         published,
@@ -675,7 +679,9 @@ def verify_candidate(
     }
     for platform, path, expected_digest in evidence.sboms:
         if manifest_map.get(platform) is None or sha256_file(path) != expected_digest:
-            raise InvalidInvocationError(f"SBOM evidence changed for {platform}")
+            raise RuleRejectionError(
+                f"SBOM evidence changed for {platform}", code="CC0703"
+            )
         subject = published.reference.with_digest(manifest_map[platform])
         sbom = validate_spdx_document(load_json(path), label=f"SBOM for {platform}")
         signer.verify_attestation(
@@ -757,7 +763,9 @@ def verify_candidate(
             for key, value in current_record.items()
             if key != "createdAt"
         ):
-            raise InvalidInvocationError("Release verification retry inputs changed")
+            raise RuleRejectionError(
+                "Release verification retry inputs changed", code="CC0703"
+            )
         record_digest = sha256_file(record_path)
         statement = _object(load_json(statement_path), "release verification statement")
         if (
@@ -772,7 +780,9 @@ def verify_candidate(
                 }
             ]
         ):
-            raise InvalidInvocationError("Release verification statement changed")
+            raise RuleRejectionError(
+                "Release verification statement changed", code="CC0703"
+            )
         statement_digest = sha256_file(statement_path)
     else:
         record_digest = record.write(record_path)
@@ -1206,8 +1216,8 @@ def validate_release_provenance(
         for manifest in sorted(graph.manifests, key=lambda value: value.platform)
     )
     if provenance.get("subject") != expected_subjects:
-        raise InvalidInvocationError(
-            "Provenance subject coverage does not match published graph"
+        raise RuleRejectionError(
+            "Provenance subject coverage does not match published graph", code="CC0703"
         )
     predicate = _object(provenance.get("predicate"), "provenance predicate")
     definition = _object(
@@ -1225,7 +1235,7 @@ def validate_release_provenance(
         ],
     }
     if definition.get("externalParameters") != expected_parameters:
-        raise InvalidInvocationError("Provenance release parameters changed")
+        raise RuleRejectionError("Provenance release parameters changed", code="CC0704")
     expected_dependencies: list[dict[str, object]] = [
         {
             "uri": evidence.source.repository,
@@ -1246,15 +1256,19 @@ def validate_release_provenance(
         for material in evidence.provenance_materials
     )
     if definition.get("resolvedDependencies") != expected_dependencies:
-        raise InvalidInvocationError("Provenance resolved dependencies changed")
+        raise RuleRejectionError(
+            "Provenance resolved dependencies changed", code="CC0703"
+        )
     details = _object(predicate.get("runDetails"), "provenance run details")
     if details.get("builder") != {
         "id": f"https://github.com/foundata/conclear/commit/{IDENTITY.source_revision}"
     }:
-        raise InvalidInvocationError("Provenance builder identity changed")
+        raise RuleRejectionError("Provenance builder identity changed", code="CC0704")
     metadata = _object(details.get("metadata"), "provenance run metadata")
     if metadata.get("invocationId") != workspace.run_id:
-        raise InvalidInvocationError("Provenance invocation identity changed")
+        raise RuleRejectionError(
+            "Provenance invocation identity changed", code="CC0704"
+        )
 
 
 def _render_tag(template: str, version: str | None) -> str:

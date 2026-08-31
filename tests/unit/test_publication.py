@@ -22,7 +22,7 @@ from conclear.attestations import (
     STATEMENT_TYPE,
 )
 from conclear.config import ReleaseMode, ReleaseProfile, load_repository_config
-from conclear.errors import OperationalError
+from conclear.errors import OperationalError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
     atomic_write_json,
@@ -527,6 +527,26 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
     )
+    original_sbom = sbom.read_bytes()
+    sbom.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(RuleRejectionError) as caught:
+        attest_candidate(
+            published,
+            evidence,
+            image=image,
+            workspace=workspace,
+            signer=signer,
+            private_key="test.key",
+            public_key=public_key,
+            passphrase="secret",
+            passphrase_path=None,
+            registry=registry,
+            auth_file=None,
+            now=datetime(2026, 1, 1, 0, 3, tzinfo=UTC),
+        )
+    assert caught.value.code == "CC0504"
+    assert caught.value.exit_status == 2
+    sbom.write_bytes(original_sbom)
     platform_subject = published.reference.with_digest(
         observation.graph.manifests[0].descriptor.digest
     )

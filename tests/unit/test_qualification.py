@@ -16,7 +16,7 @@ from conclear.adapters.podman import (
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.artifacts import qualification_transport
 from conclear.config import load_repository_config
-from conclear.errors import OperationalError
+from conclear.errors import OperationalError, RuleRejectionError
 from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
@@ -379,6 +379,34 @@ def test_foreign_build_and_test_record_the_same_qemu_execution_mode(
     }
     assert payload["buildExecution"] == expected
     assert payload["testExecution"] == expected
+
+
+def test_qualification_payload_tampering_is_a_catalogued_rule_rejection(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+    qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        pin_observations=pin_observations(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+    sbom_path = value.workspace.root / "exports" / "sbom" / "linux-amd64.spdx.json"
+    sbom_path.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(RuleRejectionError) as caught:
+        qualification_transport(value.workspace, value.image, value.platform)
+
+    assert caught.value.code == "CC0703"
+    assert caught.value.exit_status == 2
 
 
 def test_qualification_records_label_rule_rejection(

@@ -6,7 +6,7 @@ from pathlib import Path
 from conclear.assembly import AssemblyObservation
 from conclear.attestations import RELEASE_VERIFICATION_TYPE
 from conclear.config import ImageConfig
-from conclear.errors import InvalidInvocationError
+from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.jsonutil import load_json, sha256_file
 from conclear.oci import validate_layout
 from conclear.provenance import ProvenanceMaterial
@@ -46,11 +46,15 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
     if _platforms(payload.get("requiredPlatforms"), "required platforms") != (
         expected_platforms
     ):
-        raise InvalidInvocationError("Candidate required platform set changed")
+        raise RuleRejectionError(
+            "Candidate required platform set changed", code="CC0304"
+        )
     if _platforms(payload.get("acceptedPlatforms"), "accepted platforms") != (
         expected_platforms
     ):
-        raise InvalidInvocationError("Candidate accepted platform set changed")
+        raise RuleRejectionError(
+            "Candidate accepted platform set changed", code="CC0304"
+        )
     candidate_tag_value = _string(payload.get("candidateTag"), "candidate tag")
     source_value = _object(record.get("source"), "candidate source")
     source_revision = _string(source_value.get("revision"), "source revision")
@@ -74,12 +78,14 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
         }
         or candidate_tag_value != expected_tag
     ):
-        raise InvalidInvocationError("Candidate naming inputs changed")
+        raise RuleRejectionError("Candidate naming inputs changed", code="CC0601")
     layout_path = workspace.root / "layouts" / image.image_id / "candidate"
     graph = validate_layout(layout_path, reference=candidate_tag_value)
     descriptor = _object(payload.get("subjectDescriptor"), "subject descriptor")
     if descriptor != graph.root.to_dict():
-        raise InvalidInvocationError("Candidate record descriptor differs from layout")
+        raise RuleRejectionError(
+            "Candidate record descriptor differs from layout", code="CC0602"
+        )
     platform_manifests = _object(
         payload.get("platformManifests"), "platform manifest map"
     )
@@ -87,8 +93,8 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
         str(item.platform): str(item.descriptor.digest) for item in graph.manifests
     }
     if platform_manifests != observed:
-        raise InvalidInvocationError(
-            "Candidate record platform graph differs from layout"
+        raise RuleRejectionError(
+            "Candidate record platform graph differs from layout", code="CC0602"
         )
     qualifications = payload.get("qualifications")
     if not isinstance(qualifications, list):
@@ -120,7 +126,9 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
             Digest(digest)
             payload_digests.add(digest)
     if qualification_platforms != set(expected_platforms):
-        raise InvalidInvocationError("Candidate qualification platform set changed")
+        raise RuleRejectionError(
+            "Candidate qualification platform set changed", code="CC0304"
+        )
     if len(qualification_digests) != len(set(qualification_digests)):
         raise InvalidInvocationError("Candidate repeats a qualification digest")
     return CandidateResult(
@@ -187,22 +195,23 @@ def qualification_transport(
         raise InvalidInvocationError("Qualification repeats a payload digest")
     candidate_paths = _qualification_payload_paths(workspace, image, platform, payload)
     if {sha256_file(path) for path in candidate_paths} != set(values):
-        raise InvalidInvocationError(
-            f"Qualification payload files are incomplete for {platform}"
+        raise RuleRejectionError(
+            f"Qualification payload files are incomplete for {platform}",
+            code="CC0703",
         )
     layout_path = workspace.root / "layouts" / image.image_id / platform.key
     graph = validate_layout(layout_path, reference="qualified")
     if len(graph.manifests) != 1 or graph.manifests[0].platform != platform:
-        raise InvalidInvocationError(
-            f"Qualification layout platform differs from {platform}"
+        raise RuleRejectionError(
+            f"Qualification layout platform differs from {platform}", code="CC0303"
         )
     if payload.get("layoutDescriptor") != graph.root.to_dict():
-        raise InvalidInvocationError(
-            f"Qualification layout descriptor changed for {platform}"
+        raise RuleRejectionError(
+            f"Qualification layout descriptor changed for {platform}", code="CC0302"
         )
     if payload.get("manifestDigest") != str(graph.manifests[0].descriptor.digest):
-        raise InvalidInvocationError(
-            f"Qualification manifest digest changed for {platform}"
+        raise RuleRejectionError(
+            f"Qualification manifest digest changed for {platform}", code="CC0302"
         )
     return QualificationTransport(
         record_path=record_path,
@@ -236,15 +245,15 @@ def load_release_evidence(
         validate_record(record)
         _validate_workspace_record(record, workspace)
         if sha256_file(record_path) not in candidate.qualification_digests:
-            raise InvalidInvocationError(
-                "Candidate does not bind a qualification record"
+            raise RuleRejectionError(
+                "Candidate does not bind a qualification record", code="CC0304"
             )
         payload = _object(record.get("payload"), "qualification payload")
         sbom_value = _object(payload.get("sbom"), "qualification SBOM")
         sbom_digest = _string(sbom_value.get("digest"), "SBOM digest")
         sbom_path = workspace.root / "exports" / "sbom" / f"{platform.key}.spdx.json"
         if sha256_file(sbom_path) != sbom_digest:
-            raise InvalidInvocationError(f"SBOM changed for {platform}")
+            raise RuleRejectionError(f"SBOM changed for {platform}", code="CC0504")
         sboms.append((platform, sbom_path, sbom_digest))
         scans = payload.get("scans")
         if not isinstance(scans, list):
@@ -260,7 +269,9 @@ def load_release_evidence(
                 workspace.root / "reports" / image.image_id / platform.key / scan_name
             )
             if sha256_file(scan_path) != scan_digest:
-                raise InvalidInvocationError(f"Scan report changed for {platform}")
+                raise RuleRejectionError(
+                    f"Scan report changed for {platform}", code="CC0501"
+                )
             scan_digests.append(scan_digest)
     provenance_path = workspace.root / "records" / "provenance.json"
     evidence = ReleaseEvidence(
@@ -302,7 +313,9 @@ def load_provenance_materials(
         digest = Digest(_string(digest_value, f"digest for {uri}"))
         previous = materials.get(uri)
         if previous is not None and previous != digest:
-            raise InvalidInvocationError(f"Provenance material changed: {uri}")
+            raise RuleRejectionError(
+                f"Provenance material changed: {uri}", code="CC0703"
+            )
         materials[uri] = digest
 
     observed_payloads: set[str] = set()
@@ -312,8 +325,8 @@ def load_provenance_materials(
         )
         record_digest = sha256_file(record_path)
         if record_digest not in candidate.qualification_digests:
-            raise InvalidInvocationError(
-                f"Candidate does not bind qualification for {platform}"
+            raise RuleRejectionError(
+                f"Candidate does not bind qualification for {platform}", code="CC0304"
             )
         record = _object(load_json(record_path), "qualification record")
         validate_record(record)
@@ -344,7 +357,9 @@ def load_provenance_materials(
             relative = path.relative_to(workspace.root).as_posix()
             add(f"conclear:workspace/{relative}", digest)
     if observed_payloads != set(candidate.payload_digests):
-        raise InvalidInvocationError("Candidate provenance payload set changed")
+        raise RuleRejectionError(
+            "Candidate provenance payload set changed", code="CC0703"
+        )
     return tuple(
         ProvenanceMaterial(uri, digest) for uri, digest in sorted(materials.items())
     )
@@ -368,12 +383,15 @@ def load_published(
         reference.repository_name != image.repository.repository_name
         or reference.tag != candidate.candidate_tag
     ):
-        raise InvalidInvocationError(
-            "Published candidate reference differs from the accepted candidate"
+        raise RuleRejectionError(
+            "Published candidate reference differs from the accepted candidate",
+            code="CC0602",
         )
     digest = Digest(_string(entry.metadata.get("digest"), "published digest"))
     if digest != candidate.observation.graph.digest:
-        raise InvalidInvocationError("Published digest differs from candidate")
+        raise RuleRejectionError(
+            "Published digest differs from candidate", code="CC0602"
+        )
     expiration = _datetime(entry.metadata.get("expiration"), "candidate expiration")
     immutable = entry.metadata.get("immutabilityEnabled")
     if not isinstance(immutable, bool):
@@ -407,12 +425,16 @@ def load_verification(
         "repository": image.repository.repository_name,
         "digest": str(subject.digest),
     }:
-        raise InvalidInvocationError("Release verification record subject differs")
+        raise RuleRejectionError(
+            "Release verification record subject differs", code="CC0703"
+        )
     statement = _object(load_json(statement_path), "release verification statement")
     if statement.get("predicateType") != RELEASE_VERIFICATION_TYPE:
         raise InvalidInvocationError("Release verification predicate type is incorrect")
     if statement.get("predicate") != record:
-        raise InvalidInvocationError("Release verification statement changed")
+        raise RuleRejectionError(
+            "Release verification statement changed", code="CC0703"
+        )
     statement_subjects = statement.get("subject")
     expected_subject = [
         {
@@ -421,7 +443,7 @@ def load_verification(
         }
     ]
     if statement_subjects != expected_subject:
-        raise InvalidInvocationError("Release verification subject differs")
+        raise RuleRejectionError("Release verification subject differs", code="CC0703")
     record_digest = sha256_file(record_path)
     entries = [
         entry

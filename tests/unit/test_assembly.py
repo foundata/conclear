@@ -10,7 +10,7 @@ import conclear.services.assembly as assembly_service_module
 from conclear.artifacts import load_candidate
 from conclear.assembly import PlatformLayout, assemble_layout
 from conclear.config import load_repository_config
-from conclear.errors import InvalidInvocationError
+from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes, sha256_file
 from conclear.oci import OCI_CONFIG, OCI_INDEX, OCI_MANIFEST, validate_layout
@@ -284,8 +284,10 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
     candidate_record = json.loads(candidate.record_path.read_text(encoding="utf-8"))
     candidate_record["payload"]["candidateNaming"]["version"] = "9.9.9"
     candidate.record_path.write_text(json.dumps(candidate_record), encoding="utf-8")
-    with pytest.raises(InvalidInvocationError, match="naming inputs"):
+    with pytest.raises(RuleRejectionError, match="naming inputs") as caught:
         load_candidate(workspace, repository.image("app"))
+    assert caught.value.code == "CC0601"
+    assert caught.value.exit_status == 2
 
     payload_file.write_text("changed\n", encoding="utf-8")
     second_workspace = RunWorkspace.create(
