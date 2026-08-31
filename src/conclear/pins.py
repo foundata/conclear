@@ -114,7 +114,10 @@ class PinStore:
             initialized = previous is None
             divergence_since: datetime | None = None
             if observed != reference.digest:
-                if previous is not None and previous.observed_digest == observed:
+                if (
+                    previous is not None
+                    and previous.observed_digest != previous.pinned_digest
+                ):
                     divergence_since = previous.divergence_since
                 if divergence_since is None:
                     divergence_since = now

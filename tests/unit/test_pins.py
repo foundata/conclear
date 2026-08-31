@@ -53,6 +53,31 @@ def test_pin_store_initializes_and_then_rejects_expired_divergence(
     assert expired.findings[0].check_id == "CC0204"
 
 
+def test_pin_store_preserves_divergence_start_across_upstream_rebuilds(
+    tmp_path: Path,
+) -> None:
+    store = PinStore(tmp_path)
+    started = datetime(2026, 1, 1, tzinfo=UTC)
+
+    first = store.check(
+        pin(),
+        resolver=Resolver("sha256:" + "b" * 64),
+        maximum_divergence=timedelta(days=7),
+        now=started,
+    )
+    expired = store.check(
+        pin(),
+        resolver=Resolver("sha256:" + "c" * 64),
+        maximum_divergence=timedelta(days=7),
+        now=started + timedelta(days=7),
+    )
+
+    assert first.divergence_since == started
+    assert expired.divergence_since == started
+    assert not expired.accepted
+    assert expired.findings[0].check_id == "CC0204"
+
+
 def test_immutable_tag_change_always_requires_review(tmp_path: Path) -> None:
     observation = PinStore(tmp_path).check(
         pin(PinIntent.IMMUTABLE_VERSION),
