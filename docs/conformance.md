@@ -15,6 +15,10 @@ Repository configuration may shorten these limits but cannot extend or disable t
 | Candidate lifetime | 7 days |
 | Fixable HIGH or CRITICAL remediation | 30 days |
 
+## Retired identifiers
+
+No identifiers are retired.
+
 ## Check catalog
 
 | Check | Behavior | Severity | Guide section | Summary |

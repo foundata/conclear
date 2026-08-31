@@ -7,6 +7,7 @@
     {"name": "Candidate lifetime", "value": "7 days"},
     {"name": "Fixable HIGH or CRITICAL remediation", "value": "30 days"}
   ],
+  "retired": [],
   "checks": [
     {"id": "CC0001", "summary": "Validate repository configuration against its closed schema", "severity": "error", "behavior": "automated", "anchor": "build-arguments-configuration-and-secrets"},
     {"id": "CC0002", "summary": "Keep configured and transported paths within their trusted root", "severity": "error", "behavior": "automated", "anchor": "build-context"},

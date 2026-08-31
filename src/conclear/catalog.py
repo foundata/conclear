@@ -32,11 +32,20 @@ class LimitDefinition:
 
 
 @dataclass(frozen=True, slots=True)
+class RetiredCheckDefinition:
+    """One historical identifier that must never be reused."""
+
+    check_id: str
+    summary: str
+
+
+@dataclass(frozen=True, slots=True)
 class CheckCatalog:
     """The complete machine-readable check catalog."""
 
     checks: tuple[CheckDefinition, ...]
     limits: tuple[LimitDefinition, ...]
+    retired: tuple[RetiredCheckDefinition, ...]
 
 
 def load_catalog() -> CheckCatalog:
@@ -54,7 +63,12 @@ def load_catalog() -> CheckCatalog:
         raise OperationalError("Check catalog guide revision does not match the build")
     checks_value = untrusted.get("checks")
     limits_value = untrusted.get("limits")
-    if not isinstance(checks_value, list) or not isinstance(limits_value, list):
+    retired_value = untrusted.get("retired")
+    if (
+        not isinstance(checks_value, list)
+        or not isinstance(limits_value, list)
+        or not isinstance(retired_value, list)
+    ):
         raise OperationalError("Check catalog arrays are malformed")
     checks: list[CheckDefinition] = []
     for item in checks_value:
@@ -73,7 +87,20 @@ def load_catalog() -> CheckCatalog:
                 "Check catalog contains an incomplete check"
             ) from exc
         checks.append(check)
-    identifiers = [check.check_id for check in checks]
+    retired: list[RetiredCheckDefinition] = []
+    for item in retired_value:
+        if not isinstance(item, dict) or any(not isinstance(key, str) for key in item):
+            raise OperationalError("Check catalog contains a malformed retired check")
+        retired.append(
+            RetiredCheckDefinition(
+                check_id=_required_string(item, "id"),
+                summary=_required_string(item, "summary"),
+            )
+        )
+    identifiers = [
+        *(check.check_id for check in checks),
+        *(check.check_id for check in retired),
+    ]
     if any(
         re.fullmatch(r"CC[0-9]{4}", identifier) is None for identifier in identifiers
     ):
@@ -90,7 +117,11 @@ def load_catalog() -> CheckCatalog:
                 value=_required_string(item, "value"),
             )
         )
-    return CheckCatalog(checks=tuple(checks), limits=tuple(limits))
+    return CheckCatalog(
+        checks=tuple(checks),
+        limits=tuple(limits),
+        retired=tuple(retired),
+    )
 
 
 def render_conformance(catalog: CheckCatalog | None = None) -> str:
@@ -111,6 +142,26 @@ def render_conformance(catalog: CheckCatalog | None = None) -> str:
         "|---|---:|",
     ]
     lines.extend(f"| {limit.name} | {limit.value} |" for limit in selected.limits)
+    lines.extend(
+        [
+            "",
+            "## Retired identifiers",
+            "",
+        ]
+    )
+    if selected.retired:
+        lines.extend(
+            [
+                "| Check | Historical summary |",
+                "|---|---|",
+                *(
+                    f"| `{check.check_id}` | {check.summary} |"
+                    for check in selected.retired
+                ),
+            ]
+        )
+    else:
+        lines.append("No identifiers are retired.")
     lines.extend(
         [
             "",

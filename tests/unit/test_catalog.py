@@ -1,15 +1,38 @@
 import re
 from pathlib import Path
 
-from conclear.catalog import load_catalog, render_conformance, write_conformance
+from conclear.catalog import (
+    CheckCatalog,
+    RetiredCheckDefinition,
+    load_catalog,
+    render_conformance,
+    write_conformance,
+)
 from conclear.conformance import validate_guide_anchors
 
 
 def test_catalog_identifiers_are_unique_and_stable() -> None:
     catalog = load_catalog()
-    identifiers = [check.check_id for check in catalog.checks]
+    identifiers = [
+        *(check.check_id for check in catalog.checks),
+        *(check.check_id for check in catalog.retired),
+    ]
     assert len(identifiers) == len(set(identifiers))
     assert all(re.fullmatch(r"CC[0-9]{4}", identifier) for identifier in identifiers)
+
+
+def test_conformance_renders_retired_identifiers_separately() -> None:
+    current = load_catalog()
+    catalog = CheckCatalog(
+        checks=current.checks,
+        limits=current.limits,
+        retired=(RetiredCheckDefinition("CC0999", "Historical example rule"),),
+    )
+
+    rendered = render_conformance(catalog)
+
+    assert "| `CC0999` | Historical example rule |" in rendered
+    assert "CC0999" not in rendered.split("## Check catalog", maxsplit=1)[1]
 
 
 def test_catalog_anchors_exist_in_selected_guide_snapshot() -> None:
