@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,7 +7,11 @@ from typing import Any, cast
 import pytest
 
 from conclear.config import ReleaseMode, ReleaseProfile
-from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.errors import (
+    InvalidInvocationError,
+    OperationalError,
+    RuleRejectionError,
+)
 from conclear.services import release
 from conclear.services.release import ReleaseRequest
 from conclear.workspace import RunState, RunWorkspace
@@ -53,6 +58,8 @@ def workspace(
         id_factory=FixedIdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
+    if state is RunState.CREATED:
+        return result
     for next_state in (
         RunState.QUALIFIED,
         RunState.ASSEMBLED,
@@ -169,3 +176,57 @@ def test_release_rejects_invalid_version_before_source_isolation(
 
     with pytest.raises(InvalidInvocationError, match="Invalid release version"):
         release.execute_release(request)
+
+
+@pytest.mark.parametrize(
+    ("failure", "state", "failure_value"),
+    (
+        (
+            RuleRejectionError("scan rejected", code="CC0502"),
+            RunState.REJECTED,
+            {
+                "type": "ruleRejection",
+                "message": "scan rejected",
+                "checkId": "CC0502",
+            },
+        ),
+        (
+            OperationalError("registry unavailable"),
+            RunState.INCOMPLETE,
+            {"type": "operationalFailure", "message": "registry unavailable"},
+        ),
+        (
+            KeyboardInterrupt(),
+            RunState.INCOMPLETE,
+            {"type": "interrupted", "message": "Release was interrupted"},
+        ),
+        (
+            RuntimeError("credential=/secret/value"),
+            RunState.INCOMPLETE,
+            {"type": "internalError", "message": "Release failed unexpectedly"},
+        ),
+    ),
+)
+def test_release_failure_writes_safe_terminal_summary(
+    tmp_path: Path,
+    failure: BaseException,
+    state: RunState,
+    failure_value: dict[str, object],
+) -> None:
+    run_workspace = workspace(tmp_path, profile(tmp_path), RunState.CREATED)
+
+    release._finish_failure(
+        run_workspace,
+        failure,
+        datetime(2026, 1, 2, tzinfo=UTC),
+    )
+
+    assert run_workspace.load().state is state
+    assert json.loads(
+        (run_workspace.root / "summary.json").read_text(encoding="utf-8")
+    ) == {
+        "failure": failure_value,
+        "runId": run_workspace.run_id,
+        "schemaVersion": 1,
+        "state": state.value,
+    }

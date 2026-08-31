@@ -20,6 +20,7 @@ from conclear.artifacts import (
 from conclear.config import ReleaseMode, ReleaseProfile, RepositoryConfig
 from conclear.database import select_fresh_database
 from conclear.errors import (
+    ConClearError,
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
@@ -575,14 +576,44 @@ def _finish_failure(
     workspace: RunWorkspace, failure: BaseException, now: datetime
 ) -> None:
     state = workspace.load().state
-    if state in {RunState.PROMOTED, RunState.REJECTED, RunState.INCOMPLETE}:
+    if state is RunState.PROMOTED:
         return
-    target = (
-        RunState.REJECTED
-        if isinstance(failure, RuleRejectionError)
-        else RunState.INCOMPLETE
+    if state not in {RunState.REJECTED, RunState.INCOMPLETE}:
+        target = (
+            RunState.REJECTED
+            if isinstance(failure, RuleRejectionError)
+            else RunState.INCOMPLETE
+        )
+        workspace.transition(target, now=now)
+    snapshot = workspace.load()
+    failure_value: dict[str, object]
+    if isinstance(failure, ConClearError):
+        failure_value = {
+            "type": failure.error_type,
+            "message": str(failure),
+        }
+        if failure.code is not None:
+            failure_value["checkId"] = failure.code
+    elif isinstance(failure, KeyboardInterrupt):
+        failure_value = {
+            "type": "interrupted",
+            "message": "Release was interrupted",
+        }
+    else:
+        failure_value = {
+            "type": "internalError",
+            "message": "Release failed unexpectedly",
+        }
+    atomic_write_json(
+        workspace.root / "summary.json",
+        {
+            "schemaVersion": 1,
+            "runId": workspace.run_id,
+            "state": snapshot.state.value,
+            "failure": failure_value,
+        },
+        mode=0o644,
     )
-    workspace.transition(target, now=now)
 
 
 def _parse_timestamp(value: str) -> datetime:
