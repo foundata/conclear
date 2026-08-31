@@ -149,6 +149,8 @@ def rescan_release(
     clock: Callable[[], datetime],
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("Rescan time must be timezone-aware")
     if subject.digest is None or subject.tag is not None:
         raise InvalidInvocationError("Rescan subject must be an immutable digest")
     if scope not in {"sbom-vulnerabilities", "full-image"}:
@@ -221,6 +223,15 @@ def rescan_release(
             "Rescan triage names platforms outside the released subject: "
             + ", ".join(unknown_triage_platforms)
         )
+    for decision in triage:
+        decided_at = _parse_timestamp(decision.decided_at, "triage decision time")
+        if decided_at > now.astimezone(UTC):
+            raise InvalidInvocationError(
+                "Rescan triage decisions cannot be dated in the future"
+            )
+    triage_map = {
+        (item.platform, item.component, item.advisory): item for item in triage
+    }
     if recorded_platforms != expected_platforms:
         raise OperationalError(
             "Released platform graph differs from release verification"
@@ -280,12 +291,24 @@ def rescan_release(
             exceptions=exceptions,
             today=now.date(),
         )
+        suppressed = set()
+        for vulnerability in evaluation.fixable_vulnerabilities:
+            triage_decision = triage_map.get(
+                (platform, vulnerability.component, vulnerability.advisory)
+            )
+            if (
+                vulnerability.finding is not None
+                and triage_decision is not None
+                and triage_decision.decision == "not-applicable"
+            ):
+                suppressed.add(vulnerability.finding)
         findings.extend(
             {
                 "platform": str(platform),
                 **finding.to_dict(),
             }
             for finding in evaluation.findings
+            if finding not in suppressed
         )
         applied_exceptions.extend(
             {"platform": str(platform), **item.to_dict()}
@@ -394,6 +417,16 @@ def _timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
         raise OperationalError("Rescan verification clock returned a naive timestamp")
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _parse_timestamp(value: str, label: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise InvalidInvocationError(f"{label} is malformed") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise InvalidInvocationError(f"{label} lacks a timezone")
+    return parsed.astimezone(UTC)
 
 
 def _one_statement(

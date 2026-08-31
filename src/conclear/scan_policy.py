@@ -29,11 +29,23 @@ class AppliedException:
 
 
 @dataclass(frozen=True, slots=True)
+class FixableVulnerability:
+    """One structured fixable HIGH or CRITICAL scanner observation."""
+
+    component: str
+    advisory: str
+    severity: str
+    fixed_version: str
+    finding: Finding | None
+
+
+@dataclass(frozen=True, slots=True)
 class ScanEvaluation:
     """Policy findings and exact exceptions applied to one Trivy report."""
 
     findings: tuple[Finding, ...]
     applied_exceptions: tuple[AppliedException, ...]
+    fixable_vulnerabilities: tuple[FixableVulnerability, ...]
 
     @property
     def accepted(self) -> bool:
@@ -54,6 +66,7 @@ def evaluate_trivy_report(
     results = array_value(results_value, label="Trivy results")
     findings: list[Finding] = []
     applied: list[AppliedException] = []
+    vulnerabilities: list[FixableVulnerability] = []
     for raw_result in results:
         result = object_value(raw_result, label="Trivy result")
         target = result.get("Target")
@@ -113,25 +126,32 @@ def evaluate_trivy_report(
                 exceptions=exceptions,
                 today=today,
             )
+            finding: Finding | None = None
             if matched is not None:
                 applied.append(matched)
-                continue
-            if expired:
-                findings.append(
-                    Finding(
-                        "CC0503",
-                        "error",
-                        f"Vulnerability exception expired for {advisory} in {component}",
-                        location,
-                    )
+            elif expired:
+                finding = Finding(
+                    "CC0503",
+                    "error",
+                    f"Vulnerability exception expired for {advisory} in {component}",
+                    location,
                 )
-                continue
-            findings.append(
-                Finding(
+                findings.append(finding)
+            else:
+                finding = Finding(
                     "CC0502",
                     "error",
                     f"Fixable {severity} vulnerability {advisory} in {component}",
                     location,
+                )
+                findings.append(finding)
+            vulnerabilities.append(
+                FixableVulnerability(
+                    component=component,
+                    advisory=advisory,
+                    severity=severity,
+                    fixed_version=fixed,
+                    finding=finding,
                 )
             )
     return ScanEvaluation(
@@ -143,6 +163,12 @@ def evaluate_trivy_report(
         ),
         applied_exceptions=tuple(
             sorted(applied, key=lambda item: (item.component, item.advisory))
+        ),
+        fixable_vulnerabilities=tuple(
+            sorted(
+                vulnerabilities,
+                key=lambda item: (item.component, item.advisory, item.severity),
+            )
         ),
     )
 
