@@ -289,6 +289,7 @@ def rescan_command(
             selected.cosign_private_key or "",
             selected.cosign_public_key,
             passphrase,
+            selected.passphrase_file,
         )
         if authoritative
         else None

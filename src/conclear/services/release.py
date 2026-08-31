@@ -313,6 +313,7 @@ def _continue_release(
                 private_key=private_key,
                 public_key=request.profile.cosign_public_key,
                 passphrase=request.passphrase,
+                passphrase_path=request.profile.passphrase_file,
                 registry=registry,
                 auth_file=request.profile.auth_file,
                 now=now_factory(),

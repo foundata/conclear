@@ -238,9 +238,14 @@ class FakeSigner:
         self.fail_once: str | None = None
 
     def sign(
-        self, *, subject: OCIReference, private_key: str, passphrase: str | None
+        self,
+        *,
+        subject: OCIReference,
+        private_key: str,
+        passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
-        del private_key, passphrase
+        del private_key, passphrase, passphrase_path
         self.signatures.add(str(subject))
         return SignatureObservation(subject, "signed")
 
@@ -252,8 +257,9 @@ class FakeSigner:
         predicate_type: str,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
-        del private_key, passphrase
+        del private_key, passphrase, passphrase_path
         assert subject.digest is not None
         statement_predicate_type = (
             SPDX_DOCUMENT_TYPE if predicate_type == "spdxjson" else predicate_type
@@ -279,8 +285,9 @@ class FakeSigner:
         statement: Path,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
-        del private_key, passphrase
+        del private_key, passphrase, passphrase_path
         value = load_json(statement)
         assert isinstance(value, dict)
         predicate_type = value.get("predicateType")
@@ -550,6 +557,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         private_key="test.key",
         public_key=public_key,
         passphrase="secret",
+        passphrase_path=None,
         registry=registry,
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 3, tzinfo=UTC),

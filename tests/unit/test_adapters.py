@@ -1,5 +1,6 @@
 import hashlib
 import json
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,7 +24,12 @@ from conclear.errors import (
     OperationalError,
     UnsupportedOperationError,
 )
-from conclear.process import CommandRequest, ProcessResult
+from conclear.process import (
+    CommandRequest,
+    ProcessEnvironment,
+    ProcessResult,
+    ProcessRunner,
+)
 from conclear.tools import ResolvedTool, ToolName
 from conclear.values import Digest, OCIReference, Platform
 
@@ -394,17 +400,101 @@ def test_trivy_scans_cannot_update_or_query_outside_selected_snapshot(
 def test_cosign_release_signing_keeps_public_log_policy_enabled(
     tmp_path: Path,
 ) -> None:
-    runner = FakeRunner(result("signed"))
+    runner = FakeRunner(result("signed"), result("attested"), result("attested"))
     adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
     subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
 
-    adapter.sign(subject=subject, private_key="/secret/cosign.key", passphrase="pw")
+    adapter.sign(
+        subject=subject,
+        private_key="/secret/cosign.key",
+        passphrase="pw",
+        passphrase_path=Path("/secret/cosign.password"),
+    )
 
     request = runner.requests[0]
     assert "--use-signing-config=true" in request.argv
     assert not any("tlog" in argument for argument in request.argv)
     assert request.environment["COSIGN_PASSWORD"] == "pw"
     assert request.secret_values == ("pw",)
+    assert request.secret_paths == (
+        Path("/secret/cosign.key"),
+        Path("/secret/cosign.password"),
+    )
+    predicate = tmp_path / "predicate.json"
+    statement = tmp_path / "statement.json"
+    predicate.write_text("{}", encoding="utf-8")
+    statement.write_text("{}", encoding="utf-8")
+    adapter.attest(
+        subject=subject,
+        predicate=predicate,
+        predicate_type="custom",
+        private_key="/secret/cosign.key",
+        passphrase="pw",
+        passphrase_path=Path("/secret/cosign.password"),
+    )
+    adapter.attest_statement(
+        subject=subject,
+        statement=statement,
+        private_key="/secret/cosign.key",
+        passphrase="pw",
+        passphrase_path=Path("/secret/cosign.password"),
+    )
+    assert runner.requests[1].secret_paths == (
+        predicate,
+        Path("/secret/cosign.key"),
+        Path("/secret/cosign.password"),
+    )
+    assert runner.requests[2].secret_paths == (
+        statement,
+        Path("/secret/cosign.key"),
+        Path("/secret/cosign.password"),
+    )
+
+
+def test_cosign_signing_failure_redacts_private_key_path(tmp_path: Path) -> None:
+    executable = tmp_path / "cosign"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "key = sys.argv[sys.argv.index('--key') + 1]\n"
+        "print(f'reading key: open {key}: permission denied', file=sys.stderr)\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o700)
+    content = executable.read_bytes()
+    private_key = tmp_path / "protected" / "cosign.key"
+    environment_root = tmp_path / "environment"
+    environment = ProcessEnvironment(
+        home=environment_root / "home",
+        config_home=environment_root / "config",
+        cache_home=environment_root / "cache",
+        state_home=environment_root / "state",
+        runtime_dir=environment_root / "runtime",
+    ).values()
+    adapter = CosignAdapter(
+        tool=ResolvedTool(
+            name=ToolName.COSIGN,
+            path=executable,
+            version="3.1.3",
+            reported_version="3.1.3",
+            executable_digest="sha256:" + hashlib.sha256(content).hexdigest(),
+        ),
+        runner=ProcessRunner(),
+        environment=environment,
+        log_directory=tmp_path / "logs",
+    )
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
+
+    with pytest.raises(CommandExecutionError) as failure:
+        adapter.sign(subject=subject, private_key=str(private_key), passphrase="pw")
+
+    assert str(private_key) not in str(failure.value)
+    assert "[REDACTED]" in str(failure.value)
+    log = json.loads(
+        (tmp_path / "logs" / "cosign-0001.json").read_text(encoding="utf-8")
+    )
+    assert str(private_key) not in json.dumps(log)
 
 
 def test_cosign_verification_requires_a_verified_entry(tmp_path: Path) -> None:

@@ -126,7 +126,12 @@ class Signer(Protocol):
     """Cosign operations used by signing and verification workflows."""
 
     def sign(
-        self, *, subject: OCIReference, private_key: str, passphrase: str | None
+        self,
+        *,
+        subject: OCIReference,
+        private_key: str,
+        passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
         """Sign one digest with public log inclusion."""
         ...
@@ -139,6 +144,7 @@ class Signer(Protocol):
         predicate_type: str,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
         """Attach one predicate with public log inclusion."""
         ...
@@ -150,6 +156,7 @@ class Signer(Protocol):
         statement: Path,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
         """Attach one complete statement with public log inclusion."""
         ...
@@ -409,6 +416,7 @@ def attest_candidate(
     private_key: str,
     public_key: Path,
     passphrase: str | None,
+    passphrase_path: Path | None,
     registry: Registry,
     auth_file: Path | None,
     now: datetime,
@@ -485,6 +493,7 @@ def attest_candidate(
                 predicate_type="spdxjson",
                 private_key=private_key,
                 passphrase=passphrase,
+                passphrase_path=passphrase_path,
             )
         except Exception:
             _mark_failed(workspace, resource)
@@ -543,6 +552,7 @@ def attest_candidate(
                 statement=evidence.provenance_path,
                 private_key=private_key,
                 passphrase=passphrase,
+                passphrase_path=passphrase_path,
             )
             workspace.journal.update("provenance", ResourceStatus.CREATED)
         except Exception:
@@ -582,6 +592,7 @@ def attest_candidate(
                 subject=subject,
                 private_key=private_key,
                 passphrase=passphrase,
+                passphrase_path=passphrase_path,
             )
             workspace.journal.update(resource, ResourceStatus.CREATED)
         except Exception:
@@ -817,6 +828,7 @@ def verify_candidate(
             statement=statement_path,
             private_key=private_key,
             passphrase=passphrase,
+            passphrase_path=profile.passphrase_file,
         )
         signer.verify_attestation(
             subject=published.immutable_reference,

@@ -85,6 +85,7 @@ class Signer(Protocol):
         statement: Path,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
         """Attach a signed complete statement using public logging."""
         ...
@@ -121,6 +122,7 @@ class RescanSigning:
     private_key: str
     public_key: Path
     passphrase: str | None
+    passphrase_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -479,6 +481,7 @@ def rescan_release(
             statement=statement_path,
             private_key=signing.private_key,
             passphrase=signing.passphrase,
+            passphrase_path=signing.passphrase_path,
         )
         attested_history = verified_rescan_history(
             subject,

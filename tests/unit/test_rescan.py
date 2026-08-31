@@ -161,8 +161,9 @@ class FakeSigner:
         statement: Path,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
-        del private_key, passphrase
+        del private_key, passphrase, passphrase_path
         value = load_json(statement)
         assert isinstance(value, dict)
         predicate_type = value.get("predicateType")

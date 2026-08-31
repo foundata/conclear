@@ -179,6 +179,7 @@ def attest_command(
         private_key=key,
         public_key=selected.cosign_public_key,
         passphrase=passphrase,
+        passphrase_path=selected.passphrase_file,
         registry=source_run.runtime.skopeo(),
         auth_file=selected.auth_file,
         now=datetime.now(UTC),

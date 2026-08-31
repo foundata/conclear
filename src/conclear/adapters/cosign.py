@@ -61,6 +61,7 @@ class CosignAdapter(ToolAdapter):
         subject: OCIReference,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
         """Sign one digest with default public transparency-log upload enabled."""
         self._require_digest(subject)
@@ -74,6 +75,7 @@ class CosignAdapter(ToolAdapter):
                 str(subject),
             ),
             passphrase=passphrase,
+            secret_paths=_signing_secret_paths(private_key, passphrase_path),
         )
         return SignatureObservation(subject, result)
 
@@ -85,6 +87,7 @@ class CosignAdapter(ToolAdapter):
         predicate_type: str,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
         """Attach one signed predicate with default public log upload enabled."""
         self._require_digest(subject)
@@ -102,7 +105,10 @@ class CosignAdapter(ToolAdapter):
                 str(subject),
             ),
             passphrase=passphrase,
-            secret_paths=(predicate,),
+            secret_paths=(
+                predicate,
+                *_signing_secret_paths(private_key, passphrase_path),
+            ),
         )
         return SignatureObservation(subject, result)
 
@@ -113,6 +119,7 @@ class CosignAdapter(ToolAdapter):
         statement: Path,
         private_key: str,
         passphrase: str | None,
+        passphrase_path: Path | None = None,
     ) -> SignatureObservation:
         """Attach one caller-validated in-toto Statement with public log inclusion."""
         self._require_digest(subject)
@@ -128,7 +135,10 @@ class CosignAdapter(ToolAdapter):
                 str(subject),
             ),
             passphrase=passphrase,
-            secret_paths=(statement,),
+            secret_paths=(
+                statement,
+                *_signing_secret_paths(private_key, passphrase_path),
+            ),
         )
         return SignatureObservation(subject, result)
 
@@ -272,3 +282,14 @@ def _missing_attestation(error: CommandExecutionError, predicate_type: str) -> b
         for line in (*error.stderr.splitlines(), *error.stdout.splitlines())
     }
     return bool(messages & expected)
+
+
+def _signing_secret_paths(
+    private_key: str, passphrase_path: Path | None
+) -> tuple[Path, ...]:
+    key_paths = (
+        ()
+        if private_key.startswith("pkcs11:") or "://" in private_key
+        else (Path(private_key),)
+    )
+    return (*key_paths, *(() if passphrase_path is None else (passphrase_path,)))
