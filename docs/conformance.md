@@ -19,7 +19,7 @@ Repository configuration may shorten these limits but cannot extend or disable t
 
 | Check | Behavior | Severity | Guide section | Summary |
 |---|---|---|---|---|
-| `CC0001` | automated | error | [configuration-and-trust-inputs](https://github.com/foundata/guidelines/blob/909794089dbabbf6c8d8e50fcf47bb2b6fd315b9/oci-container-image-guide.md#configuration-and-trust-inputs) | Validate repository configuration against its closed schema |
+| `CC0001` | automated | error | [build-arguments-configuration-and-secrets](https://github.com/foundata/guidelines/blob/909794089dbabbf6c8d8e50fcf47bb2b6fd315b9/oci-container-image-guide.md#build-arguments-configuration-and-secrets) | Validate repository configuration against its closed schema |
 | `CC0002` | automated | error | [build-context](https://github.com/foundata/guidelines/blob/909794089dbabbf6c8d8e50fcf47bb2b6fd315b9/oci-container-image-guide.md#build-context) | Keep configured and transported paths within their trusted root |
 | `CC0003` | automated | error | [signing-and-verification](https://github.com/foundata/guidelines/blob/909794089dbabbf6c8d8e50fcf47bb2b6fd315b9/oci-container-image-guide.md#signing-and-verification) | Reject unsafe release-profile ownership and permissions |
 | `CC0101` | automated | error | [files-and-layout](https://github.com/foundata/guidelines/blob/909794089dbabbf6c8d8e50fcf47bb2b6fd315b9/oci-container-image-guide.md#files-and-layout) | Require UTF-8 Containerfiles with Unix line endings and a final newline |

@@ -1,6 +1,7 @@
 """Stable check catalog loading and conformance generation."""
 
 import json
+import re
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -73,6 +74,10 @@ def load_catalog() -> CheckCatalog:
             ) from exc
         checks.append(check)
     identifiers = [check.check_id for check in checks]
+    if any(
+        re.fullmatch(r"CC[0-9]{4}", identifier) is None for identifier in identifiers
+    ):
+        raise OperationalError("Check catalog identifiers must match CCnnnn")
     if len(identifiers) != len(set(identifiers)):
         raise OperationalError("Check catalog identifiers must be unique")
     limits: list[LimitDefinition] = []

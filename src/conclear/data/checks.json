@@ -8,7 +8,7 @@
     {"name": "Fixable HIGH or CRITICAL remediation", "value": "30 days"}
   ],
   "checks": [
-    {"id": "CC0001", "summary": "Validate repository configuration against its closed schema", "severity": "error", "behavior": "automated", "anchor": "configuration-and-trust-inputs"},
+    {"id": "CC0001", "summary": "Validate repository configuration against its closed schema", "severity": "error", "behavior": "automated", "anchor": "build-arguments-configuration-and-secrets"},
     {"id": "CC0002", "summary": "Keep configured and transported paths within their trusted root", "severity": "error", "behavior": "automated", "anchor": "build-context"},
     {"id": "CC0003", "summary": "Reject unsafe release-profile ownership and permissions", "severity": "error", "behavior": "automated", "anchor": "signing-and-verification"},
     {"id": "CC0101", "summary": "Require UTF-8 Containerfiles with Unix line endings and a final newline", "severity": "error", "behavior": "automated", "anchor": "files-and-layout"},
