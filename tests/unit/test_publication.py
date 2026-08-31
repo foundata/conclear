@@ -27,7 +27,7 @@ from conclear.jsonutil import (
     sha256_bytes,
     sha256_file,
 )
-from conclear.oci import OCI_CONFIG, OCI_MANIFEST
+from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.services.assembly import CandidateResult
 from conclear.services.publication import (
@@ -487,6 +487,15 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         )
 
     signer.fail_once = RELEASE_VERIFICATION_TYPE
+    accepted_graph = registry.graph
+    registry.graph = OCIGraph(
+        root=accepted_graph.root,
+        descriptors=accepted_graph.descriptors[:-1],
+        manifests=accepted_graph.manifests,
+    )
+    with pytest.raises(OperationalError, match="descriptor graph differs"):
+        run_verification(datetime(2026, 1, 1, 0, 4, tzinfo=UTC))
+    registry.graph = accepted_graph
     with pytest.raises(OperationalError, match="injected"):
         run_verification(datetime(2026, 1, 1, 0, 4, tzinfo=UTC))
     verification = run_verification(datetime(2026, 1, 1, 0, 5, tzinfo=UTC))

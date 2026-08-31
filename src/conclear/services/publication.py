@@ -1,5 +1,6 @@
 """Candidate publication, signing, verification and promotion services."""
 
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -403,7 +404,14 @@ def attest_candidate(
     """Attach SPDX and provenance, then sign every unique image digest."""
     if workspace.load().state is not RunState.PUBLISHED:
         raise InvalidInvocationError("Attestation requires published state")
-    _require_remote_unchanged(published, registry, auth_file)
+    _require_remote_graph_unchanged(
+        published,
+        registry,
+        auth_file,
+        workspace=workspace,
+        image=image,
+        phase="before-attestation",
+    )
     manifest_map = {
         item.platform: item.descriptor.digest for item in published.graph.manifests
     }
@@ -616,7 +624,14 @@ def verify_candidate(
         raise InvalidInvocationError(
             "Release candidate record changed before verification"
         )
-    _require_remote_unchanged(published, registry, auth_file)
+    _require_remote_graph_unchanged(
+        published,
+        registry,
+        auth_file,
+        workspace=workspace,
+        image=image,
+        phase="verification",
+    )
     subjects = {
         published.graph.digest,
         *(manifest.descriptor.digest for manifest in published.graph.manifests),
@@ -993,14 +1008,28 @@ def _write_release_tag(
     workspace.journal.update(resource_id, ResourceStatus.CREATED)
 
 
-def _require_remote_unchanged(
+def _require_remote_graph_unchanged(
     published: PublishedCandidate,
     registry: Registry,
     auth_file: Path | None,
+    *,
+    workspace: RunWorkspace,
+    image: ImageConfig,
+    phase: str,
 ) -> None:
     observed = registry.resolve_digest(published.reference, auth_file=auth_file)
     if observed != published.graph.digest:
         raise OperationalError("Candidate tag changed after publication")
+    report_root = workspace.root / "reports" / image.image_id / "remote-verification"
+    report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"{phase}-", dir=report_root) as directory:
+        remote = registry.copy_registry_to_layout(
+            source=published.immutable_reference,
+            layout_path=Path(directory) / "layout",
+            layout_reference=phase,
+            auth_file=auth_file,
+        )
+        _require_same_graph(published.graph, remote.graph)
 
 
 def _require_same_graph(expected: OCIGraph, observed: OCIGraph) -> None:
