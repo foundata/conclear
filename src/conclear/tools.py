@@ -118,11 +118,11 @@ class ToolResolver:
         self,
         *,
         runner: Runner | None = None,
-        locator: Callable[[str], str | None] = shutil.which,
+        locator: Callable[[str, str], str | None] | None = None,
     ) -> None:
         """Create a resolver with injectable process and path boundaries."""
         self._runner = runner or ProcessRunner()
-        self._locator = locator
+        self._locator = locator or _locate_on_path
 
     def resolve(
         self,
@@ -131,7 +131,10 @@ class ToolResolver:
         environment: Mapping[str, str],
     ) -> ResolvedTool:
         """Resolve one executable and reject an unsupported version."""
-        located = self._locator(name.value)
+        search_path = environment.get("PATH")
+        if not search_path:
+            raise OperationalError("Tool discovery environment has no PATH")
+        located = self._locator(name.value, search_path)
         if located is None:
             raise OperationalError(f"Required tool is unavailable: {name.value}")
         try:
@@ -182,3 +185,7 @@ class ToolResolver:
     ) -> tuple[ResolvedTool, ...]:
         """Resolve a deterministic collection of required tools."""
         return tuple(self.resolve(name, environment=environment) for name in names)
+
+
+def _locate_on_path(name: str, search_path: str) -> str | None:
+    return shutil.which(name, path=search_path)

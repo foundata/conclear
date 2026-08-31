@@ -262,9 +262,15 @@ def test_tool_resolver_records_supported_executable_identity(tmp_path: Path) -> 
     executable = tmp_path / "cosign"
     executable.write_bytes(b"executable")
     executable.chmod(0o700)
+    searches: list[tuple[str, str]] = []
+
+    def locate(name: str, search_path: str) -> str:
+        searches.append((name, search_path))
+        return str(executable)
+
     resolver = ToolResolver(
         runner=FakeRunner("GitVersion: v3.1.3"),
-        locator=lambda _name: str(executable),
+        locator=locate,
     )
 
     tool = resolver.resolve(ToolName.COSIGN, environment={"PATH": "/usr/bin"})
@@ -272,6 +278,7 @@ def test_tool_resolver_records_supported_executable_identity(tmp_path: Path) -> 
     assert tool.version == "3.1.3"
     assert tool.executable_digest.startswith("sha256:")
     assert tool.path.is_absolute()
+    assert searches == [("cosign", "/usr/bin")]
 
 
 def test_tool_resolver_rejects_unsupported_version(tmp_path: Path) -> None:
@@ -280,7 +287,7 @@ def test_tool_resolver_rejects_unsupported_version(tmp_path: Path) -> None:
     executable.chmod(0o700)
     resolver = ToolResolver(
         runner=FakeRunner("GitVersion: v3.1.2"),
-        locator=lambda _name: str(executable),
+        locator=lambda _name, _search_path: str(executable),
     )
 
     with pytest.raises(
