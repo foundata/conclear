@@ -294,6 +294,7 @@ def promote_command(
                 if result.candidate_deleted
                 else "Verified digest promoted; candidate cleanup failed"
             ),
+            findings=result.findings,
             data={
                 "tags": [
                     {"tag": tag, "digest": str(digest)} for tag, digest in result.tags
@@ -374,6 +375,7 @@ def release_command(
                 if result.candidate_deleted
                 else "Verified digest promoted; candidate cleanup failed"
             ),
+            findings=result.findings,
             data={
                 "runId": result.run_id,
                 "workspace": str(result.workspace),

@@ -56,7 +56,7 @@ def select_database_by_digest(
     selected = adapter.select_database_by_digest(cache_root, expected_digest)
     if selected.digest != str(expected_digest):
         raise OperationalError(
-            "Selected Trivy database does not match the expected digest"
+            "Selected Trivy database does not match the expected digest", code="CC0505"
         )
     return selected
 

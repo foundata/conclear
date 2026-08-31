@@ -8,7 +8,12 @@ import conclear.records as records_module
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
-from conclear.records import RecordEnvelope, SourceIdentity, Verdict
+from conclear.records import (
+    RecordEnvelope,
+    SourceIdentity,
+    ToolIdentity,
+    Verdict,
+)
 from conclear.rescan_history import (
     RemediationFindingKey,
     RescanHistoryEntry,
@@ -58,7 +63,9 @@ def _record(
         run_id="01arz3ndektsv4rrffq69g5fav",
         source=SourceIdentity("https://github.com/example/app", "b" * 40),
         configuration_digest="sha256:" + "c" * 64,
-        tools=(),
+        tools=(
+            ToolIdentity("trivy", "0.69.3", executable_digest="sha256:" + "f" * 64),
+        ),
         verdict=Verdict.ACCEPTED,
         payload={
             "subject": str(SUBJECT),

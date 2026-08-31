@@ -22,8 +22,9 @@ def test_contained_path_rejects_parent_traversal(depth: int) -> None:
     with tempfile.TemporaryDirectory() as temporary_directory:
         root = Path(temporary_directory) / "root"
         root.mkdir()
-        with pytest.raises(InvalidInvocationError):
+        with pytest.raises(InvalidInvocationError) as caught:
             contained_path(root, "/".join([".."] * depth), must_exist=False)
+        assert caught.value.code == "CC0002"
 
 
 def test_contained_path_rejects_symlink_escape(tmp_path: Path) -> None:

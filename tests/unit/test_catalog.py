@@ -21,6 +21,19 @@ def test_catalog_identifiers_are_unique_and_stable() -> None:
     assert all(re.fullmatch(r"CC[0-9]{4}", identifier) for identifier in identifiers)
 
 
+def test_every_automated_identifier_is_attached_in_production_code() -> None:
+    production_root = Path(__file__).parents[2] / "src" / "conclear"
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in production_root.rglob("*.py")
+    )
+    missing = sorted(
+        check.check_id
+        for check in load_catalog().checks
+        if check.behavior == "automated" and check.check_id not in source
+    )
+    assert missing == []
+
+
 def test_conformance_renders_retired_identifiers_separately() -> None:
     current = load_catalog()
     catalog = CheckCatalog(

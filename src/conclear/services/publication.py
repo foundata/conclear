@@ -31,6 +31,7 @@ from conclear.errors import (
 from conclear.identity import IDENTITY
 from conclear.jsonutil import load_json, sha256_file
 from conclear.oci import OCIGraph, graph_fingerprint
+from conclear.presentation import Finding
 from conclear.provenance import SLSA_PROVENANCE_TYPE, ProvenanceMaterial
 from conclear.records import (
     RecordEnvelope,
@@ -233,6 +234,7 @@ class PromotionResult:
 
     tags: tuple[tuple[str, Digest], ...]
     candidate_deleted: bool
+    findings: tuple[Finding, ...] = ()
 
 
 def publish_candidate(
@@ -577,11 +579,13 @@ def attest_candidate(
         if existing_signature is not None:
             downloaded = signer.download_signatures(subject=subject)
             if downloaded:
-                signer.verify(subject=subject, public_key=public_key)
+                _verify_image_signature(signer, subject, public_key)
                 workspace.journal.update(resource, ResourceStatus.CREATED)
                 continue
             if existing_signature.status is ResourceStatus.CREATED:
-                raise OperationalError("Recorded image signature is missing")
+                raise OperationalError(
+                    "Recorded image signature is missing", code="CC0702"
+                )
         else:
             workspace.journal.plan(
                 resource_id=resource,
@@ -668,9 +672,10 @@ def verify_candidate(
         *(manifest.descriptor.digest for manifest in published.graph.manifests),
     }
     for digest in sorted(subjects):
-        signer.verify(
-            subject=published.reference.with_digest(digest),
-            public_key=profile.cosign_public_key,
+        _verify_image_signature(
+            signer,
+            published.reference.with_digest(digest),
+            profile.cosign_public_key,
         )
     manifest_map = {
         item.platform: item.descriptor.digest for item in published.graph.manifests
@@ -989,7 +994,17 @@ def promote_candidate(
         quay.delete_tag(image.repository, published.reference.tag or "")
         workspace.journal.update("candidate", ResourceStatus.REMOVED)
     except Exception:
-        return PromotionResult(tuple(observed), False)
+        return PromotionResult(
+            tuple(observed),
+            False,
+            (
+                Finding(
+                    "CC0605",
+                    "error",
+                    "Verified digest was promoted but candidate cleanup failed",
+                ),
+            ),
+        )
     else:
         return PromotionResult(tuple(observed), True)
 
@@ -1289,6 +1304,18 @@ def _render_tag(template: str, version: str | None) -> str:
         rendered = template
     OCIReference("registry.invalid", "validation").with_tag(rendered)
     return rendered
+
+
+def _verify_image_signature(
+    signer: Signer, subject: OCIReference, public_key: Path
+) -> None:
+    try:
+        signer.verify(subject=subject, public_key=public_key)
+    except OperationalError as exc:
+        raise OperationalError(
+            f"Image signature coverage could not be verified for {subject}",
+            code="CC0702",
+        ) from exc
 
 
 def _mark_failed(workspace: RunWorkspace, resource_id: str) -> None:

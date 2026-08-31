@@ -131,12 +131,15 @@ def test_database_rejects_distributed_snapshot_content_mismatch(
     )
     adapter = FakeDatabase(changed, changed)
 
-    with pytest.raises(OperationalError, match="does not match the expected digest"):
+    with pytest.raises(
+        OperationalError, match="does not match the expected digest"
+    ) as caught:
         select_database_by_digest(
             adapter,
             tmp_path,
             expected_digest=expected,
         )
+    assert caught.value.code == "CC0505"
 
 
 def test_secret_descriptor_is_read_once_and_closed() -> None:

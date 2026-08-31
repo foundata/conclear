@@ -220,6 +220,29 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
     assert not observation.effective_capabilities
 
 
+def test_podman_import_digest_mismatch_uses_stable_check_identifier(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(
+        result("imported-id\n"),
+        result(),
+        result("sha256:" + "b" * 64 + "\n"),
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    with pytest.raises(OperationalError, match="differs from layout") as caught:
+        adapter.import_layout(
+            root=tmp_path / "root",
+            runroot=tmp_path / "runroot",
+            layout_path=tmp_path / "layout",
+            layout_reference="qualified",
+            image_name="test-image",
+            expected_digest=Digest("sha256:" + "a" * 64),
+        )
+
+    assert caught.value.code == "CC0305"
+
+
 def test_podman_controls_require_effective_capability_observation(
     tmp_path: Path,
 ) -> None:
@@ -532,9 +555,10 @@ def test_cosign_signing_failure_redacts_private_key_path(tmp_path: Path) -> None
     )
     subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
 
-    with pytest.raises(CommandExecutionError) as failure:
+    with pytest.raises(OperationalError) as failure:
         adapter.sign(subject=subject, private_key=str(private_key), passphrase="pw")
 
+    assert failure.value.code == "CC0701"
     assert str(private_key) not in str(failure.value)
     assert "[REDACTED]" in str(failure.value)
     log = json.loads(
@@ -548,9 +572,10 @@ def test_cosign_verification_requires_a_verified_entry(tmp_path: Path) -> None:
     adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
     subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
 
-    with pytest.raises(OperationalError, match="no verified entries"):
+    with pytest.raises(OperationalError, match="no verified entries") as caught:
         adapter.verify(subject=subject, public_key=tmp_path / "cosign.pub")
 
+    assert caught.value.code == "CC0701"
     assert "--insecure-ignore-tlog" not in runner.requests[0].argv
 
 

@@ -154,7 +154,8 @@ def assemble_candidate(
             )
         if item.database_digest != first.database_digest:
             raise InvalidInvocationError(
-                "Qualifications use different vulnerability database snapshots"
+                "Qualifications use different vulnerability database snapshots",
+                code="CC0505",
             )
     tag = candidate_tag(
         version=version,

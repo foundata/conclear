@@ -114,11 +114,12 @@ class PodmanAdapter(ToolAdapter):
             observed = Digest(result.stdout.strip())
         except Exception as exc:
             raise OperationalError(
-                "Podman returned an invalid imported digest"
+                "Podman returned an invalid imported digest", code="CC0305"
             ) from exc
         if observed != expected_digest:
             raise OperationalError(
-                f"Podman imported digest {observed} differs from layout {expected_digest}"
+                f"Podman imported digest {observed} differs from layout {expected_digest}",
+                code="CC0305",
             )
         return ImportObservation(image_name, observed)
 

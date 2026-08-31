@@ -31,16 +31,19 @@ def read_protected_file(
         file_stat = os.fstat(descriptor)
         if not stat.S_ISREG(file_stat.st_mode):
             raise InvalidInvocationError(
-                f"Credential or profile path is not a regular file: {path}"
+                f"Credential or profile path is not a regular file: {path}",
+                code="CC0003",
             )
         if file_stat.st_uid != os.getuid():
             raise InvalidInvocationError(
-                f"Credential or profile file is not owned by this user: {path}"
+                f"Credential or profile file is not owned by this user: {path}",
+                code="CC0003",
             )
         allowed = 0o640 if allow_group_read else 0o600
         if stat.S_IMODE(file_stat.st_mode) & ~allowed:
             raise InvalidInvocationError(
-                f"Credential or profile file permissions are unsafe: {path}"
+                f"Credential or profile file permissions are unsafe: {path}",
+                code="CC0003",
             )
         content = bytearray()
         while len(content) <= maximum_bytes:

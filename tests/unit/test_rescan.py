@@ -271,6 +271,7 @@ def _exception() -> VulnerabilityException:
         "use_exception",
         "triage_decision",
         "future_triage",
+        "platform_mismatch",
     ),
     [
         (
@@ -281,9 +282,28 @@ def _exception() -> VulnerabilityException:
             False,
             "not-applicable",
             False,
+            False,
         ),
-        ("sbom-vulnerabilities", False, "linux/amd64", False, False, "affected", False),
-        ("full-image", False, "linux/amd64", False, True, "not-applicable", False),
+        (
+            "sbom-vulnerabilities",
+            False,
+            "linux/amd64",
+            False,
+            False,
+            "affected",
+            False,
+            False,
+        ),
+        (
+            "full-image",
+            False,
+            "linux/amd64",
+            False,
+            True,
+            "not-applicable",
+            False,
+            False,
+        ),
         (
             "sbom-vulnerabilities",
             True,
@@ -291,6 +311,7 @@ def _exception() -> VulnerabilityException:
             False,
             True,
             "not-applicable",
+            False,
             False,
         ),
         (
@@ -301,6 +322,7 @@ def _exception() -> VulnerabilityException:
             True,
             "not-applicable",
             False,
+            False,
         ),
         (
             "sbom-vulnerabilities",
@@ -310,6 +332,7 @@ def _exception() -> VulnerabilityException:
             True,
             "not-applicable",
             False,
+            False,
         ),
         (
             "sbom-vulnerabilities",
@@ -318,6 +341,17 @@ def _exception() -> VulnerabilityException:
             False,
             True,
             "not-applicable",
+            True,
+            False,
+        ),
+        (
+            "sbom-vulnerabilities",
+            False,
+            "linux/amd64",
+            False,
+            True,
+            "not-applicable",
+            False,
             True,
         ),
     ],
@@ -332,6 +366,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     use_exception: bool,
     triage_decision: str,
     future_triage: bool,
+    platform_mismatch: bool,
 ) -> None:
     monkeypatch.setattr(
         records_module,
@@ -377,7 +412,9 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         run_id=run.run_id,
         source=SourceIdentity("https://github.com/example/app", "e" * 40),
         configuration_digest=configuration_digest,
-        tools=(),
+        tools=(
+            ToolIdentity("cosign", "3.1.3", executable_digest="sha256:" + "8" * 64),
+        ),
         verdict=Verdict.ACCEPTED,
         payload={
             "subject": {
@@ -400,6 +437,10 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             },
         },
     ).to_dict()
+    if platform_mismatch:
+        payload = release_record["payload"]
+        assert isinstance(payload, dict)
+        payload["platformDigests"] = {str(platform): "sha256:" + "9" * 64}
     signer = FakeSigner()
     signer.add(subject, RELEASE_VERIFICATION_TYPE, release_record)
     if wrong_release_name:
@@ -466,7 +507,9 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             run_id=run.run_id,
             source=SourceIdentity("https://github.com/example/app", "e" * 40),
             configuration_digest=configuration_digest,
-            tools=(),
+            tools=(
+                ToolIdentity("trivy", "0.69.3", executable_digest="sha256:" + "7" * 64),
+            ),
             verdict=Verdict.ACCEPTED,
             payload={
                 "subject": str(subject),
@@ -532,6 +575,12 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     if future_triage:
         with pytest.raises(InvalidInvocationError, match="dated in the future"):
             run_rescan()
+        assert run.journal.entries() == ()
+        return
+    if platform_mismatch:
+        with pytest.raises(OperationalError, match="platform graph differs") as caught:
+            run_rescan()
+        assert caught.value.code == "CC0801"
         assert run.journal.entries() == ()
         return
     if wrong_release_name:

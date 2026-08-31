@@ -31,7 +31,7 @@ from conclear.commands.remote import (
     verify_command,
 )
 from conclear.commands.version import version_command, write_version
-from conclear.errors import ConClearError, ExitStatus, RuleRejectionError
+from conclear.errors import ConClearError, ExitStatus
 from conclear.presentation import CommandResult, Finding, ResultStatus
 
 
@@ -108,11 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         return int(ExitStatus.OPERATIONAL_FAILURE)
     except ConClearError as exc:
-        finding = (
-            Finding(exc.code, "error", str(exc))
-            if isinstance(exc, RuleRejectionError) and exc.code is not None
-            else None
-        )
+        finding = Finding(exc.code, "error", str(exc)) if exc.code is not None else None
         diagnostic = (
             f"{finding.check_id} {finding.severity}: {finding.message}"
             if finding is not None

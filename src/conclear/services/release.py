@@ -28,6 +28,7 @@ from conclear.errors import (
 from conclear.hooks import HookRunner
 from conclear.jsonutil import atomic_write_json, sha256_bytes
 from conclear.pins import PinResolver, PinStore
+from conclear.presentation import Finding
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.records import SourceIdentity, Verdict
 from conclear.runtime import ApplicationRuntime
@@ -88,6 +89,7 @@ class ReleaseResult:
     subject: str
     tags: tuple[tuple[str, str], ...]
     candidate_deleted: bool
+    findings: tuple[Finding, ...] = ()
 
 
 class AuthenticatedPinResolver(PinResolver):
@@ -569,6 +571,7 @@ def _write_summary(
         str(subject),
         tags,
         promotion.candidate_deleted,
+        promotion.findings,
     )
 
 

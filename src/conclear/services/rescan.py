@@ -266,7 +266,9 @@ def rescan_release(
         item.platform: item.descriptor.digest for item in remote.graph.manifests
     }
     if None in manifest_map:
-        raise OperationalError("Released graph has a manifest without a platform")
+        raise OperationalError(
+            "Released graph has a manifest without a platform", code="CC0801"
+        )
     recorded_platforms = _object(
         payload.get("platformDigests"), "release platform digests"
     )
@@ -292,7 +294,7 @@ def rescan_release(
     }
     if recorded_platforms != expected_platforms:
         raise OperationalError(
-            "Released platform graph differs from release verification"
+            "Released platform graph differs from release verification", code="CC0801"
         )
     report_root = workspace.root / "reports" / image_id / "rescan"
     report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -301,7 +303,9 @@ def rescan_release(
     active_findings: set[RemediationFindingKey] = set()
     for platform, digest in sorted(manifest_map.items()):
         if platform is None:
-            raise OperationalError("Rescan platform coverage invariant failed")
+            raise OperationalError(
+                "Rescan platform coverage invariant failed", code="CC0801"
+            )
         manifest_subject = subject.with_digest(digest)
         signer.verify_attestation(
             subject=manifest_subject,

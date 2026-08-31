@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import override
 
 import pytest
 
@@ -349,6 +350,30 @@ class FakeSigner:
         statement: dict[str, object],
     ) -> None:
         self.statements.setdefault((str(subject), predicate_type), []).append(statement)
+
+
+class FailingSignatureSigner(FakeSigner):
+    @override
+    def verify(
+        self, *, subject: OCIReference, public_key: Path
+    ) -> VerificationObservation:
+        del subject, public_key
+        raise OperationalError("signature is absent")
+
+
+def test_signature_coverage_failure_uses_stable_check_identifier(
+    tmp_path: Path,
+) -> None:
+    subject = OCIReference.parse(
+        "quay.io/example/app@sha256:" + "a" * 64, require_digest=True
+    )
+
+    with pytest.raises(OperationalError, match="coverage") as caught:
+        publication_module._verify_image_signature(
+            FailingSignatureSigner(), subject, tmp_path / "cosign.pub"
+        )
+
+    assert caught.value.code == "CC0702"
 
 
 def test_failed_publication_retains_digest_ownership_and_expiration(
@@ -722,6 +747,9 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         ("stable", observation.graph.digest),
     )
     assert promoted.candidate_deleted is not delete_fails
+    assert tuple(finding.check_id for finding in promoted.findings) == (
+        ("CC0605",) if delete_fails else ()
+    )
     assert (tag in tags) is delete_fails
     assert tags["1.2.3"] == observation.graph.digest
     assert "1.2.3" in quay.immutable

@@ -190,8 +190,11 @@ def test_release_profile_rejects_group_writable_file(tmp_path: Path) -> None:
     )
     profile.chmod(0o620)
     assert os.getuid() == profile.stat().st_uid
-    with pytest.raises(InvalidInvocationError, match="permissions are unsafe"):
+    with pytest.raises(
+        InvalidInvocationError, match="permissions are unsafe"
+    ) as caught:
         load_release_profile("release", config_home=config_home)
+    assert caught.value.code == "CC0003"
 
 
 def test_release_profile_rejects_credentials_in_hsm_handle(tmp_path: Path) -> None:

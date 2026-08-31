@@ -150,6 +150,7 @@ class CosignAdapter(ToolAdapter):
         output = self._execute_release(
             ("verify", "--key", str(public_key), "--output", "json", str(subject)),
             secret_paths=(public_key,),
+            check_code="CC0701",
         )
         return self._verification(subject, output)
 
@@ -174,6 +175,7 @@ class CosignAdapter(ToolAdapter):
                 str(subject),
             ),
             secret_paths=(public_key,),
+            check_code="CC0701",
         )
         return self._verification(subject, output)
 
@@ -230,6 +232,7 @@ class CosignAdapter(ToolAdapter):
             extra_environment=extra,
             secret_values=(() if passphrase is None else (passphrase,)),
             secret_paths=secret_paths,
+            check_code="CC0701",
         )
 
     def _execute_release(
@@ -240,20 +243,27 @@ class CosignAdapter(ToolAdapter):
         extra_environment: dict[str, str] | None = None,
         secret_values: tuple[str, ...] = (),
         secret_paths: tuple[Path, ...] = (),
+        check_code: str | None = None,
     ) -> str:
         if any(argument in _FORBIDDEN_RELEASE_OPTIONS for argument in arguments):
             raise OperationalError(
-                "Cosign release operations cannot disable log transparency"
+                "Cosign release operations cannot disable log transparency",
+                code="CC0701",
             )
-        return self._run(
-            arguments,
-            timeout_seconds=600,
-            operation=operation,
-            retries=2 if operation is OperationKind.READ else 0,
-            extra_environment=extra_environment,
-            secret_values=secret_values,
-            secret_paths=secret_paths,
-        ).stdout
+        try:
+            return self._run(
+                arguments,
+                timeout_seconds=600,
+                operation=operation,
+                retries=2 if operation is OperationKind.READ else 0,
+                extra_environment=extra_environment,
+                secret_values=secret_values,
+                secret_paths=secret_paths,
+            ).stdout
+        except CommandExecutionError as exc:
+            if check_code is None:
+                raise
+            raise OperationalError(str(exc), code=check_code) from exc
 
     @staticmethod
     def _verification(subject: OCIReference, output: str) -> VerificationObservation:
@@ -262,7 +272,9 @@ class CosignAdapter(ToolAdapter):
             label="Cosign verification",
         )
         if not entries:
-            raise OperationalError("Cosign verification returned no verified entries")
+            raise OperationalError(
+                "Cosign verification returned no verified entries", code="CC0701"
+            )
         return VerificationObservation(subject, tuple(entries))
 
     @staticmethod

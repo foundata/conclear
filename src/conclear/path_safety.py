@@ -16,33 +16,40 @@ def contained_path(root: Path, untrusted: str, *, must_exist: bool = True) -> Pa
     candidate_path = Path(untrusted)
     if candidate_path.is_absolute() or "\x00" in untrusted:
         raise InvalidInvocationError(
-            f"Path must be relative to the source root: {untrusted}"
+            f"Path must be relative to the source root: {untrusted}", code="CC0002"
         )
     if any(part in {"", ".", ".."} for part in candidate_path.parts):
-        raise InvalidInvocationError(f"Path contains an unsafe component: {untrusted}")
+        raise InvalidInvocationError(
+            f"Path contains an unsafe component: {untrusted}", code="CC0002"
+        )
     try:
         resolved_root = root.resolve(strict=True)
         resolved_candidate = (resolved_root / candidate_path).resolve(strict=must_exist)
         resolved_candidate.relative_to(resolved_root)
     except (OSError, RuntimeError, ValueError) as exc:
         raise InvalidInvocationError(
-            f"Path escapes or cannot be resolved below the source root: {untrusted}"
+            f"Path escapes or cannot be resolved below the source root: {untrusted}",
+            code="CC0002",
         ) from exc
     return resolved_candidate
 
 
 def _safe_archive_target(root: Path, member_name: str) -> Path:
     if "\x00" in member_name or "\\" in member_name:
-        raise InvalidInvocationError(f"Unsafe archive member path: {member_name}")
+        raise InvalidInvocationError(
+            f"Unsafe archive member path: {member_name}", code="CC0002"
+        )
     member = PurePosixPath(member_name)
     if member.is_absolute() or any(part in {"", ".", ".."} for part in member.parts):
-        raise InvalidInvocationError(f"Unsafe archive member path: {member_name}")
+        raise InvalidInvocationError(
+            f"Unsafe archive member path: {member_name}", code="CC0002"
+        )
     target = root.joinpath(*member.parts)
     try:
         target.resolve(strict=False).relative_to(root.resolve(strict=True))
     except (OSError, RuntimeError, ValueError) as exc:
         raise InvalidInvocationError(
-            f"Archive member escapes destination: {member_name}"
+            f"Archive member escapes destination: {member_name}", code="CC0002"
         ) from exc
     return target
 
