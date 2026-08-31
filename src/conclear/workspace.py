@@ -298,6 +298,10 @@ class RunWorkspace:
         with _locked_file(self.root / ".run.lock"):
             snapshot = self.load()
             if state == snapshot.state:
+                if state in {RunState.REJECTED, RunState.PROMOTED}:
+                    raise InvalidInvocationError(
+                        f"Run is already in terminal state {state.value}"
+                    )
                 return snapshot
             if state not in _NEXT_STATES[snapshot.state]:
                 raise InvalidInvocationError(

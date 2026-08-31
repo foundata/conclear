@@ -53,6 +53,28 @@ def test_workspace_refuses_changed_inputs_and_invalid_transition(
         workspace.transition(RunState.PUBLISHED)
 
 
+@pytest.mark.parametrize("terminal_state", (RunState.REJECTED, RunState.PROMOTED))
+def test_workspace_rejects_repeated_terminal_transition(
+    tmp_path: Path, terminal_state: RunState
+) -> None:
+    workspace = create_workspace(tmp_path)
+    if terminal_state is RunState.REJECTED:
+        workspace.transition(terminal_state)
+    else:
+        for state in (
+            RunState.QUALIFIED,
+            RunState.ASSEMBLED,
+            RunState.PUBLISHED,
+            RunState.ATTESTED,
+            RunState.VERIFIED,
+            RunState.PROMOTED,
+        ):
+            workspace.transition(state)
+
+    with pytest.raises(InvalidInvocationError, match="already in terminal state"):
+        workspace.transition(terminal_state)
+
+
 def test_workspace_open_rejects_symlinked_run(tmp_path: Path) -> None:
     state_home = tmp_path / "state"
     runs = state_home / "conclear" / "runs"
