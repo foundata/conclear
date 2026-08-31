@@ -6,7 +6,7 @@ from pathlib import Path
 
 from conclear.adapters.quay import QuayAdapter
 from conclear.config import ReleaseProfile, RepositoryConfig
-from conclear.errors import RuleRejectionError
+from conclear.errors import OperationalError
 from conclear.runtime import ApplicationRuntime
 
 
@@ -44,9 +44,8 @@ def diagnose_environment(
     emulated = tuple(sorted(item for item in requested if item != native))
     unavailable = [item for item in emulated if not _binfmt_available(item)]
     if unavailable:
-        raise RuleRejectionError(
-            "No enabled binfmt handler was observed for: " + ", ".join(unavailable),
-            code="CC0301",
+        raise OperationalError(
+            "No enabled binfmt handler was observed for: " + ", ".join(unavailable)
         )
     for image in repository.images:
         quay.get_tag(image.repository, "conclear-doctor-read-probe")
