@@ -3,7 +3,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from conclear.adapters.hadolint import HadolintFinding
-from conclear.checks import analyze_containerfile, check_image_static
+from conclear.checks import (
+    analyze_containerfile,
+    check_image_static,
+    validate_image_labels,
+)
 from conclear.config import load_repository_config
 from conclear.services.checking import check_image
 
@@ -54,6 +58,29 @@ def test_static_checks_report_security_boundaries(tmp_path: Path) -> None:
         "CC0111",
         "CC0112",
     }.issubset(identifiers)
+
+
+def test_buildkit_syntax_directive_spelling_variants_are_rejected(
+    tmp_path: Path,
+) -> None:
+    for index, directive in enumerate(
+        (
+            "#syntax=docker/dockerfile:1",
+            "# syntax = docker/dockerfile:1",
+            "  # SYNTAX=docker/dockerfile:1",
+        )
+    ):
+        path = tmp_path / f"Containerfile.{index}"
+        path.write_text(
+            f'{directive}\nFROM scratch\nUSER 1000\nENTRYPOINT ["/app"]\n',
+            encoding="utf-8",
+        )
+
+        identifiers = {
+            finding.check_id for finding in analyze_containerfile(path).findings
+        }
+
+        assert "CC0103" in identifiers
 
 
 def test_non_root_user_must_be_set_in_the_final_stage(tmp_path: Path) -> None:
@@ -115,6 +142,49 @@ def test_safe_chmod_modes_are_not_rejected(tmp_path: Path) -> None:
     identifiers = {finding.check_id for finding in analyze_containerfile(path).findings}
 
     assert "CC0109" not in identifiers
+
+
+def test_created_label_is_optional_but_verified_when_present() -> None:
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/example/app",
+        "org.opencontainers.image.revision": "a" * 40,
+        "org.opencontainers.image.licenses": "MIT",
+        "org.opencontainers.image.title": "Example",
+    }
+
+    assert (
+        validate_image_labels(
+            labels,
+            source="https://github.com/example/app",
+            revision="a" * 40,
+            version=None,
+            created="2026-01-01T00:00:00Z",
+        )
+        == ()
+    )
+
+    findings = validate_image_labels(
+        {**labels, "org.opencontainers.image.created": "2025-01-01T00:00:00Z"},
+        source="https://github.com/example/app",
+        revision="a" * 40,
+        version=None,
+        created="2026-01-01T00:00:00Z",
+    )
+    assert [finding.check_id for finding in findings] == ["CC0113"]
+
+
+def test_bare_double_star_does_not_satisfy_required_context_exclusions(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    (root / ".containerignore").write_text("**\n", encoding="utf-8")
+    image = load_repository_config(root / "conclear.toml").image("app")
+
+    findings = [
+        finding for finding in check_image_static(image) if finding.check_id == "CC0202"
+    ]
+
+    assert len(findings) == 4
 
 
 def test_hadolint_diagnostics_use_the_adapter_check_identifier(

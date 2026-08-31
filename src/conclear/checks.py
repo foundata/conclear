@@ -24,6 +24,9 @@ _CURL_PIPE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _CHMOD_COMMAND_PATTERN = re.compile(r"\bchmod\b(?P<arguments>[^;&\n]*)")
+_BUILDKIT_SYNTAX_DIRECTIVE = re.compile(
+    r"^[ \t]*#[ \t]*syntax[ \t]*=", re.IGNORECASE | re.MULTILINE
+)
 MAX_CONTAINERFILE_BYTES = 4 * 1024 * 1024
 
 
@@ -191,7 +194,7 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
         findings.append(
             _finding("CC0111", "Final image must define ENTRYPOINT or CMD", str(path))
         )
-    if text.startswith("# syntax=") or "\n# syntax=" in text:
+    if _BUILDKIT_SYNTAX_DIRECTIVE.search(text):
         findings.append(
             _finding(
                 "CC0103", "Docker BuildKit parser directives are prohibited", str(path)
@@ -239,7 +242,6 @@ def validate_image_labels(
     expected = {
         "org.opencontainers.image.source": source,
         "org.opencontainers.image.revision": revision,
-        "org.opencontainers.image.created": created,
     }
     if version is not None:
         expected["org.opencontainers.image.version"] = version
@@ -255,6 +257,14 @@ def validate_image_labels(
                     "CC0113", f"Image label {key} does not match observed release data"
                 )
             )
+    created_label = labels.get("org.opencontainers.image.created")
+    if created_label is not None and created_label != created:
+        findings.append(
+            _finding(
+                "CC0113",
+                "Image label org.opencontainers.image.created does not match observed release data",
+            )
+        )
     for key in sorted(required_presence):
         value = labels.get(key)
         if not isinstance(value, str) or not value:
@@ -444,7 +454,7 @@ def _check_context(context: Path) -> tuple[Finding, ...]:
     }
     findings: list[Finding] = []
     for category, accepted_patterns in categories.items():
-        if patterns.isdisjoint(accepted_patterns) and "**" not in patterns:
+        if patterns.isdisjoint(accepted_patterns):
             findings.append(
                 _finding(
                     "CC0202",
