@@ -1,6 +1,7 @@
 import base64
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -126,6 +127,7 @@ class FakeRegistry:
         self.graph = graph
         self.tags = tags
         self.fail_graph_copy = False
+        self.resolution_overrides: dict[str, Digest] = {}
 
     def resolve_digest(
         self, reference: OCIReference, *, auth_file: Path | None = None
@@ -133,6 +135,8 @@ class FakeRegistry:
         del auth_file
         if reference.digest is not None:
             return reference.digest
+        if reference.tag is not None and reference.tag in self.resolution_overrides:
+            return self.resolution_overrides[reference.tag]
         if reference.tag is None or reference.tag not in self.tags:
             raise AssertionError(f"unknown fake tag: {reference}")
         return self.tags[reference.tag]
@@ -647,6 +651,13 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
     quay.expirations[tag] = expiration
+    image = replace(
+        image,
+        release=replace(
+            image.release,
+            immutable_tags=("{version}", "v{version}"),
+        ),
+    )
     tags["1.2.3"] = observation.graph.digest
     quay.immutable.add("1.2.3")
     workspace.journal.plan(
@@ -660,6 +671,24 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         },
     )
     workspace.journal.update("tag-1.2.3", ResourceStatus.FAILED)
+    tags["v1.2.3"] = observation.graph.digest
+    quay.immutable.add("v1.2.3")
+    registry.resolution_overrides["v1.2.3"] = Digest("sha256:" + "9" * 64)
+    with pytest.raises(OperationalError, match="conflicting registry observations"):
+        promote_candidate(
+            published,
+            verification,
+            image=image,
+            version="1.2.3",
+            workspace=workspace,
+            quay=quay,
+            registry=registry,
+            signer=signer,
+            public_key=public_key,
+            auth_file=None,
+            now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
+        )
+    del registry.resolution_overrides["v1.2.3"]
     quay.fail_delete = delete_fails
     promoted = promote_candidate(
         published,
@@ -678,6 +707,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     assert workspace.load().state is RunState.PROMOTED
     assert promoted.tags == (
         ("1.2.3", observation.graph.digest),
+        ("v1.2.3", observation.graph.digest),
         ("stable", observation.graph.digest),
     )
     assert promoted.candidate_deleted is not delete_fails

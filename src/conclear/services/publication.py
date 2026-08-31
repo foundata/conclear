@@ -946,6 +946,13 @@ def promote_candidate(
                     raise OperationalError(
                         f"Immutable release tag was not protected: {tag}"
                     )
+            resolved = registry.resolve_digest(
+                image.repository.with_tag(tag), auth_file=auth_file
+            )
+            if resolved != published.graph.digest:
+                raise OperationalError(
+                    f"Adopted release tag {tag} has conflicting registry observations"
+                )
             observed.append((tag, current.digest))
             continue
         _write_release_tag(
