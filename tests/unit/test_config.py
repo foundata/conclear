@@ -50,6 +50,32 @@ def test_repository_configuration_cannot_extend_builtin_limits(
         load_repository_config(path)
 
 
+def test_candidate_lifetime_is_accepted_only_at_image_scope(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    direct = path.read_text(encoding="utf-8").replace(
+        "arm64_omission_reason =",
+        'candidate_lifetime = "24h"\narm64_omission_reason =',
+    )
+    path.write_text(direct, encoding="utf-8")
+    assert load_repository_config(path).image("app").limits.candidate_lifetime == (
+        timedelta(hours=24)
+    )
+
+    nested = direct.replace(
+        'candidate_lifetime = "24h"\narm64_omission_reason =',
+        "arm64_omission_reason =",
+    ).replace(
+        "[images.release]",
+        '[images.limits]\ncandidate_lifetime = "24h"\n\n[images.release]',
+    )
+    path.write_text(nested, encoding="utf-8")
+    with pytest.raises(InvalidInvocationError, match="Additional properties"):
+        load_repository_config(path)
+
+
 @pytest.mark.parametrize(
     ("configured", "replacement"),
     (

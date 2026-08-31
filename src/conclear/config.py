@@ -341,10 +341,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     release = _parse_release_tags(release_value)
     runtime_value = _object(value["runtime"])
     limits_value = _object(value.get("limits", {}))
-    candidate_value = value.get(
-        "candidate_lifetime",
-        limits_value.get("candidate_lifetime", "7d"),
-    )
+    candidate_value = value.get("candidate_lifetime", "7d")
     limits = EffectiveLimits(
         pin_freshness=parse_duration(
             _string(limits_value.get("pin_freshness", "24h")),

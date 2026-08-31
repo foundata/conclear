@@ -132,7 +132,6 @@
       "properties": {
         "pin_freshness": {"$ref": "#/$defs/duration"},
         "pin_divergence": {"$ref": "#/$defs/duration"},
-        "candidate_lifetime": {"$ref": "#/$defs/duration"},
         "remediation": {"$ref": "#/$defs/duration"}
       }
     },
