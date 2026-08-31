@@ -14,6 +14,7 @@ from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
+    SPDX_DOCUMENT_TYPE,
     STATEMENT_TYPE,
     decode_dsse_statements,
     statement_matches,
@@ -430,7 +431,7 @@ def attest_candidate(
         subject = published.reference.with_digest(digest)
         resource = f"sbom-{platform.key}"
         metadata: dict[str, object] = {
-            "predicateType": "spdxjson",
+            "predicateType": SPDX_DOCUMENT_TYPE,
             "payloadDigest": expected_digest,
         }
         existing = _retry_entry(
@@ -444,7 +445,7 @@ def attest_candidate(
             if _has_downloaded_predicate(
                 signer,
                 subject=subject,
-                predicate_type="spdxjson",
+                predicate_type=SPDX_DOCUMENT_TYPE,
                 expected=sbom,
             ):
                 signer.verify_attestation(
@@ -657,7 +658,7 @@ def verify_candidate(
         _require_downloaded_predicate(
             signer,
             subject=subject,
-            predicate_type="spdxjson",
+            predicate_type=SPDX_DOCUMENT_TYPE,
             expected=sbom,
         )
     provenance = _object(load_json(evidence.provenance_path), "provenance")

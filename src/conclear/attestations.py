@@ -14,6 +14,7 @@ RELEASE_VERIFICATION_TYPE = (
     "https://github.com/foundata/conclear/predicates/release-verification/v1"
 )
 RESCAN_TYPE = "https://github.com/foundata/conclear/predicates/rescan/v1"
+SPDX_DOCUMENT_TYPE = "https://spdx.dev/Document"
 
 
 def write_statement(

@@ -16,7 +16,11 @@ from conclear.adapters.cosign import (
 from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.assembly import PlatformLayout, assemble_layout
-from conclear.attestations import RELEASE_VERIFICATION_TYPE, STATEMENT_TYPE
+from conclear.attestations import (
+    RELEASE_VERIFICATION_TYPE,
+    SPDX_DOCUMENT_TYPE,
+    STATEMENT_TYPE,
+)
 from conclear.config import ReleaseMode, ReleaseProfile, load_repository_config
 from conclear.errors import OperationalError
 from conclear.identity import ApplicationIdentity
@@ -236,6 +240,9 @@ class FakeSigner:
     ) -> SignatureObservation:
         del private_key, passphrase
         assert subject.digest is not None
+        statement_predicate_type = (
+            SPDX_DOCUMENT_TYPE if predicate_type == "spdxjson" else predicate_type
+        )
         statement: dict[str, object] = {
             "_type": STATEMENT_TYPE,
             "subject": [
@@ -244,10 +251,10 @@ class FakeSigner:
                     "digest": {"sha256": subject.digest.encoded},
                 }
             ],
-            "predicateType": predicate_type,
+            "predicateType": statement_predicate_type,
             "predicate": load_json(predicate),
         }
-        self._store(subject, predicate_type, statement)
+        self._store(subject, statement_predicate_type, statement)
         return SignatureObservation(subject, "attested")
 
     def attest_statement(
@@ -282,7 +289,10 @@ class FakeSigner:
         predicate_type: str,
     ) -> VerificationObservation:
         assert public_key.is_file()
-        assert (str(subject), predicate_type) in self.statements
+        statement_predicate_type = (
+            SPDX_DOCUMENT_TYPE if predicate_type == "spdxjson" else predicate_type
+        )
+        assert (str(subject), statement_predicate_type) in self.statements
         if self.fail_once == predicate_type:
             self.fail_once = None
             raise OperationalError("injected verification interruption")
@@ -448,7 +458,10 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         kind=ResourceKind.ATTESTATION,
         identifier=str(platform_subject),
         ephemeral=False,
-        metadata={"predicateType": "spdxjson", "payloadDigest": sbom_digest},
+        metadata={
+            "predicateType": SPDX_DOCUMENT_TYPE,
+            "payloadDigest": sbom_digest,
+        },
     )
     workspace.journal.update("sbom-linux-amd64", ResourceStatus.FAILED)
     attest_candidate(
@@ -464,7 +477,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 3, tzinfo=UTC),
     )
-    assert len(signer.statements[(str(platform_subject), "spdxjson")]) == 1
+    assert len(signer.statements[(str(platform_subject), SPDX_DOCUMENT_TYPE)]) == 1
 
     def run_verification(now: datetime) -> VerificationResult:
         return verify_candidate(
