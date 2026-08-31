@@ -20,6 +20,7 @@ from conclear.attestations import (
     statement_matches,
     write_statement,
 )
+from conclear.ci import validate_ci_identity
 from conclear.config import ImageConfig, ReleaseProfile
 from conclear.errors import (
     InvalidInvocationError,
@@ -619,6 +620,8 @@ def verify_candidate(
         raise InvalidInvocationError("Local releases cannot claim a CI identity")
     if profile.mode.value == "ci" and ci_identity is None:
         raise InvalidInvocationError("CI releases require an observed CI identity")
+    if ci_identity is not None:
+        ci_identity = validate_ci_identity(ci_identity, evidence.source)
     Digest(evidence.configuration_digest)
     for evidence_digest in (
         *evidence.qualification_digests,

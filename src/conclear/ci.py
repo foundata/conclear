@@ -4,7 +4,9 @@ import re
 from collections.abc import Mapping
 from urllib.parse import urlparse
 
-from conclear.errors import InvalidInvocationError
+from conclear.config import normalize_source_url
+from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.records import SourceIdentity
 from conclear.values import validate_source_revision
 
 
@@ -45,6 +47,81 @@ def observe_ci_identity(environment: Mapping[str, str]) -> dict[str, object]:
     raise InvalidInvocationError("CI release mode requires a supported CI identity")
 
 
+def validate_ci_identity(
+    identity: Mapping[str, object], source: SourceIdentity
+) -> dict[str, object]:
+    """Bind observed provider metadata to the isolated checkout identity."""
+    provider = identity.get("provider")
+    result: dict[str, object]
+    if provider == "github-actions":
+        expected_keys = {
+            "provider",
+            "server",
+            "repository",
+            "workflow",
+            "runId",
+            "revision",
+        }
+        server = _https_url(_optional_string(identity.get("server")), "GitHub server")
+        repository = _name(
+            _optional_string(identity.get("repository")), "GitHub repository"
+        )
+        workflow = _name(_optional_string(identity.get("workflow")), "GitHub workflow")
+        run_id = _digits(_optional_string(identity.get("runId")), "GitHub run id")
+        if not workflow.startswith(f"{repository}/.github/workflows/"):
+            raise OperationalError(
+                "GitHub workflow identity differs from its claimed repository"
+            )
+        result = {
+            "provider": provider,
+            "server": server,
+            "repository": repository,
+            "workflow": workflow,
+            "runId": run_id,
+            "revision": _revision(identity.get("revision")),
+        }
+    elif provider == "gitlab-ci":
+        expected_keys = {
+            "provider",
+            "server",
+            "repository",
+            "pipelineId",
+            "jobId",
+            "revision",
+        }
+        server = _https_url(_optional_string(identity.get("server")), "GitLab server")
+        repository = _name(
+            _optional_string(identity.get("repository")), "GitLab project"
+        )
+        result = {
+            "provider": provider,
+            "server": server,
+            "repository": repository,
+            "pipelineId": _digits(
+                _optional_string(identity.get("pipelineId")), "GitLab pipeline id"
+            ),
+            "jobId": _digits(_optional_string(identity.get("jobId")), "GitLab job id"),
+            "revision": _revision(identity.get("revision")),
+        }
+    else:
+        raise OperationalError("Observed CI provider is unsupported")
+    if set(identity) != expected_keys:
+        raise OperationalError("Observed CI identity fields are malformed")
+    try:
+        claimed_source = normalize_source_url(f"{server}/{repository}")
+    except InvalidInvocationError as exc:
+        raise OperationalError("Observed CI repository is malformed") from exc
+    if claimed_source != source.repository:
+        raise OperationalError(
+            "Observed CI repository differs from the isolated checkout"
+        )
+    if result["revision"] != source.revision:
+        raise OperationalError(
+            "Observed CI revision differs from the isolated checkout"
+        )
+    return result
+
+
 def _name(value: str | None, label: str) -> str:
     if (
         value is None
@@ -69,3 +146,14 @@ def _https_url(value: str | None, label: str) -> str:
     if parsed.scheme != "https" or not parsed.netloc or parsed.username is not None:
         raise InvalidInvocationError(f"{label} must be a credential-free HTTPS URL")
     return result.rstrip("/")
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _revision(value: object) -> str:
+    try:
+        return validate_source_revision(_name(_optional_string(value), "CI revision"))
+    except InvalidInvocationError as exc:
+        raise OperationalError("Observed CI revision is malformed") from exc

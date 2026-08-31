@@ -65,6 +65,10 @@ The local suite compiles network-free `scratch` fixtures with Go, uses isolated 
 
 Network tests need an explicitly authorized disposable Quay repository, narrow credentials and dedicated test signing keys. Production release keys and shared repositories are never test inputs.
 
+## CI identity trust
+
+Before CI metadata enters signed release evidence, ConClear requires the claimed provider repository and revision to match the canonical repository and commit observed from the isolated checkout. The provider server, workflow and run identifiers remain observations from the protected runner environment rather than independently authenticated identities. ConClear does not acquire or accept OIDC tokens because the release profile defines no issuer and audience trust root against which to authenticate those claims.
+
 ## Source layout
 
 Production code lives under `src/conclear/`. Click command modules parse inputs and call workflow services. Configuration, schemas, records, state, process supervision, OCI parsing, adapters, presentation and workflow decisions remain separate modules.

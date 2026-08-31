@@ -5,11 +5,12 @@ from pathlib import Path
 import pytest
 
 from conclear.adapters.trivy import DatabaseObservation
-from conclear.ci import observe_ci_identity
+from conclear.ci import observe_ci_identity, validate_ci_identity
 from conclear.database import select_database_by_digest, select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.fileio import read_regular_file
 from conclear.jsonutil import load_json, sha256_file
+from conclear.records import SourceIdentity
 from conclear.secrets import MAX_SECRET_BYTES, read_secret_fd, read_secret_file
 from conclear.values import Digest
 from conclear.workspace import (
@@ -228,6 +229,57 @@ def test_ci_identity_requires_complete_validated_provider_values() -> None:
                 "GITHUB_SHA": "a" * 40,
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("repository", "revision", "message"),
+    [
+        ("foundata/other", "a" * 40, "repository differs"),
+        ("foundata/example", "b" * 40, "revision differs"),
+    ],
+)
+def test_ci_identity_must_match_isolated_checkout(
+    repository: str, revision: str, message: str
+) -> None:
+    identity = observe_ci_identity(
+        {
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_SERVER_URL": "https://github.com",
+            "GITHUB_REPOSITORY": repository,
+            "GITHUB_WORKFLOW_REF": (
+                f"{repository}/.github/workflows/release.yml@refs/heads/main"
+            ),
+            "GITHUB_RUN_ID": "1234",
+            "GITHUB_SHA": revision,
+        }
+    )
+    source = SourceIdentity("https://github.com/foundata/example", "a" * 40)
+
+    with pytest.raises(OperationalError, match=message):
+        validate_ci_identity(identity, source)
+
+
+def test_ci_identity_is_bound_to_matching_isolated_checkout() -> None:
+    identity = observe_ci_identity(
+        {
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_SERVER_URL": "https://github.com",
+            "GITHUB_REPOSITORY": "foundata/example",
+            "GITHUB_WORKFLOW_REF": (
+                "foundata/example/.github/workflows/release.yml@refs/heads/main"
+            ),
+            "GITHUB_RUN_ID": "1234",
+            "GITHUB_SHA": "a" * 40,
+        }
+    )
+
+    assert (
+        validate_ci_identity(
+            identity,
+            SourceIdentity("https://github.com/foundata/example", "a" * 40),
+        )
+        == identity
+    )
 
 
 def test_removed_resource_identifier_can_be_planned_for_bounded_retry(
