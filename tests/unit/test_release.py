@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -6,15 +7,27 @@ from typing import Any, cast
 
 import pytest
 
-from conclear.config import ReleaseMode, ReleaseProfile
+import conclear.provenance as provenance_module
+import conclear.records as records_module
+import conclear.services.assembly as assembly_module
+import conclear.services.publication as publication_module
+from conclear.config import (
+    ReleaseMode,
+    ReleaseProfile,
+    load_repository_config,
+)
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
 )
+from conclear.identity import ApplicationIdentity
+from conclear.jsonutil import sha256_bytes
+from conclear.records import SourceIdentity
 from conclear.services import release
 from conclear.services.release import ReleaseRequest
 from conclear.workspace import RunState, RunWorkspace
+from tests.release_fakes import FakeRuntime
 
 
 class FixedIdFactory:
@@ -176,6 +189,107 @@ def test_release_rejects_invalid_version_before_source_isolation(
 
     with pytest.raises(InvalidInvocationError, match="Invalid release version"):
         release.execute_release(request)
+
+
+def test_execute_release_drives_every_phase_to_verified_promotion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    repository_factory: Any,
+) -> None:
+    identity = ApplicationIdentity(source_revision="c" * 40)
+    monkeypatch.setattr(records_module, "IDENTITY", identity)
+    monkeypatch.setattr(provenance_module, "IDENTITY", identity)
+    monkeypatch.setattr(assembly_module, "IDENTITY", identity)
+    monkeypatch.setattr(publication_module, "IDENTITY", identity)
+    source_root = repository_factory()
+    repository = load_repository_config(source_root / "conclear.toml")
+    profile_value = profile(tmp_path)
+    profile_value.cosign_public_key.write_text("test public key\n", encoding="utf-8")
+    profile_value.cosign_public_key.chmod(0o600)
+    run_workspace = RunWorkspace.create(
+        state_home=tmp_path / "state",
+        immutable_inputs={
+            "sourceRoot": str(source_root.resolve()),
+            "sourceRevision": "b" * 40,
+            "sourceRepository": repository.project.source,
+            "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "image": "app",
+            "version": "1.2.3",
+            "profile": profile_value.name,
+            "mode": profile_value.mode.value,
+            "profileConfigurationDigest": profile_value.configuration_digest,
+            "profilePublicKeyDigest": profile_value.public_key_digest,
+        },
+        id_factory=FixedIdFactory(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    pin_digest = repository.image("app").pins[0].reference.digest
+    assert pin_digest is not None
+    runtime = FakeRuntime(pin_digest)
+    source_run = SimpleNamespace(
+        workspace=run_workspace,
+        repository=repository,
+        runtime=runtime,
+        source=SourceIdentity(repository.project.source, "b" * 40),
+        source_time=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    monkeypatch.setattr(release, "create_source_run", lambda **_kwargs: source_run)
+    monkeypatch.setattr(release, "quay_adapter", lambda _profile: runtime.quay)
+
+    result = release.execute_release(
+        ReleaseRequest(
+            repository=source_root,
+            revision="b" * 40,
+            image_id="app",
+            version="1.2.3",
+            profile=profile_value,
+            state_home=tmp_path / "state",
+            cache_home=tmp_path / "cache",
+            passphrase=None,
+            ci_identity=None,
+        ),
+        now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert run_workspace.load().state is RunState.PROMOTED
+    assert result.candidate_deleted
+    assert result.subject.endswith("@" + result.tags[0][1])
+    assert [tag for tag, _digest in result.tags] == ["1.2.3", "stable"]
+    assert runtime.signer.signatures == {result.subject}
+    assert runtime.quay.closed
+    summary = json.loads(
+        (run_workspace.root / "summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["state"] == "promoted"
+    assert summary["subject"] == result.subject
+
+
+def test_resume_release_rejects_changed_trust_profile_before_continuing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_profile = profile(tmp_path)
+    run_workspace = workspace(tmp_path, original_profile, RunState.ATTESTED)
+    source_run = SimpleNamespace(workspace=run_workspace)
+    monkeypatch.setattr(release, "open_source_run", lambda **_kwargs: source_run)
+
+    def unexpected_continue(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("changed resume inputs entered release continuation")
+
+    monkeypatch.setattr(release, "_continue_release", unexpected_continue)
+
+    with pytest.raises(InvalidInvocationError, match="trust profile changed"):
+        release.resume_release(
+            run_workspace.run_id,
+            repository=tmp_path / "repository",
+            profile=replace(
+                original_profile,
+                configuration_digest="sha256:" + "9" * 64,
+            ),
+            state_home=tmp_path / "state",
+            cache_home=tmp_path / "cache",
+            passphrase=None,
+            ci_identity=None,
+        )
 
 
 @pytest.mark.parametrize(

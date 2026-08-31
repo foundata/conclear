@@ -17,6 +17,7 @@ from conclear.adapters.cosign import (
 )
 from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
+from conclear.artifacts import load_published, load_verification
 from conclear.assembly import PlatformLayout, assemble_layout
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
@@ -467,6 +468,8 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         state_home=tmp_path / "state",
         immutable_inputs={
             "sourceRevision": "b" * 40,
+            "sourceRepository": repository.project.source,
+            "configurationDigest": "sha256:" + "2" * 64,
             "image": "app",
             "version": "1.2.3",
             "mode": "local",
@@ -578,6 +581,20 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
     )
+    assert load_published(workspace, candidate, image) == published
+    workspace.journal.update(
+        "candidate",
+        ResourceStatus.CREATED,
+        metadata={"digest": "sha256:" + "9" * 64},
+    )
+    with pytest.raises(RuleRejectionError, match="differs from candidate") as caught:
+        load_published(workspace, candidate, image)
+    assert caught.value.code == "CC0602"
+    workspace.journal.update(
+        "candidate",
+        ResourceStatus.CREATED,
+        metadata={"digest": str(observation.graph.digest)},
+    )
     assert registry.copied_layout_paths == [
         workspace.root / "layouts" / "app" / "remote-published"
     ]
@@ -671,6 +688,20 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     with pytest.raises(OperationalError, match="injected"):
         run_verification(datetime(2026, 1, 1, 0, 4, tzinfo=UTC))
     verification = run_verification(datetime(2026, 1, 1, 0, 5, tzinfo=UTC))
+    assert (
+        load_verification(workspace, image, published.immutable_reference)
+        == verification
+    )
+    statement_content = verification.statement_path.read_bytes()
+    statement_value = json.loads(statement_content)
+    statement_value["predicate"]["verdict"] = "rejected"
+    verification.statement_path.write_text(
+        json.dumps(statement_value), encoding="utf-8"
+    )
+    with pytest.raises(RuleRejectionError, match="statement changed") as caught:
+        load_verification(workspace, image, published.immutable_reference)
+    assert caught.value.code == "CC0703"
+    verification.statement_path.write_bytes(statement_content)
     expiration = quay.expirations.pop(tag)
     with pytest.raises(OperationalError, match="expiration is missing"):
         promote_candidate(
@@ -687,6 +718,44 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
     quay.expirations[tag] = expiration
+    quay.expirations[tag] = datetime(2026, 1, 1, 0, 6, tzinfo=UTC)
+    with pytest.raises(RuleRejectionError, match="expired") as caught:
+        promote_candidate(
+            published,
+            verification,
+            image=image,
+            version="1.2.3",
+            workspace=workspace,
+            quay=quay,
+            registry=registry,
+            signer=signer,
+            public_key=public_key,
+            auth_file=None,
+            now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
+        )
+    assert caught.value.code == "CC0603"
+    quay.expirations[tag] = expiration
+
+    registry.resolution_overrides["race"] = Digest("sha256:" + "9" * 64)
+    with pytest.raises(OperationalError, match="did not resolve"):
+        publication_module._write_release_tag(
+            "race",
+            observation.graph.digest,
+            image,
+            workspace,
+            quay,
+            registry,
+            None,
+            immutable=True,
+        )
+    assert tags["race"] == observation.graph.digest
+    race_entry = next(
+        entry
+        for entry in workspace.journal.entries()
+        if entry.resource_id == "tag-race"
+    )
+    assert race_entry.status is ResourceStatus.FAILED
+    del registry.resolution_overrides["race"]
     image = replace(
         image,
         release=replace(
@@ -694,8 +763,6 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             immutable_tags=("{version}", "v{version}"),
         ),
     )
-    tags["1.2.3"] = observation.graph.digest
-    quay.immutable.add("1.2.3")
     workspace.journal.plan(
         resource_id="tag-1.2.3",
         kind=ResourceKind.TAG_WRITE,
@@ -724,6 +791,9 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             auth_file=None,
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
+    assert tags["1.2.3"] == observation.graph.digest
+    assert "1.2.3" in quay.immutable
+    assert "stable" not in tags
     del registry.resolution_overrides["v1.2.3"]
     quay.fail_delete = delete_fails
     promoted = promote_candidate(
