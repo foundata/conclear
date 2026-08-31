@@ -24,6 +24,7 @@
     {"id": "CC0111", "summary": "Require JSON exec form for ENTRYPOINT and CMD", "severity": "error", "behavior": "automated", "anchor": "entrypoint-command-and-signal-handling"},
     {"id": "CC0112", "summary": "Reject Docker-format HEALTHCHECK metadata", "severity": "error", "behavior": "automated", "anchor": "ports-volumes-and-health-checks"},
     {"id": "CC0113", "summary": "Verify mandatory OCI image labels against observed source facts", "severity": "error", "behavior": "automated", "anchor": "image-metadata"},
+    {"id": "CC0114", "summary": "Report Hadolint diagnostics with their upstream rule identifiers", "severity": "error", "behavior": "automated", "anchor": "linting-and-testing"},
     {"id": "CC0201", "summary": "Require a .containerignore at the build-context root", "severity": "error", "behavior": "automated", "anchor": "build-context"},
     {"id": "CC0202", "summary": "Require context exclusions for source control, credentials and local output", "severity": "error", "behavior": "automated", "anchor": "build-context"},
     {"id": "CC0203", "summary": "Match every declared pin to exactly one Containerfile image input", "severity": "error", "behavior": "automated", "anchor": "pinning-image-references"},
