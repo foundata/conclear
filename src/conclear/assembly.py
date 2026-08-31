@@ -1,7 +1,9 @@
 """Verified assembly of platform OCI layouts into one release subject."""
 
+import hashlib
 import os
 import stat
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -121,33 +123,145 @@ def _copy_graph_blobs(source: Path, graph: OCIGraph, destination: Path) -> None:
         source_path = source / "blobs" / "sha256" / descriptor.digest.encoded
         destination_path = destination / "blobs" / "sha256" / descriptor.digest.encoded
         try:
-            source_stat = source_path.lstat()
-        except OSError as exc:
-            raise OperationalError(
-                f"Unable to inspect assembly blob {source_path}"
-            ) from exc
-        if not stat.S_ISREG(source_stat.st_mode):
-            raise InvalidInvocationError(f"Assembly blob is not regular: {source_path}")
-        if destination_path.exists():
-            if destination_path.read_bytes() != source_path.read_bytes():
-                raise InvalidInvocationError(
-                    f"Conflicting assembly blob content for {descriptor.digest}"
-                )
+            destination_stat = destination_path.lstat()
+        except FileNotFoundError:
+            _copy_validated_blob(source_path, destination_path, descriptor)
             continue
-        try:
-            descriptor_fd = os.open(
-                source_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-            )
-            with os.fdopen(descriptor_fd, "rb") as stream:
-                content = stream.read()
         except OSError as exc:
             raise OperationalError(
-                f"Unable to read assembly blob {source_path}"
+                f"Unable to inspect assembly blob {destination_path}"
             ) from exc
-        if len(content) != descriptor.size or sha256_bytes(content) != str(
-            descriptor.digest
-        ):
+        if not stat.S_ISREG(destination_stat.st_mode):
             raise InvalidInvocationError(
-                f"Assembly blob changed after layout validation: {descriptor.digest}"
+                f"Assembly destination blob is not regular: {destination_path}"
             )
-        atomic_write_bytes(destination_path, content, mode=0o644)
+        _validate_blob(source_path, descriptor)
+        _validate_blob(destination_path, descriptor)
+
+
+def _copy_validated_blob(
+    source: Path, destination: Path, descriptor: Descriptor
+) -> None:
+    source_descriptor: int | None = None
+    output_descriptor: int | None = None
+    temporary_path: Path | None = None
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        source_descriptor = os.open(source, flags)
+        initial = _require_blob_stat(source_descriptor, source, descriptor)
+        output_descriptor, temporary_name = tempfile.mkstemp(
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+        )
+        temporary_path = Path(temporary_name)
+        os.fchmod(output_descriptor, 0o644)
+        digest = hashlib.sha256()
+        size = 0
+        with (
+            os.fdopen(source_descriptor, "rb") as input_stream,
+            os.fdopen(output_descriptor, "wb") as output_stream,
+        ):
+            source_descriptor = None
+            output_descriptor = None
+            for chunk in iter(lambda: input_stream.read(1024 * 1024), b""):
+                size += len(chunk)
+                digest.update(chunk)
+                output_stream.write(chunk)
+            finished = os.fstat(input_stream.fileno())
+            output_stream.flush()
+            os.fsync(output_stream.fileno())
+        if not _same_blob_stat(initial, finished):
+            raise OperationalError(
+                f"Assembly source blob changed while copying: {source}"
+            )
+        _require_observed_blob(size, digest.hexdigest(), descriptor)
+        temporary_path.replace(destination)
+        temporary_path = None
+        directory_descriptor = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except OSError as exc:
+        raise OperationalError(f"Unable to copy assembly blob {source}") from exc
+    finally:
+        if source_descriptor is not None:
+            try:
+                os.close(source_descriptor)
+            except OSError:
+                pass
+        if output_descriptor is not None:
+            try:
+                os.close(output_descriptor)
+            except OSError:
+                pass
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _validate_blob(path: Path, descriptor: Descriptor) -> None:
+    file_descriptor: int | None = None
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        file_descriptor = os.open(path, flags)
+        initial = _require_blob_stat(file_descriptor, path, descriptor)
+        digest = hashlib.sha256()
+        size = 0
+        with os.fdopen(file_descriptor, "rb") as stream:
+            file_descriptor = None
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                size += len(chunk)
+                digest.update(chunk)
+            finished = os.fstat(stream.fileno())
+        if not _same_blob_stat(initial, finished):
+            raise OperationalError(f"Assembly blob changed while reading: {path}")
+        _require_observed_blob(size, digest.hexdigest(), descriptor)
+    except OSError as exc:
+        raise OperationalError(f"Unable to read assembly blob {path}") from exc
+    finally:
+        if file_descriptor is not None:
+            try:
+                os.close(file_descriptor)
+            except OSError:
+                pass
+
+
+def _require_blob_stat(
+    file_descriptor: int, path: Path, descriptor: Descriptor
+) -> os.stat_result:
+    observed = os.fstat(file_descriptor)
+    if not stat.S_ISREG(observed.st_mode):
+        raise InvalidInvocationError(f"Assembly blob is not regular: {path}")
+    if observed.st_size != descriptor.size:
+        raise InvalidInvocationError(
+            f"Assembly blob size changed for {descriptor.digest}"
+        )
+    return observed
+
+
+def _require_observed_blob(
+    size: int, encoded_digest: str, descriptor: Descriptor
+) -> None:
+    if size != descriptor.size or f"sha256:{encoded_digest}" != str(descriptor.digest):
+        raise InvalidInvocationError(
+            f"Assembly blob changed after layout validation: {descriptor.digest}"
+        )
+
+
+def _same_blob_stat(first: os.stat_result, second: os.stat_result) -> bool:
+    return (
+        first.st_dev == second.st_dev
+        and first.st_ino == second.st_ino
+        and first.st_mode == second.st_mode
+        and first.st_size == second.st_size
+        and first.st_mtime_ns == second.st_mtime_ns
+        and first.st_ctime_ns == second.st_ctime_ns
+    )

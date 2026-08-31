@@ -121,6 +121,27 @@ def test_assembly_rejects_duplicate_platform(tmp_path: Path) -> None:
         )
 
 
+def test_assembly_streams_blobs_without_path_whole_file_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    layout = platform_layout(tmp_path / "amd64", "amd64")
+
+    def reject_read_bytes(_path: Path) -> bytes:
+        raise AssertionError("assembly must stream OCI blobs")
+
+    monkeypatch.setattr(Path, "read_bytes", reject_read_bytes)
+    observation = assemble_layout(
+        (PlatformLayout(Platform.parse("linux/amd64"), layout, "qualified"),),
+        output_path=tmp_path / "assembled",
+        output_reference="candidate",
+    )
+
+    assert (
+        observation.graph.digest
+        == validate_layout(layout, reference="qualified").digest
+    )
+
+
 class IdFactory:
     def create(self) -> str:
         return "01arz3ndektsv4rrffq69g5fav"
