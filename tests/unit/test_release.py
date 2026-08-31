@@ -145,3 +145,27 @@ def test_release_does_not_promote_until_verification_transitions_state(
             started_at=datetime(2026, 1, 1, tzinfo=UTC),
             now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
         )
+
+
+def test_release_rejects_invalid_version_before_source_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = ReleaseRequest(
+        repository=tmp_path / "repository",
+        revision="a" * 40,
+        image_id="app",
+        version="invalid version",
+        profile=profile(tmp_path),
+        state_home=tmp_path / "state",
+        cache_home=tmp_path / "cache",
+        passphrase=None,
+        ci_identity=None,
+    )
+
+    def unexpected_source_isolation(**_kwargs: object) -> None:
+        raise AssertionError("invalid version reached source isolation")
+
+    monkeypatch.setattr(release, "create_source_run", unexpected_source_isolation)
+
+    with pytest.raises(InvalidInvocationError, match="Invalid release version"):
+        release.execute_release(request)

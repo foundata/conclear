@@ -47,7 +47,12 @@ from conclear.services.qualification import (
 )
 from conclear.services.run_context import create_source_run, open_source_run
 from conclear.tools import ToolName
-from conclear.values import Digest, OCIReference, Platform
+from conclear.values import (
+    Digest,
+    OCIReference,
+    Platform,
+    validate_release_version,
+)
 from conclear.workspace import (
     IdFactory,
     ResourceKind,
@@ -104,6 +109,8 @@ def execute_release(
     now_factory: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ReleaseResult:
     """Run the complete release state machine from detached checkout to promotion."""
+    if request.version is not None:
+        validate_release_version(request.version)
     started_at = now_factory()
     source_run = create_source_run(
         source_root=request.repository,

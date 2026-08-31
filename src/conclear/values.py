@@ -203,6 +203,13 @@ def validate_source_revision(value: str) -> str:
     return value
 
 
+def validate_release_version(value: str) -> str:
+    """Return a release version that is safe within owned OCI tag names."""
+    if _TAG_PATTERN.fullmatch(value) is None or "candidate" in value:
+        raise InvalidInvocationError(f"Invalid release version for a tag: {value}")
+    return value
+
+
 def candidate_tag(*, version: str | None, run_id: str, source_revision: str) -> str:
     """Generate the required single-use candidate tag."""
     validate_run_id(run_id)
@@ -211,10 +218,7 @@ def candidate_tag(*, version: str | None, run_id: str, source_revision: str) -> 
     if version is None:
         value = f"g{short_revision}-candidate.{run_id}"
     else:
-        if _TAG_PATTERN.fullmatch(version) is None or "candidate" in version:
-            raise InvalidInvocationError(
-                f"Invalid release version for a tag: {version}"
-            )
+        validate_release_version(version)
         value = f"{version}-candidate.{run_id}.g{short_revision}"
     if _TAG_PATTERN.fullmatch(value) is None:
         raise InvalidInvocationError("Generated candidate tag is invalid or too long")
