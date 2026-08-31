@@ -364,8 +364,14 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         sbom,
         {
             "spdxVersion": "SPDX-2.3",
+            "dataLicense": "CC0-1.0",
             "SPDXID": "SPDXRef-DOCUMENT",
             "name": "app",
+            "documentNamespace": "https://example.invalid/spdx/app",
+            "creationInfo": {
+                "creators": ["Tool: test"],
+                "created": "2026-01-01T00:00:00Z",
+            },
         },
     )
     configuration_digest = Digest("sha256:" + "2" * 64)

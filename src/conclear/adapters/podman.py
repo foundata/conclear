@@ -36,6 +36,7 @@ class RuntimeControlObservation:
 
     user: str
     read_only: bool
+    writable_mounts: tuple[str, ...]
     memory_bytes: int
     nano_cpus: int
     pids_limit: int
@@ -252,6 +253,9 @@ class PodmanAdapter(ToolAdapter):
         return RuntimeControlObservation(
             user=string_value(config.get("User"), label="Podman effective user"),
             read_only=_bool(host.get("ReadonlyRootfs"), "Podman read-only root"),
+            writable_mounts=_string_mapping_keys(
+                host.get("Tmpfs"), "Podman tmpfs mounts"
+            ),
             memory_bytes=_int(host.get("Memory"), "Podman memory limit"),
             nano_cpus=_int(host.get("NanoCpus"), "Podman CPU limit"),
             pids_limit=_int(host.get("PidsLimit"), "Podman PID limit"),
@@ -316,3 +320,14 @@ def _strings(value: object, label: str) -> tuple[str, ...]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise OperationalError(f"{label} are malformed")
     return tuple(value)
+
+
+def _string_mapping_keys(value: object, label: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, dict) or any(
+        not isinstance(key, str) or not isinstance(item, str)
+        for key, item in value.items()
+    ):
+        raise OperationalError(f"{label} are malformed")
+    return tuple(sorted(value))

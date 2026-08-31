@@ -326,8 +326,14 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         "spdxjson",
         {
             "spdxVersion": "SPDX-2.3",
+            "dataLicense": "CC0-1.0",
             "SPDXID": "SPDXRef-DOCUMENT",
             "name": "app",
+            "documentNamespace": "https://example.invalid/spdx/app",
+            "creationInfo": {
+                "creators": ["Tool: test"],
+                "created": "2026-01-01T00:00:00Z",
+            },
         },
     )
     signer.add(subject, RESCAN_TYPE, {"historical": True})

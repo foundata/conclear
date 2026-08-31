@@ -189,10 +189,11 @@
     "runtimeObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["user", "readOnly", "memoryBytes", "nanoCpus", "pidsLimit", "nofile", "capAdd", "capDrop", "securityOptions"],
+      "required": ["user", "readOnly", "writableMounts", "memoryBytes", "nanoCpus", "pidsLimit", "nofile", "capAdd", "capDrop", "securityOptions"],
       "properties": {
         "user": {"type": "string"},
         "readOnly": {"type": "boolean"},
+        "writableMounts": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^/"}},
         "memoryBytes": {"type": "integer"},
         "nanoCpus": {"type": "integer"},
         "pidsLimit": {"type": "integer"},

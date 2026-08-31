@@ -13,6 +13,7 @@ from conclear.adapters.podman import (
     RuntimeControlObservation,
 )
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
+from conclear.artifacts import qualification_transport
 from conclear.config import load_repository_config
 from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
@@ -138,6 +139,7 @@ class Runtime:
         return RuntimeControlObservation(
             user="10001",
             read_only=True,
+            writable_mounts=(),
             memory_bytes=512 * 1024 * 1024,
             nano_cpus=1_000_000_000,
             pids_limit=128,
@@ -169,7 +171,20 @@ class Scanner:
         return self._write(values["report_path"], {"Results": []})
 
     def generate_spdx(self, **values: Any) -> ScanObservation:
-        return self._write(values["output_path"], {"spdxVersion": "SPDX-2.3"})
+        return self._write(
+            values["output_path"],
+            {
+                "spdxVersion": "SPDX-2.3",
+                "dataLicense": "CC0-1.0",
+                "SPDXID": "SPDXRef-DOCUMENT",
+                "name": "app",
+                "documentNamespace": "https://example.invalid/spdx/app",
+                "creationInfo": {
+                    "creators": ["Tool: test"],
+                    "created": "2026-01-01T00:00:00Z",
+                },
+            },
+        )
 
     @staticmethod
     def _write(path_value: object, value: object) -> ScanObservation:
@@ -198,7 +213,13 @@ def inputs(repository: Path, tmp_path: Path) -> QualificationInputs:
     config = load_repository_config(repository / "conclear.toml")
     workspace = RunWorkspace.create(
         state_home=tmp_path / "state",
-        immutable_inputs={"sourceRevision": "b" * 40, "image": "app"},
+        immutable_inputs={
+            "sourceRevision": "b" * 40,
+            "sourceRepository": config.project.source,
+            "configurationDigest": sha256_bytes(config.raw_bytes),
+            "image": "app",
+            "version": "1.2.3",
+        },
         id_factory=IdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -257,6 +278,15 @@ def test_qualification_writes_accepted_digest_bound_record(
     assert result.verdict is Verdict.ACCEPTED
     assert result.record_digest == sha256_file(result.record_path)
     validate_record(json.loads(result.record_path.read_text(encoding="utf-8")))
+    transport = qualification_transport(value.workspace, value.image, value.platform)
+    assert transport.payload_paths[0] == (
+        value.workspace.root / "reports" / "app" / "linux-amd64" / "tests.json"
+    )
+    assert [path.name for path in transport.payload_paths[2:]] == [
+        "source-scan.json",
+        "containerfile-scan.json",
+        "image-scan.json",
+    ]
 
 
 def test_qualification_records_label_rule_rejection(

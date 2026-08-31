@@ -13,6 +13,7 @@ from conclear.adapters.buildah import BuildahAdapter
 from conclear.adapters.cosign import CosignAdapter
 from conclear.adapters.git import GitAdapter
 from conclear.adapters.hadolint import HadolintAdapter
+from conclear.adapters.podman import PodmanAdapter
 from conclear.adapters.quay import QuayAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
@@ -115,6 +116,47 @@ def test_buildah_info_uses_supported_go_template_json(tmp_path: Path) -> None:
         "store": {}
     }
     assert "{{json .}}" in runner.requests[0].argv
+
+
+def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> None:
+    runner = FakeRunner(
+        result(
+            json.dumps(
+                [
+                    {
+                        "Config": {"User": "10001:10001"},
+                        "HostConfig": {
+                            "ReadonlyRootfs": True,
+                            "Tmpfs": {
+                                "/run": "rw,nosuid,nodev",
+                                "/tmp": "rw,nosuid,nodev",
+                            },
+                            "Memory": 536870912,
+                            "NanoCpus": 1000000000,
+                            "PidsLimit": 128,
+                            "Ulimits": [
+                                {
+                                    "Name": "RLIMIT_NOFILE",
+                                    "Soft": 1024,
+                                    "Hard": 1024,
+                                }
+                            ],
+                            "CapAdd": [],
+                            "CapDrop": ["ALL"],
+                            "SecurityOpt": ["no-new-privileges"],
+                        },
+                    }
+                ]
+            )
+        )
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    observation = adapter.inspect_controls(
+        root=tmp_path / "root", runroot=tmp_path / "runroot", name="test"
+    )
+
+    assert observation.writable_mounts == ("/run", "/tmp")
 
 
 def test_git_adapter_observes_full_source_facts(tmp_path: Path) -> None:

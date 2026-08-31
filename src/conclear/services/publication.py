@@ -15,6 +15,7 @@ from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
     STATEMENT_TYPE,
     decode_dsse_statements,
+    statement_matches,
     write_statement,
 )
 from conclear.config import ImageConfig, ReleaseProfile
@@ -37,6 +38,7 @@ from conclear.records import (
 )
 from conclear.schema import validate_external
 from conclear.services.assembly import CandidateResult
+from conclear.spdx import validate_spdx_document
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import (
     ResourceEntry,
@@ -414,11 +416,9 @@ def attest_candidate(
         sbom_path, expected_digest = sbom_map[platform]
         if sha256_file(sbom_path) != expected_digest:
             raise InvalidInvocationError(f"SBOM digest changed for {platform}")
-        sbom = _object(load_json(sbom_path), f"SBOM for {platform}")
-        if sbom.get("spdxVersion") != "SPDX-2.3":
-            raise InvalidInvocationError(
-                f"SBOM for {platform} is not the required SPDX 2.3 document"
-            )
+        sbom = validate_spdx_document(
+            load_json(sbom_path), label=f"SBOM for {platform}"
+        )
         subject = published.reference.with_digest(digest)
         resource = f"sbom-{platform.key}"
         metadata: dict[str, object] = {
@@ -633,6 +633,7 @@ def verify_candidate(
         if manifest_map.get(platform) is None or sha256_file(path) != expected_digest:
             raise InvalidInvocationError(f"SBOM evidence changed for {platform}")
         subject = published.reference.with_digest(manifest_map[platform])
+        sbom = validate_spdx_document(load_json(path), label=f"SBOM for {platform}")
         signer.verify_attestation(
             subject=subject,
             public_key=profile.cosign_public_key,
@@ -642,7 +643,7 @@ def verify_candidate(
             signer,
             subject=subject,
             predicate_type="spdxjson",
-            expected=load_json(path),
+            expected=sbom,
         )
     provenance = _object(load_json(evidence.provenance_path), "provenance")
     validate_release_provenance(
@@ -1056,9 +1057,14 @@ def _has_downloaded_predicate(
         )
     )
     return any(
-        statement.get("predicateType") == predicate_type
-        and statement.get("predicate") == expected
-        and _statement_has_digest(statement, subject.digest)
+        subject.digest is not None
+        and statement_matches(
+            statement,
+            subject_name=subject.repository_name,
+            subject_digest=subject.digest,
+            predicate_type=predicate_type,
+            predicate=expected,
+        )
         for statement in statements
     )
 
@@ -1185,19 +1191,6 @@ def validate_release_provenance(
     metadata = _object(details.get("metadata"), "provenance run metadata")
     if metadata.get("invocationId") != workspace.run_id:
         raise InvalidInvocationError("Provenance invocation identity changed")
-
-
-def _statement_has_digest(statement: dict[str, object], digest: Digest | None) -> bool:
-    if digest is None:
-        return False
-    subjects = statement.get("subject")
-    if not isinstance(subjects, list):
-        return False
-    expected = {"sha256": digest.encoded}
-    return any(
-        isinstance(subject, dict) and subject.get("digest") == expected
-        for subject in subjects
-    )
 
 
 def _render_tag(template: str, version: str | None) -> str:

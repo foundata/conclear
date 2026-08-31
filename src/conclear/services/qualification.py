@@ -495,7 +495,13 @@ def generate_evidence(
         path=inputs.image.context,
         report_path=report_root / "source-scan.json",
         cache_root=database.path,
-        scanners=("secret", "misconfig"),
+        scanners=("secret",),
+    )
+    containerfile_scan = scanner.scan_filesystem(
+        path=inputs.image.containerfile,
+        report_path=report_root / "containerfile-scan.json",
+        cache_root=database.path,
+        scanners=("misconfig",),
     )
     image_scan = scanner.scan_layout(
         layout_path=build.observation.layout_path,
@@ -516,6 +522,12 @@ def generate_evidence(
         exceptions=(),
         today=today,
     )
+    containerfile_evaluation = evaluate_trivy_report(
+        containerfile_scan.value,
+        image_id=inputs.image.image_id,
+        exceptions=(),
+        today=today,
+    )
     image_evaluation = evaluate_trivy_report(
         image_scan.value,
         image_id=inputs.image.image_id,
@@ -524,9 +536,13 @@ def generate_evidence(
     )
     return ScanEvidence(
         sbom=sbom,
-        scans=(source_scan, image_scan),
+        scans=(source_scan, containerfile_scan, image_scan),
         applied_exceptions=image_evaluation.applied_exceptions,
-        findings=source_evaluation.findings + image_evaluation.findings,
+        findings=(
+            source_evaluation.findings
+            + containerfile_evaluation.findings
+            + image_evaluation.findings
+        ),
     )
 
 
@@ -656,6 +672,8 @@ def _control_findings(
         mismatches.append("user")
     if observed.read_only is not expected.read_only:
         mismatches.append("read-only root")
+    if observed.writable_mounts != tuple(sorted(expected.writable_mounts)):
+        mismatches.append("writable mounts")
     if observed.memory_bytes != _memory_bytes(expected.memory):
         mismatches.append("memory")
     if observed.nano_cpus != round(expected.cpus * 1_000_000_000):
@@ -686,6 +704,7 @@ def _control_findings(
             in {
                 "user",
                 "read-only root",
+                "writable mounts",
                 "no-new-privileges",
                 "capability drop",
                 "added capabilities",
@@ -742,6 +761,7 @@ def _controls_dict(value: RuntimeControlObservation) -> dict[str, object]:
     return {
         "user": value.user,
         "readOnly": value.read_only,
+        "writableMounts": list(value.writable_mounts),
         "memoryBytes": value.memory_bytes,
         "nanoCpus": value.nano_cpus,
         "pidsLimit": value.pids_limit,

@@ -29,6 +29,7 @@ from conclear.records import (
     validate_record,
 )
 from conclear.scan_policy import evaluate_trivy_report
+from conclear.spdx import validate_spdx_document
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference
 from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
@@ -244,9 +245,9 @@ def rescan_release(
             predicate_type="spdxjson",
             subject=manifest_subject,
         )
-        sbom = _object(statement.get("predicate"), f"SBOM for {platform}")
-        if sbom.get("spdxVersion") != "SPDX-2.3":
-            raise OperationalError(f"Unsupported retained SPDX version for {platform}")
+        sbom = validate_spdx_document(
+            statement.get("predicate"), label=f"SBOM for {platform}"
+        )
         sbom_path = report_root / f"{platform.key}.spdx.json"
         atomic_write_json(sbom_path, sbom, mode=0o644)
         report_path = report_root / f"{platform.key}-scan.json"

@@ -23,6 +23,7 @@ from conclear.jsonutil import (
     sha256_file,
 )
 from conclear.process import OperationKind
+from conclear.spdx import validate_spdx_document
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,10 +205,7 @@ class TrivyAdapter(ToolAdapter):
             ),
             output_path,
         )
-        document = object_value(observation.value, label="SPDX document")
-        version = string_value(document.get("spdxVersion"), label="SPDX version")
-        if version != "SPDX-2.3":
-            raise OperationalError(f"Unsupported SPDX document version: {version}")
+        validate_spdx_document(observation.value, label="Trivy SPDX document")
         return observation
 
     def scan_sbom(
