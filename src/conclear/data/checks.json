@@ -44,6 +44,7 @@
     {"id": "CC0503", "summary": "Validate exception completeness, expiry and exact finding matches", "severity": "error", "behavior": "automated", "anchor": "vulnerability-and-configuration-scanning"},
     {"id": "CC0504", "summary": "Generate and validate one digest-bound SPDX JSON SBOM per platform", "severity": "error", "behavior": "automated", "anchor": "sboms"},
     {"id": "CC0505", "summary": "Hold one validated vulnerability database snapshot across a release", "severity": "error", "behavior": "automated", "anchor": "vulnerability-and-configuration-scanning"},
+    {"id": "CC0506", "summary": "The optional Syft and Grype scanner stack is not implemented", "severity": "info", "behavior": "not implemented", "anchor": "vulnerability-and-configuration-scanning"},
     {"id": "CC0601", "summary": "Generate a unique lowercase-ULID candidate reference", "severity": "error", "behavior": "automated", "anchor": "registries-and-image-names"},
     {"id": "CC0602", "summary": "Preserve and compare the complete local and remote digest graph", "severity": "error", "behavior": "automated", "anchor": "vulnerability-and-configuration-scanning"},
     {"id": "CC0603", "summary": "Set and verify a bounded Quay candidate expiration", "severity": "error", "behavior": "automated", "anchor": "registries-and-image-names"},

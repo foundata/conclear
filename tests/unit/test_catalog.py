@@ -26,6 +26,13 @@ def test_conformance_generation_is_deterministic(tmp_path: Path) -> None:
     assert "909794089dbabbf6c8d8e50fcf47bb2b6fd315b9" in render_conformance()
 
 
+def test_catalog_records_unimplemented_optional_scanner_stack() -> None:
+    check = next(item for item in load_catalog().checks if item.check_id == "CC0506")
+    assert check.behavior == "not implemented"
+    assert "Syft and Grype" in check.summary
+    assert "| `CC0506` | not implemented | info |" in render_conformance()
+
+
 def test_committed_conformance_document_is_current() -> None:
     path = Path(__file__).parents[2] / "docs" / "conformance.md"
     assert path.read_text(encoding="utf-8") == render_conformance()
