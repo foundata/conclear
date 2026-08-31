@@ -216,5 +216,8 @@ def test_tool_resolver_rejects_unsupported_version(tmp_path: Path) -> None:
         locator=lambda _name: str(executable),
     )
 
-    with pytest.raises(RuleRejectionError, match=r"Unsupported cosign version 3\.1\.2"):
+    with pytest.raises(
+        RuleRejectionError, match=r"Unsupported cosign version 3\.1\.2"
+    ) as failure:
         resolver.resolve(ToolName.COSIGN, environment={"PATH": "/usr/bin"})
+    assert failure.value.code == "CC0301"

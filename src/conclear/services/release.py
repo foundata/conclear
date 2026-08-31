@@ -370,7 +370,10 @@ def _qualify_release(
     preflight = check_image(image, runtime.hadolint())
     if not preflight.accepted:
         raise RuleRejectionError(
-            "Static image checks rejected the release", code="CC0101"
+            "Static image checks rejected the release",
+            code=next(
+                item.check_id for item in preflight.findings if item.severity == "error"
+            ),
         )
     pin_store = PinStore(request.state_home)
     pin_resolver = AuthenticatedPinResolver(runtime, request.profile.auth_file)
@@ -384,8 +387,15 @@ def _qualify_release(
         for pin in image.pins
     )
     if any(not item.accepted for item in pin_observations):
+        rejecting_pin = next(
+            finding
+            for observation in pin_observations
+            for finding in observation.findings
+            if finding.severity == "error"
+        )
         raise RuleRejectionError(
-            "External image pin checks rejected the release", code="CC0204"
+            "External image pin checks rejected the release",
+            code=rejecting_pin.check_id,
         )
     database = select_fresh_database(
         runtime.trivy(),
@@ -435,8 +445,12 @@ def _qualify_release(
             now=now_factory(),
         )
         if result.verdict is Verdict.REJECTED:
+            rejecting_finding = next(
+                finding for finding in result.findings if finding.severity == "error"
+            )
             raise RuleRejectionError(
-                f"Platform qualification rejected {platform}", code="CC0502"
+                f"Platform qualification rejected {platform}",
+                code=rejecting_finding.check_id,
             )
         if result.verdict is Verdict.INCOMPLETE:
             raise OperationalError(f"Platform qualification was incomplete: {platform}")

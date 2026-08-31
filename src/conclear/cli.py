@@ -31,8 +31,8 @@ from conclear.commands.remote import (
     verify_command,
 )
 from conclear.commands.version import version_command, write_version
-from conclear.errors import ConClearError, ExitStatus
-from conclear.presentation import CommandResult, ResultStatus
+from conclear.errors import ConClearError, ExitStatus, RuleRejectionError
+from conclear.presentation import CommandResult, Finding, ResultStatus
 
 
 def _version_callback(
@@ -108,13 +108,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         return int(ExitStatus.OPERATIONAL_FAILURE)
     except ConClearError as exc:
-        print(str(exc), file=sys.stderr)
+        finding = (
+            Finding(exc.code, "error", str(exc))
+            if isinstance(exc, RuleRejectionError) and exc.code is not None
+            else None
+        )
+        diagnostic = (
+            f"{finding.check_id} {finding.severity}: {finding.message}"
+            if finding is not None
+            else str(exc)
+        )
+        print(diagnostic, file=sys.stderr)
         if wants_json:
             status = ResultStatus(exc.error_type)
             _write_error_json(
                 command=_command_name(arguments),
                 status=status,
                 message=str(exc),
+                findings=(() if finding is None else (finding,)),
             )
         return int(exc.exit_status)
     return int(result) if isinstance(result, int) else int(ExitStatus.SUCCESS)
@@ -134,7 +145,18 @@ def _command_name(arguments: Sequence[str]) -> str:
     )
 
 
-def _write_error_json(*, command: str, status: ResultStatus, message: str) -> None:
-    result = CommandResult(command=command, status=status, message=message)
+def _write_error_json(
+    *,
+    command: str,
+    status: ResultStatus,
+    message: str,
+    findings: tuple[Finding, ...] = (),
+) -> None:
+    result = CommandResult(
+        command=command,
+        status=status,
+        message=message,
+        findings=findings,
+    )
     json.dump(result.to_dict(), sys.stdout, ensure_ascii=True, sort_keys=True)
     sys.stdout.write("\n")

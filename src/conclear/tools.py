@@ -159,7 +159,7 @@ class ToolResolver:
             supported = ", ".join(sorted(spec.supported_versions))
             raise RuleRejectionError(
                 f"Unsupported {name.value} version {version}; supported: {supported}",
-                code="CC0701",
+                code="CC0301",
             )
         digest_after = sha256_file(path)
         if digest_before != digest_after:

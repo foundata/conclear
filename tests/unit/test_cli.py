@@ -9,7 +9,7 @@ from click.testing import CliRunner
 
 import conclear.commands.local as local_commands
 from conclear.cli import main, root
-from conclear.errors import OperationalError
+from conclear.errors import OperationalError, RuleRejectionError
 
 DOCUMENTED_COMMANDS = {
     "assemble",
@@ -153,3 +153,41 @@ def test_main_maps_operational_failure_to_one(
     captured = capsys.readouterr()
     assert json.loads(captured.out)["status"] == "operationalFailure"
     assert "failed" in captured.err
+
+
+def test_main_preserves_rule_identifier_in_human_and_json_output(
+    repository_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root_path = repository_factory()
+    monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
+    monkeypatch.setattr(
+        local_commands,
+        "check_image",
+        lambda image, hadolint: (_ for _ in ()).throw(
+            RuleRejectionError("rejected", code="CC0107")
+        ),
+    )
+
+    assert (
+        main(
+            [
+                "check",
+                "--config",
+                str(root_path / "conclear.toml"),
+                "--image",
+                "app",
+                "--format",
+                "json",
+            ]
+        )
+        == 2
+    )
+    captured = capsys.readouterr()
+    value = json.loads(captured.out)
+    assert value["status"] == "ruleRejection"
+    assert value["findings"] == [
+        {"checkId": "CC0107", "severity": "error", "message": "rejected"}
+    ]
+    assert "CC0107 error: rejected" in captured.err
