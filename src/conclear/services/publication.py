@@ -305,7 +305,7 @@ def publish_candidate(
         remote = registry.copy_registry_to_layout(
             source=immutable,
             layout_path=workspace.root
-            / "reports"
+            / "layouts"
             / image.image_id
             / "remote-published",
             layout_reference="published",
@@ -382,7 +382,7 @@ def _resume_published_candidate(
     remote = registry.copy_registry_to_layout(
         source=immutable,
         layout_path=workspace.root
-        / "reports"
+        / "layouts"
         / image.image_id
         / "remote-published-resume",
         layout_reference="published",
@@ -1072,9 +1072,9 @@ def _require_remote_graph_unchanged(
     observed = registry.resolve_digest(published.reference, auth_file=auth_file)
     if observed != published.graph.digest:
         raise OperationalError("Candidate tag changed after publication")
-    report_root = workspace.root / "reports" / image.image_id / "remote-verification"
-    report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=f"{phase}-", dir=report_root) as directory:
+    layout_root = workspace.root / "layouts" / image.image_id / "remote-verification"
+    layout_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"{phase}-", dir=layout_root) as directory:
         remote = registry.copy_registry_to_layout(
             source=published.immutable_reference,
             layout_path=Path(directory) / "layout",

@@ -128,6 +128,7 @@ class FakeRegistry:
         self.tags = tags
         self.fail_graph_copy = False
         self.resolution_overrides: dict[str, Digest] = {}
+        self.copied_layout_paths: list[Path] = []
 
     def resolve_digest(
         self, reference: OCIReference, *, auth_file: Path | None = None
@@ -168,6 +169,7 @@ class FakeRegistry:
         auth_file: Path | None,
     ) -> RegistryCopyObservation:
         del auth_file
+        self.copied_layout_paths.append(layout_path)
         if self.fail_graph_copy:
             raise OperationalError("injected remote graph failure")
         return RegistryCopyObservation(source, layout_path, self.graph)
@@ -509,7 +511,13 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     evidence = ReleaseEvidence(
         source=records_module.SourceIdentity(repository.project.source, "b" * 40),
         configuration_digest=str(configuration_digest),
-        tools=(),
+        tools=(
+            records_module.ToolIdentity(
+                "trivy",
+                "0.69.3",
+                executable_digest="sha256:" + "6" * 64,
+            ),
+        ),
         sboms=((platform, sbom, sbom_digest),),
         scan_digests=("sha256:" + "3" * 64,),
         provenance_path=provenance,
@@ -545,6 +553,9 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
     )
+    assert registry.copied_layout_paths == [
+        workspace.root / "layouts" / "app" / "remote-published"
+    ]
     original_sbom = sbom.read_bytes()
     sbom.write_text("{}\n", encoding="utf-8")
     with pytest.raises(RuleRejectionError) as caught:
