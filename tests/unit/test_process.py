@@ -9,6 +9,7 @@ import pytest
 from conclear.errors import (
     CommandExecutionError,
     CommandTimeoutError,
+    OperationalError,
     RuleRejectionError,
 )
 from conclear.process import (
@@ -206,7 +207,7 @@ def test_process_runner_retries_reads_but_rejects_write_retries(
     )
     assert result.attempts == 2
 
-    with pytest.raises(ValueError, match="cannot retry blindly"):
+    with pytest.raises(OperationalError, match="cannot retry blindly"):
         request(tmp_path, retries=1, operation=OperationKind.WRITE)
 
 
@@ -221,7 +222,7 @@ def test_process_runner_classifies_nonzero_status(
 
 
 def test_command_array_rejects_shell_strings() -> None:
-    with pytest.raises(TypeError, match="argument arrays"):
+    with pytest.raises(OperationalError, match="argument arrays"):
         command_array("echo unsafe")
 
 

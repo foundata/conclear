@@ -11,7 +11,7 @@ from conclear.assembly import (
     assemble_layout,
 )
 from conclear.config import ImageConfig, RepositoryConfig
-from conclear.errors import InvalidInvocationError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import IDENTITY
 from conclear.jsonutil import load_json, sha256_bytes, sha256_file
 from conclear.oci import validate_layout
@@ -341,7 +341,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
             )
         pinned_digest = reference.digest
         if pinned_digest is None:  # parser invariant
-            raise AssertionError("Required pin digest is absent")
+            raise OperationalError("Required pin digest is absent after validation")
         observed_digest = Digest(
             _string(observation.get("observedDigest"), "observed pin digest")
         )

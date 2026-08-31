@@ -8,7 +8,11 @@ from urllib.parse import quote
 import httpx
 
 from conclear.adapters.parsing import object_value, string_value
-from conclear.errors import OperationalError, UnsupportedOperationError
+from conclear.errors import (
+    InvalidInvocationError,
+    OperationalError,
+    UnsupportedOperationError,
+)
 from conclear.values import Digest, OCIReference
 
 MAX_QUAY_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -44,7 +48,7 @@ class QuayAdapter:
     ) -> None:
         """Create an adapter with an injectable HTTP transport."""
         if not api_url.startswith("https://"):
-            raise ValueError("Quay API URL must use HTTPS")
+            raise InvalidInvocationError("Quay API URL must use HTTPS")
         self._api_url = api_url.rstrip("/")
         self._token_provider = token_provider
         self._owns_client = client is None
@@ -101,7 +105,7 @@ class QuayAdapter:
     ) -> QuayTagObservation:
         """Set expiration and require an exact post-write observation."""
         if expiration.tzinfo is None or expiration.utcoffset() is None:
-            raise ValueError("Candidate expiration must be timezone-aware")
+            raise OperationalError("Candidate expiration must be timezone-aware")
         epoch = int(expiration.astimezone(UTC).timestamp())
         self._write_with_observation(
             repository, tag, {"expiration": str(epoch)}, expected_digest=None
@@ -248,12 +252,14 @@ class QuayAdapter:
     @staticmethod
     def _repository_parts(repository: OCIReference) -> tuple[str, str]:
         if repository.registry != "quay.io" or repository.tag or repository.digest:
-            raise ValueError(
+            raise InvalidInvocationError(
                 "Quay API operations require an untagged quay.io repository"
             )
         namespace, separator, name = repository.repository.partition("/")
         if not separator or "/" in name:
-            raise ValueError("Quay API supports namespace/repository destinations")
+            raise InvalidInvocationError(
+                "Quay API supports namespace/repository destinations"
+            )
         return quote(namespace, safe=""), quote(name, safe="")
 
     def _tag_list_path(self, repository: OCIReference) -> str:

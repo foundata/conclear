@@ -1299,5 +1299,5 @@ def _object(value: object, label: str) -> dict[str, object]:
 
 def _timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("Publication timestamp must be timezone-aware")
+        raise OperationalError("Publication timestamp must be timezone-aware")
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
-from conclear.errors import CommandExecutionError, OperationalError
+from conclear.errors import (
+    CommandExecutionError,
+    InvalidInvocationError,
+    OperationalError,
+)
 from conclear.oci import OCIGraph, validate_layout
 from conclear.process import OperationKind
 from conclear.values import Digest, OCIReference
@@ -110,7 +114,7 @@ class SkopeoAdapter(ToolAdapter):
     def delete(self, reference: OCIReference, *, auth_file: Path) -> None:
         """Delete one previously journaled registry tag."""
         if reference.tag is None or reference.digest is not None:
-            raise ValueError("Skopeo deletion requires a tag reference")
+            raise InvalidInvocationError("Skopeo deletion requires a tag reference")
         self._run(
             ("delete", "--authfile", str(auth_file), f"docker://{reference}"),
             timeout_seconds=300,

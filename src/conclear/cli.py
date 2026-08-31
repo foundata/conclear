@@ -128,6 +128,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 findings=(() if finding is None else (finding,)),
             )
         return int(exc.exit_status)
+    except Exception as exc:
+        message = "ConClear encountered an internal error"
+        print(f"{message} ({type(exc).__name__})", file=sys.stderr)
+        if wants_json:
+            _write_error_json(
+                command=_command_name(arguments),
+                status=ResultStatus.OPERATIONAL_FAILURE,
+                message=message,
+            )
+        return int(ExitStatus.OPERATIONAL_FAILURE)
     return int(result) if isinstance(result, int) else int(ExitStatus.SUCCESS)
 
 

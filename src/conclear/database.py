@@ -32,7 +32,7 @@ def select_fresh_database(
 ) -> DatabaseObservation:
     """Select a fresh snapshot or perform one bounded refresh."""
     if now.tzinfo is None or now.utcoffset() is None:
-        raise ValueError("Database selection time must be timezone-aware")
+        raise OperationalError("Database selection time must be timezone-aware")
     try:
         selected = adapter.select_database(cache_root)
         if not _fresh(selected, now):

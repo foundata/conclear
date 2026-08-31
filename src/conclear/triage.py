@@ -53,10 +53,10 @@ def load_triage(path: Path, *, subject: OCIReference) -> tuple[TriageDecision, .
         raise InvalidInvocationError("Unable to read rescan triage input") from exc
     validate_external(value, "triage.schema.json", label="rescan triage")
     if not isinstance(value, dict):  # schema-validated narrowing
-        raise AssertionError("Triage schema accepted a non-object")
+        raise OperationalError("Triage schema accepted a non-object")
     raw_decisions = value.get("decisions")
     if not isinstance(raw_decisions, list):  # schema-validated narrowing
-        raise AssertionError("Triage schema accepted a non-array")
+        raise OperationalError("Triage schema accepted a non-array")
     decisions = tuple(
         sorted(
             (_decision(item, subject=subject) for item in raw_decisions),
@@ -73,7 +73,7 @@ def load_triage(path: Path, *, subject: OCIReference) -> tuple[TriageDecision, .
 
 def _decision(value: object, *, subject: OCIReference) -> TriageDecision:
     if not isinstance(value, dict):  # schema-validated narrowing
-        raise AssertionError("Triage schema accepted a non-object decision")
+        raise OperationalError("Triage schema accepted a non-object decision")
     decision_subject = OCIReference.parse(
         _string(value["subject"]), require_digest=True, allow_localhost=False
     )
@@ -100,7 +100,7 @@ def _decision(value: object, *, subject: OCIReference) -> TriageDecision:
 
 def _string(value: object) -> str:
     if not isinstance(value, str):  # schema-validated narrowing
-        raise AssertionError("Triage schema accepted a non-string")
+        raise OperationalError("Triage schema accepted a non-string")
     return value
 
 

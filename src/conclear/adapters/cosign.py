@@ -242,7 +242,7 @@ class CosignAdapter(ToolAdapter):
         secret_paths: tuple[Path, ...] = (),
     ) -> str:
         if any(argument in _FORBIDDEN_RELEASE_OPTIONS for argument in arguments):
-            raise ValueError(
+            raise OperationalError(
                 "Cosign release operations cannot disable log transparency"
             )
         return self._run(
@@ -268,7 +268,9 @@ class CosignAdapter(ToolAdapter):
     @staticmethod
     def _require_digest(subject: OCIReference) -> None:
         if subject.digest is None or subject.tag is not None:
-            raise ValueError("Cosign release subjects must use an immutable digest")
+            raise OperationalError(
+                "Cosign release subjects must use an immutable digest"
+            )
 
 
 def _missing_attestation(error: CommandExecutionError, predicate_type: str) -> bool:

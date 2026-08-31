@@ -205,7 +205,7 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
         if any(name.endswith("conclear/_development_identity.py") for name in names):
             raise OperationalError("Wheel contains development-only source identity")
     else:
-        raise ValueError(f"Unknown distribution kind: {kind}")
+        raise OperationalError(f"Unknown distribution kind: {kind}")
     for suffix in suffixes:
         if not any(name == suffix or name.endswith(f"/{suffix}") for name in names):
             raise OperationalError(f"{kind} is missing required file {suffix}")

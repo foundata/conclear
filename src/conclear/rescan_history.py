@@ -54,9 +54,9 @@ class RescanHistoryEntry:
         """Validate the stored digest, time and finding identities."""
         Digest(self.record_digest)
         if self.verified_at.tzinfo is None or self.verified_at.utcoffset() is None:
-            raise ValueError("Rescan verification time must be timezone-aware")
+            raise OperationalError("Rescan verification time must be timezone-aware")
         if self.active_findings != tuple(sorted(set(self.active_findings))):
-            raise ValueError("Rescan active findings must be unique and sorted")
+            raise OperationalError("Rescan active findings must be unique and sorted")
 
     def to_dict(self) -> dict[str, object]:
         """Return the durable representation."""

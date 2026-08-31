@@ -772,7 +772,7 @@ def _pin_findings(
     now: datetime,
 ) -> tuple[Finding, ...]:
     if now.tzinfo is None or now.utcoffset() is None:
-        raise ValueError("Qualification time must be timezone-aware")
+        raise OperationalError("Qualification time must be timezone-aware")
     configured = {pin.reference for pin in image.pins}
     observed = {item.reference for item in observations}
     if len(observations) != len(observed) or observed != configured:
@@ -928,7 +928,7 @@ def _memory_bytes(value: str) -> int:
     for suffix, multiplier in units.items():
         if value.endswith(suffix):
             return int(value.removesuffix(suffix)) * multiplier
-    raise ValueError(f"Unsupported memory value: {value}")
+    raise OperationalError(f"Unsupported memory value: {value}")
 
 
 def _normalized_architecture(value: str) -> str:
@@ -951,7 +951,7 @@ def _execution_observation(inputs: QualificationInputs) -> dict[str, object]:
 
 def _timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("Source timestamp must be timezone-aware")
+        raise OperationalError("Source timestamp must be timezone-aware")
     return (
         value.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     )

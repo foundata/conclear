@@ -53,11 +53,11 @@ def generate_provenance(value: ProvenanceInput, output_path: Path) -> str:
     validate_source_revision(value.source_revision)
     validate_source_revision(IDENTITY.source_revision)
     if value.mode not in {"local", "ci"}:
-        raise ValueError("Release mode must be local or ci")
+        raise OperationalError("Release mode must be local or ci")
     if value.started_at.tzinfo is None or value.finished_at.tzinfo is None:
-        raise ValueError("Provenance timestamps must be timezone-aware")
+        raise OperationalError("Provenance timestamps must be timezone-aware")
     if value.finished_at < value.started_at:
-        raise ValueError("Provenance finish time precedes its start")
+        raise OperationalError("Provenance finish time precedes its start")
     subjects: list[dict[str, object]] = [
         {
             "name": value.subject_name,

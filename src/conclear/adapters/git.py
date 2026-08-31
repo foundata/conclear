@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
-from conclear.errors import OperationalError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.process import OperationKind
 from conclear.values import validate_source_revision
 
@@ -74,7 +74,7 @@ class GitAdapter(ToolAdapter):
             or ".." in Path(relative_path).parts
             or "\\" in relative_path
         ):
-            raise ValueError("Git object path must be a safe relative path")
+            raise InvalidInvocationError("Git object path must be a safe relative path")
         return self._run(
             ("-C", str(repository), "show", f"{revision}:{relative_path}"),
             timeout_seconds=30,

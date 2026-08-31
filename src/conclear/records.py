@@ -79,7 +79,7 @@ class RecordEnvelope:
         """Validate identity and timestamp invariants."""
         validate_run_id(self.run_id)
         if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
-            raise ValueError("Record timestamps must be timezone-aware")
+            raise OperationalError("Record timestamps must be timezone-aware")
 
     def to_dict(self) -> dict[str, object]:
         """Return a schema-validated public record object."""

@@ -40,20 +40,20 @@ class PinObservation:
     def __post_init__(self) -> None:
         """Validate temporal and digest relationships in one observation."""
         if self.reference.digest is None or self.reference.tag is None:
-            raise ValueError("Pin observations require a tagged digest reference")
+            raise OperationalError("Pin observations require a tagged digest reference")
         if self.pinned_digest != self.reference.digest:
-            raise ValueError("Pin observation digest differs from its reference")
+            raise OperationalError("Pin observation digest differs from its reference")
         if self.checked_at.tzinfo is None or self.checked_at.utcoffset() is None:
-            raise ValueError("Pin observation time must be timezone-aware")
+            raise OperationalError("Pin observation time must be timezone-aware")
         if self.divergence_since is not None and (
             self.divergence_since.tzinfo is None
             or self.divergence_since.utcoffset() is None
         ):
-            raise ValueError("Pin divergence time must be timezone-aware")
+            raise OperationalError("Pin divergence time must be timezone-aware")
         if (self.observed_digest == self.pinned_digest) != (
             self.divergence_since is None
         ):
-            raise ValueError("Pin divergence time does not match observed digest")
+            raise OperationalError("Pin divergence time does not match observed digest")
 
     @property
     def accepted(self) -> bool:
@@ -95,10 +95,10 @@ class PinStore:
     ) -> PinObservation:
         """Resolve, update and evaluate one declared tag and digest pin."""
         if now.tzinfo is None or now.utcoffset() is None:
-            raise ValueError("Pin observation time must be timezone-aware")
+            raise OperationalError("Pin observation time must be timezone-aware")
         reference = pin.reference
         if reference.tag is None or reference.digest is None:
-            raise ValueError("Pin checks require a tag and digest")
+            raise OperationalError("Pin checks require a tag and digest")
         readable = OCIReference(
             registry=reference.registry,
             repository=reference.repository,
@@ -229,7 +229,7 @@ def _evaluate_divergence(
             )
         )
     if divergence_since is None:
-        raise AssertionError("A divergent pin must have a start timestamp")
+        raise OperationalError("Divergent pin has no start timestamp")
     if now.astimezone(UTC) - divergence_since.astimezone(UTC) >= maximum:
         findings.append(
             Finding(

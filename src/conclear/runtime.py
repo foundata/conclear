@@ -11,6 +11,7 @@ from conclear.adapters.hadolint import HadolintAdapter
 from conclear.adapters.podman import PodmanAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
+from conclear.errors import OperationalError
 from conclear.process import ProcessEnvironment, ProcessRunner
 from conclear.records import ToolIdentity
 from conclear.tools import ResolvedTool, ToolName, ToolResolver
@@ -110,11 +111,11 @@ class ApplicationRuntime:
         cached = self._adapters.get(name)
         if cached is not None:
             if not isinstance(cached, adapter):  # pragma: no cover - internal invariant
-                raise AssertionError(f"Runtime adapter type changed for {name.value}")
+                raise OperationalError(f"Runtime adapter type changed for {name.value}")
             return cached
         tool = self.tools.get(name)
         if tool is None:
-            raise ValueError(f"Runtime did not resolve {name.value}")
+            raise OperationalError(f"Runtime did not resolve {name.value}")
         value = adapter(
             tool=tool,
             runner=self.runner,

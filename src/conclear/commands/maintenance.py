@@ -10,7 +10,7 @@ import click
 from conclear.adapters.quay import QuayAdapter
 from conclear.config import load_repository_config
 from conclear.database import select_fresh_database
-from conclear.errors import InvalidInvocationError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import sha256_bytes
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
@@ -318,7 +318,7 @@ def rescan_command(
     )
     if result.authoritative:
         if result.verified_at is None:
-            raise AssertionError("Authoritative rescan has no verification time")
+            raise OperationalError("Authoritative rescan has no verification time")
         history_store.record(
             subject,
             RescanHistoryEntry(

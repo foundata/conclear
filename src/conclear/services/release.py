@@ -475,7 +475,7 @@ def _generate_release_provenance(
     from conclear.config import RepositoryConfig
 
     if not isinstance(repository, RepositoryConfig):
-        raise TypeError("repository must be RepositoryConfig")
+        raise OperationalError("Release repository has an invalid internal type")
     materials = load_provenance_materials(workspace, repository.image(request.image_id))
     generate_provenance(
         ProvenanceInput(
@@ -525,7 +525,7 @@ def signer_identity(profile: ReleaseProfile, signer: object) -> tuple[str, str]:
     from conclear.adapters.cosign import CosignAdapter
 
     if not isinstance(signer, CosignAdapter):
-        raise TypeError("signer must be CosignAdapter")
+        raise OperationalError("Release signer has an invalid internal type")
     key = profile.cosign_private_key or ""
     if key.startswith("pkcs11:"):
         return "hsm", key
@@ -542,7 +542,7 @@ def _write_summary(
     from conclear.values import OCIReference
 
     if not isinstance(subject, OCIReference):
-        raise TypeError("subject must be OCIReference")
+        raise OperationalError("Release subject has an invalid internal type")
     tags = tuple((tag, str(digest)) for tag, digest in promotion.tags)
     atomic_write_json(
         workspace.root / "summary.json",

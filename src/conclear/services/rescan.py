@@ -197,7 +197,7 @@ def rescan_release(
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if now.tzinfo is None or now.utcoffset() is None:
-        raise ValueError("Rescan time must be timezone-aware")
+        raise OperationalError("Rescan time must be timezone-aware")
     if subject.digest is None or subject.tag is not None:
         raise InvalidInvocationError("Rescan subject must be an immutable digest")
     if scope not in {"sbom-vulnerabilities", "full-image"}:
@@ -301,7 +301,7 @@ def rescan_release(
     active_findings: set[RemediationFindingKey] = set()
     for platform, digest in sorted(manifest_map.items()):
         if platform is None:
-            raise AssertionError("platform coverage checked above")
+            raise OperationalError("Rescan platform coverage invariant failed")
         manifest_subject = subject.with_digest(digest)
         signer.verify_attestation(
             subject=manifest_subject,
@@ -579,7 +579,7 @@ def _one_statement(
 
 def _has_subject(statement: dict[str, object], subject: OCIReference) -> bool:
     if subject.digest is None:
-        raise AssertionError("Statement subjects require an immutable digest")
+        raise OperationalError("Rescan statement subject is not immutable")
     subjects = statement.get("subject")
     return isinstance(subjects, list) and any(
         isinstance(item, dict)

@@ -64,9 +64,11 @@ class ProcessEnvironment:
         if extra is not None:
             for key, value in extra.items():
                 if not re.fullmatch(r"[A-Z_][A-Z0-9_]*", key):
-                    raise ValueError(f"Invalid child environment name: {key}")
+                    raise OperationalError(f"Invalid child environment name: {key}")
                 if "\x00" in value:
-                    raise ValueError(f"Child environment value for {key} contains NUL")
+                    raise OperationalError(
+                        f"Child environment value for {key} contains NUL"
+                    )
                 environment[key] = value
         return environment
 
@@ -90,20 +92,22 @@ class CommandRequest:
     def __post_init__(self) -> None:
         """Reject unsafe or unbounded execution specifications."""
         if not self.argv:
-            raise ValueError("Command argument array cannot be empty")
+            raise OperationalError("Command argument array cannot be empty")
         executable = Path(self.argv[0])
         if not executable.is_absolute():
-            raise ValueError("External executable path must be absolute")
+            raise OperationalError("External executable path must be absolute")
         if any("\x00" in argument for argument in self.argv):
-            raise ValueError("Command arguments cannot contain NUL")
+            raise OperationalError("Command arguments cannot contain NUL")
         if self.timeout_seconds <= 0 or self.termination_grace_seconds <= 0:
-            raise ValueError("Command timeouts must be positive")
+            raise OperationalError("Command timeouts must be positive")
         if self.retries < 0 or self.retries > 3:
-            raise ValueError("External command retries must be between zero and three")
+            raise OperationalError(
+                "External command retries must be between zero and three"
+            )
         if self.operation is OperationKind.WRITE and self.retries:
-            raise ValueError("Registry and signing writes cannot retry blindly")
+            raise OperationalError("Registry and signing writes cannot retry blindly")
         if self.max_output_bytes < 1024:
-            raise ValueError("Captured output bound is too small")
+            raise OperationalError("Captured output bound is too small")
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,7 +201,9 @@ class ProcessRunner:
                 self._write_log(request, result)
                 return result
         if last_failure is None:  # pragma: no cover - loop invariant
-            raise AssertionError("Process retry loop completed without an observation")
+            raise OperationalError(
+                "Process retry loop completed without an observation"
+            )
         raise last_failure
 
     def _run_once(
@@ -224,7 +230,7 @@ class ProcessRunner:
             ) from exc
         if process.stdout is None or process.stderr is None:  # pragma: no cover
             self._terminate(process, request.termination_grace_seconds)
-            raise AssertionError("Process pipes were not created")
+            raise OperationalError("Process pipes were not created")
         stdout_stream = cast(BinaryIO, process.stdout)
         stderr_stream = cast(BinaryIO, process.stderr)
         stdout = _BoundedCapture(stdout_stream, request.max_output_bytes)
@@ -437,5 +443,5 @@ def _wait_best_effort(process: subprocess.Popen[bytes], timeout: float) -> None:
 def command_array(arguments: Sequence[str]) -> tuple[str, ...]:
     """Convert an argument sequence while explicitly rejecting shell interpolation."""
     if isinstance(arguments, str):
-        raise TypeError("External commands must be argument arrays")
+        raise OperationalError("External commands must be argument arrays")
     return tuple(arguments)

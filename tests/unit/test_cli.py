@@ -167,6 +167,44 @@ def test_main_maps_operational_failure_to_one(
     assert "failed" in captured.err
 
 
+def test_main_redacts_unhandled_exception_and_writes_one_json_result(
+    repository_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root_path = repository_factory()
+    monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
+    monkeypatch.setattr(
+        local_commands,
+        "check_image",
+        lambda image, hadolint: (_ for _ in ()).throw(
+            ValueError("private path: /run/secrets/release-key")
+        ),
+    )
+
+    assert (
+        main(
+            [
+                "check",
+                "--config",
+                str(root_path / "conclear.toml"),
+                "--image",
+                "app",
+                "--format",
+                "json",
+            ]
+        )
+        == 1
+    )
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert result["status"] == "operationalFailure"
+    assert result["message"] == "ConClear encountered an internal error"
+    assert captured.out.count("\n") == 1
+    assert "ValueError" in captured.err
+    assert "/run/secrets" not in captured.out + captured.err
+
+
 def test_main_preserves_rule_identifier_in_human_and_json_output(
     repository_factory: Any,
     monkeypatch: pytest.MonkeyPatch,

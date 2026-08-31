@@ -10,7 +10,7 @@ from conclear.errors import InvalidInvocationError, OperationalError
 def read_regular_file(path: Path, *, maximum_bytes: int, label: str) -> bytes:
     """Read one bounded regular file without following its final symlink."""
     if maximum_bytes < 1:
-        raise ValueError("Regular-file size limit must be positive")
+        raise OperationalError("Regular-file size limit must be positive")
     flags = os.O_RDONLY | os.O_CLOEXEC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW

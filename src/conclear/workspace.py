@@ -533,7 +533,7 @@ def _parse_resource(value: object) -> ResourceEntry:
 
 def _timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
-        raise ValueError("Workspace timestamps must be timezone-aware")
+        raise OperationalError("Workspace timestamps must be timezone-aware")
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 

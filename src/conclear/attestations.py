@@ -27,7 +27,7 @@ def write_statement(
 ) -> str:
     """Write one deterministic in-toto Statement around a validated predicate."""
     if not predicate_type.startswith("https://"):
-        raise ValueError("Predicate type must be an HTTPS URI")
+        raise OperationalError("Predicate type must be an HTTPS URI")
     return atomic_write_json(
         path,
         {

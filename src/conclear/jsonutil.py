@@ -96,7 +96,7 @@ def atomic_write_json(path: Path, value: object, *, mode: int = 0o600) -> str:
 def load_json(path: Path, *, maximum_bytes: int = MAX_JSON_BYTES) -> Any:
     """Decode bounded UTF-8 JSON from a regular file without following a symlink."""
     if maximum_bytes < 1:
-        raise ValueError("JSON size limit must be positive")
+        raise OperationalError("JSON size limit must be positive")
     flags = os.O_RDONLY | os.O_CLOEXEC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
