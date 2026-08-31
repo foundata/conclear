@@ -282,6 +282,32 @@ def test_ci_identity_is_bound_to_matching_isolated_checkout() -> None:
     )
 
 
+def test_internal_ci_server_is_kept_only_in_local_diagnostics(
+    tmp_path: Path,
+) -> None:
+    server = "https://gitlab.internal.example"
+    identity = observe_ci_identity(
+        {
+            "GITLAB_CI": "true",
+            "CI_SERVER_URL": server,
+            "CI_PROJECT_PATH": "foundata/example",
+            "CI_PIPELINE_ID": "1234",
+            "CI_JOB_ID": "5678",
+            "CI_COMMIT_SHA": "a" * 40,
+        }
+    )
+    diagnostic = tmp_path / "ci-identity.json"
+
+    public_identity = validate_ci_identity(
+        identity,
+        SourceIdentity(f"{server}/foundata/example", "a" * 40),
+        diagnostic_path=diagnostic,
+    )
+
+    assert "server" not in public_identity
+    assert load_json(diagnostic)["ciIdentity"]["server"] == server
+
+
 def test_removed_resource_identifier_can_be_planned_for_bounded_retry(
     tmp_path: Path,
 ) -> None:

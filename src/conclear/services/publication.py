@@ -632,7 +632,11 @@ def verify_candidate(
     if profile.mode.value == "ci" and ci_identity is None:
         raise InvalidInvocationError("CI releases require an observed CI identity")
     if ci_identity is not None:
-        ci_identity = validate_ci_identity(ci_identity, evidence.source)
+        ci_identity = validate_ci_identity(
+            ci_identity,
+            evidence.source,
+            diagnostic_path=workspace.root / "reports" / "ci-identity.json",
+        )
     Digest(evidence.configuration_digest)
     for evidence_digest in (
         *evidence.qualification_digests,

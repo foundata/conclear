@@ -2,12 +2,16 @@
 
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from urllib.parse import urlparse
 
 from conclear.config import normalize_source_url
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.jsonutil import atomic_write_json
 from conclear.records import SourceIdentity
 from conclear.values import validate_source_revision
+
+PUBLIC_CI_SERVERS = frozenset({"https://github.com", "https://gitlab.com"})
 
 
 def observe_ci_identity(environment: Mapping[str, str]) -> dict[str, object]:
@@ -48,9 +52,12 @@ def observe_ci_identity(environment: Mapping[str, str]) -> dict[str, object]:
 
 
 def validate_ci_identity(
-    identity: Mapping[str, object], source: SourceIdentity
+    identity: Mapping[str, object],
+    source: SourceIdentity,
+    *,
+    diagnostic_path: Path | None = None,
 ) -> dict[str, object]:
-    """Bind observed provider metadata to the isolated checkout identity."""
+    """Bind CI metadata to the checkout and return its public representation."""
     provider = identity.get("provider")
     result: dict[str, object]
     if provider == "github-actions":
@@ -119,6 +126,13 @@ def validate_ci_identity(
         raise OperationalError(
             "Observed CI revision differs from the isolated checkout"
         )
+    if diagnostic_path is not None:
+        atomic_write_json(
+            diagnostic_path,
+            {"schemaVersion": 1, "ciIdentity": result},
+        )
+    if server not in PUBLIC_CI_SERVERS:
+        result.pop("server")
     return result
 
 
