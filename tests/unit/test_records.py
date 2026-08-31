@@ -87,6 +87,14 @@ def test_record_schema_rejects_a_version_from_another_generation() -> None:
         validate_record(value)
 
 
+def test_record_schema_rejects_empty_tool_identity_set() -> None:
+    value = _record().to_dict()
+    value["tools"] = []
+
+    with pytest.raises(InvalidInvocationError):
+        validate_record(value)
+
+
 def test_record_write_is_atomic_and_digest_bound(tmp_path: Path) -> None:
     record = _record()
     path = tmp_path / "record.json"
