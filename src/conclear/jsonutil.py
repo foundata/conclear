@@ -62,6 +62,7 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int = 0o600) -> None
     """Atomically replace a file with flushed content on the same filesystem."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary_path: Path | None = None
+    descriptor: int | None = None
     try:
         descriptor, temporary_name = tempfile.mkstemp(
             dir=path.parent,
@@ -70,7 +71,9 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int = 0o600) -> None
         )
         temporary_path = Path(temporary_name)
         os.fchmod(descriptor, mode)
-        with os.fdopen(descriptor, "wb") as stream:
+        stream = os.fdopen(descriptor, "wb")
+        descriptor = None
+        with stream:
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
@@ -84,6 +87,9 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int = 0o600) -> None
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
         raise OperationalError(f"Unable to atomically write {path}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def atomic_write_json(path: Path, value: object, *, mode: int = 0o600) -> str:

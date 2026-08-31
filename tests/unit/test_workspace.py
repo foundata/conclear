@@ -1,5 +1,8 @@
+import os
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -124,4 +127,32 @@ def test_atomic_write_failure_preserves_previous_file(
         atomic_write_bytes(target, b"new\n")
 
     assert target.read_bytes() == b"old\n"
+    assert list(tmp_path.glob(".state.json.*.tmp")) == []
+
+
+def test_atomic_write_closes_descriptor_when_fchmod_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    descriptors: list[int] = []
+    original_mkstemp = tempfile.mkstemp
+
+    def record_mkstemp(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        descriptor, name = original_mkstemp(*args, **kwargs)
+        assert isinstance(name, str)
+        descriptors.append(descriptor)
+        return descriptor, name
+
+    def fail_fchmod(descriptor: int, mode: int) -> None:
+        del descriptor, mode
+        raise OSError("injected fchmod failure")
+
+    monkeypatch.setattr(tempfile, "mkstemp", record_mkstemp)
+    monkeypatch.setattr(os, "fchmod", fail_fchmod)
+
+    with pytest.raises(OperationalError, match="atomically write"):
+        atomic_write_bytes(tmp_path / "state.json", b"new\n")
+
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
     assert list(tmp_path.glob(".state.json.*.tmp")) == []
