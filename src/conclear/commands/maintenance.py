@@ -20,7 +20,11 @@ from conclear.secrets import token_provider
 from conclear.services.cleanup import cleanup_run
 from conclear.services.doctor import diagnose_environment
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
-from conclear.services.rescan import RescanSigning, rescan_release
+from conclear.services.rescan import (
+    RescanSigning,
+    rescan_release,
+    verified_rescan_history,
+)
 from conclear.tools import ToolName
 from conclear.triage import load_triage
 from conclear.values import OCIReference
@@ -240,8 +244,6 @@ def rescan_command(
         )
     configuration_digest = sha256_bytes(repository.raw_bytes)
     triage = () if triage_path is None else load_triage(triage_path, subject=subject)
-    history_store = RescanHistoryStore(state_home())
-    remediation_history = history_store.linked_history(subject, previous_result)
     if authoritative and selected.cosign_private_key is None:
         raise InvalidInvocationError("Authoritative rescan requires a signing key")
     passphrase = signing_passphrase(selected, passphrase_fd, required=authoritative)
@@ -265,6 +267,17 @@ def rescan_command(
             f"tool.{tool.name.value}": f"{tool.version}@{tool.executable_digest}"
             for tool in runtime.tools.values()
         }
+    )
+    history_store = RescanHistoryStore(state_home())
+    attested_history = verified_rescan_history(
+        subject,
+        signer=runtime.cosign(),
+        public_key=selected.cosign_public_key,
+    )
+    remediation_history = history_store.synchronize(
+        subject,
+        attested_history,
+        previous_result,
     )
     database = select_fresh_database(
         runtime.trivy(),
@@ -300,7 +313,7 @@ def rescan_command(
         remediation_history=remediation_history,
         signing=signing,
         now=datetime.now(UTC),
-        clock=lambda: datetime.now(UTC),
+        record_clock=lambda: datetime.now(UTC),
     )
     if result.authoritative:
         if result.verified_at is None:

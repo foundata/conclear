@@ -6,7 +6,7 @@ from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
 from conclear.adapters.parsing import array_value, json_value
-from conclear.errors import OperationalError
+from conclear.errors import CommandExecutionError, OperationalError
 from conclear.process import OperationKind
 from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
 from conclear.values import OCIReference
@@ -168,19 +168,28 @@ class CosignAdapter(ToolAdapter):
         return self._verification(subject, output)
 
     def download_attestations(
-        self, *, subject: OCIReference, predicate_type: str
+        self,
+        *,
+        subject: OCIReference,
+        predicate_type: str,
+        allow_missing: bool = False,
     ) -> tuple[object, ...]:
         """Download matching in-toto envelopes for workflow-level validation."""
         self._require_digest(subject)
-        output = self._execute_release(
-            (
-                "download",
-                "attestation",
-                "--predicate-type",
-                predicate_type,
-                str(subject),
+        try:
+            output = self._execute_release(
+                (
+                    "download",
+                    "attestation",
+                    "--predicate-type",
+                    predicate_type,
+                    str(subject),
+                )
             )
-        )
+        except CommandExecutionError as exc:
+            if not allow_missing or not _missing_attestation(exc, predicate_type):
+                raise
+            return ()
         values: list[object] = []
         for line in output.splitlines():
             if line.strip():
@@ -250,3 +259,16 @@ class CosignAdapter(ToolAdapter):
     def _require_digest(subject: OCIReference) -> None:
         if subject.digest is None or subject.tag is not None:
             raise ValueError("Cosign release subjects must use an immutable digest")
+
+
+def _missing_attestation(error: CommandExecutionError, predicate_type: str) -> bool:
+    expected = {
+        "no attestations",
+        "no matching attestations",
+        f"no attestations with predicate type '{predicate_type}' found",
+    }
+    messages = {
+        line.removeprefix("Error: ").strip()
+        for line in (*error.stderr.splitlines(), *error.stdout.splitlines())
+    }
+    return bool(messages & expected)

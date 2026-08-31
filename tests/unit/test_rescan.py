@@ -19,7 +19,12 @@ from conclear.attestations import (
 from conclear.config import VulnerabilityException
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import ApplicationIdentity
-from conclear.jsonutil import atomic_write_json, canonical_json_bytes, load_json
+from conclear.jsonutil import (
+    atomic_write_json,
+    canonical_json_bytes,
+    load_json,
+    sha256_bytes,
+)
 from conclear.oci import (
     OCI_CONFIG,
     OCI_INDEX,
@@ -38,7 +43,12 @@ from conclear.rescan_history import (
     RemediationFindingKey,
     RescanHistoryEntry,
 )
-from conclear.services.rescan import RescanResult, RescanSigning, rescan_release
+from conclear.services.rescan import (
+    RescanResult,
+    RescanSigning,
+    rescan_release,
+    verified_rescan_history,
+)
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
@@ -106,11 +116,34 @@ class FakeSigner:
         assert (str(subject), predicate_type) in self.statements
         if self.fail_rescan_verification and predicate_type == RESCAN_TYPE:
             raise OperationalError("post-attachment verification failed")
-        return VerificationObservation(subject, ({"verified": True},))
+        return VerificationObservation(
+            subject,
+            tuple(
+                {
+                    "critical": {
+                        "identity": {"docker-reference": subject.repository_name},
+                        "image": {"docker-manifest-digest": str(subject.digest)},
+                        "type": predicate_type,
+                    },
+                    "optional": None,
+                }
+                for _statement in self.statements[(str(subject), predicate_type)]
+            ),
+        )
 
     def download_attestations(
-        self, *, subject: OCIReference, predicate_type: str
+        self,
+        *,
+        subject: OCIReference,
+        predicate_type: str,
+        allow_missing: bool = False,
     ) -> tuple[object, ...]:
+        key = (str(subject), predicate_type)
+        statements = self.statements.get(key)
+        if statements is None:
+            if allow_missing:
+                return ()
+            raise OperationalError("no matching attestations")
         return tuple(
             {
                 "payloadType": "application/vnd.in-toto+json",
@@ -118,7 +151,7 @@ class FakeSigner:
                     "ascii"
                 ),
             }
-            for statement in self.statements[(str(subject), predicate_type)]
+            for statement in statements
         )
 
     def attest_statement(
@@ -393,7 +426,6 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             },
         },
     )
-    signer.add(subject, RESCAN_TYPE, {"historical": True})
     signer.fail_rescan_verification = fail_post_verification
     public_key = tmp_path / "cosign.pub"
     public_key.write_text("test", encoding="utf-8")
@@ -418,27 +450,57 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         ),
     )
     previous_result_digest = (
-        "sha256:" + "8" * 64
-        if triage_decision == "affected" and not use_exception
-        else None
+        "pending" if triage_decision == "affected" and not use_exception else None
     )
-    remediation_history = (
-        (
+    remediation_history: tuple[RescanHistoryEntry, ...] = ()
+    if previous_result_digest is not None:
+        active_finding = RemediationFindingKey(
+            platform=platform,
+            component="libssl",
+            advisory="CVE-2026-0001",
+        )
+        previous_record = RecordEnvelope(
+            record_type="rescanResult",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            run_id=run.run_id,
+            source=SourceIdentity("https://github.com/example/app", "e" * 40),
+            configuration_digest=configuration_digest,
+            tools=(),
+            verdict=Verdict.ACCEPTED,
+            payload={
+                "subject": str(subject),
+                "platformManifests": {str(platform): str(manifest_digest)},
+                "scanner": "trivy 0.69.3",
+                "databaseDigest": "sha256:" + "6" * 64,
+                "databaseMetadata": DATABASE_METADATA,
+                "scope": "sbom-vulnerabilities",
+                "findings": [],
+                "appliedExceptions": [],
+                "triage": [],
+                "previousResultDigest": None,
+                "authoritative": True,
+                "remediation": {
+                    "limitSeconds": 2592000,
+                    "findings": [
+                        {
+                            **active_finding.to_dict(),
+                            "startedAt": None,
+                            "deadline": None,
+                            "overdue": False,
+                        }
+                    ],
+                },
+            },
+        ).to_dict()
+        previous_result_digest = sha256_bytes(canonical_json_bytes(previous_record))
+        signer.add(subject, RESCAN_TYPE, previous_record)
+        remediation_history = (
             RescanHistoryEntry(
                 record_digest=previous_result_digest,
                 verified_at=datetime(2026, 1, 1, tzinfo=UTC),
-                active_findings=(
-                    RemediationFindingKey(
-                        platform=platform,
-                        component="libssl",
-                        advisory="CVE-2026-0001",
-                    ),
-                ),
+                active_findings=(active_finding,),
             ),
         )
-        if previous_result_digest is not None
-        else ()
-    )
 
     def run_rescan() -> RescanResult:
         return rescan_release(
@@ -463,7 +525,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             remediation_history=remediation_history,
             signing=RescanSigning("test.key", public_key, "secret"),
             now=datetime(2026, 2, 1, tzinfo=UTC),
-            clock=lambda: datetime(2026, 2, 1, 0, 5, tzinfo=UTC),
+            record_clock=lambda: datetime(2026, 2, 1, 0, 5, tzinfo=UTC),
         )
 
     if future_triage:
@@ -543,3 +605,12 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     assert entry.status is ResourceStatus.CREATED
     assert entry.metadata["verifiedAt"] == "2026-02-01T00:05:00Z"
     assert result.verified_at == "2026-02-01T00:05:00Z"
+    if previous_result_digest is None:
+        history = verified_rescan_history(
+            subject,
+            signer=signer,
+            public_key=public_key,
+        )
+        assert len(history) == 1
+        assert history[0].record_digest == result.record_digest
+        assert history[0].verified_at == datetime(2026, 2, 1, 0, 5, tzinfo=UTC)

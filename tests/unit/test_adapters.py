@@ -418,6 +418,43 @@ def test_cosign_verification_requires_a_verified_entry(tmp_path: Path) -> None:
     assert "--insecure-ignore-tlog" not in runner.requests[0].argv
 
 
+def test_cosign_optional_attestation_download_accepts_only_exact_absence(
+    tmp_path: Path,
+) -> None:
+    predicate_type = "https://example.com/predicate/v1"
+    missing = CommandExecutionError(
+        "Cosign found no matching attestation",
+        returncode=1,
+        stderr=f"Error: no attestations with predicate type '{predicate_type}' found\n",
+    )
+    runner = FakeRunner(missing)
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
+
+    assert (
+        adapter.download_attestations(
+            subject=subject,
+            predicate_type=predicate_type,
+            allow_missing=True,
+        )
+        == ()
+    )
+
+    failure = CommandExecutionError(
+        "Registry unavailable",
+        returncode=1,
+        stderr="Error: registry unavailable\n",
+    )
+    runner = FakeRunner(failure)
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+    with pytest.raises(CommandExecutionError, match="Registry unavailable"):
+        adapter.download_attestations(
+            subject=subject,
+            predicate_type=predicate_type,
+            allow_missing=True,
+        )
+
+
 def quay_repository() -> OCIReference:
     return OCIReference.parse("quay.io/foundata/example")
 

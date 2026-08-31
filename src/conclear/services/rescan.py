@@ -20,7 +20,7 @@ from conclear.attestations import (
 )
 from conclear.config import MAX_REMEDIATION, VulnerabilityException
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.jsonutil import atomic_write_json, load_json
+from conclear.jsonutil import atomic_write_json
 from conclear.records import (
     RecordEnvelope,
     SourceIdentity,
@@ -31,6 +31,7 @@ from conclear.records import (
 from conclear.rescan_history import (
     RemediationFindingKey,
     RescanHistoryEntry,
+    history_from_records,
 )
 from conclear.scan_policy import evaluate_trivy_report
 from conclear.spdx import validate_spdx_document
@@ -68,7 +69,11 @@ class Signer(Protocol):
         ...
 
     def download_attestations(
-        self, *, subject: OCIReference, predicate_type: str
+        self,
+        *,
+        subject: OCIReference,
+        predicate_type: str,
+        allow_missing: bool = False,
     ) -> tuple[object, ...]:
         """Download DSSE envelopes for validated inspection."""
         ...
@@ -132,6 +137,39 @@ class RescanResult:
     active_findings: tuple[RemediationFindingKey, ...]
 
 
+def verified_rescan_history(
+    subject: OCIReference, *, signer: Signer, public_key: Path
+) -> tuple[RescanHistoryEntry, ...]:
+    """Reconstruct the authoritative chain from verified signed attestations."""
+    envelopes = signer.download_attestations(
+        subject=subject,
+        predicate_type=RESCAN_TYPE,
+        allow_missing=True,
+    )
+    if not envelopes:
+        return ()
+    verification = signer.verify_attestation(
+        subject=subject,
+        public_key=public_key,
+        predicate_type=RESCAN_TYPE,
+    )
+    statements = decode_dsse_statements(envelopes)
+    matches = tuple(
+        statement
+        for statement in statements
+        if statement.get("predicateType") == RESCAN_TYPE
+        and _has_subject(statement, subject)
+    )
+    if len(matches) != len(statements) or len(verification.entries) != len(matches):
+        raise OperationalError(
+            "Downloaded rescan attestations differ from Cosign verification"
+        )
+    records = tuple(
+        _object(statement.get("predicate"), "rescan record") for statement in matches
+    )
+    return history_from_records(records, subject)
+
+
 def rescan_release(
     subject: OCIReference,
     *,
@@ -153,7 +191,7 @@ def rescan_release(
     remediation_history: tuple[RescanHistoryEntry, ...],
     signing: RescanSigning | None,
     now: datetime,
-    clock: Callable[[], datetime],
+    record_clock: Callable[[], datetime],
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -375,9 +413,12 @@ def rescan_release(
         if any(item.get("severity") == "error" for item in findings)
         else Verdict.ACCEPTED
     )
+    recorded_at = record_clock()
+    if recorded_at.tzinfo is None or recorded_at.utcoffset() is None:
+        raise OperationalError("Rescan record clock returned a naive timestamp")
     record = RecordEnvelope(
         record_type="rescanResult",
-        created_at=now,
+        created_at=recorded_at,
         run_id=workspace.run_id,
         source=source,
         configuration_digest=configuration_digest,
@@ -439,22 +480,27 @@ def rescan_release(
             private_key=signing.private_key,
             passphrase=signing.passphrase,
         )
-        signer.verify_attestation(
-            subject=subject,
+        attested_history = verified_rescan_history(
+            subject,
+            signer=signer,
             public_key=signing.public_key,
-            predicate_type=RESCAN_TYPE,
         )
-        expected_statement = _object(load_json(statement_path), "rescan statement")
-        _exact_statement(
-            signer.download_attestations(subject=subject, predicate_type=RESCAN_TYPE),
-            predicate_type=RESCAN_TYPE,
-            subject=subject,
-            expected=expected_statement,
+        expected_history = (
+            *remediation_history,
+            RescanHistoryEntry(
+                record_digest=record_digest,
+                verified_at=recorded_at,
+                active_findings=tuple(sorted(active_findings)),
+            ),
         )
+        if attested_history != expected_history:
+            raise OperationalError(
+                "Post-attachment rescan history differs from the intended chain"
+            )
     except Exception:
         workspace.journal.update("rescan-result", ResourceStatus.FAILED)
         raise
-    verified_at = _timestamp(clock())
+    verified_at = _timestamp(recorded_at)
     workspace.journal.update(
         "rescan-result",
         ResourceStatus.CREATED,
@@ -524,28 +570,6 @@ def _one_statement(
     if len(matches) != 1:
         raise OperationalError(
             f"Expected exactly one {predicate_type} attestation, found {len(matches)}"
-        )
-    return matches[0]
-
-
-def _exact_statement(
-    envelopes: tuple[object, ...],
-    *,
-    predicate_type: str,
-    subject: OCIReference,
-    expected: dict[str, object],
-) -> dict[str, object]:
-    matches = [
-        statement
-        for statement in decode_dsse_statements(envelopes)
-        if statement.get("predicateType") == predicate_type
-        and _has_subject(statement, subject)
-        and statement == expected
-    ]
-    if len(matches) != 1:
-        raise OperationalError(
-            "Expected exactly one copy of the newly attached rescan result, "
-            f"found {len(matches)}"
         )
     return matches[0]
 

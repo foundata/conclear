@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import IO
 
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.jsonutil import atomic_write_json, load_json
+from conclear.jsonutil import (
+    atomic_write_json,
+    canonical_json_bytes,
+    load_json,
+    sha256_bytes,
+)
+from conclear.records import validate_record
 from conclear.values import Digest, OCIReference, Platform
 
 MAX_RESCAN_HISTORY_BYTES = 4 * 1024 * 1024
@@ -61,6 +67,12 @@ class RescanHistoryEntry:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _LinkedRecord:
+    entry: RescanHistoryEntry
+    previous_digest: str | None
+
+
 class RescanHistoryStore:
     """Append and link authoritative rescan clocks for one immutable subject."""
 
@@ -72,24 +84,29 @@ class RescanHistoryStore:
         self, subject: OCIReference, requested_previous: str | None
     ) -> tuple[RescanHistoryEntry, ...]:
         """Return history only when the caller links the exact latest result."""
-        entries = self._load(subject)
-        if not entries:
-            if requested_previous is not None:
-                Digest(requested_previous)
-                raise InvalidInvocationError(
-                    "Previous rescan result is not present in durable history"
+        return _require_latest(self._load(subject), requested_previous)
+
+    def synchronize(
+        self,
+        subject: OCIReference,
+        authoritative: tuple[RescanHistoryEntry, ...],
+        requested_previous: str | None,
+    ) -> tuple[RescanHistoryEntry, ...]:
+        """Reconcile a cache prefix with verified attestations and require its tip."""
+        path = self._path(subject)
+        self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with _locked_file(path.with_suffix(".lock")):
+            cached = self._load(subject)
+            if (
+                len(cached) > len(authoritative)
+                or cached != authoritative[: len(cached)]
+            ):
+                raise OperationalError(
+                    "Durable rescan history conflicts with signed attestations"
                 )
-            return ()
-        if requested_previous is None:
-            raise InvalidInvocationError(
-                "A previous result digest is required for this released subject"
-            )
-        Digest(requested_previous)
-        if requested_previous != entries[-1].record_digest:
-            raise InvalidInvocationError(
-                "Previous result digest is not the latest authoritative rescan"
-            )
-        return entries
+            if cached != authoritative:
+                self._write(path, subject, authoritative)
+        return _require_latest(authoritative, requested_previous)
 
     def record(
         self,
@@ -113,14 +130,22 @@ class RescanHistoryStore:
             if any(item.record_digest == entry.record_digest for item in entries):
                 raise OperationalError("Rescan result digest is already recorded")
             entries.append(entry)
-            atomic_write_json(
-                path,
-                {
-                    "schemaVersion": 1,
-                    "subject": str(subject),
-                    "results": [item.to_dict() for item in entries],
-                },
-            )
+            self._write(path, subject, tuple(entries))
+
+    @staticmethod
+    def _write(
+        path: Path,
+        subject: OCIReference,
+        entries: tuple[RescanHistoryEntry, ...],
+    ) -> None:
+        atomic_write_json(
+            path,
+            {
+                "schemaVersion": 1,
+                "subject": str(subject),
+                "results": [item.to_dict() for item in entries],
+            },
+        )
 
     def _load(self, subject: OCIReference) -> tuple[RescanHistoryEntry, ...]:
         path = self._path(subject)
@@ -159,6 +184,95 @@ class RescanHistoryStore:
         return self._root / f"{key}.json"
 
 
+def history_from_records(
+    records: tuple[dict[str, object], ...], subject: OCIReference
+) -> tuple[RescanHistoryEntry, ...]:
+    """Reconstruct one complete authoritative chain from signed rescan records."""
+    linked: list[_LinkedRecord] = []
+    digests: set[str] = set()
+    for record in records:
+        try:
+            validate_record(record)
+        except InvalidInvocationError as exc:
+            raise OperationalError("Signed rescan record is malformed") from exc
+        if record.get("recordType") != "rescanResult":
+            raise OperationalError("Signed rescan history has the wrong record type")
+        payload = _object(record.get("payload"), "rescan payload")
+        if payload.get("subject") != str(subject):
+            raise OperationalError("Signed rescan history names another subject")
+        if payload.get("authoritative") is not True:
+            raise OperationalError("Signed rescan history contains a diagnostic result")
+        record_digest = sha256_bytes(canonical_json_bytes(record))
+        if record_digest in digests:
+            raise OperationalError("Signed rescan history contains duplicate results")
+        digests.add(record_digest)
+        previous_digest = payload.get("previousResultDigest")
+        if previous_digest is not None:
+            if not isinstance(previous_digest, str):
+                raise OperationalError("Signed rescan history link is malformed")
+            try:
+                Digest(previous_digest)
+            except InvalidInvocationError as exc:
+                raise OperationalError(
+                    "Signed rescan history link is malformed"
+                ) from exc
+        remediation = _object(payload.get("remediation"), "rescan remediation")
+        raw_findings = remediation.get("findings")
+        if not isinstance(raw_findings, list):
+            raise OperationalError("Signed rescan remediation findings are malformed")
+        findings = tuple(sorted(_finding(item) for item in raw_findings))
+        try:
+            entry = RescanHistoryEntry(
+                record_digest=record_digest,
+                verified_at=_parse_timestamp(_string(record.get("createdAt"))),
+                active_findings=findings,
+            )
+        except ValueError as exc:
+            raise OperationalError(
+                "Signed rescan history contains invalid values"
+            ) from exc
+        linked.append(_LinkedRecord(entry, previous_digest))
+
+    chain: list[RescanHistoryEntry] = []
+    previous: str | None = None
+    remaining = list(linked)
+    while remaining:
+        matches = [item for item in remaining if item.previous_digest == previous]
+        if len(matches) != 1:
+            raise OperationalError(
+                "Signed rescan attestations do not form one complete chain"
+            )
+        selected = matches[0]
+        if chain and selected.entry.verified_at < chain[-1].verified_at:
+            raise OperationalError("Signed rescan history timestamps are unordered")
+        chain.append(selected.entry)
+        remaining.remove(selected)
+        previous = selected.entry.record_digest
+    return tuple(chain)
+
+
+def _require_latest(
+    entries: tuple[RescanHistoryEntry, ...], requested_previous: str | None
+) -> tuple[RescanHistoryEntry, ...]:
+    if not entries:
+        if requested_previous is not None:
+            Digest(requested_previous)
+            raise InvalidInvocationError(
+                "Previous rescan result is not present in durable history"
+            )
+        return ()
+    if requested_previous is None:
+        raise InvalidInvocationError(
+            "A previous result digest is required for this released subject"
+        )
+    Digest(requested_previous)
+    if requested_previous != entries[-1].record_digest:
+        raise InvalidInvocationError(
+            "Previous result digest is not the latest authoritative rescan"
+        )
+    return entries
+
+
 def _entry(value: object) -> RescanHistoryEntry:
     if not isinstance(value, dict):
         raise OperationalError("Rescan history entry is malformed")
@@ -184,6 +298,24 @@ def _entry(value: object) -> RescanHistoryEntry:
         )
     except (InvalidInvocationError, ValueError) as exc:
         raise OperationalError("Rescan history entry contains invalid values") from exc
+
+
+def _finding(value: object) -> RemediationFindingKey:
+    finding = _object(value, "rescan remediation finding")
+    try:
+        return RemediationFindingKey(
+            platform=Platform.parse(_string(finding.get("platform"))),
+            component=_string(finding.get("component")),
+            advisory=_string(finding.get("advisory")),
+        )
+    except InvalidInvocationError as exc:
+        raise OperationalError("Rescan remediation finding is malformed") from exc
+
+
+def _object(value: object, label: str) -> dict[str, object]:
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise OperationalError(f"{label} must be an object")
+    return value
 
 
 def _string(value: object) -> str:
