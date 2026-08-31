@@ -47,6 +47,8 @@ The provider-independent release check requires a clean Git checkout and locally
 uv run python -m conclear.release_check
 ```
 
+The GitHub Actions check installs those interpreters and delegates all project checks to this command. It separately checks the catalog against the OCI guide at the exact embedded revision; the workflow does not redefine formatting, typing, test or distribution-build logic.
+
 The command checks formatting, linting, strict typing, generated conformance documentation and the unit-test matrix. It creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
 
 The release check does not create a release, write to a registry, sign content, create transparency-log entries, tag Git or push commits.

@@ -1,5 +1,8 @@
 import io
+import subprocess
+import sys
 import tarfile
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -7,6 +10,58 @@ import pytest
 
 from conclear.errors import OperationalError
 from conclear.release_check import validate_distribution_artifact
+
+
+def test_pytest_configuration_enforces_strict_markers() -> None:
+    project = tomllib.loads(
+        (Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
+    assert "--strict-config" in addopts
+    assert "--strict-markers" in addopts
+
+
+def test_pytest_configuration_rejects_unknown_marker(tmp_path: Path) -> None:
+    project_root = Path(__file__).parents[2]
+    test_file = tmp_path / "test_unknown_marker.py"
+    test_file.write_text(
+        "import pytest\n\n"
+        "@pytest.mark.unit\n"
+        "@pytest.mark.marker_typo\n"
+        "def test_marker_typo():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    observed = subprocess.run(
+        (
+            sys.executable,
+            "-m",
+            "pytest",
+            "-c",
+            str(project_root / "pyproject.toml"),
+            "--collect-only",
+            str(test_file),
+        ),
+        cwd=project_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert observed.returncode != 0
+    assert "marker_typo" in observed.stdout + observed.stderr
+    assert "not found in `markers`" in observed.stdout + observed.stderr
+
+
+def test_ci_delegates_to_provider_independent_release_gate() -> None:
+    workflow = (
+        Path(__file__).parents[2] / ".github" / "workflows" / "checks.yml"
+    ).read_text(encoding="utf-8")
+    assert "python -m conclear.release_check" in workflow
+    assert "conclear.conformance --check --guide" in workflow
+    assert "ruff check" not in workflow
+    assert "pytest" not in workflow
 
 
 def test_wheel_hygiene_requires_embedded_identity(tmp_path: Path) -> None:

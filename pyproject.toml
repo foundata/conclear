@@ -97,11 +97,12 @@ warn_unreachable = true
 [tool.pytest.ini_options]
 addopts = [
   "--import-mode=importlib",
+  "--strict-config",
+  "--strict-markers",
   "-m",
   "unit",
 ]
 filterwarnings = ["error"]
-strict = true
 testpaths = ["tests"]
 markers = [
   "unit: hermetic tests that require no external tools or services",
