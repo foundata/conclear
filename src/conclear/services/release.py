@@ -154,8 +154,9 @@ def resume_release(
     )
     workspace = source_run.workspace
     snapshot = workspace.load()
-    source_root = repository.resolve(strict=True)
     expected = snapshot.immutable_inputs
+    workspace.validate_resume(expected)
+    source_root = repository.resolve(strict=True)
     if expected.get("sourceRoot") != str(source_root):
         raise InvalidInvocationError("Resume source repository differs from the run")
     if (
@@ -335,6 +336,8 @@ def _continue_release(
                 ci_identity=request.ci_identity,
                 now=now_factory(),
             )
+        if workspace.load().state is not RunState.VERIFIED:
+            raise OperationalError("Release did not reach the verified state")
         verification = load_verification(
             workspace, image, published.immutable_reference
         )
