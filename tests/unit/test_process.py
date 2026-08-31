@@ -1,7 +1,8 @@
 import io
+import signal
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
 import pytest
 
@@ -46,6 +47,21 @@ class FakeProcess:
         return self.returncode
 
     def poll(self) -> int | None:
+        return self.returncode
+
+
+class InterruptedProcess(FakeProcess):
+    def __init__(self) -> None:
+        super().__init__()
+        self._waits = 0
+
+    @override
+    def wait(self, timeout: float | None = None) -> int:
+        del timeout
+        self._waits += 1
+        if self._waits == 1:
+            raise KeyboardInterrupt
+        self.returncode = 0
         return self.returncode
 
 
@@ -136,8 +152,43 @@ def test_process_runner_terminates_timed_out_process_group(
     with pytest.raises(CommandTimeoutError, match="timed out"):
         ProcessRunner(monotonic=iter((1.0, 3.0)).__next__).run(request(tmp_path))
 
-    assert signals
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
     assert process.returncode == 0
+
+
+def test_process_runner_preserves_interruption_during_group_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    process = InterruptedProcess()
+    signals: list[int] = []
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(
+        "conclear.process.os.killpg",
+        lambda _pid, signal_number: signals.append(signal_number),
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        ProcessRunner().run(request(tmp_path))
+
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+
+
+def test_process_runner_preserves_timeout_when_cleanup_operations_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    process = FakeProcess(timeout_once=True)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(
+        "conclear.process.os.killpg",
+        lambda _pid, _signal_number: (_ for _ in ()).throw(PermissionError()),
+    )
+    monkeypatch.setattr(
+        "conclear.process.atomic_write_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError()),
+    )
+
+    with pytest.raises(CommandTimeoutError, match="timed out"):
+        ProcessRunner(monotonic=iter((1.0, 3.0)).__next__).run(request(tmp_path))
 
 
 def test_process_runner_retries_reads_but_rejects_write_retries(

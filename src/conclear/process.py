@@ -12,7 +12,11 @@ from enum import StrEnum
 from pathlib import Path
 from typing import BinaryIO, cast
 
-from conclear.errors import CommandExecutionError, CommandTimeoutError
+from conclear.errors import (
+    CommandExecutionError,
+    CommandTimeoutError,
+    OperationalError,
+)
 from conclear.jsonutil import atomic_write_json
 
 _SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -250,7 +254,7 @@ class ProcessRunner:
                 stdout=stdout_text,
                 stderr=stderr_text,
             )
-            self._write_failure_log(
+            self._write_failure_log_best_effort(
                 request,
                 redacted_argv,
                 stdout_text,
@@ -270,7 +274,7 @@ class ProcessRunner:
                 stdout=stdout_text,
                 stderr=stderr_text,
             )
-            self._write_failure_log(
+            self._write_failure_log_best_effort(
                 request,
                 redacted_argv,
                 stdout_text,
@@ -293,27 +297,11 @@ class ProcessRunner:
 
     @staticmethod
     def _terminate(process: subprocess.Popen[bytes], grace_seconds: float) -> None:
-        if process.poll() is not None:
-            return
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=grace_seconds)
-            return
-        except subprocess.TimeoutExpired:
-            pass
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=grace_seconds)
-        except subprocess.TimeoutExpired as exc:  # pragma: no cover - kernel failure
-            raise CommandExecutionError(
-                "Unable to reap external process group"
-            ) from exc
+        _signal_group(process.pid, signal.SIGTERM)
+        _wait_best_effort(process, grace_seconds)
+        # The group can outlive its leader, so always complete the group cleanup.
+        _signal_group(process.pid, signal.SIGKILL)
+        _wait_best_effort(process, grace_seconds)
 
     @staticmethod
     def _write_log(request: CommandRequest, result: ProcessResult) -> None:
@@ -359,6 +347,30 @@ class ProcessRunner:
             },
         )
 
+    @classmethod
+    def _write_failure_log_best_effort(
+        cls,
+        request: CommandRequest,
+        argv: tuple[str, ...],
+        stdout: str,
+        stderr: str,
+        duration: float,
+        attempt: int,
+        outcome: str,
+    ) -> None:
+        try:
+            cls._write_failure_log(
+                request,
+                argv,
+                stdout,
+                stderr,
+                duration,
+                attempt,
+                outcome,
+            )
+        except (OSError, OperationalError):
+            return
+
 
 class _BoundedCapture:
     def __init__(self, stream: BinaryIO, limit: int) -> None:
@@ -396,10 +408,30 @@ class _BoundedCapture:
 def _finish_capture(stream: BinaryIO, capture: _BoundedCapture, timeout: float) -> None:
     capture.join(timeout)
     if capture.alive:
-        stream.close()
+        try:
+            os.close(stream.fileno())
+        except (OSError, ValueError):
+            pass
         capture.join(timeout)
-    else:
+        return
+    try:
         stream.close()
+    except (OSError, ValueError):
+        pass
+
+
+def _signal_group(process_group: int, signal_number: signal.Signals) -> None:
+    try:
+        os.killpg(process_group, signal_number)
+    except OSError:
+        return
+
+
+def _wait_best_effort(process: subprocess.Popen[bytes], timeout: float) -> None:
+    try:
+        process.wait(timeout=timeout)
+    except BaseException:
+        return
 
 
 def command_array(arguments: Sequence[str]) -> tuple[str, ...]:
