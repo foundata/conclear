@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import sha256_bytes
@@ -22,7 +22,13 @@ MAX_PIN_FRESHNESS = timedelta(hours=24)
 MAX_PIN_DIVERGENCE = timedelta(days=7)
 MAX_CANDIDATE_LIFETIME = timedelta(days=7)
 MAX_REMEDIATION = timedelta(days=30)
+MAX_CONFIG_BYTES = 4 * 1024 * 1024
 _DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[hHdDwW])$")
+_HOST_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
+_URL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
 
 
 class PinIntent(StrEnum):
@@ -197,10 +203,10 @@ def parse_duration(value: str, *, maximum: timedelta, field_name: str) -> timede
 def load_repository_config(path: Path) -> RepositoryConfig:
     """Load, schema-validate and narrow a repository configuration."""
     try:
-        raw_bytes = path.read_bytes()
+        raw_bytes = _read_repository_file(path)
         decoded = raw_bytes.decode("utf-8")
         value: Any = tomllib.loads(decoded)
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+    except (UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise InvalidInvocationError(
             f"Unable to read repository configuration {path}"
         ) from exc
@@ -230,14 +236,32 @@ def load_repository_config(path: Path) -> RepositoryConfig:
 
 def normalize_source_url(value: str) -> str:
     """Normalize an HTTPS Git source URL for observed comparisons."""
-    if not value.startswith("https://") or "@" in value.split("/", maxsplit=3)[2]:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidInvocationError("Project source URL is malformed") from exc
+    hostname = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or _HOST_PATTERN.fullmatch(hostname.lower()) is None
+    ):
         raise InvalidInvocationError(
             "Project source must be a credential-free HTTPS URL"
         )
-    normalized = value.removesuffix("/").removesuffix(".git")
-    if len(normalized.split("/")) < 5:
+    components = parsed.path.removesuffix("/").removesuffix(".git").split("/")[1:]
+    if len(components) < 2 or any(
+        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
+        for item in components
+    ):
         raise InvalidInvocationError("Project source must name a repository")
-    return normalized
+    authority = hostname.lower() + ("" if port is None else f":{port}")
+    return urlunsplit(("https", authority, "/" + "/".join(components), "", ""))
 
 
 def load_release_profile(
@@ -280,7 +304,9 @@ def load_release_profile(
         cosign_private_key=private_key,
         cosign_public_key=public_key,
         passphrase_file=passphrase_file,
-        quay_api_url=_string(profile.get("quay_api_url", "https://quay.io/api/v1")),
+        quay_api_url=_https_api_url(
+            _string(profile.get("quay_api_url", "https://quay.io/api/v1"))
+        ),
         configuration_digest=sha256_bytes(profile_bytes),
         public_key_digest=sha256_bytes(public_key_bytes),
     )
@@ -390,17 +416,23 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
 
 
 def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
+    writable_mounts = _container_paths(
+        value.get("writable_mounts", []), field_name="writable_mounts", allow_root=False
+    )
+    immutable_paths = _container_paths(
+        value.get("immutable_paths", []), field_name="immutable_paths", allow_root=True
+    )
     return RuntimeConfig(
         profile=_string(value["profile"]),
         user=_integer(value["user"]),
         read_only=_boolean(value["read_only"]),
-        writable_mounts=tuple(_string_list(value.get("writable_mounts", []))),
+        writable_mounts=writable_mounts,
         memory=_string(value["memory"]),
         cpus=_number(value["cpus"]),
         pids=_integer(value["pids"]),
         nofile=_integer(value["nofile"]),
-        health_command=tuple(_string_list(value.get("health_command", []))),
-        immutable_paths=tuple(_string_list(value.get("immutable_paths", []))),
+        health_command=_command(value.get("health_command", []), "health_command"),
+        immutable_paths=immutable_paths,
         capabilities=tuple(_string_list(value.get("capabilities", []))),
         startup_timeout_seconds=_integer(value.get("startup_timeout_seconds", 60)),
         shutdown_timeout_seconds=_integer(value.get("shutdown_timeout_seconds", 30)),
@@ -410,7 +442,7 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
 def _parse_hook(value: dict[str, Any]) -> HookConfig:
     return HookConfig(
         name=_string(value["name"]),
-        command=tuple(_string_list(value["command"])),
+        command=_command(value["command"], "hook command"),
         timeout_seconds=_integer(value.get("timeout_seconds", 300)),
         required=_boolean(value.get("required", True)),
     )
@@ -422,6 +454,7 @@ def _parse_pin(value: dict[str, Any]) -> PinConfig:
             _string(value["reference"]),
             require_tag=True,
             require_digest=True,
+            allow_localhost=False,
         ),
         tag_intent=PinIntent(_string(value["tag_intent"])),
     )
@@ -447,6 +480,100 @@ def _parse_exception(value: dict[str, Any]) -> VulnerabilityException:
         expires=expires,
         review_trigger=_string(value["review_trigger"]),
     )
+
+
+def _container_paths(
+    value: object, *, field_name: str, allow_root: bool
+) -> tuple[str, ...]:
+    paths = tuple(_string_list(value))
+    for path in paths:
+        components = path.split("/")
+        if (
+            not path.startswith("/")
+            or "\\" in path
+            or "\x00" in path
+            or (path == "/" and not allow_root)
+            or (path != "/" and any(item in {"", ".", ".."} for item in components[1:]))
+        ):
+            raise InvalidInvocationError(
+                f"{field_name} contains an unsafe container path: {path}"
+            )
+    if len(paths) != len(set(paths)):
+        raise InvalidInvocationError(f"{field_name} contains duplicate paths")
+    return tuple(sorted(paths))
+
+
+def _command(value: object, field_name: str) -> tuple[str, ...]:
+    command = tuple(_string_list(value))
+    if any("\x00" in item for item in command):
+        raise InvalidInvocationError(f"{field_name} contains NUL")
+    return command
+
+
+def _https_api_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidInvocationError("Quay API URL is malformed") from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or _HOST_PATTERN.fullmatch(parsed.hostname.lower()) is None
+    ):
+        raise InvalidInvocationError(
+            "Quay API URL must be credential-free HTTPS without a query or fragment"
+        )
+    authority = parsed.hostname.lower() + ("" if port is None else f":{port}")
+    components = parsed.path.rstrip("/").split("/")[1:]
+    if not components or any(
+        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
+        for item in components
+    ):
+        raise InvalidInvocationError("Quay API URL must contain a canonical path")
+    path = "/" + "/".join(components)
+    return urlunsplit(("https", authority, path, "", ""))
+
+
+def _read_repository_file(path: Path) -> bytes:
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise InvalidInvocationError(
+            f"Unable to read repository configuration {path}"
+        ) from exc
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise InvalidInvocationError(
+                f"Repository configuration is not a regular file: {path}"
+            )
+        content = bytearray()
+        while len(content) <= MAX_CONFIG_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(64 * 1024, MAX_CONFIG_BYTES + 1 - len(content)),
+            )
+            if not chunk:
+                break
+            content.extend(chunk)
+        if len(content) > MAX_CONFIG_BYTES:
+            raise InvalidInvocationError(
+                f"Repository configuration exceeds the size limit: {path}"
+            )
+        return bytes(content)
+    except OSError as exc:
+        raise InvalidInvocationError(
+            f"Unable to read repository configuration {path}"
+        ) from exc
+    finally:
+        os.close(descriptor)
 
 
 def _require_private_file(path: Path, *, allow_group_read: bool = False) -> None:

@@ -416,3 +416,24 @@ def test_quay_adapter_classifies_unsupported_immutability() -> None:
         adapter.set_immutable(quay_repository(), "candidate")
 
     client.close()
+
+
+def test_quay_adapter_rejects_oversized_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("conclear.adapters.quay.MAX_QUAY_RESPONSE_BYTES", 16)
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, content=b"{" + b"x" * 32 + b"}")
+        )
+    )
+    adapter = QuayAdapter(
+        api_url="https://quay.io/api/v1",
+        token_provider=lambda: "token",
+        client=client,
+    )
+
+    with pytest.raises(OperationalError, match="response exceeds the size limit"):
+        adapter.get_tag(quay_repository(), "candidate")
+
+    client.close()

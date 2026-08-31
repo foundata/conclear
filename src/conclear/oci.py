@@ -1,19 +1,23 @@
 """Recursive validation of OCI image layouts and descriptor graphs."""
 
+import hashlib
 import json
+import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.jsonutil import sha256_bytes
 from conclear.values import Digest, Platform
 
 OCI_INDEX = "application/vnd.oci.image.index.v1+json"
 OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
 OCI_CONFIG = "application/vnd.oci.image.config.v1+json"
 OCI_LAYOUT_VERSION = "1.0.0"
+MAX_OCI_JSON_BYTES = 16 * 1024 * 1024
+MAX_OCI_GRAPH_DESCRIPTORS = 100_000
+MAX_OCI_GRAPH_DEPTH = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,7 +173,7 @@ class LayoutValidator:
             raise InvalidInvocationError(
                 "Selected OCI layout root is not an image or index"
             )
-        self._walk(root, inherited_platform=root.platform)
+        self._walk(root, inherited_platform=root.platform, depth=0)
         platforms = [manifest.platform for manifest in self._manifests.values()]
         if len(platforms) != len(set(platforms)):
             raise InvalidInvocationError("OCI graph contains duplicate image platforms")
@@ -187,8 +191,16 @@ class LayoutValidator:
         )
 
     def _walk(
-        self, descriptor: Descriptor, *, inherited_platform: Platform | None
+        self,
+        descriptor: Descriptor,
+        *,
+        inherited_platform: Platform | None,
+        depth: int,
     ) -> None:
+        if depth > MAX_OCI_GRAPH_DEPTH:
+            raise InvalidInvocationError("OCI descriptor graph exceeds the depth limit")
+        if descriptor.digest in self._visiting:
+            raise InvalidInvocationError("OCI descriptor graph contains a cycle")
         existing = self._descriptors.get(descriptor.digest)
         if existing is not None:
             if existing != descriptor:
@@ -196,11 +208,11 @@ class LayoutValidator:
                     f"Conflicting OCI descriptors for {descriptor.digest}"
                 )
             return
-        if descriptor.digest in self._visiting:
-            raise InvalidInvocationError("OCI descriptor graph contains a cycle")
+        if len(self._descriptors) >= MAX_OCI_GRAPH_DESCRIPTORS:
+            raise InvalidInvocationError("OCI descriptor graph exceeds the size limit")
         self._visiting.add(descriptor.digest)
-        content = self._read_blob(descriptor)
-        self._descriptors[descriptor.digest] = descriptor
+        content = self._read_blob(descriptor, retain=True)
+        self._remember_descriptor(descriptor)
         if descriptor.media_type == OCI_INDEX:
             index = _object(_decode_json(content, descriptor.digest), "image index")
             if _integer(index.get("schemaVersion"), "index.schemaVersion") != 2:
@@ -215,7 +227,9 @@ class LayoutValidator:
                         "Release image indexes may reference only image indexes or manifests"
                     )
                 self._walk(
-                    child, inherited_platform=child.platform or inherited_platform
+                    child,
+                    inherited_platform=child.platform or inherited_platform,
+                    depth=depth + 1,
                 )
         elif descriptor.media_type == OCI_MANIFEST:
             self._validate_manifest(descriptor, content, inherited_platform)
@@ -235,8 +249,9 @@ class LayoutValidator:
             raise InvalidInvocationError(
                 "OCI image manifest has a non-image configuration"
             )
-        config_content = self._read_blob(config)
-        self._descriptors[config.digest] = config
+        self._check_descriptor(config)
+        config_content = self._read_blob(config, retain=True)
+        self._remember_descriptor(config)
         config_value = _object(
             _decode_json(config_content, config.digest), "image config"
         )
@@ -258,8 +273,10 @@ class LayoutValidator:
         layer_values = _array(manifest.get("layers"), "manifest.layers")
         layers = tuple(Descriptor.from_untrusted(value) for value in layer_values)
         for layer in layers:
-            self._read_blob(layer)
-            self._descriptors[layer.digest] = layer
+            existing = self._check_descriptor(layer)
+            if existing is None:
+                self._read_blob(layer, retain=False)
+                self._remember_descriptor(layer)
         self._manifests[descriptor.digest] = ManifestObservation(
             descriptor=descriptor,
             platform=platform,
@@ -268,42 +285,105 @@ class LayoutValidator:
             config_data=config_value,
         )
 
-    def _read_blob(self, descriptor: Descriptor) -> bytes:
+    def _read_blob(self, descriptor: Descriptor, *, retain: bool) -> bytes:
         path = (
             self._layout_path
             / "blobs"
             / descriptor.digest.algorithm
             / descriptor.digest.encoded
         )
+        file_descriptor: int | None = None
         try:
-            file_stat = path.lstat()
+            flags = os.O_RDONLY | os.O_CLOEXEC
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            file_descriptor = os.open(path, flags)
+            file_stat = os.fstat(file_descriptor)
             if not stat.S_ISREG(file_stat.st_mode):
                 raise InvalidInvocationError(f"OCI blob is not a regular file: {path}")
-            content = path.read_bytes()
+            if file_stat.st_size != descriptor.size:
+                raise InvalidInvocationError(
+                    f"OCI blob size mismatch for {descriptor.digest}: "
+                    f"expected {descriptor.size}, observed {file_stat.st_size}"
+                )
+            if retain and descriptor.size > MAX_OCI_JSON_BYTES:
+                raise InvalidInvocationError(
+                    f"OCI JSON blob exceeds the size limit: {descriptor.digest}"
+                )
+            digest = hashlib.sha256()
+            content = bytearray()
+            with os.fdopen(file_descriptor, "rb") as stream:
+                file_descriptor = None
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    if retain:
+                        content.extend(chunk)
         except OSError as exc:
             raise OperationalError(
                 f"Unable to read OCI blob {descriptor.digest}"
             ) from exc
-        if len(content) != descriptor.size:
-            raise InvalidInvocationError(
-                f"OCI blob size mismatch for {descriptor.digest}: "
-                f"expected {descriptor.size}, observed {len(content)}"
-            )
-        observed = sha256_bytes(content)
+        finally:
+            if file_descriptor is not None:
+                os.close(file_descriptor)
+        observed = f"sha256:{digest.hexdigest()}"
         if observed != str(descriptor.digest):
             raise InvalidInvocationError(
                 f"OCI blob digest mismatch for {descriptor.digest}: observed {observed}"
             )
-        return content
+        return bytes(content)
+
+    def _check_descriptor(self, descriptor: Descriptor) -> Descriptor | None:
+        existing = self._descriptors.get(descriptor.digest)
+        if existing is not None and existing != descriptor:
+            raise InvalidInvocationError(
+                f"Conflicting OCI descriptors for {descriptor.digest}"
+            )
+        if existing is None and len(self._descriptors) >= MAX_OCI_GRAPH_DESCRIPTORS:
+            raise InvalidInvocationError("OCI descriptor graph exceeds the size limit")
+        return existing
+
+    def _remember_descriptor(self, descriptor: Descriptor) -> None:
+        self._check_descriptor(descriptor)
+        self._descriptors[descriptor.digest] = descriptor
 
     @staticmethod
     def _read_json_file(path: Path) -> object:
+        flags = os.O_RDONLY | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor: int | None = None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            descriptor = os.open(path, flags)
+            file_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise InvalidInvocationError(
+                    f"OCI JSON path is not a regular file: {path}"
+                )
+            if file_stat.st_size > MAX_OCI_JSON_BYTES:
+                raise InvalidInvocationError(
+                    f"OCI JSON file exceeds the size limit: {path}"
+                )
+            content = bytearray()
+            while len(content) <= MAX_OCI_JSON_BYTES:
+                chunk = os.read(
+                    descriptor,
+                    min(1024 * 1024, MAX_OCI_JSON_BYTES + 1 - len(content)),
+                )
+                if not chunk:
+                    break
+                content.extend(chunk)
+            if len(content) > MAX_OCI_JSON_BYTES:
+                raise InvalidInvocationError(
+                    f"OCI JSON file exceeds the size limit: {path}"
+                )
+            return json.loads(content.decode("utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise InvalidInvocationError(
                 f"Unable to decode OCI JSON file {path}"
             ) from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
 
 
 def graph_fingerprint(graph: OCIGraph) -> tuple[tuple[object, ...], ...]:

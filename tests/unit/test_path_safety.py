@@ -8,6 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+import conclear.path_safety as path_safety_module
 from conclear.errors import InvalidInvocationError
 from conclear.path_safety import (
     contained_path,
@@ -64,6 +65,29 @@ def test_zip_extraction_rejects_traversal(tmp_path: Path) -> None:
         archive.writestr("../escape", "x")
     with pytest.raises(InvalidInvocationError, match="Unsafe archive member"):
         extract_zip_safely(archive_path, tmp_path / "output")
+
+
+@pytest.mark.parametrize("kind", ["tar", "zip"])
+def test_archive_extraction_bounds_total_content(
+    kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(path_safety_module, "MAX_ARCHIVE_CONTENT_BYTES", 1)
+    archive_path = tmp_path / f"input.{kind}"
+    if kind == "tar":
+        with tarfile.open(archive_path, "w") as archive:
+            member = tarfile.TarInfo("value")
+            member.size = 2
+            archive.addfile(member, io.BytesIO(b"xx"))
+        expected = "Tar archive exceeds"
+        extractor = extract_tar_safely
+    else:
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("value", "xx")
+        expected = "ZIP archive exceeds"
+        extractor = extract_zip_safely
+
+    with pytest.raises(InvalidInvocationError, match=expected):
+        extractor(archive_path, tmp_path / "output")
 
 
 @given(depth=st.integers(min_value=1, max_value=20))

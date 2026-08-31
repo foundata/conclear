@@ -7,6 +7,9 @@ from pathlib import Path, PurePosixPath
 
 from conclear.errors import InvalidInvocationError, OperationalError
 
+MAX_ARCHIVE_MEMBERS = 100_000
+MAX_ARCHIVE_CONTENT_BYTES = 16 * 1024 * 1024 * 1024
+
 
 def contained_path(root: Path, untrusted: str, *, must_exist: bool = True) -> Path:
     """Resolve a repository path without allowing traversal or symlink escape."""
@@ -49,7 +52,16 @@ def extract_tar_safely(archive_path: Path, destination: Path) -> None:
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
     try:
         with tarfile.open(archive_path, mode="r:*") as archive:
-            for member in archive.getmembers():
+            total_size = 0
+            names: set[str] = set()
+            for member_number, member in enumerate(archive, start=1):
+                if member_number > MAX_ARCHIVE_MEMBERS:
+                    raise InvalidInvocationError("Tar archive exceeds the member limit")
+                if member.name in names:
+                    raise InvalidInvocationError(
+                        f"Archive contains a duplicate member: {member.name}"
+                    )
+                names.add(member.name)
                 target = _safe_archive_target(destination, member.name)
                 if member.isdir():
                     target.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -57,6 +69,11 @@ def extract_tar_safely(archive_path: Path, destination: Path) -> None:
                 if not member.isfile():
                     raise InvalidInvocationError(
                         f"Archive member is not a regular file: {member.name}"
+                    )
+                total_size += member.size
+                if total_size > MAX_ARCHIVE_CONTENT_BYTES:
+                    raise InvalidInvocationError(
+                        "Tar archive exceeds the extracted-content limit"
                     )
                 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 source = archive.extractfile(member)
@@ -77,7 +94,16 @@ def extract_zip_safely(archive_path: Path, destination: Path) -> None:
     destination.mkdir(mode=0o700, parents=True, exist_ok=False)
     try:
         with zipfile.ZipFile(archive_path) as archive:
-            for member in archive.infolist():
+            total_size = 0
+            names: set[str] = set()
+            for member_number, member in enumerate(archive.infolist(), start=1):
+                if member_number > MAX_ARCHIVE_MEMBERS:
+                    raise InvalidInvocationError("ZIP archive exceeds the member limit")
+                if member.filename in names:
+                    raise InvalidInvocationError(
+                        f"Archive contains a duplicate member: {member.filename}"
+                    )
+                names.add(member.filename)
                 target = _safe_archive_target(destination, member.filename)
                 unix_mode = member.external_attr >> 16
                 if stat.S_ISLNK(unix_mode):
@@ -87,6 +113,11 @@ def extract_zip_safely(archive_path: Path, destination: Path) -> None:
                 if member.is_dir():
                     target.mkdir(mode=0o700, parents=True, exist_ok=True)
                     continue
+                total_size += member.file_size
+                if total_size > MAX_ARCHIVE_CONTENT_BYTES:
+                    raise InvalidInvocationError(
+                        "ZIP archive exceeds the extracted-content limit"
+                    )
                 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 with archive.open(member) as source, target.open("xb") as output:
                     while chunk := source.read(1024 * 1024):

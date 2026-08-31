@@ -11,6 +11,8 @@ from conclear.adapters.parsing import object_value, string_value
 from conclear.errors import OperationalError, UnsupportedOperationError
 from conclear.values import Digest, OCIReference
 
+MAX_QUAY_RESPONSE_BYTES = 4 * 1024 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class QuayTagObservation:
@@ -198,17 +200,28 @@ class QuayAdapter:
         if not token or any(character.isspace() for character in token):
             raise OperationalError("Quay API token provider returned an invalid token")
         try:
-            response = self._client.request(
+            with self._client.stream(
                 method,
                 f"{self._api_url}{path}",
                 headers={"Authorization": f"Bearer {token}"},
                 params=params,
                 json=json_body,
-            )
+            ) as streamed:
+                if streamed.status_code >= 400:
+                    self._raise_response(streamed)
+                content = bytearray()
+                for chunk in streamed.iter_bytes():
+                    content.extend(chunk)
+                    if len(content) > MAX_QUAY_RESPONSE_BYTES:
+                        raise OperationalError("Quay response exceeds the size limit")
+                response = httpx.Response(
+                    streamed.status_code,
+                    headers=streamed.headers,
+                    content=bytes(content),
+                    request=streamed.request,
+                )
         finally:
             token = ""
-        if response.status_code >= 400:
-            self._raise_response(response)
         return response
 
     @staticmethod
