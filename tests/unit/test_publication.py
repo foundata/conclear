@@ -204,6 +204,13 @@ class FakeQuay:
         assert observed is not None
         return observed
 
+    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+        del repository
+        self.immutable.discard(tag)
+        observed = self.get_tag(OCIReference("quay.io", "example/app"), tag)
+        assert observed is not None
+        return observed
+
     def write_tag(
         self, repository: OCIReference, tag: str, digest: Digest
     ) -> QuayTagObservation:
@@ -217,6 +224,8 @@ class FakeQuay:
         del repository
         if self.fail_delete:
             raise OperationalError("injected candidate deletion failure")
+        if tag in self.immutable:
+            raise OperationalError("immutable tags cannot be deleted")
         self.tags.pop(tag, None)
         self.expirations.pop(tag, None)
         self.immutable.discard(tag)
@@ -617,6 +626,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     assert (tag in tags) is delete_fails
     assert tags["1.2.3"] == observation.graph.digest
     assert "1.2.3" in quay.immutable
+    assert tag not in quay.immutable
     candidate_entry = next(
         entry
         for entry in workspace.journal.entries()

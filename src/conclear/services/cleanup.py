@@ -50,6 +50,10 @@ class CandidateRegistry(Protocol):
         """Delete and verify one candidate tag."""
         ...
 
+    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+        """Disable and verify candidate immutability before deletion."""
+        ...
+
 
 class SourceWorktree(Protocol):
     """Git worktree cleanup boundary."""
@@ -172,6 +176,10 @@ def _cleanup_entry(
             return True
         if observed.digest != expected:
             raise OperationalError("Candidate now names an unowned digest")
+        if observed.immutable:
+            observed = quay.set_mutable(candidate_repository, reference.tag)
+            if observed.digest != expected:
+                raise OperationalError("Candidate changed while removing immutability")
         quay.delete_tag(candidate_repository, reference.tag)
         return True
     return False

@@ -106,6 +106,10 @@ class Quay(Protocol):
         """Enable and verify immutability."""
         ...
 
+    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+        """Disable and verify immutability before owned candidate deletion."""
+        ...
+
     def write_tag(
         self, repository: OCIReference, tag: str, digest: Digest
     ) -> QuayTagObservation:
@@ -940,6 +944,12 @@ def promote_candidate(
         observed.append((tag, published.graph.digest))
     workspace.transition(RunState.PROMOTED, now=now)
     try:
+        if tag_state.immutable:
+            mutable = quay.set_mutable(image.repository, published.reference.tag or "")
+            if mutable.digest != published.graph.digest:
+                raise OperationalError(
+                    "Candidate tag changed while removing immutability"
+                )
         quay.delete_tag(image.repository, published.reference.tag or "")
         workspace.journal.update("candidate", ResourceStatus.REMOVED)
     except Exception:

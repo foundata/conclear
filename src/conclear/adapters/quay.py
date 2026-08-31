@@ -128,6 +128,16 @@ class QuayAdapter:
             raise OperationalError("Quay did not retain tag immutability")
         return observed
 
+    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+        """Disable Quay tag immutability and verify the observed control."""
+        self._write_with_observation(
+            repository, tag, {"immutable": False}, expected_digest=None
+        )
+        observed = self._required_tag(repository, tag)
+        if observed.immutable:
+            raise OperationalError("Quay did not remove tag immutability")
+        return observed
+
     def write_tag(
         self, repository: OCIReference, tag: str, digest: Digest
     ) -> QuayTagObservation:

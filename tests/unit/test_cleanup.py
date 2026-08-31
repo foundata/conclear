@@ -55,8 +55,22 @@ class FakeQuay:
 
     def delete_tag(self, repository: OCIReference, tag: str) -> None:
         assert repository.tag is None
+        if self.tag is not None and self.tag.immutable:
+            raise OperationalError("immutable tags cannot be deleted")
         self.deleted.append(tag)
         self.tag = None
+
+    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+        assert repository.tag is None
+        assert self.tag is not None
+        assert self.tag.name == tag
+        self.tag = QuayTagObservation(
+            self.tag.name,
+            self.tag.digest,
+            self.tag.expiration,
+            False,
+        )
+        return self.tag
 
 
 def workspace(tmp_path: Path) -> RunWorkspace:
@@ -155,6 +169,34 @@ def test_cleanup_refuses_candidate_when_recorded_digest_changed(tmp_path: Path) 
 
     assert quay.deleted == []
     assert run.journal.entries()[0].status is ResourceStatus.CREATED
+
+
+def test_cleanup_lifts_owned_candidate_immutability_before_deletion(
+    tmp_path: Path,
+) -> None:
+    run = workspace(tmp_path)
+    expected = Digest("sha256:" + "a" * 64)
+    reference = OCIReference.parse("quay.io/example/app:candidate")
+    run.journal.plan(
+        resource_id="candidate",
+        kind=ResourceKind.CANDIDATE_REFERENCE,
+        identifier=str(reference),
+        ephemeral=True,
+        metadata={"digest": str(expected)},
+    )
+    run.journal.update("candidate", ResourceStatus.CREATED)
+    quay = FakeQuay(QuayTagObservation("candidate", expected, None, True))
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=FakePodman(),
+        quay=quay,
+    )
+
+    assert result.removed == ("candidate",)
+    assert quay.deleted == ["candidate"]
+    assert run.journal.entries()[0].status is ResourceStatus.REMOVED
 
 
 def test_cleanup_unlinks_owned_symlink_without_following_it(tmp_path: Path) -> None:

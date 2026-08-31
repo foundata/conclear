@@ -504,6 +504,41 @@ def test_quay_adapter_classifies_unsupported_immutability() -> None:
     client.close()
 
 
+def test_quay_adapter_lifts_and_verifies_tag_immutability() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "PUT":
+            return httpx.Response(201)
+        return httpx.Response(
+            200,
+            json={
+                "tags": [
+                    {
+                        "name": "candidate",
+                        "manifest_digest": "sha256:" + "3" * 64,
+                        "expiration": 1767312000,
+                        "immutable": False,
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    adapter = QuayAdapter(
+        api_url="https://quay.io/api/v1",
+        token_provider=lambda: "token",
+        client=client,
+    )
+
+    observed = adapter.set_mutable(quay_repository(), "candidate")
+
+    assert not observed.immutable
+    assert requests[0].read() == b'{"immutable":false}'
+    client.close()
+
+
 def test_quay_adapter_rejects_oversized_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
