@@ -382,9 +382,23 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
     )
     tags: dict[str, Digest] = {}
     registry = FakeRegistry(observation.graph, tags)
-    registry.fail_graph_copy = True
     quay = FakeQuay(tags)
     now = datetime(2026, 1, 1, tzinfo=UTC)
+
+    tags[tag] = observation.graph.digest
+    with pytest.raises(OperationalError, match="already in use"):
+        publish_candidate(
+            candidate,
+            image=image,
+            workspace=workspace,
+            registry=registry,
+            quay=quay,
+            auth_file=None,
+            now=now,
+        )
+    assert workspace.journal.entries() == ()
+    del tags[tag]
+    registry.fail_graph_copy = True
 
     with pytest.raises(OperationalError, match="injected remote graph failure"):
         publish_candidate(
@@ -617,6 +631,22 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     with pytest.raises(OperationalError, match="injected"):
         run_verification(datetime(2026, 1, 1, 0, 4, tzinfo=UTC))
     verification = run_verification(datetime(2026, 1, 1, 0, 5, tzinfo=UTC))
+    expiration = quay.expirations.pop(tag)
+    with pytest.raises(OperationalError, match="expiration is missing"):
+        promote_candidate(
+            published,
+            verification,
+            image=image,
+            version="1.2.3",
+            workspace=workspace,
+            quay=quay,
+            registry=registry,
+            signer=signer,
+            public_key=public_key,
+            auth_file=None,
+            now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
+        )
+    quay.expirations[tag] = expiration
     tags["1.2.3"] = observation.graph.digest
     quay.immutable.add("1.2.3")
     workspace.journal.plan(

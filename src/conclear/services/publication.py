@@ -270,9 +270,7 @@ def publish_candidate(
             now=now,
         )
     if registry.resolve_optional(tagged, auth_file=auth_file) is not None:
-        raise RuleRejectionError(
-            f"Generated candidate tag is already in use: {tagged}", code="CC0601"
-        )
+        raise OperationalError(f"Generated candidate tag is already in use: {tagged}")
     expiration = (
         now.astimezone(UTC).replace(microsecond=0) + image.limits.candidate_lifetime
     )
@@ -890,7 +888,9 @@ def promote_candidate(
     tag_state = quay.get_tag(image.repository, published.reference.tag or "")
     if tag_state is None or tag_state.digest != published.graph.digest:
         raise OperationalError("Candidate tag changed before promotion")
-    if tag_state.expiration is None or now.astimezone(UTC) >= tag_state.expiration:
+    if tag_state.expiration is None:
+        raise OperationalError("Candidate expiration is missing before promotion")
+    if now.astimezone(UTC) >= tag_state.expiration:
         raise RuleRejectionError("Candidate expired before promotion", code="CC0603")
     signer.verify_attestation(
         subject=verification.subject,
