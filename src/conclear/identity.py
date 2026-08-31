@@ -3,16 +3,17 @@
 from dataclasses import asdict, dataclass
 from importlib import import_module
 
-from conclear._development_identity import (
-    SOURCE_REVISION as DEVELOPMENT_REVISION,
-)
-
 
 def _load_source_revision() -> str:
     try:
         module = import_module("conclear._embedded_identity")
     except ModuleNotFoundError:
-        return DEVELOPMENT_REVISION
+        try:
+            module = import_module("conclear._development_identity")
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "ConClear distribution has no embedded source identity"
+            ) from exc
     value = getattr(module, "SOURCE_REVISION", None)
     if not isinstance(value, str):
         raise RuntimeError("Embedded source identity is malformed")

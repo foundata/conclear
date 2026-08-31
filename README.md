@@ -64,4 +64,6 @@ The profile and secret files must be owned by the invoking user and have private
 
 The generated [conformance catalog](docs/conformance.md) maps stable `CCnnnn` identifiers to guide requirements and records the built-in limits that repository configuration may narrow but never disable.
 
+Development setup, test markers and the clean-checkout release gate are documented in [DEVELOPMENT.md](DEVELOPMENT.md). See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
+
 ConClear is licensed under GPL-3.0-or-later.
