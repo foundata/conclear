@@ -161,7 +161,7 @@ uv run mypy --strict src tests
 
 ### Commit messages and scopes<a id="commit-scopes"></a>
 
-Commit messages follow the foundata guideline (`guidelines/git-commits.md`): `<scope>: <description>`, imperative, lowercase description, body only for context the diff cannot preserve. Choose the narrowest stable project area affected by the commit. ConClear uses these recurring scopes:
+Commit messages follow the [foundata guideline (`guidelines/git-commits.md`)](https://github.com/foundata/guidelines/blob/master/git-commits.md): `<scope>: <description>`, imperative, lowercase description, body only for context the diff cannot preserve. Choose the narrowest stable project area affected by the commit. ConClear uses these recurring scopes:
 
 | Scope | Area |
 |---|---|
@@ -191,7 +191,7 @@ Commit messages follow the foundata guideline (`guidelines/git-commits.md`): `<s
 | `tests` | Cross-cutting test infrastructure or coverage not attributable to one subsystem |
 | `project` | Initial establishment of the application when no narrower subsystem describes the change |
 
-Use one canonical scope for each area. Do not alternate `packaging` with `build`, `state` with `workspace`, `runtime` or `tools` with `process`, `promotion` or `verification` with `publication`, or `design` with `architecture`. A new stable subsystem may introduce a scope when none of the documented scopes fits; the table is a reference rather than a closed registry.
+A new stable subsystem may introduce a scope when none of the documented scopes fits; the table is a reference rather than a closed registry.
 
 `docs` is not a scope: the foundata guideline lists it among the Conventional Commits types a scope must not be written as. A commit that only changes documentation still uses the scope of the subsystem it documents, or a cross-cutting scope such as `repository` when the documentation is not about one subsystem.
 
