@@ -1,45 +1,344 @@
 # Development
 
-ConClear requires Python 3.12 or newer and uses [uv](https://docs.astral.sh/uv/) for locked environments and builds.
+This file provides information for maintainers and contributors to `conclear`.
 
-## Setup
 
-Create or update the development environment from the committed lock file:
+## Table of contents<a id="toc"></a>
 
-```sh
-uv sync --frozen --all-groups
+- [Prerequisites](#prerequisites)
+- [Getting started](#getting-started)
+- [Project structure](#project-structure)
+- [Development standards](#development-standards)
+  - [Code formatting and linting](#code-linting)
+  - [Commit messages and scopes](#commit-scopes)
+  - [Contract changes](#contract-changes)
+  - [Compatibility](#compatibility)
+- [Testing](#testing)
+  - [Running tests](#running-tests)
+  - [Test tiers and markers](#test-tiers)
+  - [Test structure](#test-structure)
+  - [Writing tests](#writing-tests)
+  - [Local integration tests](#local-integration-tests)
+  - [Network tests](#network-tests)
+- [Generated conformance catalog](#conformance-catalog)
+- [CI identity trust](#ci-identity-trust)
+- [Recommended development workflow](#development-workflow)
+  - [Before making changes](#before-making-changes)
+  - [Making changes](#making-changes)
+  - [Before committing](#before-committing)
+- [Releases](#releases)
+- [Troubleshooting](#troubleshooting)
+  - [Common issues](#common-issues)
+
+
+## Prerequisites<a id="prerequisites"></a>
+
+- **Python 3.12 or later** - Required for running the application.
+- **Git** - For version control.
+- **[`uv`](https://docs.astral.sh/uv/getting-started/installation/)** - Python package manager and build front end.
+- **Python 3.12, 3.13 and 3.14 interpreters** - Required by the clean-checkout release gate, which runs the unit matrix on each of them.
+- **Rootless [Buildah](https://buildah.io/), [Podman](https://podman.io/), [Skopeo](https://github.com/containers/skopeo), [Hadolint](https://github.com/hadolint/hadolint), [Trivy](https://trivy.dev/) and [Cosign](https://docs.sigstore.dev/cosign/)** - Only for the opt-in local integration tier and for real releases. The default unit suite does not need them. [`README.md`](./README.md#supported-tools) lists the exact supported versions.
+
+Hermetic unit tests need no container tools, credentials or network access.
+
+
+## Getting started<a id="getting-started"></a>
+
+1. Clone the repository:
+   ```sh
+   git clone https://github.com/foundata/conclear.git
+   cd conclear
+   ```
+2. Set up the development environment from the committed lock file:
+   ```sh
+   # Install all dependencies including development dependencies
+   uv sync --frozen --all-groups
+   ```
+3. Test that the installation works:
+   ```sh
+   # Show the command hierarchy
+   uv run conclear --help
+
+   # Show the tool and implemented-guide identity
+   uv run conclear version
+
+   # Run the hermetic unit suite
+   uv run pytest
+   ```
+
+
+## Project structure<a id="project-structure"></a>
+
+```
+conclear/
+├── CONTRIBUTING.md
+├── ARCHITECTURE.md                     # Normative behavioral contract
+├── DEVELOPMENT.md                # This file
+├── README.md
+├── REUSE.toml
+├── LICENSES/                     # License texts (SPDX)
+├── docs/
+│   └── conformance.md            # Generated check catalog (do not edit by hand)
+├── pyproject.toml                # Project configuration
+├── uv.lock                       # Dependency lock file
+├── src/conclear/          # Main package
+│   ├── cli.py                    # Click entry point and error-to-exit mapping
+│   ├── identity.py               # Embedded tool and guide identity
+│   ├── config.py                 # conclear.toml and release profiles
+│   ├── catalog.py                # CCnnnn check catalog loader
+│   ├── checks.py                 # Static Containerfile and context checks
+│   ├── conformance.py            # docs/conformance.md generator
+│   ├── records.py                # Record envelopes and digests
+│   ├── workspace.py              # Run state machine and ownership journal
+│   ├── process.py                # Supervised execution and redaction
+│   ├── oci.py                    # Layout, descriptor and graph validation
+│   ├── release_check.py          # Clean-checkout release gate
+│   ├── adapters/                 # Typed tool and registry boundaries
+│   │   ├── buildah.py            # Build and layout export
+│   │   ├── podman.py             # Import and runtime tests
+│   │   ├── skopeo.py             # Registry inspection and transport
+│   │   ├── hadolint.py           # Containerfile linting
+│   │   ├── trivy.py              # Scanning, SBOMs, database snapshots
+│   │   ├── cosign.py             # Signing, attestations, verification
+│   │   ├── quay.py               # Quay tag API
+│   │   └── git.py                # Source selection and worktrees
+│   ├── commands/                 # CLI surface, grouped by scope
+│   ├── services/                 # Workflow decisions (qualification,
+│   │                             # assembly, publication, rescan, cleanup)
+│   ├── schemas/                  # Shipped JSON Schemas
+│   └── data/checks.json          # Check catalog source of truth
+└── tests/
+    ├── conftest.py               # Marker auto-assignment and shared fixtures
+    ├── fixtures/                 # Test data
+    ├── release_fakes.py          # Stateful adapter fakes
+    ├── unit/                     # Hermetic tests (default tier)
+    ├── local_integration/        # Opt-in, real local tools
+    └── network/                  # Opt-in, disposable external services
 ```
 
-The supported release tools are listed in [README.md](README.md). Hermetic unit tests do not require those tools, credentials or network access.
 
-## Local checks
+## Development standards<a id="development-standards"></a>
 
-Run the normal source checks with:
+This project follows these coding standards and rules:
+
+- **Python Style**: [PEP 8](https://peps.python.org/pep-0008/) compliance.
+- **Type Hints**: Use [type](https://docs.python.org/3/library/typing.html) annotations everywhere. `mypy --strict` must pass for `src` and `tests`.
+- **Docstrings**: Use the three-double-quote `"""` format (per [PEP 257](https://peps.python.org/pep-0257/)) for public functions, classes and modules.
+- **Import organization**: Follow [isort](https://pycqa.github.io/isort/) standards.
+- **Error handling**: Keep rule rejections and operational failures distinguishable. Never convert an unknown state into success.
+- **Untrusted input**: Treat configuration, JSON, registry responses, OCI layouts, archives, paths and tool output as untrusted. Validate them at runtime before constructing typed domain values.
+- **Encoding, line ending:** Use UTF-8 encoding with `LF` (Line Feed `\n`) line endings *without* [BOM](https://en.wikipedia.org/wiki/Byte_order_mark) for all files.
+
+Keep each change focused and include its tests, schema changes, generated conformance output and affected documentation. Avoid unrelated refactoring. A new external dependency needs a concrete requirement that the standard library or an existing dependency cannot meet.
+
+The linting and formatting tool can take care of most of the style rules (see next section).
+
+
+### Code formatting and linting<a id="code-linting"></a>
 
 ```sh
+# Format code
+uv run ruff format .
+
+# Check formatting without writing
 uv run ruff format --check .
+
+# Lint code
 uv run ruff check .
+
+# Fix auto-fixable linting issues
+uv run ruff check --fix .
+
+# Strict type checking
 uv run mypy --strict src tests
-uv run pytest -m unit --strict-markers --strict-config
-uv run pytest -m unit --strict-markers --strict-config --cov=conclear --cov-branch --cov-report=term-missing
+```
+
+
+### Commit messages and scopes<a id="commit-scopes"></a>
+
+Commit messages follow the foundata guideline (`guidelines/git-commits.md`): `<scope>: <description>`, imperative, lowercase description, body only for context the diff cannot preserve. Scopes in use:
+
+| Scope | Area |
+|---|---|
+| `cli`, `errors`, `presentation` | `cli.py`, error classification, human and JSON output |
+| `config`, `records`, `state` | configuration, record envelopes, run workspace and journal |
+| `checks`, `catalog`, `conformance` | static checks, the `CCnnnn` catalog, generated documentation |
+| `adapters`, and per-tool scopes such as `trivy`, `quay`, `cosign` | `src/conclear/adapters/` |
+| `qualification`, `assembly`, `publication`, `promotion`, `verification`, `rescan`, `cleanup` | `src/conclear/services/` |
+| `process`, `runtime`, `security` | supervised execution, isolated storage, hardening |
+| `ci` | CI-environment observation and identity binding |
+| `architecture` | `ARCHITECTURE.md` contract changes |
+| `tests` | the test suite |
+| `packaging`, `dependencies` | packaging, lock file |
+| `licensing`, `release`, `repository`/`repo` | licensing files, release preparation, repository-wide concerns |
+
+`docs` is not a scope: the foundata guideline lists it among the Conventional Commits types a scope must not be written as. A commit that only changes documentation still uses the scope of the subsystem it documents, or a cross-cutting scope such as `repository` when the documentation is not about one subsystem.
+
+Do not prepare releases, create tags or push from local validation work.
+
+
+### Contract changes<a id="contract-changes"></a>
+
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) is the behavioral contract, not a description of the current code. Put every `ARCHITECTURE.md` edit in its own commit whose subject names it as a contract change, such as `architecture: require a new run after an ambiguous candidate write`, and never fold one into a commit that also changes code. Give the reason in the commit body when the diff does not carry it.
+
+Do not amend the contract to match an implementation that turned out differently. When the code cannot meet a documented rule, leave the rule alone and report the conflict so the maintainer decides whether the design or the code changes.
+
+Report every contract change when reporting completed work. A summary that lists implemented behavior but omits an edit to `ARCHITECTURE.md`, a shipped schema, an exit status, a record layout or a `CCnnnn` identifier is incomplete.
+
+The guide that `ARCHITECTURE.md` implements is normative and lives outside this repository. Each build embeds one exact guide revision. Moving to a newer revision means reviewing every changed rule, updating the embedded identity, catalog, generated conformance document, schemas and tests together; ConClear must not advertise a revision whose automatable rules it does not implement.
+
+
+### Compatibility<a id="compatibility"></a>
+
+ConClear follows Semantic Versioning. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses and stable check identifiers are compatibility surfaces. Change them deliberately and document the effect.
+
+A `CCnnnn` identifier is never reused for a different rule. Removing a check leaves a retired entry in the catalog so historical findings stay understandable.
+
+Do not add a changelog before the project reaches 1.0.0. Do not prepare releases, create tags or push from local validation work.
+
+
+## Testing<a id="testing"></a>
+
+### Running tests<a id="running-tests"></a>
+
+```sh
+# Run the default hermetic unit suite
+uv run pytest
+
+# Run a specific test file
+uv run pytest tests/unit/test_publication.py
+
+# Run a specific test
+uv run pytest tests/unit/test_pins.py -k divergence
+
+# Run with branch coverage
+uv run pytest --cov=conclear --cov-branch --cov-report=term-missing
+
+# Run the opt-in local integration tier (see below)
+uv run pytest -m local_integration
+```
+
+
+### Test tiers and markers<a id="test-tiers"></a>
+
+`addopts` selects the `unit` marker, so a bare `uv run pytest` is always hermetic. `tests/conftest.py` assigns markers by directory, and `--strict-markers` rejects an unregistered marker.
+
+| Marker | Location | Requires |
+|---|---|---|
+| `unit` | `tests/unit/` | Nothing. No container storage, credentials, network or wall-clock dependency. |
+| `local_integration` | `tests/local_integration/` | Installed rootless tools at supported versions. |
+| `emulation` | `tests/local_integration/` | Non-native execution through a registered binfmt handler. |
+| `network` | `tests/network/` | An explicitly authorized disposable Quay repository and test signing keys. |
+
+The default suite must stay independent of the workstation's container storage, configuration, credentials, network and clock. Inject clocks and identifier factories rather than reading the current time.
+
+
+### Test structure<a id="test-structure"></a>
+
+- **Unit tests**: `tests/unit/` - Hermetic tests of one component or workflow through fakes.
+- **Local integration tests**: `tests/local_integration/` - Exercise real installed tools against run-owned storage.
+- **Network tests**: `tests/network/` - Exercise real external services. These cover the behavior that fakes cannot model, such as the predicate URI Cosign really writes and Quay's real tag-immutability semantics.
+- **Fixtures**: `tests/fixtures/` - Sample data. Files here must never be modified by a test.
+- **Adapter fakes**: `tests/release_fakes.py` - Stateful fakes used by workflow tests.
+
+
+### Writing tests<a id="writing-tests"></a>
+
+1. **Write the failing test first**. A fix without a test that failed before it is not finished.
+2. **Cover the failure path**, not only the success path. This is a fail-closed tool; its error branches are its product.
+3. **Use deterministic fakes at adapter boundaries** for operational failures and ambiguous remote writes. Do not mock ordinary policy or serialization logic.
+4. **Make fakes behave like the real tool.** A fake that echoes its input back can hide a real defect; where behavior depends on an external format, assert against that format in the network tier.
+5. **Keep tests isolated**: `tmp_path` only, no shared state, no ambient environment.
+
+
+### Local integration tests<a id="local-integration-tests"></a>
+
+Read the local testing instructions before running opt-in tests. Use a unique run ID, run-owned rootless storage and a resource manifest outside the repository. Never reuse or clean up unrecorded Buildah, Podman, registry or virtual-machine resources.
+
+```sh
+CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration
+```
+
+The run ID becomes part of an OCI repository name, so it must be lowercase.
+
+The local suite compiles network-free `scratch` fixtures with Go, uses isolated Buildah and Podman storage, copies only between local OCI layouts with Skopeo and creates disposable Cosign key material under the run workspace. Its manual no-log Cosign check stays outside the production adapter and follows the guide's no-service signing configuration, bundle and verification flags. Record the workspace and all created resources in the external run manifest before invoking it, then record the observed assertions and cleanup result.
+
+
+### Network tests<a id="network-tests"></a>
+
+Network tests need an explicitly authorized disposable Quay repository, narrow credentials and dedicated test signing keys. Production release keys and shared repositories are never test inputs. These tests write to a real registry and create permanent public transparency-log entries, so they are opt-in by design.
+
+They remain the only check on behavior that fakes cannot reproduce. Run them at least once before trusting a production-signed release.
+
+
+## Generated conformance catalog<a id="conformance-catalog"></a>
+
+`docs/conformance.md` is generated from `src/conclear/data/checks.json` and the embedded guide identity. Never edit it by hand.
+
+```sh
+# Regenerate the catalog
+uv run python -m conclear.conformance
+
+# Verify the committed catalog is current
 uv run python -m conclear.conformance --check
 ```
 
-Tests under `tests/unit/` receive the `unit` marker automatically. Tests that invoke installed rootless tools use `local_integration`; non-native execution also uses `emulation`; tests that access disposable external services use `network`. The default unit suite must remain independent of the workstation's container storage, configuration, credentials, network and clock.
+Commit a catalog change together with the check definition, implementation, tests and affected documentation. Continuous integration verifies that identifiers are unique and well formed, that every claimed guide anchor exists at the embedded revision and that the committed document matches the generator.
 
-Use deterministic fakes at adapter boundaries for operational failures and ambiguous remote writes. Do not mock ordinary policy or serialization logic.
 
-## Generated conformance catalog
+## CI identity trust<a id="ci-identity-trust"></a>
 
-`docs/conformance.md` is generated from `src/conclear/data/checks.json` and the embedded guide identity. Update the catalog with:
+Before CI metadata enters signed release evidence, ConClear requires the claimed provider repository and revision to match the canonical repository and commit observed from the isolated checkout. The provider workflow and run identifiers remain observations from the protected runner environment rather than independently authenticated identities, and an internal server origin is omitted from public evidence.
+
+ConClear does not acquire or accept OIDC tokens because the release profile defines no issuer and audience trust root against which to authenticate those claims.
+
+
+## Recommended development workflow<a id="development-workflow"></a>
+
+### Before making changes<a id="before-making-changes"></a>
+
+1. **Create a feature branch**:
+   ```sh
+   git checkout -b feature/your-feature-name
+   ```
+
+2. **Ensure the suite passes**:
+   ```sh
+   uv run pytest
+   ```
+
+
+### Making changes<a id="making-changes"></a>
+
+1. **Follow the coding standards** mentioned above.
+2. **Write or update tests** for your changes, failure paths first.
+3. **Update documentation** in the same commit as the behavior it describes.
+4. **Separate contract changes** into their own commits, as described in [Contract changes](#contract-changes).
+
+
+### Before committing<a id="before-committing"></a>
+
+Always run this checklist before committing:
 
 ```sh
-uv run python -m conclear.conformance
+# 1. Format code
+uv run ruff format .
+
+# 2. Fix linting issues (if any)
+uv run ruff check --fix .
+
+# 3. Strict type checking
+uv run mypy --strict src tests
+
+# 4. Run the unit suite
+uv run pytest
+
+# 5. Verify the generated conformance catalog is current
+uv run python -m conclear.conformance --check
 ```
 
-Commit a catalog change with the check definition, implementation, tests and affected documentation.
 
-## Release check
+## Releases<a id="releases"></a>
 
 The provider-independent release check requires a clean Git checkout and locally available Python 3.12, 3.13 and 3.14 interpreters:
 
@@ -47,32 +346,21 @@ The provider-independent release check requires a clean Git checkout and locally
 uv run python -m conclear.release_check
 ```
 
-The GitHub Actions check installs those interpreters and delegates all project checks to this command. It separately checks the catalog against the OCI guide at the exact embedded revision; the workflow does not redefine formatting, typing, test or distribution-build logic.
-
-The command checks formatting, linting, strict typing, generated conformance documentation and the unit-test matrix. It creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
+The command checks formatting, linting, strict typing, the generated conformance documentation and the unit-test matrix on every supported interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
 
 The release check does not create a release, write to a registry, sign content, create transparency-log entries, tag Git or push commits.
 
-## Local integration tests
+The GitHub Actions workflow installs those interpreters and delegates all project checks to this command. It separately checks the catalog against the OCI guide at the exact embedded revision, so the workflow never redefines formatting, typing, test or distribution-build logic.
 
-Read the local testing instructions before running opt-in tests. Use a unique run ID, run-owned rootless storage and a resource manifest outside the repository. Never reuse or clean up unrecorded Buildah, Podman, registry or virtual-machine resources.
+The source tree uses `development-source-tree` as its local identity. Distribution builds generate `conclear/_embedded_identity.py` from an externally observed full Git revision; identity is never derived from an application repository at runtime. A build without an embedded revision cannot produce release evidence.
 
-Run read-only and run-owned local tool tests with:
 
-```sh
-CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration --strict-markers --strict-config
-```
+## Troubleshooting<a id="troubleshooting"></a>
 
-The local suite compiles network-free `scratch` fixtures with Go, uses isolated Buildah and Podman storage, copies only between local OCI layouts with Skopeo and creates disposable Cosign key material under the run workspace. Its manual no-log Cosign check stays outside the production adapter and follows the guide's no-service signing configuration, bundle and verification flags. Record the workspace and all created resources in the external run manifest before invoking it, then record the observed assertions and cleanup result.
+### Common issues<a id="common-issues"></a>
 
-Network tests need an explicitly authorized disposable Quay repository, narrow credentials and dedicated test signing keys. Production release keys and shared repositories are never test inputs.
-
-## CI identity trust
-
-Before CI metadata enters signed release evidence, ConClear requires the claimed provider repository and revision to match the canonical repository and commit observed from the isolated checkout. The provider server, workflow and run identifiers remain observations from the protected runner environment rather than independently authenticated identities. ConClear does not acquire or accept OIDC tokens because the release profile defines no issuer and audience trust root against which to authenticate those claims.
-
-## Source layout
-
-Production code lives under `src/conclear/`. Click command modules parse inputs and call workflow services. Configuration, schemas, records, state, process supervision, OCI parsing, adapters, presentation and workflow decisions remain separate modules.
-
-The source tree uses `development-source-tree` as its local identity. Distribution builds must generate `conclear/_embedded_identity.py` from an externally observed full Git revision; they must not derive identity from an application repository at runtime.
+- **Import errors**: Ensure the environment is installed with `uv sync --frozen --all-groups`.
+- **`uv run conclear version` reports `development-source-tree`**: Expected in a source checkout. Only a distribution build embeds a real revision, and only such a build can emit records.
+- **Conformance check fails after editing `docs/conformance.md`**: The file is generated. Change `src/conclear/data/checks.json` and regenerate.
+- **A local integration test fails on the run ID**: The identifier becomes part of an OCI repository name and must be lowercase.
+- **Unit tests suddenly need the network or container storage**: A test landed in `tests/unit/` that belongs in `local_integration` or `network`. Move it rather than relaxing the tier.
