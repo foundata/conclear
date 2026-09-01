@@ -644,12 +644,15 @@ def test_quay_adapter_sets_and_verifies_expiration_without_leaking_token() -> No
     client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = QuayAdapter(
         api_url="https://quay.io/api/v1",
+        registry="quay.io",
         token_provider=lambda: "protected-token",
         client=client,
     )
     expiration = datetime.fromtimestamp(1767312000, tz=UTC)
 
-    observed = adapter.set_expiration(quay_repository(), "candidate", expiration)
+    observed = adapter.enforce_candidate_lifetime(
+        quay_repository(), "candidate", expiration
+    )
 
     assert observed.expiration == expiration
     assert all("protected-token" not in str(request.url) for request in requests)
@@ -683,12 +686,13 @@ def test_quay_adapter_resolves_ambiguous_tag_write_by_digest() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = QuayAdapter(
         api_url="https://quay.io/api/v1",
+        registry="quay.io",
         token_provider=lambda: "token",
         client=client,
     )
     digest = Digest("sha256:" + "4" * 64)
 
-    observed = adapter.write_tag(quay_repository(), "stable", digest)
+    observed = adapter.assign_tag(quay_repository(), "stable", digest)
 
     assert observed.digest == digest
     assert writes == 1
@@ -701,12 +705,13 @@ def test_quay_adapter_classifies_unsupported_immutability() -> None:
     )
     adapter = QuayAdapter(
         api_url="https://quay.io/api/v1",
+        registry="quay.io",
         token_provider=lambda: "token",
         client=client,
     )
 
     with pytest.raises(UnsupportedOperationError, match="immutability is unavailable"):
-        adapter.set_immutable(quay_repository(), "candidate")
+        adapter.ensure_tag_immutable(quay_repository(), "candidate")
 
     client.close()
 
@@ -735,11 +740,12 @@ def test_quay_adapter_lifts_and_verifies_tag_immutability() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     adapter = QuayAdapter(
         api_url="https://quay.io/api/v1",
+        registry="quay.io",
         token_provider=lambda: "token",
         client=client,
     )
 
-    observed = adapter.set_mutable(quay_repository(), "candidate")
+    observed = adapter.ensure_tag_mutable(quay_repository(), "candidate")
 
     assert not observed.immutable
     assert requests[0].read() == b'{"immutable":false}'
@@ -757,11 +763,12 @@ def test_quay_adapter_rejects_oversized_response(
     )
     adapter = QuayAdapter(
         api_url="https://quay.io/api/v1",
+        registry="quay.io",
         token_provider=lambda: "token",
         client=client,
     )
 
     with pytest.raises(OperationalError, match="response exceeds the size limit"):
-        adapter.get_tag(quay_repository(), "candidate")
+        adapter.observe_tag(quay_repository(), "candidate")
 
     client.close()

@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from conclear.adapters.quay import QuayTagObservation
 from conclear.errors import OperationalError
+from conclear.registry_control import TagObservation
 from conclear.services.cleanup import cleanup_run
 from conclear.values import Digest, OCIReference
 from conclear.workspace import (
@@ -43,28 +43,28 @@ class FakePodman:
         self.reset.append((root, runroot))
 
 
-class FakeQuay:
-    def __init__(self, tag: QuayTagObservation | None) -> None:
+class FakeRegistryControl:
+    def __init__(self, tag: TagObservation | None) -> None:
         self.tag = tag
         self.deleted: list[str] = []
 
-    def get_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation | None:
+    def observe_tag(self, repository: OCIReference, tag: str) -> TagObservation | None:
         assert repository.tag is None
         del tag
         return self.tag
 
-    def delete_tag(self, repository: OCIReference, tag: str) -> None:
+    def remove_tag(self, repository: OCIReference, tag: str) -> None:
         assert repository.tag is None
         if self.tag is not None and self.tag.immutable:
             raise OperationalError("immutable tags cannot be deleted")
         self.deleted.append(tag)
         self.tag = None
 
-    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:
         assert repository.tag is None
         assert self.tag is not None
         assert self.tag.name == tag
-        self.tag = QuayTagObservation(
+        self.tag = TagObservation(
             self.tag.name,
             self.tag.digest,
             self.tag.expiration,
@@ -107,7 +107,7 @@ def test_cleanup_removes_only_journaled_ephemeral_resources(tmp_path: Path) -> N
         run,
         buildah=FakeBuildah(),
         podman=FakePodman(),
-        quay=None,
+        registry_control=None,
     )
 
     assert result.removed == ("owned",)
@@ -135,7 +135,7 @@ def test_cleanup_removes_container_and_isolated_podman_storage(tmp_path: Path) -
         run,
         buildah=FakeBuildah(),
         podman=podman,
-        quay=None,
+        registry_control=None,
     )
 
     assert result.removed == ("podman-linux-amd64",)
@@ -157,17 +157,19 @@ def test_cleanup_refuses_candidate_when_recorded_digest_changed(tmp_path: Path) 
         metadata={"digest": str(expected)},
     )
     run.journal.update("candidate", ResourceStatus.CREATED)
-    quay = FakeQuay(QuayTagObservation("candidate", changed, None, False))
+    registry_control = FakeRegistryControl(
+        TagObservation("candidate", changed, None, False)
+    )
 
     with pytest.raises(OperationalError, match="unowned digest"):
         cleanup_run(
             run,
             buildah=FakeBuildah(),
             podman=FakePodman(),
-            quay=quay,
+            registry_control=registry_control,
         )
 
-    assert quay.deleted == []
+    assert registry_control.deleted == []
     assert run.journal.entries()[0].status is ResourceStatus.CREATED
 
 
@@ -185,17 +187,19 @@ def test_cleanup_lifts_owned_candidate_immutability_before_deletion(
         metadata={"digest": str(expected)},
     )
     run.journal.update("candidate", ResourceStatus.CREATED)
-    quay = FakeQuay(QuayTagObservation("candidate", expected, None, True))
+    registry_control = FakeRegistryControl(
+        TagObservation("candidate", expected, None, True)
+    )
 
     result = cleanup_run(
         run,
         buildah=FakeBuildah(),
         podman=FakePodman(),
-        quay=quay,
+        registry_control=registry_control,
     )
 
     assert result.removed == ("candidate",)
-    assert quay.deleted == ["candidate"]
+    assert registry_control.deleted == ["candidate"]
     assert run.journal.entries()[0].status is ResourceStatus.REMOVED
 
 
@@ -219,7 +223,7 @@ def test_cleanup_unlinks_owned_symlink_without_following_it(tmp_path: Path) -> N
         run,
         buildah=FakeBuildah(),
         podman=FakePodman(),
-        quay=None,
+        registry_control=None,
     )
 
     assert not link.exists()
@@ -241,7 +245,7 @@ def test_cleanup_can_reserve_ambiguous_candidate_for_resume(tmp_path: Path) -> N
         run,
         buildah=FakeBuildah(),
         podman=FakePodman(),
-        quay=FakeQuay(None),
+        registry_control=FakeRegistryControl(None),
         statuses=frozenset({ResourceStatus.FAILED}),
         excluded_kinds=frozenset({ResourceKind.CANDIDATE_REFERENCE}),
     )
@@ -267,7 +271,7 @@ def test_cleanup_preserves_explicitly_revalidated_resource(tmp_path: Path) -> No
         run,
         buildah=FakeBuildah(),
         podman=FakePodman(),
-        quay=None,
+        registry_control=None,
         excluded_resource_ids=frozenset({"layout-linux-amd64"}),
     )
 

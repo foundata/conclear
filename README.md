@@ -71,20 +71,27 @@ Trust roots, signing keys and registry credentials stay outside the repository, 
 ```toml
 ci_context = "observe"
 auth_file = "/home/example/.config/containers/auth.json"
-quay_token_file = "/home/example/.config/conclear/quay.token"
 cosign_private_key = "/home/example/.config/conclear/cosign.key"
 cosign_public_key = "/home/example/.config/conclear/cosign.pub"
 passphrase_file = "/home/example/.config/conclear/cosign.passphrase"
+
+[registry]
+provider = "quay"
+host = "quay.io"
+api_url = "https://quay.io/api/v1"
+token_file = "/home/example/.config/conclear/quay.token"
 ```
 
 The profile and every secret file must be owned by the invoking user and carry private permissions. CI may supply the signing passphrase through `--passphrase-fd` instead of a file. Secret values are never accepted through project configuration, command-line literals or inherited environment variables.
 
 `ci_context` controls optional CI correlation metadata. `omit` does not inspect CI variables, `observe` records complete matching context when available, and `require` stops when recognized context is absent, malformed or inconsistent with the isolated checkout. ConClear recognizes GitHub Actions, GitLab CI, Gitea Actions, Forgejo Actions and Woodpecker CI. The normalized public record contains the provider, repository, full revision and provider run identifier. Provider environment variables are not authentication and never control the release verdict, source identity, signer identity or artifact digest.
 
+Repository configuration may name any fully qualified OCI registry for local checks, qualification, assembly and provenance. The complete `publish` through `promote` workflow requires an explicitly selected registry control backend. A supported backend must provide exact tag observation, digest-preserving graph handling, Cosign referrers, an independently enforced candidate lifetime, selective tag protection, exact tag assignment, deletion and ambiguous-write recovery. Quay.io provides these controls and `quay` is currently the only implemented backend. A release profile that selects `quay` rejects a destination on another registry before qualification or remote mutation.
+
 
 ### Running a release<a id="usage-release"></a>
 
-The normal interface resolves a reviewed Git selector, creates a detached checkout, qualifies `linux/amd64` before any additional platform, assembles the accepted layouts, publishes one expiring Quay candidate, signs and verifies every digest and attestation, and promotes only the verified digest:
+The normal interface resolves a reviewed Git selector, creates a detached checkout, qualifies `linux/amd64` before any additional platform, assembles the accepted layouts, publishes one registry-controlled candidate, signs and verifies every digest and attestation, and promotes only the verified digest:
 
 ```sh
 uv run conclear release --image app --revision v1.2.3 --version 1.2.3 --profile foundata

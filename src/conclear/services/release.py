@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import override
 
 from conclear.adapters.ci import CIContextObservation
-from conclear.adapters.quay import QuayAdapter
+from conclear.adapters.registry_control import (
+    create_registry_control,
+    validate_registry_destinations,
+)
 from conclear.artifacts import (
     load_candidate,
     load_provenance_materials,
@@ -33,7 +36,6 @@ from conclear.presentation import Finding
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.records import SourceIdentity, Verdict
 from conclear.runtime import ApplicationRuntime
-from conclear.secrets import token_provider
 from conclear.services.assembly import CandidateResult, assemble_candidate
 from conclear.services.checking import check_image
 from conclear.services.ci_context import resolve_ci_context
@@ -192,13 +194,15 @@ def resume_release(
             if record_path.is_file():
                 qualification_transport(workspace, image, platform)
                 protected_resources.add(f"layout-{platform.key}")
-        quay = quay_adapter(profile)
+        registry_control = create_registry_control(
+            profile, destinations=(image.repository,)
+        )
         try:
             cleanup_run(
                 workspace,
                 buildah=source_run.runtime.buildah(),
                 podman=source_run.runtime.podman(),
-                quay=quay,
+                registry_control=registry_control,
                 git=source_run.runtime.git(),
                 statuses=frozenset(
                     {
@@ -211,7 +215,7 @@ def resume_release(
                 excluded_resource_ids=frozenset(protected_resources),
             )
         finally:
-            quay.close()
+            registry_control.close()
         workspace.resume(expected, now=now_factory())
     started_at = _parse_timestamp(workspace.load().created_at)
     request = ReleaseRequest(
@@ -253,6 +257,7 @@ def _continue_release(
     now_factory: Callable[[], datetime],
 ) -> ReleaseResult:
     image = repository.image(request.image_id)
+    validate_registry_destinations(request.profile, (image.repository,))
     public_ci_context = resolve_ci_context(
         request.ci_context,
         policy=request.profile.ci_context,
@@ -300,7 +305,9 @@ def _continue_release(
         raise InvalidInvocationError("Release profile has no Cosign signing key")
     registry = runtime.skopeo()
     signer = runtime.cosign()
-    quay = quay_adapter(request.profile)
+    registry_control = create_registry_control(
+        request.profile, destinations=(image.repository,)
+    )
     try:
         if workspace.load().state is RunState.ASSEMBLED:
             publish_candidate(
@@ -308,7 +315,7 @@ def _continue_release(
                 image=image,
                 workspace=workspace,
                 registry=registry,
-                quay=quay,
+                registry_control=registry_control,
                 auth_file=request.profile.auth_file,
                 now=now_factory(),
             )
@@ -359,7 +366,7 @@ def _continue_release(
             image=image,
             version=request.version,
             workspace=workspace,
-            quay=quay,
+            registry_control=registry_control,
             registry=registry,
             signer=signer,
             public_key=request.profile.cosign_public_key,
@@ -368,7 +375,7 @@ def _continue_release(
         )
         return _write_summary(workspace, published.immutable_reference, promotion)
     finally:
-        quay.close()
+        registry_control.close()
 
 
 def _qualify_release(
@@ -503,17 +510,6 @@ def _generate_release_provenance(
             materials=materials,
         ),
         workspace.root / "records" / "provenance.json",
-    )
-
-
-def quay_adapter(profile: ReleaseProfile) -> QuayAdapter:
-    """Construct a Quay adapter from one protected release profile."""
-    token_path = profile.quay_token_file
-    if token_path is None:
-        raise InvalidInvocationError("Release profile has no Quay API token")
-    return QuayAdapter(
-        api_url=profile.quay_api_url,
-        token_provider=lambda: token_provider(token_path),
     )
 
 

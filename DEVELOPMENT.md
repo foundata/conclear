@@ -97,6 +97,7 @@ conclear/
 │   ├── workspace.py              # Run state machine and ownership journal
 │   ├── process.py                # Supervised execution and redaction
 │   ├── oci.py                    # Layout, descriptor and graph validation
+│   ├── registry_control.py       # Provider-neutral registry controls
 │   ├── release_check.py          # Clean-checkout release gate
 │   ├── adapters/                 # Typed tool and registry boundaries
 │   │   ├── buildah.py            # Build and layout export
@@ -105,6 +106,7 @@ conclear/
 │   │   ├── hadolint.py           # Containerfile linting
 │   │   ├── trivy.py              # Scanning, SBOMs, database snapshots
 │   │   ├── cosign.py             # Signing, attestations, verification
+│   │   ├── registry_control.py   # Compiled backend selection
 │   │   ├── quay.py               # Quay tag API
 │   │   └── git.py                # Source selection and worktrees
 │   ├── commands/                 # CLI surface, grouped by scope
@@ -181,6 +183,7 @@ Commit messages follow the [foundata guideline (`guidelines/git-commits.md`)](ht
 | `scanner` | Scan policy, immutable database snapshots and scanner behavior shared by qualification and rescans |
 | `release` | Release-run orchestration, resume behavior and terminal summaries |
 | `publication` | Candidate publication, registry observation, attestations, signing, verification and promotion |
+| `registry` | Provider-neutral registry control contracts, backend selection and support policy |
 | `rescan` | Post-release scanning, triage, remediation history and rescan cleanup |
 | `adapters` | Shared adapter contracts or one change spanning several external tools |
 | `buildah`, `cosign`, `hadolint`, `podman`, `quay`, `skopeo`, `trivy` | Behavior confined to one external tool adapter |
@@ -272,6 +275,8 @@ The default suite must stay independent of the workstation's container storage, 
 3. **Use deterministic fakes at adapter boundaries** for operational failures and ambiguous remote writes. Do not mock ordinary policy or serialization logic.
 4. **Make fakes behave like the real tool.** A fake that echoes its input back can hide a real defect; where behavior depends on an external format, assert against that format in the network tier.
 5. **Keep tests isolated**: `tmp_path` only, no shared state, no ambient environment.
+
+A new release-registry backend must implement the typed control contract in `registry_control.py` and pass the shared publication, resume, promotion and cleanup tests. Add it to the closed backend table only after opt-in network tests establish exact tag observation, digest-preserving graph handling, Cosign referrers, independently enforced candidate lifetime, selective tag protection, exact tag assignment, deletion and ambiguous-write recovery. Provider-specific request and response details stay in the adapter. Workflow services continue deciding verdicts from typed observations.
 
 
 ### Local integration tests<a id="local-integration-tests"></a>

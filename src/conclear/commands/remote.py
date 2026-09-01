@@ -8,6 +8,7 @@ from typing import Any
 
 import click
 
+from conclear.adapters.registry_control import create_registry_control
 from conclear.artifacts import (
     load_candidate,
     load_provenance_materials,
@@ -31,7 +32,6 @@ from conclear.services.release import (
     ReleaseRequest,
     execute_release,
     profile_inputs,
-    quay_adapter,
     resume_release,
     signer_identity,
 )
@@ -123,19 +123,21 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
     image = _image(source_run)
     candidate = load_candidate(source_run.workspace, image)
     load_release_evidence(source_run.workspace, image)
-    quay = quay_adapter(selected)
+    registry_control = create_registry_control(
+        selected, destinations=(image.repository,)
+    )
     try:
         result = publish_candidate(
             candidate,
             image=image,
             workspace=source_run.workspace,
             registry=source_run.runtime.skopeo(),
-            quay=quay,
+            registry_control=registry_control,
             auth_file=selected.auth_file,
             now=datetime.now(UTC),
         )
     finally:
-        quay.close()
+        registry_control.close()
     emit(
         CommandResult(
             "publish",
@@ -269,7 +271,9 @@ def promote_command(
     verification = load_verification(
         source_run.workspace, image, published.immutable_reference
     )
-    quay = quay_adapter(selected)
+    registry_control = create_registry_control(
+        selected, destinations=(image.repository,)
+    )
     try:
         recorded_version = (
             source_run.workspace.load().immutable_inputs.get("version") or None
@@ -282,7 +286,7 @@ def promote_command(
             image=image,
             version=recorded_version,
             workspace=source_run.workspace,
-            quay=quay,
+            registry_control=registry_control,
             registry=source_run.runtime.skopeo(),
             signer=source_run.runtime.cosign(),
             public_key=selected.cosign_public_key,
@@ -290,7 +294,7 @@ def promote_command(
             now=datetime.now(UTC),
         )
     finally:
-        quay.close()
+        registry_control.close()
     emit(
         CommandResult(
             "promote",

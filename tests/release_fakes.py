@@ -18,7 +18,6 @@ from conclear.adapters.podman import (
     ImportObservation,
     RuntimeControlObservation,
 )
-from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.attestations import SPDX_DOCUMENT_TYPE, STATEMENT_TYPE
@@ -33,6 +32,7 @@ from conclear.jsonutil import (
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph, validate_layout
 from conclear.process import CommandRequest, ProcessResult
 from conclear.records import ToolIdentity
+from conclear.registry_control import TagObservation
 from conclear.values import Digest, OCIReference, Platform
 
 DATABASE_METADATA: dict[str, object] = {
@@ -304,7 +304,7 @@ class FakeRegistry:
         return RegistryCopyObservation(source, layout_path, self.graph)
 
 
-class FakeQuay:
+class FakeRegistryControl:
     """Observe tag controls without network access."""
 
     def __init__(self, tags: dict[str, Digest]) -> None:
@@ -313,51 +313,57 @@ class FakeQuay:
         self.immutable: set[str] = set()
         self.closed = False
 
-    def get_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation | None:
+    @property
+    def provider(self) -> str:
+        return "quay"
+
+    def observe_tag(self, repository: OCIReference, tag: str) -> TagObservation | None:
         del repository
         digest = self.tags.get(tag)
         if digest is None:
             return None
-        return QuayTagObservation(
+        return TagObservation(
             tag,
             digest,
             self.expirations.get(tag),
             tag in self.immutable,
         )
 
-    def set_expiration(
+    def enforce_candidate_lifetime(
         self, repository: OCIReference, tag: str, expiration: datetime
-    ) -> QuayTagObservation:
+    ) -> TagObservation:
         self.expirations[tag] = expiration
-        observed = self.get_tag(repository, tag)
+        observed = self.observe_tag(repository, tag)
         if observed is None:
             raise AssertionError("expiration target is absent")
         return observed
 
-    def set_immutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_immutable(
+        self, repository: OCIReference, tag: str
+    ) -> TagObservation:
         self.immutable.add(tag)
-        observed = self.get_tag(repository, tag)
+        observed = self.observe_tag(repository, tag)
         if observed is None:
             raise AssertionError("immutability target is absent")
         return observed
 
-    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:
         self.immutable.discard(tag)
-        observed = self.get_tag(repository, tag)
+        observed = self.observe_tag(repository, tag)
         if observed is None:
             raise AssertionError("mutability target is absent")
         return observed
 
-    def write_tag(
+    def assign_tag(
         self, repository: OCIReference, tag: str, digest: Digest
-    ) -> QuayTagObservation:
+    ) -> TagObservation:
         self.tags[tag] = digest
-        observed = self.get_tag(repository, tag)
+        observed = self.observe_tag(repository, tag)
         if observed is None:
             raise AssertionError("written tag is absent")
         return observed
 
-    def delete_tag(self, repository: OCIReference, tag: str) -> None:
+    def remove_tag(self, repository: OCIReference, tag: str) -> None:
         del repository
         self.tags.pop(tag, None)
         self.expirations.pop(tag, None)
@@ -516,7 +522,7 @@ class FakeRuntime:
 
     def __init__(self, pin_digest: Digest) -> None:
         self.registry = FakeRegistry(pin_digest)
-        self.quay = FakeQuay(self.registry.tags)
+        self.registry_control = FakeRegistryControl(self.registry.tags)
         self.signer = FakeSigner()
         self.builder = FakeBuilder()
         self.podman_adapter = FakePodman()

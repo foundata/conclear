@@ -9,7 +9,12 @@ from conclear.adapters.ci import (
     observe_ci_context,
 )
 from conclear.commands import common as common_commands
-from conclear.config import CIContextPolicy, ReleaseProfile
+from conclear.config import (
+    CIContextPolicy,
+    QuayRegistryConfig,
+    RegistryProvider,
+    ReleaseProfile,
+)
 from conclear.errors import OperationalError
 from conclear.jsonutil import load_json
 from conclear.records import SourceIdentity
@@ -23,11 +28,15 @@ def _profile(tmp_path: Path, policy: CIContextPolicy) -> ReleaseProfile:
         name="test",
         ci_context=policy,
         auth_file=None,
-        quay_token_file=None,
+        registry=QuayRegistryConfig(
+            RegistryProvider.QUAY,
+            "quay.io",
+            "https://quay.io/api/v1",
+            None,
+        ),
         cosign_private_key=None,
         cosign_public_key=tmp_path / "cosign.pub",
         passphrase_file=None,
-        quay_api_url="https://quay.io/api/v1",
         configuration_digest="sha256:" + "1" * 64,
         public_key_digest="sha256:" + "2" * 64,
     )

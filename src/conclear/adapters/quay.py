@@ -1,7 +1,6 @@
 """Synchronous Quay REST API adapter."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import quote
 
@@ -13,19 +12,10 @@ from conclear.errors import (
     OperationalError,
     UnsupportedOperationError,
 )
+from conclear.registry_control import TagObservation
 from conclear.values import Digest, OCIReference
 
 MAX_QUAY_RESPONSE_BYTES = 4 * 1024 * 1024
-
-
-@dataclass(frozen=True, slots=True)
-class QuayTagObservation:
-    """Observed Quay tag state."""
-
-    name: str
-    digest: Digest
-    expiration: datetime | None
-    immutable: bool
 
 
 class _QuayAPIError(OperationalError):
@@ -43,6 +33,7 @@ class QuayAdapter:
         self,
         *,
         api_url: str,
+        registry: str,
         token_provider: Callable[[], str],
         client: httpx.Client | None = None,
     ) -> None:
@@ -50,6 +41,7 @@ class QuayAdapter:
         if not api_url.startswith("https://"):
             raise InvalidInvocationError("Quay API URL must use HTTPS")
         self._api_url = api_url.rstrip("/")
+        self._registry = registry
         self._token_provider = token_provider
         self._owns_client = client is None
         self._client = client or httpx.Client(
@@ -61,7 +53,12 @@ class QuayAdapter:
         if self._owns_client:
             self._client.close()
 
-    def get_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation | None:
+    @property
+    def provider(self) -> str:
+        """Return the compiled backend identifier."""
+        return "quay"
+
+    def observe_tag(self, repository: OCIReference, tag: str) -> TagObservation | None:
         """Resolve one exact Quay tag without accepting ambiguous list results."""
         try:
             response = self._request(
@@ -91,7 +88,7 @@ class QuayAdapter:
             ):
                 raise OperationalError("Quay tag expiration is malformed")
             expiration = datetime.fromtimestamp(expiration_value, tz=UTC)
-        return QuayTagObservation(
+        return TagObservation(
             name=tag,
             digest=Digest(
                 string_value(item.get("manifest_digest"), label="Quay digest")
@@ -100,9 +97,9 @@ class QuayAdapter:
             immutable=item.get("immutable") is True,
         )
 
-    def set_expiration(
+    def enforce_candidate_lifetime(
         self, repository: OCIReference, tag: str, expiration: datetime
-    ) -> QuayTagObservation:
+    ) -> TagObservation:
         """Set expiration and require an exact post-write observation."""
         if expiration.tzinfo is None or expiration.utcoffset() is None:
             raise OperationalError("Candidate expiration must be timezone-aware")
@@ -115,7 +112,9 @@ class QuayAdapter:
             raise OperationalError("Quay did not retain the requested tag expiration")
         return observed
 
-    def set_immutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_immutable(
+        self, repository: OCIReference, tag: str
+    ) -> TagObservation:
         """Enable Quay tag immutability and verify the observed control."""
         try:
             self._write_with_observation(
@@ -132,7 +131,7 @@ class QuayAdapter:
             raise OperationalError("Quay did not retain tag immutability")
         return observed
 
-    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:
         """Disable Quay tag immutability and verify the observed control."""
         self._write_with_observation(
             repository, tag, {"immutable": False}, expected_digest=None
@@ -142,9 +141,9 @@ class QuayAdapter:
             raise OperationalError("Quay did not remove tag immutability")
         return observed
 
-    def write_tag(
+    def assign_tag(
         self, repository: OCIReference, tag: str, digest: Digest
-    ) -> QuayTagObservation:
+    ) -> TagObservation:
         """Write a digest tag once, resolving a transport ambiguity by reading state."""
         self._write_with_observation(
             repository,
@@ -159,19 +158,19 @@ class QuayAdapter:
             )
         return observed
 
-    def delete_tag(self, repository: OCIReference, tag: str) -> None:
+    def remove_tag(self, repository: OCIReference, tag: str) -> None:
         """Delete one owned tag and verify it is absent."""
         try:
             response = self._request("DELETE", self._tag_path(repository, tag))
             if response.status_code not in {200, 204}:
                 self._raise_response(response)
         except httpx.TransportError:
-            if self.get_tag(repository, tag) is not None:
+            if self.observe_tag(repository, tag) is not None:
                 raise OperationalError(
                     "Quay tag deletion has unknown remote state"
                 ) from None
             return
-        if self.get_tag(repository, tag) is not None:
+        if self.observe_tag(repository, tag) is not None:
             raise OperationalError("Quay tag remains after deletion")
 
     def _write_with_observation(
@@ -189,15 +188,15 @@ class QuayAdapter:
             if response.status_code not in {200, 201, 204}:
                 self._raise_response(response)
         except httpx.TransportError as exc:
-            observed = self.get_tag(repository, tag)
+            observed = self.observe_tag(repository, tag)
             if observed is not None and (
                 expected_digest is None or observed.digest == expected_digest
             ):
                 return
             raise OperationalError("Quay tag write has unknown remote state") from exc
 
-    def _required_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation:
-        observed = self.get_tag(repository, tag)
+    def _required_tag(self, repository: OCIReference, tag: str) -> TagObservation:
+        observed = self.observe_tag(repository, tag)
         if observed is None:
             raise OperationalError(f"Quay tag is absent after write: {tag}")
         return observed
@@ -249,11 +248,10 @@ class QuayAdapter:
     def _raise_response(response: httpx.Response) -> None:
         raise _QuayAPIError(response.status_code)
 
-    @staticmethod
-    def _repository_parts(repository: OCIReference) -> tuple[str, str]:
-        if repository.registry != "quay.io" or repository.tag or repository.digest:
+    def _repository_parts(self, repository: OCIReference) -> tuple[str, str]:
+        if repository.registry != self._registry or repository.tag or repository.digest:
             raise InvalidInvocationError(
-                "Quay API operations require an untagged quay.io repository"
+                f"Quay API operations require an untagged {self._registry} repository"
             )
         namespace, separator, name = repository.repository.partition("/")
         if not separator or "/" in name:

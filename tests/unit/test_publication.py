@@ -15,7 +15,6 @@ from conclear.adapters.cosign import (
     SignatureObservation,
     VerificationObservation,
 )
-from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.artifacts import load_published, load_verification
 from conclear.assembly import PlatformLayout, assemble_layout
@@ -24,7 +23,13 @@ from conclear.attestations import (
     SPDX_DOCUMENT_TYPE,
     STATEMENT_TYPE,
 )
-from conclear.config import CIContextPolicy, ReleaseProfile, load_repository_config
+from conclear.config import (
+    CIContextPolicy,
+    QuayRegistryConfig,
+    RegistryProvider,
+    ReleaseProfile,
+    load_repository_config,
+)
 from conclear.errors import OperationalError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
@@ -36,6 +41,7 @@ from conclear.jsonutil import (
 )
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph
 from conclear.provenance import ProvenanceInput, generate_provenance
+from conclear.registry_control import TagObservation
 from conclear.services.assembly import CandidateResult
 from conclear.services.ci_context import PublicCIContext
 from conclear.services.publication import (
@@ -178,58 +184,64 @@ class FakeRegistry:
         return RegistryCopyObservation(source, layout_path, self.graph)
 
 
-class FakeQuay:
+class FakeRegistryControl:
     def __init__(self, tags: dict[str, Digest]) -> None:
         self.tags = tags
         self.expirations: dict[str, datetime] = {}
         self.immutable: set[str] = set()
         self.fail_delete = False
 
-    def get_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation | None:
+    @property
+    def provider(self) -> str:
+        return "quay"
+
+    def observe_tag(self, repository: OCIReference, tag: str) -> TagObservation | None:
         del repository
         digest = self.tags.get(tag)
         if digest is None:
             return None
-        return QuayTagObservation(
+        return TagObservation(
             tag,
             digest,
             self.expirations.get(tag),
             tag in self.immutable,
         )
 
-    def set_expiration(
+    def enforce_candidate_lifetime(
         self, repository: OCIReference, tag: str, expiration: datetime
-    ) -> QuayTagObservation:
+    ) -> TagObservation:
         del repository
         self.expirations[tag] = expiration
-        observed = self.get_tag(OCIReference("quay.io", "example/app"), tag)
+        observed = self.observe_tag(OCIReference("quay.io", "example/app"), tag)
         assert observed is not None
         return observed
 
-    def set_immutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_immutable(
+        self, repository: OCIReference, tag: str
+    ) -> TagObservation:
         del repository
         self.immutable.add(tag)
-        observed = self.get_tag(OCIReference("quay.io", "example/app"), tag)
+        observed = self.observe_tag(OCIReference("quay.io", "example/app"), tag)
         assert observed is not None
         return observed
 
-    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:
         del repository
         self.immutable.discard(tag)
-        observed = self.get_tag(OCIReference("quay.io", "example/app"), tag)
+        observed = self.observe_tag(OCIReference("quay.io", "example/app"), tag)
         assert observed is not None
         return observed
 
-    def write_tag(
+    def assign_tag(
         self, repository: OCIReference, tag: str, digest: Digest
-    ) -> QuayTagObservation:
+    ) -> TagObservation:
         del repository
         self.tags[tag] = digest
-        observed = self.get_tag(OCIReference("quay.io", "example/app"), tag)
+        observed = self.observe_tag(OCIReference("quay.io", "example/app"), tag)
         assert observed is not None
         return observed
 
-    def delete_tag(self, repository: OCIReference, tag: str) -> None:
+    def remove_tag(self, repository: OCIReference, tag: str) -> None:
         del repository
         if self.fail_delete:
             raise OperationalError("injected candidate deletion failure")
@@ -238,6 +250,9 @@ class FakeQuay:
         self.tags.pop(tag, None)
         self.expirations.pop(tag, None)
         self.immutable.discard(tag)
+
+    def close(self) -> None:
+        pass
 
 
 class FakeSigner:
@@ -415,7 +430,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
     )
     tags: dict[str, Digest] = {}
     registry = FakeRegistry(observation.graph, tags)
-    quay = FakeQuay(tags)
+    registry_control = FakeRegistryControl(tags)
     now = datetime(2026, 1, 1, tzinfo=UTC)
 
     tags[tag] = observation.graph.digest
@@ -425,7 +440,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
             image=image,
             workspace=workspace,
             registry=registry,
-            quay=quay,
+            registry_control=registry_control,
             auth_file=None,
             now=now,
         )
@@ -439,7 +454,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
             image=image,
             workspace=workspace,
             registry=registry,
-            quay=quay,
+            registry_control=registry_control,
             auth_file=None,
             now=now,
         )
@@ -448,7 +463,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
     assert entry.status is ResourceStatus.FAILED
     assert entry.metadata["digest"] == str(observation.graph.digest)
     assert entry.metadata["expiration"] == "2026-01-08T00:00:00Z"
-    assert quay.expirations[tag] == datetime(2026, 1, 8, tzinfo=UTC)
+    assert registry_control.expirations[tag] == datetime(2026, 1, 8, tzinfo=UTC)
     assert tags[tag] == observation.graph.digest
 
 
@@ -559,24 +574,28 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         name="test",
         ci_context=CIContextPolicy.OBSERVE,
         auth_file=None,
-        quay_token_file=None,
+        registry=QuayRegistryConfig(
+            RegistryProvider.QUAY,
+            "quay.io",
+            "https://quay.io/api/v1",
+            None,
+        ),
         cosign_private_key="test.key",
         cosign_public_key=public_key,
         passphrase_file=None,
-        quay_api_url="https://quay.io/api/v1",
         configuration_digest="sha256:" + "4" * 64,
         public_key_digest="sha256:" + "5" * 64,
     )
     tags: dict[str, Digest] = {}
     registry = FakeRegistry(observation.graph, tags)
-    quay = FakeQuay(tags)
+    registry_control = FakeRegistryControl(tags)
     signer = FakeSigner()
     published = publish_candidate(
         candidate,
         image=image,
         workspace=workspace,
         registry=registry,
-        quay=quay,
+        registry_control=registry_control,
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
     )
@@ -717,7 +736,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         load_verification(workspace, image, published.immutable_reference)
     assert caught.value.code == "CC0703"
     verification.statement_path.write_bytes(statement_content)
-    expiration = quay.expirations.pop(tag)
+    expiration = registry_control.expirations.pop(tag)
     with pytest.raises(OperationalError, match="expiration is missing"):
         promote_candidate(
             published,
@@ -725,15 +744,15 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             image=image,
             version="1.2.3",
             workspace=workspace,
-            quay=quay,
+            registry_control=registry_control,
             registry=registry,
             signer=signer,
             public_key=public_key,
             auth_file=None,
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
-    quay.expirations[tag] = expiration
-    quay.expirations[tag] = datetime(2026, 1, 1, 0, 6, tzinfo=UTC)
+    registry_control.expirations[tag] = expiration
+    registry_control.expirations[tag] = datetime(2026, 1, 1, 0, 6, tzinfo=UTC)
     with pytest.raises(RuleRejectionError, match="expired") as caught:
         promote_candidate(
             published,
@@ -741,7 +760,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             image=image,
             version="1.2.3",
             workspace=workspace,
-            quay=quay,
+            registry_control=registry_control,
             registry=registry,
             signer=signer,
             public_key=public_key,
@@ -749,7 +768,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
     assert caught.value.code == "CC0603"
-    quay.expirations[tag] = expiration
+    registry_control.expirations[tag] = expiration
 
     registry.resolution_overrides["race"] = Digest("sha256:" + "9" * 64)
     with pytest.raises(OperationalError, match="did not resolve"):
@@ -758,7 +777,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             observation.graph.digest,
             image,
             workspace,
-            quay,
+            registry_control,
             registry,
             None,
             immutable=True,
@@ -790,7 +809,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     )
     workspace.journal.update("tag-1.2.3", ResourceStatus.FAILED)
     tags["v1.2.3"] = observation.graph.digest
-    quay.immutable.add("v1.2.3")
+    registry_control.immutable.add("v1.2.3")
     registry.resolution_overrides["v1.2.3"] = Digest("sha256:" + "9" * 64)
     with pytest.raises(OperationalError, match="conflicting registry observations"):
         promote_candidate(
@@ -799,7 +818,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             image=image,
             version="1.2.3",
             workspace=workspace,
-            quay=quay,
+            registry_control=registry_control,
             registry=registry,
             signer=signer,
             public_key=public_key,
@@ -807,17 +826,17 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
     assert tags["1.2.3"] == observation.graph.digest
-    assert "1.2.3" in quay.immutable
+    assert "1.2.3" in registry_control.immutable
     assert "stable" not in tags
     del registry.resolution_overrides["v1.2.3"]
-    quay.fail_delete = delete_fails
+    registry_control.fail_delete = delete_fails
     promoted = promote_candidate(
         published,
         verification,
         image=image,
         version="1.2.3",
         workspace=workspace,
-        quay=quay,
+        registry_control=registry_control,
         registry=registry,
         signer=signer,
         public_key=public_key,
@@ -837,8 +856,8 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     )
     assert (tag in tags) is delete_fails
     assert tags["1.2.3"] == observation.graph.digest
-    assert "1.2.3" in quay.immutable
-    assert tag not in quay.immutable
+    assert "1.2.3" in registry_control.immutable
+    assert tag not in registry_control.immutable
     candidate_entry = next(
         entry
         for entry in workspace.journal.entries()

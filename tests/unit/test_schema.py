@@ -53,3 +53,24 @@ def test_public_ci_context_is_provider_neutral_and_omits_server_origins() -> Non
     assert list(validator.iter_errors({**context, "repository": "example"}))
     assert list(validator.iter_errors({**context, "runId": "not valid"}))
     validator.validate({**context, "provider": "future-ci"})
+
+
+def test_release_profile_schema_has_a_closed_registry_backend_matrix() -> None:
+    validator = Draft202012Validator(load_schema("profile.schema.json"))
+    profile = {
+        "ci_context": "omit",
+        "cosign_public_key": "/run/secrets/cosign.pub",
+        "registry": {"provider": "quay", "host": "quay.io"},
+    }
+
+    validator.validate(profile)
+    assert list(
+        validator.iter_errors(
+            {**profile, "registry": {"provider": "docker", "host": "docker.io"}}
+        )
+    )
+    assert list(
+        validator.iter_errors(
+            {**profile, "registry": {"provider": "quay", "host": "docker.io"}}
+        )
+    )

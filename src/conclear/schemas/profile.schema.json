@@ -4,14 +4,30 @@
   "title": "ConClear maintainer release profile",
   "type": "object",
   "additionalProperties": false,
-  "required": ["ci_context", "cosign_public_key"],
+  "required": ["ci_context", "registry", "cosign_public_key"],
   "properties": {
     "ci_context": {"enum": ["omit", "observe", "require"]},
     "auth_file": {"type": "string", "minLength": 1},
-    "quay_token_file": {"type": "string", "minLength": 1},
+    "registry": {"$ref": "#/$defs/registry"},
     "cosign_private_key": {"type": "string", "minLength": 1},
     "cosign_public_key": {"type": "string", "minLength": 1},
-    "passphrase_file": {"type": "string", "minLength": 1},
-    "quay_api_url": {"type": "string", "format": "uri", "pattern": "^https://"}
+    "passphrase_file": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "registry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "host"],
+          "properties": {
+            "provider": {"const": "quay"},
+            "host": {"const": "quay.io"},
+            "api_url": {"type": "string", "format": "uri", "pattern": "^https://"},
+            "token_file": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    }
   }
 }

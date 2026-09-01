@@ -8,16 +8,16 @@ from typing import Any
 import click
 
 from conclear.adapters.ci import ObservedCIContext
-from conclear.adapters.quay import QuayAdapter
+from conclear.adapters.registry_control import create_registry_control
 from conclear.config import load_repository_config
 from conclear.database import select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import sha256_bytes
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
+from conclear.registry_control import RegistryControl
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime
-from conclear.secrets import token_provider
 from conclear.services.cleanup import cleanup_run
 from conclear.services.doctor import diagnose_environment
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
@@ -66,18 +66,20 @@ def doctor_command(config_path: Path, profile_name: str, output_format: str) -> 
     """Validate the release environment without publishing or signing."""
     repository = load_repository_config(config_path)
     selected = profile(profile_name)
-    token_path = selected.quay_token_file
-    if token_path is None:
-        raise InvalidInvocationError("Doctor requires a Quay API token")
-    quay = QuayAdapter(
-        api_url=selected.quay_api_url,
-        token_provider=lambda: token_provider(token_path),
+    registry_control = create_registry_control(
+        selected,
+        destinations=tuple(image.repository for image in repository.images),
     )
     try:
         with command_runtime(tuple(ToolName)) as runtime:
-            observation = diagnose_environment(repository, selected, runtime, quay=quay)
+            observation = diagnose_environment(
+                repository,
+                selected,
+                runtime,
+                registry_control=registry_control,
+            )
     finally:
-        quay.close()
+        registry_control.close()
     observed_ci = ci_context(selected)
     emit(
         CommandResult(
@@ -88,7 +90,8 @@ def doctor_command(config_path: Path, profile_name: str, output_format: str) -> 
                 "tools": list(observation.tools),
                 "nativeArchitecture": observation.native_architecture,
                 "emulatedArchitectures": list(observation.emulated_architectures),
-                "quayAccess": observation.quay_access,
+                "registryProvider": observation.registry_provider,
+                "registryAccess": observation.registry_access,
                 "sigstoreAccess": observation.sigstore_access,
                 "ciContextPolicy": selected.ci_context.value,
                 "ciContextObserved": isinstance(observed_ci, ObservedCIContext),
@@ -169,7 +172,7 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
         workspace.root / "environment",
         names=(ToolName.GIT, ToolName.BUILDAH, ToolName.PODMAN),
     )
-    quay: QuayAdapter | None = None
+    registry_control: RegistryControl | None = None
     if profile_name is not None:
         selected = profile(profile_name)
         inputs = workspace.load().immutable_inputs
@@ -179,24 +182,18 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
             recorded = inputs.get(key)
             if recorded is not None and recorded != value:
                 raise InvalidInvocationError("Cleanup release trust profile changed")
-        token_path = selected.quay_token_file
-        if token_path is None:
-            raise InvalidInvocationError("Cleanup profile has no Quay API token")
-        quay = QuayAdapter(
-            api_url=selected.quay_api_url,
-            token_provider=lambda: token_provider(token_path),
-        )
+        registry_control = create_registry_control(selected)
     try:
         result = cleanup_run(
             workspace,
             buildah=runtime.buildah(),
             podman=runtime.podman(),
-            quay=quay,
+            registry_control=registry_control,
             git=runtime.git(),
         )
     finally:
-        if quay is not None:
-            quay.close()
+        if registry_control is not None:
+            registry_control.close()
     emit(
         CommandResult(
             "cleanup",

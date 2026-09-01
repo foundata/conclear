@@ -46,6 +46,12 @@ class CIContextPolicy(StrEnum):
     REQUIRE = "require"
 
 
+class RegistryProvider(StrEnum):
+    """Compiled release-registry control backends."""
+
+    QUAY = "quay"
+
+
 @dataclass(frozen=True, slots=True)
 class EffectiveLimits:
     """Effective intervals after repository narrowing."""
@@ -165,17 +171,29 @@ class RepositoryConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class QuayRegistryConfig:
+    """Protected Quay control-plane configuration."""
+
+    provider: RegistryProvider
+    host: str
+    api_url: str
+    token_file: Path | None
+
+
+type RegistryConfig = QuayRegistryConfig
+
+
+@dataclass(frozen=True, slots=True)
 class ReleaseProfile:
     """Maintainer-controlled trust and credential locations."""
 
     name: str
     ci_context: CIContextPolicy
     auth_file: Path | None
-    quay_token_file: Path | None
+    registry: RegistryConfig
     cosign_private_key: str | None
     cosign_public_key: Path
     passphrase_file: Path | None
-    quay_api_url: str
     configuration_digest: str
     public_key_digest: str
 
@@ -283,7 +301,7 @@ def load_release_profile(
     validate_external(value, "profile.schema.json", label="release profile")
     profile = _object(value)
     auth_file = _optional_private_path(profile.get("auth_file"))
-    token_file = _optional_private_path(profile.get("quay_token_file"))
+    registry = _parse_registry_profile(_object(profile["registry"]))
     public_key = _private_path(profile["cosign_public_key"], allow_group_read=True)
     public_key_bytes = read_protected_file(
         public_key,
@@ -301,13 +319,10 @@ def load_release_profile(
         name=name,
         ci_context=CIContextPolicy(_string(profile["ci_context"])),
         auth_file=auth_file,
-        quay_token_file=token_file,
+        registry=registry,
         cosign_private_key=private_key,
         cosign_public_key=public_key,
         passphrase_file=passphrase_file,
-        quay_api_url=_https_api_url(
-            _string(profile.get("quay_api_url", "https://quay.io/api/v1"))
-        ),
         configuration_digest=sha256_bytes(profile_bytes),
         public_key_digest=sha256_bytes(public_key_bytes),
     )
@@ -369,14 +384,8 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         _string(value["repository"]),
         allow_localhost=False,
     )
-    if repository.registry != "quay.io" or repository.tag or repository.digest:
-        raise InvalidInvocationError(
-            "Release repositories must be untagged quay.io repository names"
-        )
-    if len(repository.repository.split("/")) != 2:
-        raise InvalidInvocationError(
-            "Quay release repositories must use namespace/repository form"
-        )
+    if repository.tag or repository.digest:
+        raise InvalidInvocationError("Release repositories must be untagged names")
     exceptions = tuple(
         _parse_exception(_object(item))
         for item in _list(value.get("vulnerability_exceptions", []))
@@ -522,12 +531,26 @@ def _command(value: object, field_name: str) -> tuple[str, ...]:
     return command
 
 
-def _https_api_url(value: str) -> str:
+def _parse_registry_profile(value: dict[str, Any]) -> RegistryConfig:
+    provider = RegistryProvider(_string(value["provider"]))
+    if provider is RegistryProvider.QUAY:
+        return QuayRegistryConfig(
+            provider=provider,
+            host=_string(value["host"]),
+            api_url=_registry_api_url(
+                _string(value.get("api_url", "https://quay.io/api/v1"))
+            ),
+            token_file=_optional_private_path(value.get("token_file")),
+        )
+    raise InvalidInvocationError(f"Unsupported registry provider: {provider.value}")
+
+
+def _registry_api_url(value: str) -> str:
     try:
         parsed = urlsplit(value)
         port = parsed.port
     except ValueError as exc:
-        raise InvalidInvocationError("Quay API URL is malformed") from exc
+        raise InvalidInvocationError("Registry API URL is malformed") from exc
     if (
         parsed.scheme != "https"
         or parsed.hostname is None
@@ -538,7 +561,7 @@ def _https_api_url(value: str) -> str:
         or _HOST_PATTERN.fullmatch(parsed.hostname.lower()) is None
     ):
         raise InvalidInvocationError(
-            "Quay API URL must be credential-free HTTPS without a query or fragment"
+            "Registry API URL must be credential-free HTTPS without a query or fragment"
         )
     authority = parsed.hostname.lower() + ("" if port is None else f":{port}")
     components = parsed.path.rstrip("/").split("/")[1:]
@@ -546,7 +569,7 @@ def _https_api_url(value: str) -> str:
         _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
         for item in components
     ):
-        raise InvalidInvocationError("Quay API URL must contain a canonical path")
+        raise InvalidInvocationError("Registry API URL must contain a canonical path")
     path = "/" + "/".join(components)
     return urlunsplit(("https", authority, path, "", ""))
 

@@ -3,11 +3,26 @@
 import platform as host_platform
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
-from conclear.adapters.quay import QuayAdapter
 from conclear.config import ReleaseProfile, RepositoryConfig
 from conclear.errors import OperationalError
+from conclear.registry_control import TagObservation
 from conclear.runtime import ApplicationRuntime
+from conclear.values import OCIReference
+
+
+class RegistryDiagnostic(Protocol):
+    """Read-only registry controls exercised by doctor."""
+
+    @property
+    def provider(self) -> str:
+        """Return the compiled registry backend identifier."""
+        ...
+
+    def observe_tag(self, repository: OCIReference, tag: str) -> TagObservation | None:
+        """Observe one exact probe tag."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,7 +32,8 @@ class DoctorObservation:
     tools: tuple[dict[str, object], ...]
     native_architecture: str
     emulated_architectures: tuple[str, ...]
-    quay_access: bool
+    registry_provider: str
+    registry_access: bool
     sigstore_access: bool
 
 
@@ -26,7 +42,7 @@ def diagnose_environment(
     profile: ReleaseProfile,
     runtime: ApplicationRuntime,
     *,
-    quay: QuayAdapter,
+    registry_control: RegistryDiagnostic,
 ) -> DoctorObservation:
     """Exercise read-only prerequisites without publishing or signing content."""
     runtime.buildah().info(
@@ -48,14 +64,15 @@ def diagnose_environment(
             "No enabled binfmt handler was observed for: " + ", ".join(unavailable)
         )
     for image in repository.images:
-        quay.get_tag(image.repository, "conclear-doctor-read-probe")
+        registry_control.observe_tag(image.repository, "conclear-doctor-read-probe")
     runtime.cosign().initialize()
     runtime.assert_unchanged()
     return DoctorObservation(
         tools=tuple(item.to_dict() for item in runtime.identities),
         native_architecture=native,
         emulated_architectures=emulated,
-        quay_access=True,
+        registry_provider=registry_control.provider,
+        registry_access=True,
         sigstore_access=True,
     )
 

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from conclear.adapters.quay import QuayTagObservation
 from conclear.errors import OperationalError
+from conclear.registry_control import TagObservation
 from conclear.values import Digest, OCIReference
 from conclear.workspace import (
     ResourceEntry,
@@ -42,15 +42,15 @@ class RuntimeStorage(Protocol):
 class CandidateRegistry(Protocol):
     """Candidate tag cleanup boundary."""
 
-    def get_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation | None:
+    def observe_tag(self, repository: OCIReference, tag: str) -> TagObservation | None:
         """Observe one exact candidate tag."""
         ...
 
-    def delete_tag(self, repository: OCIReference, tag: str) -> None:
+    def remove_tag(self, repository: OCIReference, tag: str) -> None:
         """Delete and verify one candidate tag."""
         ...
 
-    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
+    def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:
         """Disable and verify candidate immutability before deletion."""
         ...
 
@@ -76,7 +76,7 @@ def cleanup_run(
     *,
     buildah: BuildStorage,
     podman: RuntimeStorage,
-    quay: CandidateRegistry | None,
+    registry_control: CandidateRegistry | None,
     git: SourceWorktree | None = None,
     statuses: frozenset[ResourceStatus] | None = None,
     excluded_kinds: frozenset[ResourceKind] | None = None,
@@ -99,7 +99,12 @@ def cleanup_run(
             continue
         try:
             did_remove = _cleanup_entry(
-                workspace, entry, buildah=buildah, podman=podman, quay=quay, git=git
+                workspace,
+                entry,
+                buildah=buildah,
+                podman=podman,
+                registry_control=registry_control,
+                git=git,
             )
         except Exception as exc:
             failures.append(f"{entry.resource_id}: {exc}")
@@ -121,7 +126,7 @@ def _cleanup_entry(
     *,
     buildah: BuildStorage,
     podman: RuntimeStorage,
-    quay: CandidateRegistry | None,
+    registry_control: CandidateRegistry | None,
     git: SourceWorktree | None,
 ) -> bool:
     if entry.kind is ResourceKind.LOCAL_PATH:
@@ -159,8 +164,8 @@ def _cleanup_entry(
         _remove_local(storage.parent)
         return True
     if entry.kind is ResourceKind.CANDIDATE_REFERENCE:
-        if quay is None:
-            raise OperationalError("Candidate cleanup requires Quay credentials")
+        if registry_control is None:
+            raise OperationalError("Candidate cleanup requires registry credentials")
         reference = OCIReference.parse(entry.identifier, require_tag=True)
         if reference.digest is not None or reference.tag is None:
             raise OperationalError("Journaled candidate reference is malformed")
@@ -171,16 +176,18 @@ def _cleanup_entry(
             )
         expected = Digest(expected_value)
         candidate_repository = OCIReference(reference.registry, reference.repository)
-        observed = quay.get_tag(candidate_repository, reference.tag)
+        observed = registry_control.observe_tag(candidate_repository, reference.tag)
         if observed is None:
             return True
         if observed.digest != expected:
             raise OperationalError("Candidate now names an unowned digest")
         if observed.immutable:
-            observed = quay.set_mutable(candidate_repository, reference.tag)
+            observed = registry_control.ensure_tag_mutable(
+                candidate_repository, reference.tag
+            )
             if observed.digest != expected:
                 raise OperationalError("Candidate changed while removing immutability")
-        quay.delete_tag(candidate_repository, reference.tag)
+        registry_control.remove_tag(candidate_repository, reference.tag)
         return True
     return False
 

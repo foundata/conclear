@@ -23,23 +23,24 @@ def test_real_quay_candidate_can_be_unlocked_and_deleted() -> None:
     token_file = Path(values["token_file"])
     quay = QuayAdapter(
         api_url="https://quay.io/api/v1",
+        registry="quay.io",
         token_provider=lambda: read_secret_file(token_file),
     )
     try:
-        initial = quay.get_tag(repository, tagged.tag)
+        initial = quay.observe_tag(repository, tagged.tag)
         assert initial is not None
         assert initial.digest == expected
 
-        immutable = quay.set_immutable(repository, tagged.tag)
+        immutable = quay.ensure_tag_immutable(repository, tagged.tag)
         assert immutable.digest == expected
         assert immutable.immutable
 
-        mutable = quay.set_mutable(repository, tagged.tag)
+        mutable = quay.ensure_tag_mutable(repository, tagged.tag)
         assert mutable.digest == expected
         assert not mutable.immutable
 
-        quay.delete_tag(repository, tagged.tag)
-        assert quay.get_tag(repository, tagged.tag) is None
+        quay.remove_tag(repository, tagged.tag)
+        assert quay.observe_tag(repository, tagged.tag) is None
     finally:
         quay.close()
 

@@ -17,11 +17,15 @@ class _FakeTool:
         del root, runroot
         return {}
 
+    def initialize(self) -> None:
+        pass
+
 
 class _FakeRuntime:
     def __init__(self, root: Path) -> None:
         self.root = root
         self._tool = _FakeTool()
+        self.identities: tuple[object, ...] = ()
 
     def buildah(self) -> _FakeTool:
         return self._tool
@@ -29,11 +33,52 @@ class _FakeRuntime:
     def podman(self) -> _FakeTool:
         return self._tool
 
+    def cosign(self) -> _FakeTool:
+        return self._tool
 
-class _UnexpectedQuay:
-    def get_tag(self, repository: object, tag: str) -> None:
+    def assert_unchanged(self) -> None:
+        pass
+
+
+class _UnexpectedRegistryControl:
+    @property
+    def provider(self) -> str:
+        return "quay"
+
+    def observe_tag(self, repository: object, tag: str) -> None:
         del repository, tag
-        pytest.fail("doctor must reject missing binfmt before probing Quay")
+        pytest.fail("doctor must reject missing binfmt before probing the registry")
+
+
+class _FakeRegistryControl:
+    def __init__(self) -> None:
+        self.observed = 0
+
+    @property
+    def provider(self) -> str:
+        return "quay"
+
+    def observe_tag(self, repository: object, tag: str) -> None:
+        del repository, tag
+        self.observed += 1
+
+
+def test_doctor_reports_selected_registry_backend(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+    registry_control = _FakeRegistryControl()
+
+    observation = diagnose_environment(
+        repository,
+        cast(Any, object()),
+        cast(Any, _FakeRuntime(tmp_path)),
+        registry_control=cast(Any, registry_control),
+    )
+
+    assert observation.registry_provider == "quay"
+    assert observation.registry_access
+    assert registry_control.observed == len(repository.images)
 
 
 def test_missing_binfmt_handler_is_an_operational_failure(
@@ -63,7 +108,7 @@ def test_missing_binfmt_handler_is_an_operational_failure(
             repository,
             cast(Any, object()),
             cast(Any, _FakeRuntime(tmp_path)),
-            quay=cast(Any, _UnexpectedQuay()),
+            registry_control=cast(Any, _UnexpectedRegistryControl()),
         )
 
     assert raised.value.exit_status is ExitStatus.OPERATIONAL_FAILURE

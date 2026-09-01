@@ -13,6 +13,8 @@ import conclear.services.assembly as assembly_module
 import conclear.services.publication as publication_module
 from conclear.config import (
     CIContextPolicy,
+    QuayRegistryConfig,
+    RegistryProvider,
     ReleaseProfile,
     load_repository_config,
 )
@@ -26,6 +28,7 @@ from conclear.jsonutil import sha256_bytes
 from conclear.records import SourceIdentity
 from conclear.services import release
 from conclear.services.release import ReleaseRequest
+from conclear.values import OCIReference
 from conclear.workspace import RunState, RunWorkspace
 from tests.release_fakes import FakeRuntime
 
@@ -40,11 +43,15 @@ def profile(tmp_path: Path) -> ReleaseProfile:
         name="production",
         ci_context=CIContextPolicy.OMIT,
         auth_file=None,
-        quay_token_file=tmp_path / "quay-token",
+        registry=QuayRegistryConfig(
+            RegistryProvider.QUAY,
+            "quay.io",
+            "https://quay.io/api/v1",
+            tmp_path / "quay-token",
+        ),
         cosign_private_key=str(tmp_path / "cosign.key"),
         cosign_public_key=tmp_path / "cosign.pub",
         passphrase_file=None,
-        quay_api_url="https://quay.io/api/v1",
         configuration_digest="sha256:" + "a" * 64,
         public_key_digest="sha256:" + "b" * 64,
     )
@@ -123,17 +130,22 @@ def test_release_does_not_promote_until_verification_transitions_state(
     profile_value = profile(tmp_path)
     run_workspace = workspace(tmp_path, profile_value, RunState.ATTESTED)
     published = SimpleNamespace(immutable_reference=object())
-    image = object()
+    image = SimpleNamespace(repository=object())
     repository = SimpleNamespace(image=lambda _image_id: image)
     runtime = SimpleNamespace(
         skopeo=lambda: object(),
         cosign=lambda: object(),
     )
-    quay = SimpleNamespace(close=lambda: None)
+    registry_control = SimpleNamespace(close=lambda: None)
     monkeypatch.setattr(release, "load_candidate", lambda *_args: object())
     monkeypatch.setattr(release, "load_release_evidence", lambda *_args: object())
     monkeypatch.setattr(release, "load_published", lambda *_args: published)
-    monkeypatch.setattr(release, "quay_adapter", lambda _profile: quay)
+    monkeypatch.setattr(
+        release,
+        "create_registry_control",
+        lambda _profile, *, destinations: registry_control,
+    )
+    monkeypatch.setattr(release, "validate_registry_destinations", lambda *_args: None)
     monkeypatch.setattr(release, "signer_identity", lambda *_args: ("key", "id"))
     monkeypatch.setattr(release, "verify_candidate", lambda *_args, **_kwargs: None)
 
@@ -190,6 +202,43 @@ def test_release_rejects_invalid_version_before_source_isolation(
         release.execute_release(request)
 
 
+def test_full_release_rejects_unsupported_registry_before_qualification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile_value = profile(tmp_path)
+    run_workspace = workspace(tmp_path, profile_value, RunState.CREATED)
+    image = SimpleNamespace(repository=OCIReference.parse("docker.io/example/app"))
+    repository = SimpleNamespace(image=lambda _image_id: image)
+
+    def unexpected_qualification(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("unsupported registry reached qualification")
+
+    monkeypatch.setattr(release, "_qualify_release", unexpected_qualification)
+    request = ReleaseRequest(
+        repository=tmp_path / "repository",
+        revision="a" * 40,
+        image_id="app",
+        version="1.2.3",
+        profile=profile_value,
+        state_home=tmp_path / "state",
+        cache_home=tmp_path / "cache",
+        passphrase=None,
+        ci_context=None,
+    )
+
+    with pytest.raises(InvalidInvocationError, match=r"does not support docker\.io"):
+        release._continue_release(
+            request,
+            repository=cast(Any, repository),
+            workspace=run_workspace,
+            runtime=cast(Any, object()),
+            source=cast(Any, object()),
+            source_time=datetime(2026, 1, 1, tzinfo=UTC),
+            started_at=datetime(2026, 1, 1, tzinfo=UTC),
+            now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+
 def test_execute_release_drives_every_phase_to_verified_promotion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -232,7 +281,11 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
         source_time=datetime(2026, 1, 1, tzinfo=UTC),
     )
     monkeypatch.setattr(release, "create_source_run", lambda **_kwargs: source_run)
-    monkeypatch.setattr(release, "quay_adapter", lambda _profile: runtime.quay)
+    monkeypatch.setattr(
+        release,
+        "create_registry_control",
+        lambda _profile, *, destinations: runtime.registry_control,
+    )
 
     result = release.execute_release(
         ReleaseRequest(
@@ -254,7 +307,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
     assert result.subject.endswith("@" + result.tags[0][1])
     assert [tag for tag, _digest in result.tags] == ["1.2.3", "stable"]
     assert runtime.signer.signatures == {result.subject}
-    assert runtime.quay.closed
+    assert runtime.registry_control.closed
     summary = json.loads(
         (run_workspace.root / "summary.json").read_text(encoding="utf-8")
     )

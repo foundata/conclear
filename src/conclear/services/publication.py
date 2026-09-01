@@ -10,7 +10,6 @@ from conclear.adapters.cosign import (
     SignatureObservation,
     VerificationObservation,
 )
-from conclear.adapters.quay import QuayTagObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
@@ -39,6 +38,7 @@ from conclear.records import (
     Verdict,
     validate_record,
 )
+from conclear.registry_control import RegistryControl
 from conclear.schema import validate_external
 from conclear.services.assembly import CandidateResult
 from conclear.services.ci_context import PublicCIContext
@@ -88,38 +88,6 @@ class Registry(Protocol):
         auth_file: Path | None,
     ) -> RegistryCopyObservation:
         """Copy and validate one complete remote graph."""
-        ...
-
-
-class Quay(Protocol):
-    """Quay tag controls used by publication workflows."""
-
-    def get_tag(self, repository: OCIReference, tag: str) -> QuayTagObservation | None:
-        """Read one exact tag."""
-        ...
-
-    def set_expiration(
-        self, repository: OCIReference, tag: str, expiration: datetime
-    ) -> QuayTagObservation:
-        """Set and verify expiration."""
-        ...
-
-    def set_immutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
-        """Enable and verify immutability."""
-        ...
-
-    def set_mutable(self, repository: OCIReference, tag: str) -> QuayTagObservation:
-        """Disable and verify immutability before owned candidate deletion."""
-        ...
-
-    def write_tag(
-        self, repository: OCIReference, tag: str, digest: Digest
-    ) -> QuayTagObservation:
-        """Write and verify one tag."""
-        ...
-
-    def delete_tag(self, repository: OCIReference, tag: str) -> None:
-        """Delete and verify one tag."""
         ...
 
 
@@ -191,7 +159,7 @@ class Signer(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class PublishedCandidate:
-    """A candidate copied, graph-verified and expiration-controlled on Quay."""
+    """A graph-verified candidate with a registry-enforced lifetime."""
 
     reference: OCIReference
     immutable_reference: OCIReference
@@ -243,7 +211,7 @@ def publish_candidate(
     image: ImageConfig,
     workspace: RunWorkspace,
     registry: Registry,
-    quay: Quay,
+    registry_control: RegistryControl,
     auth_file: Path | None,
     now: datetime,
 ) -> PublishedCandidate:
@@ -267,7 +235,7 @@ def publish_candidate(
             image=image,
             workspace=workspace,
             registry=registry,
-            quay=quay,
+            registry_control=registry_control,
             auth_file=auth_file,
             now=now,
         )
@@ -298,11 +266,13 @@ def publish_candidate(
             raise OperationalError(
                 f"Published digest {remote_digest} differs from accepted {candidate.observation.graph.digest}"
             )
-        expiration_observation = quay.set_expiration(
+        expiration_observation = registry_control.enforce_candidate_lifetime(
             image.repository, candidate.candidate_tag, expiration
         )
         if expiration_observation.digest != remote_digest:
-            raise OperationalError("Quay expiration update observed another digest")
+            raise OperationalError(
+                "Registry candidate-lifetime update observed another digest"
+            )
         immutable = image.repository.with_digest(remote_digest)
         remote = registry.copy_registry_to_layout(
             source=immutable,
@@ -316,7 +286,7 @@ def publish_candidate(
         _require_same_graph(candidate.observation.graph, remote.graph)
         immutable_enabled = False
         try:
-            immutable_observation = quay.set_immutable(
+            immutable_observation = registry_control.ensure_tag_immutable(
                 image.repository, candidate.candidate_tag
             )
             immutable_enabled = immutable_observation.immutable
@@ -348,7 +318,7 @@ def _resume_published_candidate(
     image: ImageConfig,
     workspace: RunWorkspace,
     registry: Registry,
-    quay: Quay,
+    registry_control: RegistryControl,
     auth_file: Path | None,
     now: datetime,
 ) -> PublishedCandidate:
@@ -371,15 +341,19 @@ def _resume_published_candidate(
         ) from exc
     if expiration.tzinfo is None or now.astimezone(UTC) >= expiration.astimezone(UTC):
         raise RuleRejectionError("Candidate expired before resume", code="CC0603")
-    tag_observation = quay.get_tag(image.repository, candidate.candidate_tag)
+    tag_observation = registry_control.observe_tag(
+        image.repository, candidate.candidate_tag
+    )
     if tag_observation is None or tag_observation.digest != observed:
-        raise OperationalError("Quay candidate state differs during resume")
+        raise OperationalError("Registry candidate state differs during resume")
     if tag_observation.expiration != expiration:
-        tag_observation = quay.set_expiration(
+        tag_observation = registry_control.enforce_candidate_lifetime(
             image.repository, candidate.candidate_tag, expiration
         )
         if tag_observation.digest != observed:
-            raise OperationalError("Quay expiration update observed another digest")
+            raise OperationalError(
+                "Registry candidate-lifetime update observed another digest"
+            )
     immutable = image.repository.with_digest(observed)
     remote = registry.copy_registry_to_layout(
         source=immutable,
@@ -875,7 +849,7 @@ def promote_candidate(
     image: ImageConfig,
     version: str | None,
     workspace: RunWorkspace,
-    quay: Quay,
+    registry_control: RegistryControl,
     registry: Registry,
     signer: Signer,
     public_key: Path,
@@ -885,7 +859,9 @@ def promote_candidate(
     """Repeat verification, apply exact digest tags and remove the candidate tag."""
     if workspace.load().state is not RunState.VERIFIED:
         raise InvalidInvocationError("Promotion requires verified state")
-    tag_state = quay.get_tag(image.repository, published.reference.tag or "")
+    tag_state = registry_control.observe_tag(
+        image.repository, published.reference.tag or ""
+    )
     if tag_state is None or tag_state.digest != published.graph.digest:
         raise OperationalError("Candidate tag changed before promotion")
     if tag_state.expiration is None:
@@ -916,7 +892,7 @@ def promote_candidate(
         )
     observed: list[tuple[str, Digest]] = []
     for tag in immutable_tags:
-        current = quay.get_tag(image.repository, tag)
+        current = registry_control.observe_tag(image.repository, tag)
         if current is not None and current.digest != published.graph.digest:
             raise RuleRejectionError(
                 f"Immutable release tag already names another digest: {tag}",
@@ -933,7 +909,7 @@ def promote_candidate(
                     published.graph.digest,
                     image,
                     workspace,
-                    quay,
+                    registry_control,
                     registry,
                     auth_file,
                     immutable=True,
@@ -941,7 +917,9 @@ def promote_candidate(
                 observed.append((tag, published.graph.digest))
                 continue
             if not current.immutable:
-                immutable_result = quay.set_immutable(image.repository, tag)
+                immutable_result = registry_control.ensure_tag_immutable(
+                    image.repository, tag
+                )
                 if not immutable_result.immutable:
                     raise OperationalError(
                         f"Immutable release tag was not protected: {tag}"
@@ -960,7 +938,7 @@ def promote_candidate(
             published.graph.digest,
             image,
             workspace,
-            quay,
+            registry_control,
             registry,
             auth_file,
             immutable=True,
@@ -972,7 +950,7 @@ def promote_candidate(
             published.graph.digest,
             image,
             workspace,
-            quay,
+            registry_control,
             registry,
             auth_file,
             immutable=False,
@@ -981,12 +959,14 @@ def promote_candidate(
     workspace.transition(RunState.PROMOTED, now=now)
     try:
         if tag_state.immutable:
-            mutable = quay.set_mutable(image.repository, published.reference.tag or "")
+            mutable = registry_control.ensure_tag_mutable(
+                image.repository, published.reference.tag or ""
+            )
             if mutable.digest != published.graph.digest:
                 raise OperationalError(
                     "Candidate tag changed while removing immutability"
                 )
-        quay.delete_tag(image.repository, published.reference.tag or "")
+        registry_control.remove_tag(image.repository, published.reference.tag or "")
         workspace.journal.update("candidate", ResourceStatus.REMOVED)
     except Exception:
         return PromotionResult(
@@ -1009,7 +989,7 @@ def _write_release_tag(
     digest: Digest,
     image: ImageConfig,
     workspace: RunWorkspace,
-    quay: Quay,
+    registry_control: RegistryControl,
     registry: Registry,
     auth_file: Path | None,
     *,
@@ -1026,7 +1006,7 @@ def _write_release_tag(
         metadata=metadata,
     )
     if existing is not None:
-        current = quay.get_tag(image.repository, tag)
+        current = registry_control.observe_tag(image.repository, tag)
         if current is not None and current.digest == digest:
             resolved = registry.resolve_digest(tagged, auth_file=auth_file)
             if resolved != digest:
@@ -1034,7 +1014,7 @@ def _write_release_tag(
                     f"Release tag {tag} has conflicting registry observations"
                 )
             if immutable and not current.immutable:
-                current = quay.set_immutable(image.repository, tag)
+                current = registry_control.ensure_tag_immutable(image.repository, tag)
                 if current.digest != digest or not current.immutable:
                     raise OperationalError(
                         f"Immutable release tag was not protected: {tag}"
@@ -1052,14 +1032,16 @@ def _write_release_tag(
             metadata=metadata,
         )
     try:
-        result = quay.write_tag(image.repository, tag, digest)
+        result = registry_control.assign_tag(image.repository, tag, digest)
         resolved = registry.resolve_digest(tagged, auth_file=auth_file)
         if result.digest != digest or resolved != digest:
             raise OperationalError(
                 f"Release tag {tag} did not resolve to verified digest"
             )
         if immutable:
-            immutable_result = quay.set_immutable(image.repository, tag)
+            immutable_result = registry_control.ensure_tag_immutable(
+                image.repository, tag
+            )
             if not immutable_result.immutable:
                 raise OperationalError(
                     f"Immutable release tag was not protected: {tag}"
