@@ -156,21 +156,37 @@ uv run mypy --strict src tests
 
 ### Commit messages and scopes<a id="commit-scopes"></a>
 
-Commit messages follow the foundata guideline (`guidelines/git-commits.md`): `<scope>: <description>`, imperative, lowercase description, body only for context the diff cannot preserve. Scopes in use:
+Commit messages follow the foundata guideline (`guidelines/git-commits.md`): `<scope>: <description>`, imperative, lowercase description, body only for context the diff cannot preserve. Choose the narrowest stable project area affected by the commit. ConClear uses these recurring scopes:
 
 | Scope | Area |
 |---|---|
-| `cli`, `errors`, `presentation` | `cli.py`, error classification, human and JSON output |
-| `config`, `records`, `state` | configuration, record envelopes, run workspace and journal |
-| `checks`, `catalog`, `conformance` | static checks, the `CCnnnn` catalog, generated documentation |
-| `adapters`, and per-tool scopes such as `trivy`, `quay`, `cosign` | `src/conclear/adapters/` |
-| `qualification`, `assembly`, `publication`, `promotion`, `verification`, `rescan`, `cleanup` | `src/conclear/services/` |
-| `process`, `runtime`, `security` | supervised execution, isolated storage, hardening |
-| `ci` | CI-environment observation and identity binding |
-| `architecture` | `ARCHITECTURE.md` contract changes |
-| `tests` | the test suite |
-| `packaging`, `dependencies` | packaging, lock file |
-| `licensing`, `release`, `repository`/`repo` | licensing files, release preparation, repository-wide concerns |
+| `architecture` | Changes to the contract in `ARCHITECTURE.md` |
+| `catalog` | Stable `CCnnnn` definitions, conformance generation and generated conformance documentation |
+| `checks` | Containerfile, context and lint finding checks |
+| `ci` | CI identity observation and trust binding, excluding CI gate configuration |
+| `cli` | Click command parsing, command composition, presentation and command-specific diagnostics |
+| `config` | External configuration, release profiles and their schemas |
+| `errors` | Shared error taxonomy, exit classification and diagnostic identifiers |
+| `parsing` | Shared validation and resource bounds for untrusted structured input |
+| `process` | Supervised child processes, sanitized environments, redaction and executable discovery |
+| `records` | Public record envelopes, layouts, schemas and deterministic serialization |
+| `workspace` | Run state, ownership journals, atomic local writes and persisted workspace validation |
+| `qualification` | Source isolation, build-context checks, pins, image builds, runtime tests and per-platform evidence |
+| `assembly` | Verified multi-platform OCI assembly |
+| `scanner` | Scan policy, immutable database snapshots and scanner behavior shared by qualification and rescans |
+| `release` | Release-run orchestration, resume behavior and terminal summaries |
+| `publication` | Candidate publication, registry observation, attestations, signing, verification and promotion |
+| `rescan` | Post-release scanning, triage, remediation history and rescan cleanup |
+| `adapters` | Shared adapter contracts or one change spanning several external tools |
+| `buildah`, `cosign`, `hadolint`, `podman`, `quay`, `skopeo`, `trivy` | Behavior confined to one external tool adapter |
+| `build` | Python packaging, distribution identity, the lock file, the clean-checkout release gate and CI gate configuration |
+| `dependencies` | Dependency-only changes |
+| `licensing` | License texts, SPDX metadata and REUSE configuration |
+| `repository` | Repository-wide non-code concerns such as contributor documentation and ignore rules |
+| `tests` | Cross-cutting test infrastructure or coverage not attributable to one subsystem |
+| `project` | Initial establishment of the application when no narrower subsystem describes the change |
+
+Use one canonical scope for each area. Do not alternate `packaging` with `build`, `state` with `workspace`, `runtime` or `tools` with `process`, `promotion` or `verification` with `publication`, or `design` with `architecture`. A new stable subsystem may introduce a scope when none of the documented scopes fits; the table is a reference rather than a closed registry.
 
 `docs` is not a scope: the foundata guideline lists it among the Conventional Commits types a scope must not be written as. A commit that only changes documentation still uses the scope of the subsystem it documents, or a cross-cutting scope such as `repository` when the documentation is not about one subsystem.
 
