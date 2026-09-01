@@ -1,8 +1,8 @@
-# ConClear design
+# ConClear architecture
 
-This document defines the intended architecture and behavioral contracts of ConClear. It is a living design document for contributors and reviewers; implementation status belongs in tests, issues and release notes rather than in a roadmap here.
+This document defines the intended architecture and behavioral contracts of ConClear. It is a living document for contributors and reviewers; implementation status belongs in tests, issues and release notes rather than in a roadmap here.
 
-The [foundata OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md) is normative. This design explains how ConClear implements that guide's automatable rules. Each ConClear release selects and embeds an exact guide revision; when the documents conflict, that selected guide revision takes precedence and this document must be corrected.
+The [foundata OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md) is normative. This document explains how ConClear implements that guide's automatable rules. Each ConClear release selects and embeds an exact guide revision; when the documents conflict, that selected guide revision takes precedence and this document must be corrected.
 
 The terms MUST, SHOULD and MAY are used as defined in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119) and [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 
@@ -27,7 +27,7 @@ The terms MUST, SHOULD and MAY are used as defined in [RFC 2119](https://datatra
 - [Rescans](#rescans)
 - [Implementation structure](#implementation-structure)
 - [Testing](#testing)
-- [Maintaining this design](#maintaining-this-design)
+- [Maintaining this document](#maintaining-this-document)
 
 
 
@@ -410,7 +410,7 @@ The acceptance test for release behavior is a complete workstation invocation fr
 
 
 
-## Maintaining this design<a id="maintaining-this-design"></a>
+## Maintaining this document<a id="maintaining-this-document"></a>
 
 This document describes target behavior, including behavior not yet implemented. Contributors update it in the same pull request as an intentional architectural or public-contract change. Work sequencing and release timing belong in issues or project planning, not in this document.
 

@@ -43,7 +43,7 @@ module-root = "src"
 source-include = [
   "CONTRIBUTING.md",
   "DEVELOPMENT.md",
-  "DESIGN.md",
+  "ARCHITECTURE.md",
   "REUSE.toml",
   "docs/**",
   "tests/**",
