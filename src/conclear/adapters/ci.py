@@ -55,6 +55,8 @@ _PROVIDERS = {
         "FORGEJO_SHA",
         "FORGEJO_RUN_ID",
     ),
+    # Gitea's native gitea.* values are expression contexts; its documented
+    # process environment retains GITHUB_* for these identity fields.
     "gitea-actions": _ProviderSpec(
         "gitea-actions",
         "GITHUB_SERVER_URL",
