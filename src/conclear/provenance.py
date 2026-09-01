@@ -41,7 +41,6 @@ class ProvenanceInput:
     image_id: str
     version: str | None
     run_id: str
-    mode: str
     started_at: datetime
     finished_at: datetime
     materials: tuple[ProvenanceMaterial, ...]
@@ -52,8 +51,6 @@ def generate_provenance(value: ProvenanceInput, output_path: Path) -> str:
     validate_run_id(value.run_id)
     validate_source_revision(value.source_revision)
     validate_source_revision(IDENTITY.source_revision)
-    if value.mode not in {"local", "ci"}:
-        raise OperationalError("Release mode must be local or ci")
     if value.started_at.tzinfo is None or value.finished_at.tzinfo is None:
         raise OperationalError("Provenance timestamps must be timezone-aware")
     if value.finished_at < value.started_at:
@@ -99,7 +96,6 @@ def generate_provenance(value: ProvenanceInput, output_path: Path) -> str:
                     "imageId": value.image_id,
                     "version": value.version,
                     "runId": value.run_id,
-                    "mode": value.mode,
                     "platforms": [
                         str(platform) for platform, _digest in value.platform_manifests
                     ],

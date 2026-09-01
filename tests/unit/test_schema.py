@@ -37,20 +37,19 @@ def test_public_record_schema_has_a_stable_identifier() -> None:
     )
 
 
-def test_public_ci_identity_omits_non_public_server_origins() -> None:
-    ci_schema = load_schema("record.schema.json")["$defs"]["ciIdentity"]
+def test_public_ci_context_is_provider_neutral_and_omits_server_origins() -> None:
+    ci_schema = load_schema("record.schema.json")["$defs"]["ciContext"]
     validator = Draft202012Validator(ci_schema)
-    identity = {
+    context = {
         "provider": "gitlab-ci",
+        "source": "provider-environment",
         "repository": "foundata/conclear",
-        "pipelineId": "123",
-        "jobId": "456",
         "revision": "a" * 40,
+        "runId": "123",
     }
 
-    validator.validate(identity)
-    validator.validate({**identity, "server": "https://gitlab.com"})
-    assert list(
-        validator.iter_errors({**identity, "server": "https://ci.internal.example"})
-    )
-    assert list(validator.iter_errors({**identity, "provider": "unsupported-ci"}))
+    validator.validate(context)
+    assert list(validator.iter_errors({**context, "server": "https://github.com"}))
+    assert list(validator.iter_errors({**context, "repository": "example"}))
+    assert list(validator.iter_errors({**context, "runId": "not valid"}))
+    validator.validate({**context, "provider": "future-ci"})

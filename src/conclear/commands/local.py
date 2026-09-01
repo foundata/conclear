@@ -118,7 +118,6 @@ def build_command(
         state_home=state_home(),
         names=(ToolName.BUILDAH,),
         profile_name="none" if selected is None else selected.name,
-        mode="local" if selected is None else selected.mode.value,
         additional_inputs=None if selected is None else profile_inputs(selected),
     )
     inputs = _inputs(source_run, platform_text, selected)
@@ -273,7 +272,6 @@ def qualify_command(
         state_home=state_home(),
         names=tuple(ToolName),
         profile_name="none" if selected is None else selected.name,
-        mode="local" if selected is None else selected.mode.value,
         additional_inputs=additional_inputs or None,
     )
     image = source_run.repository.image(image_id)

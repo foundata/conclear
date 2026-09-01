@@ -8,6 +8,7 @@ import pytest
 
 import conclear.config as config_module
 from conclear.config import (
+    CIContextPolicy,
     load_release_profile,
     load_repository_config,
     normalize_source_url,
@@ -176,7 +177,27 @@ def test_repository_configuration_classifies_parser_recursion(
         load_repository_config(path)
 
 
-def test_release_profile_rejects_group_writable_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize("policy", tuple(CIContextPolicy))
+def test_release_profile_requires_explicit_ci_context_policy(
+    tmp_path: Path, policy: CIContextPolicy
+) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    profile = profile_directory / "release.toml"
+    profile.write_text(
+        f'ci_context = "{policy.value}"\ncosign_public_key = "{public_key}"\n',
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    assert load_release_profile("release", config_home=config_home).ci_context is policy
+
+
+def test_release_profile_rejects_legacy_release_mode(tmp_path: Path) -> None:
     config_home = tmp_path / "config"
     profile_directory = config_home / "conclear"
     profile_directory.mkdir(parents=True)
@@ -186,6 +207,24 @@ def test_release_profile_rejects_group_writable_file(tmp_path: Path) -> None:
     profile = profile_directory / "release.toml"
     profile.write_text(
         f'mode = "local"\ncosign_public_key = "{public_key}"\n',
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError, match="ci_context"):
+        load_release_profile("release", config_home=config_home)
+
+
+def test_release_profile_rejects_group_writable_file(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    profile = profile_directory / "release.toml"
+    profile.write_text(
+        f'ci_context = "omit"\ncosign_public_key = "{public_key}"\n',
         encoding="utf-8",
     )
     profile.chmod(0o620)
@@ -208,7 +247,7 @@ def test_release_profile_rejects_credentials_in_hsm_handle(tmp_path: Path) -> No
     profile.write_text(
         "\n".join(
             (
-                'mode = "local"',
+                'ci_context = "omit"',
                 f'cosign_public_key = "{public_key}"',
                 'cosign_private_key = "pkcs11:token=test;pin-value=secret"',
             )
@@ -235,7 +274,7 @@ def test_release_profile_resolves_file_signing_key(tmp_path: Path) -> None:
     profile.write_text(
         "\n".join(
             (
-                'mode = "local"',
+                'ci_context = "omit"',
                 f'cosign_public_key = "{public_key}"',
                 f'cosign_private_key = "{private_key}"',
             )
@@ -260,7 +299,7 @@ def test_release_profile_rejects_ambiguous_quay_api_url(tmp_path: Path) -> None:
     profile.write_text(
         "\n".join(
             (
-                'mode = "local"',
+                'ci_context = "omit"',
                 f'cosign_public_key = "{public_key}"',
                 'quay_api_url = "https://user:secret@quay.io/api/v1"',
             )

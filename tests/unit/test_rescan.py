@@ -423,7 +423,6 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             },
             "platformDigests": {str(platform): str(manifest_digest)},
             "releaseEnvironment": {
-                "mode": "local",
                 "hostArchitecture": "x86_64",
                 "runId": run.run_id,
             },

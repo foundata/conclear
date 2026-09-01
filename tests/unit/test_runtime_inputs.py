@@ -5,12 +5,10 @@ from pathlib import Path
 import pytest
 
 from conclear.adapters.trivy import DatabaseObservation
-from conclear.ci import observe_ci_identity, validate_ci_identity
 from conclear.database import select_database_by_digest, select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.fileio import read_regular_file
 from conclear.jsonutil import load_json, sha256_file
-from conclear.records import SourceIdentity
 from conclear.secrets import MAX_SECRET_BYTES, read_secret_fd, read_secret_file
 from conclear.values import Digest
 from conclear.workspace import (
@@ -206,105 +204,6 @@ def test_regular_file_reader_rejects_symlink_and_oversized_file(
         read_regular_file(link, maximum_bytes=32, label="test input")
     with pytest.raises(InvalidInvocationError, match="size limit"):
         read_regular_file(target, maximum_bytes=4, label="test input")
-
-
-def test_ci_identity_requires_complete_validated_provider_values() -> None:
-    identity = observe_ci_identity(
-        {
-            "GITLAB_CI": "true",
-            "CI_SERVER_URL": "https://gitlab.com",
-            "CI_PROJECT_PATH": "foundata/example",
-            "CI_PIPELINE_ID": "1234",
-            "CI_JOB_ID": "5678",
-            "CI_COMMIT_SHA": "a" * 40,
-        }
-    )
-
-    assert identity["provider"] == "gitlab-ci"
-    with pytest.raises(InvalidInvocationError, match="pipeline id"):
-        observe_ci_identity(
-            {
-                "GITLAB_CI": "true",
-                "CI_SERVER_URL": "https://gitlab.com",
-                "CI_PROJECT_PATH": "foundata/example",
-                "CI_PIPELINE_ID": "not-a-number",
-                "CI_JOB_ID": "5678",
-                "CI_COMMIT_SHA": "a" * 40,
-            }
-        )
-
-
-@pytest.mark.parametrize(
-    ("repository", "revision", "message"),
-    [
-        ("foundata/other", "a" * 40, "repository differs"),
-        ("foundata/example", "b" * 40, "revision differs"),
-    ],
-)
-def test_ci_identity_must_match_isolated_checkout(
-    repository: str, revision: str, message: str
-) -> None:
-    identity = observe_ci_identity(
-        {
-            "GITLAB_CI": "true",
-            "CI_SERVER_URL": "https://gitlab.com",
-            "CI_PROJECT_PATH": repository,
-            "CI_PIPELINE_ID": "1234",
-            "CI_JOB_ID": "5678",
-            "CI_COMMIT_SHA": revision,
-        }
-    )
-    source = SourceIdentity("https://gitlab.com/foundata/example", "a" * 40)
-
-    with pytest.raises(OperationalError, match=message):
-        validate_ci_identity(identity, source)
-
-
-def test_ci_identity_is_bound_to_matching_isolated_checkout() -> None:
-    identity = observe_ci_identity(
-        {
-            "GITLAB_CI": "true",
-            "CI_SERVER_URL": "https://gitlab.com",
-            "CI_PROJECT_PATH": "foundata/example",
-            "CI_PIPELINE_ID": "1234",
-            "CI_JOB_ID": "5678",
-            "CI_COMMIT_SHA": "a" * 40,
-        }
-    )
-
-    assert (
-        validate_ci_identity(
-            identity,
-            SourceIdentity("https://gitlab.com/foundata/example", "a" * 40),
-        )
-        == identity
-    )
-
-
-def test_internal_ci_server_is_kept_only_in_local_diagnostics(
-    tmp_path: Path,
-) -> None:
-    server = "https://gitlab.internal.example"
-    identity = observe_ci_identity(
-        {
-            "GITLAB_CI": "true",
-            "CI_SERVER_URL": server,
-            "CI_PROJECT_PATH": "foundata/example",
-            "CI_PIPELINE_ID": "1234",
-            "CI_JOB_ID": "5678",
-            "CI_COMMIT_SHA": "a" * 40,
-        }
-    )
-    diagnostic = tmp_path / "ci-identity.json"
-
-    public_identity = validate_ci_identity(
-        identity,
-        SourceIdentity(f"{server}/foundata/example", "a" * 40),
-        diagnostic_path=diagnostic,
-    )
-
-    assert "server" not in public_identity
-    assert load_json(diagnostic)["ciIdentity"]["server"] == server
 
 
 def test_removed_resource_identifier_can_be_planned_for_bounded_retry(

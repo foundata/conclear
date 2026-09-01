@@ -21,7 +21,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Local integration tests](#local-integration-tests)
   - [Network tests](#network-tests)
 - [Generated conformance catalog](#conformance-catalog)
-- [CI identity trust](#ci-identity-trust)
+- [CI context observation](#ci-context-observation)
 - [Recommended development workflow](#development-workflow)
   - [Before making changes](#before-making-changes)
   - [Making changes](#making-changes)
@@ -168,7 +168,7 @@ Commit messages follow the [foundata guideline (`guidelines/git-commits.md`)](ht
 | `architecture` | Changes to the contract in `ARCHITECTURE.md` |
 | `catalog` | Stable `CCnnnn` definitions, conformance generation and generated conformance documentation |
 | `checks` | Containerfile, context and lint finding checks |
-| `ci` | CI identity observation and trust binding, excluding CI gate configuration |
+| `ci` | Optional CI context observation and checkout binding, excluding CI gate configuration |
 | `cli` | Click command parsing, command composition, presentation and command-specific diagnostics |
 | `config` | External configuration, release profiles and their schemas |
 | `errors` | Shared error taxonomy, exit classification and diagnostic identifiers |
@@ -309,9 +309,21 @@ uv run python -m conclear.conformance --check
 Commit a catalog change together with the check definition, implementation, tests and affected documentation. Continuous integration verifies that identifiers are unique and well formed, that every claimed guide anchor exists at the embedded revision and that the committed document matches the generator.
 
 
-## CI identity trust<a id="ci-identity-trust"></a>
+## CI context observation<a id="ci-context-observation"></a>
 
-Before GitLab CI metadata enters signed release evidence, ConClear requires the claimed project and revision to match the canonical repository and commit observed from the isolated checkout. The job and pipeline identifiers remain observations from the protected runner environment rather than independently authenticated identities, and an internal server origin is omitted from public evidence.
+The protected release profile chooses `omit`, `observe` or `require`. ConClear has environment adapters for GitHub Actions, GitLab CI, Gitea Actions, Forgejo Actions and Woodpecker CI. Provider-specific markers are required, and the Gitea and Forgejo adapters take precedence over their GitHub-compatible variables. Forgejo observation requires Forgejo Runner 7 or newer because earlier runners expose only GitHub-compatible names and cannot be identified reliably.
+
+| Provider | Marker | Origin | Repository | Revision | Run |
+|---|---|---|---|---|---|
+| [GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/variables) | `GITHUB_ACTIONS` with the GitHub API URL convention | `GITHUB_SERVER_URL` | `GITHUB_REPOSITORY` | `GITHUB_SHA` | `GITHUB_RUN_ID` |
+| [GitLab CI](https://docs.gitlab.com/ci/variables/predefined_variables/) | `GITLAB_CI` | `CI_SERVER_URL` | `CI_PROJECT_PATH` | `CI_COMMIT_SHA` | `CI_PIPELINE_ID` |
+| [Gitea Actions](https://docs.gitea.com/usage/actions/actions-variables/) | `GITEA_ACTIONS` | `GITHUB_SERVER_URL` | `GITHUB_REPOSITORY` | `GITHUB_SHA` | `GITHUB_RUN_ID` |
+| [Forgejo Actions](https://forgejo.org/docs/v15.0/user/actions/reference/) | `FORGEJO_ACTIONS` | `FORGEJO_SERVER_URL` | `FORGEJO_REPOSITORY` | `FORGEJO_SHA` | `FORGEJO_RUN_ID` |
+| [Woodpecker CI](https://woodpecker-ci.org/docs/usage/environment) | `CI` or `CI_SYSTEM_NAME` equal to `woodpecker` | `CI_FORGE_URL` | `CI_REPO` | `CI_COMMIT_SHA` | `CI_PIPELINE_NUMBER` |
+
+Before observed context enters signed release evidence, ConClear requires its repository and revision to match the canonical repository and commit from the isolated checkout. The public shape contains only a normalized provider, `provider-environment` source, repository, revision and provider run identifier. Internal service origins remain in local diagnostics.
+
+Provider environment variables are ordinary process inputs. They support audit correlation but do not authenticate the runner or authorize a release. Tests and code must not use CI context to replace the source checkout, builder identity, signer identity, ConClear run identifier, artifact digest or release verdict.
 
 ConClear does not acquire or accept OIDC tokens because the release profile defines no issuer and audience trust root against which to authenticate those claims.
 

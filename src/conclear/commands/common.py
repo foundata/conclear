@@ -9,7 +9,11 @@ from pathlib import Path
 
 import click
 
-from conclear.config import ReleaseMode, ReleaseProfile, load_release_profile
+from conclear.adapters.ci import (
+    CIContextObservation,
+    observe_ci_context,
+)
+from conclear.config import CIContextPolicy, ReleaseProfile, load_release_profile
 from conclear.presentation import CommandResult, present_human, present_json
 from conclear.runtime import ApplicationRuntime
 from conclear.secrets import read_passphrase
@@ -71,10 +75,8 @@ def command_runtime(names: tuple[ToolName, ...]) -> Iterator[ApplicationRuntime]
         yield ApplicationRuntime.create(Path(temporary), names=names)
 
 
-def ci_identity(selected: ReleaseProfile) -> dict[str, object] | None:
-    """Observe CI identity only when the protected profile selects CI mode."""
-    if selected.mode is ReleaseMode.LOCAL:
+def ci_context(selected: ReleaseProfile) -> CIContextObservation | None:
+    """Observe optional CI context according to protected profile policy."""
+    if selected.ci_context is CIContextPolicy.OMIT:
         return None
-    from conclear.ci import observe_ci_identity
-
-    return observe_ci_identity(os.environ)
+    return observe_ci_context(os.environ)

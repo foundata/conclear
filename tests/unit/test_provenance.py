@@ -35,7 +35,6 @@ def test_provenance_uses_observed_builder_source_and_subject_identities(
             image_id="example",
             version="1.2.3",
             run_id="01arz3ndektsv4rrffq69g5fav",
-            mode="local",
             started_at=datetime(2026, 1, 1, tzinfo=UTC),
             finished_at=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
             materials=(ProvenanceMaterial("Containerfile", digest),),

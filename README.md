@@ -69,7 +69,7 @@ Repository behavior is declared in a reviewed `conclear.toml` at the selected so
 Trust roots, signing keys and registry credentials stay outside the repository, in a named profile such as `$XDG_CONFIG_HOME/conclear/foundata.toml`:
 
 ```toml
-mode = "local"
+ci_context = "observe"
 auth_file = "/home/example/.config/containers/auth.json"
 quay_token_file = "/home/example/.config/conclear/quay.token"
 cosign_private_key = "/home/example/.config/conclear/cosign.key"
@@ -78,6 +78,8 @@ passphrase_file = "/home/example/.config/conclear/cosign.passphrase"
 ```
 
 The profile and every secret file must be owned by the invoking user and carry private permissions. CI may supply the signing passphrase through `--passphrase-fd` instead of a file. Secret values are never accepted through project configuration, command-line literals or inherited environment variables.
+
+`ci_context` controls optional CI correlation metadata. `omit` does not inspect CI variables, `observe` records complete matching context when available, and `require` stops when recognized context is absent, malformed or inconsistent with the isolated checkout. ConClear recognizes GitHub Actions, GitLab CI, Gitea Actions, Forgejo Actions and Woodpecker CI. The normalized public record contains the provider, repository, full revision and provider run identifier. Provider environment variables are not authentication and never control the release verdict, source identity, signer identity or artifact digest.
 
 
 ### Running a release<a id="usage-release"></a>

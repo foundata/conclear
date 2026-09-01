@@ -102,7 +102,7 @@ The release state advances monotonically through `created`, `qualified`, `assemb
 3. Runtime tests use a digest-reverified import of the exact OCI layout that qualification records.
 4. Required skipped tests produce an incomplete run, not a successful qualification.
 5. `conclear.toml` may narrow built-in rules but cannot relax an unconditional `MUST` or `MUST NOT` or extend a built-in maximum.
-6. A local release and a CI release use the same state machine and can produce equally authoritative evidence.
+6. A workstation invocation and a CI invocation use the same state machine and can produce equally authoritative evidence.
 7. Source identity comes from the isolated Git checkout, builder identity comes from ConClear's embedded version data, and signer identity comes from the configured signing key. Caller-provided labels cannot replace these observations.
 8. A candidate reference is generated once and is reused after an ambiguous write only when the registry resolves it conclusively to the unchanged expected digest within its recorded lifetime; otherwise the release requires a new run and candidate reference.
 9. Promotion writes only the digest accepted by release verification and verifies every written tag by resolving it again.
@@ -174,7 +174,9 @@ Vulnerability exceptions use a dedicated typed table and contain every field req
 
 Maintainer-controlled release configuration is separate from the application repository. A named profile under `$XDG_CONFIG_HOME/conclear/` may identify a containers-auth file, a Quay API token provider, Cosign private-key and public-key paths, a passphrase provider, or a KMS/HSM key handle. It contains trust and credential locations, not alternative guide rules or secret values. ConClear rejects release configuration and file-based credentials with unsafe ownership or permissions.
 
-The release profile also identifies the environment as `local` or `ci`. Local mode is the workstation default and records no username or hostname. CI mode supports GitLab CI and requires a protected adapter that observes the repository, job and pipeline identifiers without trusting project-supplied ordinary environment values. Public evidence omits internal hostnames, filesystem paths and credential-bearing URLs.
+The release profile configures optional CI context handling as `omit`, `observe` or `require`. `omit` does not inspect provider variables. `observe` records complete context that agrees with the isolated checkout and otherwise writes a local diagnostic without changing the release result. `require` treats missing, malformed or inconsistent context as an operational failure. ConClear recognizes GitHub Actions, GitLab CI, Gitea Actions, Forgejo Actions and Woodpecker CI through provider-specific adapters. Gitea and Forgejo markers take precedence over their GitHub-compatible variables.
+
+Public CI context has one provider-neutral shape: provider, `provider-environment` source, repository, full source revision and provider run identifier. The values are correlation metadata from ordinary process environment variables, not authenticated CI identity. They cannot override the isolated checkout, builder, signer, ConClear run identifier, artifact digest or release verdict. Full provider origins stay in local diagnostics so signed public evidence does not disclose internal hostnames.
 
 On a workstation, the signing passphrase may be read from the controlling terminal. Automation may provide a read-once file descriptor or mounted secret. If Cosign requires a child-process environment variable, ConClear creates it only for that Cosign process from the protected source and removes it from all logs and evidence. Secret values are never inherited from ordinary project environment configuration.
 
@@ -251,7 +253,7 @@ Every record is UTF-8 JSON validated against a versioned schema. It includes `sc
 
 `release-candidate.json` binds exactly one accepted qualification per required platform, every qualification and payload digest, every platform-manifest digest, the index digest when present, the required and accepted platform sets, candidate naming inputs and the aggregate verdict. A single-platform release uses the same aggregate schema and assembly step.
 
-`release-verification.json` contains the subject and platform digests; ConClear version and source revision; guide title, repository, path and revision; SHA-256 of `conclear.toml`; release-environment mode, host architecture, run identity and observed CI identity when applicable; signer mode and public-key fingerprint or managed-key identity; and digests of the qualifications, SBOMs, scan results, provenance and candidate record. It is an intermediate predicate, not a source comment or committed project file. Its signed registry attestation is authoritative.
+`release-verification.json` contains the subject and platform digests; ConClear version and source revision; guide title, repository, path and revision; SHA-256 of `conclear.toml`; host architecture, run identity and optional observed CI context; signer mode and public-key fingerprint or managed-key identity; and digests of the qualifications, SBOMs, scan results, provenance and candidate record. It is an intermediate predicate, not a source comment or committed project file. Its signed registry attestation is authoritative.
 
 A run workspace is stored under `$XDG_STATE_HOME/conclear/runs/<run-id>/`:
 
@@ -334,7 +336,7 @@ After successful promotion, ConClear deletes the candidate tag and verifies its 
 
 ## Provenance, signing and verification<a id="provenance-signing-and-verification"></a>
 
-ConClear generates release provenance as an in-toto Statement with a SLSA Provenance v1 predicate. It derives the subject graph from `release-candidate.json`, source identity from the isolated Git checkout, builder identity from embedded ConClear data, and the release mode and run identity from observed execution. Repository configuration, labels and arbitrary command-line values cannot override those identities.
+ConClear generates release provenance as an in-toto Statement with a SLSA Provenance v1 predicate. It derives the subject graph from `release-candidate.json`, source identity from the isolated Git checkout, builder identity from embedded ConClear data, and the run identity from observed execution. Repository configuration, labels and arbitrary command-line values cannot override those identities.
 
 The SLSA builder ID is `https://github.com/foundata/conclear/commit/<full-source-revision>`. Materials include the canonical source repository and full commit, Containerfile, repository configuration, external image digests and other integrity-checked dependencies known to the build. Parameters exclude credentials and secret values.
 

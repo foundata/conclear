@@ -7,6 +7,7 @@ from typing import Any
 
 import click
 
+from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.quay import QuayAdapter
 from conclear.config import load_repository_config
 from conclear.database import select_fresh_database
@@ -32,7 +33,7 @@ from conclear.workspace import RunWorkspace
 
 from .common import (
     cache_home,
-    ci_identity,
+    ci_context,
     command_runtime,
     emit,
     profile,
@@ -77,7 +78,7 @@ def doctor_command(config_path: Path, profile_name: str, output_format: str) -> 
             observation = diagnose_environment(repository, selected, runtime, quay=quay)
     finally:
         quay.close()
-    observed_ci = ci_identity(selected)
+    observed_ci = ci_context(selected)
     emit(
         CommandResult(
             "doctor",
@@ -89,8 +90,13 @@ def doctor_command(config_path: Path, profile_name: str, output_format: str) -> 
                 "emulatedArchitectures": list(observation.emulated_architectures),
                 "quayAccess": observation.quay_access,
                 "sigstoreAccess": observation.sigstore_access,
-                "mode": selected.mode.value,
-                **({} if observed_ci is None else {"ciIdentity": observed_ci}),
+                "ciContextPolicy": selected.ci_context.value,
+                "ciContextObserved": isinstance(observed_ci, ObservedCIContext),
+                **(
+                    {"ciProvider": observed_ci.provider}
+                    if isinstance(observed_ci, ObservedCIContext)
+                    else {}
+                ),
             },
         ),
         output_format,
@@ -253,7 +259,6 @@ def rescan_command(
             "subject": str(subject),
             "image": image_id,
             "profile": selected.name,
-            "mode": selected.mode.value,
             "configurationDigest": configuration_digest,
             **profile_inputs(selected),
         },

@@ -12,7 +12,7 @@ import conclear.records as records_module
 import conclear.services.assembly as assembly_module
 import conclear.services.publication as publication_module
 from conclear.config import (
-    ReleaseMode,
+    CIContextPolicy,
     ReleaseProfile,
     load_repository_config,
 )
@@ -38,7 +38,7 @@ class FixedIdFactory:
 def profile(tmp_path: Path) -> ReleaseProfile:
     return ReleaseProfile(
         name="production",
-        mode=ReleaseMode.LOCAL,
+        ci_context=CIContextPolicy.OMIT,
         auth_file=None,
         quay_token_file=tmp_path / "quay-token",
         cosign_private_key=str(tmp_path / "cosign.key"),
@@ -64,7 +64,6 @@ def workspace(
             "image": "app",
             "version": "1.2.3",
             "profile": profile_value.name,
-            "mode": profile_value.mode.value,
             "profileConfigurationDigest": profile_value.configuration_digest,
             "profilePublicKeyDigest": profile_value.public_key_digest,
         },
@@ -114,7 +113,7 @@ def test_resume_release_refuses_terminal_state_before_continuing(
             state_home=tmp_path / "state",
             cache_home=tmp_path / "cache",
             passphrase=None,
-            ci_identity=None,
+            ci_context=None,
         )
 
 
@@ -151,7 +150,7 @@ def test_release_does_not_promote_until_verification_transitions_state(
         state_home=tmp_path / "state",
         cache_home=tmp_path / "cache",
         passphrase=None,
-        ci_identity=None,
+        ci_context=None,
     )
 
     with pytest.raises(OperationalError, match="did not reach the verified state"):
@@ -179,7 +178,7 @@ def test_release_rejects_invalid_version_before_source_isolation(
         state_home=tmp_path / "state",
         cache_home=tmp_path / "cache",
         passphrase=None,
-        ci_identity=None,
+        ci_context=None,
     )
 
     def unexpected_source_isolation(**_kwargs: object) -> None:
@@ -216,7 +215,6 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
             "image": "app",
             "version": "1.2.3",
             "profile": profile_value.name,
-            "mode": profile_value.mode.value,
             "profileConfigurationDigest": profile_value.configuration_digest,
             "profilePublicKeyDigest": profile_value.public_key_digest,
         },
@@ -246,7 +244,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
             state_home=tmp_path / "state",
             cache_home=tmp_path / "cache",
             passphrase=None,
-            ci_identity=None,
+            ci_context=None,
         ),
         now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -288,7 +286,7 @@ def test_resume_release_rejects_changed_trust_profile_before_continuing(
             state_home=tmp_path / "state",
             cache_home=tmp_path / "cache",
             passphrase=None,
-            ci_identity=None,
+            ci_context=None,
         )
 
 

@@ -20,8 +20,7 @@ from conclear.attestations import (
     statement_matches,
     write_statement,
 )
-from conclear.ci import validate_ci_identity
-from conclear.config import ImageConfig, ReleaseProfile
+from conclear.config import CIContextPolicy, ImageConfig, ReleaseProfile
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -42,6 +41,7 @@ from conclear.records import (
 )
 from conclear.schema import validate_external
 from conclear.services.assembly import CandidateResult
+from conclear.services.ci_context import PublicCIContext
 from conclear.spdx import validate_spdx_document
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import (
@@ -623,7 +623,7 @@ def verify_candidate(
     signer_mode: str,
     signer_key_id: str,
     host_architecture: str,
-    ci_identity: dict[str, object] | None,
+    ci_context: PublicCIContext | None,
     now: datetime,
 ) -> VerificationResult:
     """Verify every subject and evidence payload, then sign the verification result."""
@@ -633,16 +633,10 @@ def verify_candidate(
         raise InvalidInvocationError("Unsupported signer mode")
     if not signer_key_id:
         raise InvalidInvocationError("Signer identity must not be empty")
-    if profile.mode.value == "local" and ci_identity is not None:
-        raise InvalidInvocationError("Local releases cannot claim a CI identity")
-    if profile.mode.value == "ci" and ci_identity is None:
-        raise InvalidInvocationError("CI releases require an observed CI identity")
-    if ci_identity is not None:
-        ci_identity = validate_ci_identity(
-            ci_identity,
-            evidence.source,
-            diagnostic_path=workspace.root / "reports" / "ci-identity.json",
-        )
+    if profile.ci_context is CIContextPolicy.OMIT and ci_context is not None:
+        raise InvalidInvocationError("CI context must be omitted by this profile")
+    if profile.ci_context is CIContextPolicy.REQUIRE and ci_context is None:
+        raise OperationalError("Required CI context is unavailable")
     Digest(evidence.configuration_digest)
     for evidence_digest in (
         *evidence.qualification_digests,
@@ -726,10 +720,11 @@ def verify_candidate(
             str(platform): str(digest) for platform, digest in manifest_map.items()
         },
         "releaseEnvironment": {
-            "mode": profile.mode.value,
             "hostArchitecture": host_architecture,
             "runId": workspace.run_id,
-            **({} if ci_identity is None else {"ciIdentity": ci_identity}),
+            **(
+                {} if ci_context is None else {"ciContext": ci_context.to_public_dict()}
+            ),
         },
         "signer": {"mode": signer_mode, "keyId": signer_key_id},
         "evidence": {
@@ -1250,7 +1245,6 @@ def validate_release_provenance(
         "imageId": image.image_id,
         "version": snapshot.immutable_inputs.get("version") or None,
         "runId": workspace.run_id,
-        "mode": snapshot.immutable_inputs.get("mode", "local"),
         "platforms": [
             str(manifest.platform)
             for manifest in sorted(graph.manifests, key=lambda value: value.platform)

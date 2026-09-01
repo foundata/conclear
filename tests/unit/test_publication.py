@@ -24,7 +24,7 @@ from conclear.attestations import (
     SPDX_DOCUMENT_TYPE,
     STATEMENT_TYPE,
 )
-from conclear.config import ReleaseMode, ReleaseProfile, load_repository_config
+from conclear.config import CIContextPolicy, ReleaseProfile, load_repository_config
 from conclear.errors import OperationalError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
@@ -37,6 +37,7 @@ from conclear.jsonutil import (
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.services.assembly import CandidateResult
+from conclear.services.ci_context import PublicCIContext
 from conclear.services.publication import (
     ReleaseEvidence,
     VerificationResult,
@@ -472,7 +473,6 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             "configurationDigest": "sha256:" + "2" * 64,
             "image": "app",
             "version": "1.2.3",
-            "mode": "local",
         },
         id_factory=IdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
@@ -529,7 +529,6 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             image_id=image.image_id,
             version="1.2.3",
             run_id=workspace.run_id,
-            mode="local",
             started_at=datetime(2026, 1, 1, tzinfo=UTC),
             finished_at=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
             materials=(),
@@ -558,7 +557,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     public_key.write_text("test public key", encoding="utf-8")
     profile = ReleaseProfile(
         name="test",
-        mode=ReleaseMode.LOCAL,
+        ci_context=CIContextPolicy.OBSERVE,
         auth_file=None,
         quay_token_file=None,
         cosign_private_key="test.key",
@@ -671,7 +670,12 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             signer_mode="managed-key",
             signer_key_id="sha256:" + "4" * 64,
             host_architecture="x86_64",
-            ci_identity=None,
+            ci_context=PublicCIContext(
+                provider="github-actions",
+                repository="foundata/example",
+                revision="b" * 40,
+                run_id="1234",
+            ),
             now=now,
         )
 
@@ -694,6 +698,17 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     )
     statement_content = verification.statement_path.read_bytes()
     statement_value = json.loads(statement_content)
+    assert statement_value["predicate"]["payload"]["releaseEnvironment"] == {
+        "hostArchitecture": "x86_64",
+        "runId": workspace.run_id,
+        "ciContext": {
+            "provider": "github-actions",
+            "source": "provider-environment",
+            "repository": "foundata/example",
+            "revision": "b" * 40,
+            "runId": "1234",
+        },
+    }
     statement_value["predicate"]["verdict"] = "rejected"
     verification.statement_path.write_text(
         json.dumps(statement_value), encoding="utf-8"

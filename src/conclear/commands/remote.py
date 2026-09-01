@@ -20,6 +20,7 @@ from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import sha256_bytes
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.provenance import ProvenanceInput, generate_provenance
+from conclear.services.ci_context import resolve_ci_context
 from conclear.services.publication import (
     attest_candidate,
     promote_candidate,
@@ -41,7 +42,7 @@ from conclear.workspace import RunState
 
 from .common import (
     cache_home,
-    ci_identity,
+    ci_context,
     emit,
     profile,
     signing_passphrase,
@@ -95,7 +96,6 @@ def provenance_command(run_id: str, output_format: str) -> None:
                 image_id=image.image_id,
                 version=snapshot.immutable_inputs.get("version") or None,
                 run_id=source_run.workspace.run_id,
-                mode=snapshot.immutable_inputs.get("mode", "local"),
                 started_at=_timestamp(snapshot.created_at),
                 finished_at=datetime.now(UTC),
                 materials=materials,
@@ -215,6 +215,12 @@ def verify_command(
     evidence = load_release_evidence(source_run.workspace, image)
     signer = source_run.runtime.cosign()
     mode, key_id = signer_identity(selected, signer)
+    public_ci_context = resolve_ci_context(
+        ci_context(selected),
+        policy=selected.ci_context,
+        source=evidence.source,
+        diagnostic_path=source_run.workspace.root / "reports" / "ci-context.json",
+    )
     result = verify_candidate(
         published,
         candidate,
@@ -230,7 +236,7 @@ def verify_command(
         signer_mode=mode,
         signer_key_id=key_id,
         host_architecture=host_platform.machine(),
-        ci_identity=ci_identity(selected),
+        ci_context=public_ci_context,
         now=datetime.now(UTC),
     )
     emit(
@@ -335,7 +341,7 @@ def release_command(
     selected = profile(profile_name)
     _private_key(selected)
     passphrase = signing_passphrase(selected, passphrase_fd, required=True)
-    observed_ci = ci_identity(selected)
+    observed_ci = ci_context(selected)
     if resume_id is not None:
         if selector is not None or image_id is not None or release_version is not None:
             raise click.UsageError(
@@ -348,7 +354,7 @@ def release_command(
             state_home=state_home(),
             cache_home=cache_home(),
             passphrase=passphrase,
-            ci_identity=observed_ci,
+            ci_context=observed_ci,
         )
     else:
         if selector is None or image_id is None:
@@ -363,7 +369,7 @@ def release_command(
                 state_home=state_home(),
                 cache_home=cache_home(),
                 passphrase=passphrase,
-                ci_identity=observed_ci,
+                ci_context=observed_ci,
             )
         )
     emit(
@@ -394,10 +400,7 @@ def _remote_run(run_id: str, profile_name: str) -> tuple[SourceRun, ReleaseProfi
         state_home=state_home(), run_id=run_id, names=tuple(ToolName)
     )
     inputs = source_run.workspace.load().immutable_inputs
-    if (
-        inputs.get("profile") != selected.name
-        or inputs.get("mode") != selected.mode.value
-    ):
+    if inputs.get("profile") != selected.name:
         raise InvalidInvocationError("Release profile differs from recorded run input")
     if any(inputs.get(key) != value for key, value in profile_inputs(selected).items()):
         raise InvalidInvocationError(

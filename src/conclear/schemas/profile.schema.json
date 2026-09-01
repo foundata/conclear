@@ -4,9 +4,9 @@
   "title": "ConClear maintainer release profile",
   "type": "object",
   "additionalProperties": false,
-  "required": ["mode", "cosign_public_key"],
+  "required": ["ci_context", "cosign_public_key"],
   "properties": {
-    "mode": {"enum": ["local", "ci"]},
+    "ci_context": {"enum": ["omit", "observe", "require"]},
     "auth_file": {"type": "string", "minLength": 1},
     "quay_token_file": {"type": "string", "minLength": 1},
     "cosign_private_key": {"type": "string", "minLength": 1},

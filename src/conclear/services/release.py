@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import override
 
+from conclear.adapters.ci import CIContextObservation
 from conclear.adapters.quay import QuayAdapter
 from conclear.artifacts import (
     load_candidate,
@@ -17,7 +18,7 @@ from conclear.artifacts import (
     qualification_transport,
     qualification_transports,
 )
-from conclear.config import ReleaseMode, ReleaseProfile, RepositoryConfig
+from conclear.config import ReleaseProfile, RepositoryConfig
 from conclear.database import select_fresh_database
 from conclear.errors import (
     ConClearError,
@@ -35,6 +36,7 @@ from conclear.runtime import ApplicationRuntime
 from conclear.secrets import token_provider
 from conclear.services.assembly import CandidateResult, assemble_candidate
 from conclear.services.checking import check_image
+from conclear.services.ci_context import resolve_ci_context
 from conclear.services.cleanup import cleanup_run
 from conclear.services.publication import (
     PromotionResult,
@@ -77,7 +79,7 @@ class ReleaseRequest:
     state_home: Path
     cache_home: Path
     passphrase: str | None
-    ci_identity: dict[str, object] | None
+    ci_context: CIContextObservation | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +125,6 @@ def execute_release(
         state_home=request.state_home,
         names=tuple(ToolName),
         profile_name=request.profile.name,
-        mode=request.profile.mode.value,
         additional_inputs=_profile_inputs(request.profile),
         id_factory=id_factory or UlidFactory(),
         now=started_at,
@@ -154,7 +155,7 @@ def resume_release(
     state_home: Path,
     cache_home: Path,
     passphrase: str | None,
-    ci_identity: dict[str, object] | None,
+    ci_context: CIContextObservation | None,
     now_factory: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ReleaseResult:
     """Resume a non-terminal release after revalidating every immutable input."""
@@ -170,10 +171,7 @@ def resume_release(
     source_root = repository.resolve(strict=True)
     if expected.get("sourceRoot") != str(source_root):
         raise InvalidInvocationError("Resume source repository differs from the run")
-    if (
-        expected.get("profile") != profile.name
-        or expected.get("mode") != profile.mode.value
-    ):
+    if expected.get("profile") != profile.name:
         raise InvalidInvocationError("Resume profile differs from the run")
     for key, value in _profile_inputs(profile).items():
         if expected.get(key) != value:
@@ -225,7 +223,7 @@ def resume_release(
         state_home=state_home,
         cache_home=cache_home,
         passphrase=passphrase,
-        ci_identity=ci_identity,
+        ci_context=ci_context,
     )
     try:
         return _continue_release(
@@ -255,10 +253,12 @@ def _continue_release(
     now_factory: Callable[[], datetime],
 ) -> ReleaseResult:
     image = repository.image(request.image_id)
-    if request.profile.mode is ReleaseMode.LOCAL and request.ci_identity is not None:
-        raise InvalidInvocationError("Local releases cannot include CI identity")
-    if request.profile.mode is ReleaseMode.CI and request.ci_identity is None:
-        raise InvalidInvocationError("CI releases require observed CI identity")
+    public_ci_context = resolve_ci_context(
+        request.ci_context,
+        policy=request.profile.ci_context,
+        source=source,
+        diagnostic_path=workspace.root / "reports" / "ci-context.json",
+    )
     if workspace.load().state is RunState.CREATED:
         _qualify_release(
             request,
@@ -345,7 +345,7 @@ def _continue_release(
                 signer_mode=mode,
                 signer_key_id=key_id,
                 host_architecture=host_platform.machine(),
-                ci_identity=request.ci_identity,
+                ci_context=public_ci_context,
                 now=now_factory(),
             )
         if workspace.load().state is not RunState.VERIFIED:
@@ -498,7 +498,6 @@ def _generate_release_provenance(
             image_id=request.image_id,
             version=request.version,
             run_id=workspace.run_id,
-            mode=request.profile.mode.value,
             started_at=started_at,
             finished_at=now,
             materials=materials,

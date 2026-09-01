@@ -38,11 +38,12 @@ class PinIntent(StrEnum):
     MOVING_RELEASE_LINE = "moving-release-line"
 
 
-class ReleaseMode(StrEnum):
-    """Observed release environment class."""
+class CIContextPolicy(StrEnum):
+    """Protected policy for optional CI correlation observations."""
 
-    LOCAL = "local"
-    CI = "ci"
+    OMIT = "omit"
+    OBSERVE = "observe"
+    REQUIRE = "require"
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +169,7 @@ class ReleaseProfile:
     """Maintainer-controlled trust and credential locations."""
 
     name: str
-    mode: ReleaseMode
+    ci_context: CIContextPolicy
     auth_file: Path | None
     quay_token_file: Path | None
     cosign_private_key: str | None
@@ -298,7 +299,7 @@ def load_release_profile(
     )
     return ReleaseProfile(
         name=name,
-        mode=ReleaseMode(_string(profile["mode"])),
+        ci_context=CIContextPolicy(_string(profile["ci_context"])),
         auth_file=auth_file,
         quay_token_file=token_file,
         cosign_private_key=private_key,

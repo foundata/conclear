@@ -50,7 +50,6 @@ def create_source_run(
     state_home: Path,
     names: tuple[ToolName, ...],
     profile_name: str = "none",
-    mode: str = "local",
     additional_inputs: dict[str, str] | None = None,
     id_factory: IdFactory | None = None,
     now: datetime | None = None,
@@ -75,7 +74,6 @@ def create_source_run(
         "image",
         "version",
         "profile",
-        "mode",
     }
     additions = additional_inputs or {}
     conflicts = reserved_inputs & additions.keys()
@@ -92,7 +90,6 @@ def create_source_run(
             "image": image_id,
             "version": version or "",
             "profile": profile_name,
-            "mode": mode,
             **additions,
         },
         id_factory=id_factory or UlidFactory(),

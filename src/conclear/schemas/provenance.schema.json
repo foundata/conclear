@@ -46,12 +46,11 @@
             "externalParameters": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["imageId", "version", "runId", "mode", "platforms"],
+              "required": ["imageId", "version", "runId", "platforms"],
               "properties": {
                 "imageId": {"type": "string", "minLength": 1},
                 "version": {"type": ["string", "null"]},
                 "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
-                "mode": {"enum": ["local", "ci"]},
                 "platforms": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}
               }
             },
