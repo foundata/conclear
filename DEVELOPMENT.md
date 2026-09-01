@@ -45,16 +45,21 @@ Hermetic unit tests need no container tools, credentials or network access.
 ## Getting started<a id="getting-started"></a>
 
 1. Clone the repository:
+
    ```sh
    git clone https://github.com/foundata/conclear.git
    cd conclear
    ```
+
 2. Set up the development environment from the committed lock file:
+
    ```sh
    # Install all dependencies including development dependencies
    uv sync --frozen --all-groups
    ```
+
 3. Test that the installation works:
+
    ```sh
    # Show the command hierarchy
    uv run conclear --help
@@ -69,7 +74,7 @@ Hermetic unit tests need no container tools, credentials or network access.
 
 ## Project structure<a id="project-structure"></a>
 
-```
+```text
 conclear/
 ├── CONTRIBUTING.md
 ├── ARCHITECTURE.md                     # Normative behavioral contract
@@ -215,6 +220,8 @@ Do not add a changelog before the project reaches 1.0.0. Do not prepare releases
 
 ## Testing<a id="testing"></a>
 
+The default suite is hermetic. Tests that need local tools or external services use explicit opt-in tiers.
+
 ### Running tests<a id="running-tests"></a>
 
 ```sh
@@ -311,14 +318,18 @@ ConClear does not acquire or accept OIDC tokens because the release profile defi
 
 ## Recommended development workflow<a id="development-workflow"></a>
 
+Routine changes begin from a passing branch and keep behavior, tests and affected documentation together.
+
 ### Before making changes<a id="before-making-changes"></a>
 
 1. **Create a feature branch**:
+
    ```sh
    git checkout -b feature/your-feature-name
    ```
 
 2. **Ensure the suite passes**:
+
    ```sh
    uv run pytest
    ```
@@ -372,6 +383,8 @@ The source tree uses `development-source-tree` as its local identity. Distributi
 
 
 ## Troubleshooting<a id="troubleshooting"></a>
+
+Keep validation and test isolation intact when resolving the following failures.
 
 ### Common issues<a id="common-issues"></a>
 
