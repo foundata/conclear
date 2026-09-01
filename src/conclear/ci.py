@@ -11,27 +11,11 @@ from conclear.jsonutil import atomic_write_json
 from conclear.records import SourceIdentity
 from conclear.values import validate_source_revision
 
-PUBLIC_CI_SERVERS = frozenset({"https://github.com", "https://gitlab.com"})
+PUBLIC_CI_SERVERS = frozenset({"https://gitlab.com"})
 
 
 def observe_ci_identity(environment: Mapping[str, str]) -> dict[str, object]:
     """Return a narrow validated identity for a supported protected CI provider."""
-    if environment.get("GITHUB_ACTIONS") == "true":
-        server = _https_url(environment.get("GITHUB_SERVER_URL"), "GitHub server")
-        repository = _name(environment.get("GITHUB_REPOSITORY"), "GitHub repository")
-        workflow = _name(environment.get("GITHUB_WORKFLOW_REF"), "GitHub workflow")
-        run_id = _digits(environment.get("GITHUB_RUN_ID"), "GitHub run id")
-        revision = validate_source_revision(
-            _name(environment.get("GITHUB_SHA"), "GitHub revision")
-        )
-        return {
-            "provider": "github-actions",
-            "server": server,
-            "repository": repository,
-            "workflow": workflow,
-            "runId": run_id,
-            "revision": revision,
-        }
     if environment.get("GITLAB_CI") == "true":
         server = _https_url(environment.get("CI_SERVER_URL"), "GitLab server")
         project = _name(environment.get("CI_PROJECT_PATH"), "GitLab project")
@@ -59,59 +43,28 @@ def validate_ci_identity(
 ) -> dict[str, object]:
     """Bind CI metadata to the checkout and return its public representation."""
     provider = identity.get("provider")
-    result: dict[str, object]
-    if provider == "github-actions":
-        expected_keys = {
-            "provider",
-            "server",
-            "repository",
-            "workflow",
-            "runId",
-            "revision",
-        }
-        server = _https_url(_optional_string(identity.get("server")), "GitHub server")
-        repository = _name(
-            _optional_string(identity.get("repository")), "GitHub repository"
-        )
-        workflow = _name(_optional_string(identity.get("workflow")), "GitHub workflow")
-        run_id = _digits(_optional_string(identity.get("runId")), "GitHub run id")
-        if not workflow.startswith(f"{repository}/.github/workflows/"):
-            raise OperationalError(
-                "GitHub workflow identity differs from its claimed repository"
-            )
-        result = {
-            "provider": provider,
-            "server": server,
-            "repository": repository,
-            "workflow": workflow,
-            "runId": run_id,
-            "revision": _revision(identity.get("revision")),
-        }
-    elif provider == "gitlab-ci":
-        expected_keys = {
-            "provider",
-            "server",
-            "repository",
-            "pipelineId",
-            "jobId",
-            "revision",
-        }
-        server = _https_url(_optional_string(identity.get("server")), "GitLab server")
-        repository = _name(
-            _optional_string(identity.get("repository")), "GitLab project"
-        )
-        result = {
-            "provider": provider,
-            "server": server,
-            "repository": repository,
-            "pipelineId": _digits(
-                _optional_string(identity.get("pipelineId")), "GitLab pipeline id"
-            ),
-            "jobId": _digits(_optional_string(identity.get("jobId")), "GitLab job id"),
-            "revision": _revision(identity.get("revision")),
-        }
-    else:
+    if provider != "gitlab-ci":
         raise OperationalError("Observed CI provider is unsupported")
+    expected_keys = {
+        "provider",
+        "server",
+        "repository",
+        "pipelineId",
+        "jobId",
+        "revision",
+    }
+    server = _https_url(_optional_string(identity.get("server")), "GitLab server")
+    repository = _name(_optional_string(identity.get("repository")), "GitLab project")
+    result: dict[str, object] = {
+        "provider": provider,
+        "server": server,
+        "repository": repository,
+        "pipelineId": _digits(
+            _optional_string(identity.get("pipelineId")), "GitLab pipeline id"
+        ),
+        "jobId": _digits(_optional_string(identity.get("jobId")), "GitLab job id"),
+        "revision": _revision(identity.get("revision")),
+    }
     if set(identity) != expected_keys:
         raise OperationalError("Observed CI identity fields are malformed")
     try:

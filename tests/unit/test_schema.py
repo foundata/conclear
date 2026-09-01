@@ -41,15 +41,16 @@ def test_public_ci_identity_omits_non_public_server_origins() -> None:
     ci_schema = load_schema("record.schema.json")["$defs"]["ciIdentity"]
     validator = Draft202012Validator(ci_schema)
     identity = {
-        "provider": "github-actions",
+        "provider": "gitlab-ci",
         "repository": "foundata/conclear",
-        "workflow": "foundata/conclear/.github/workflows/check.yml@refs/heads/main",
-        "runId": "123",
+        "pipelineId": "123",
+        "jobId": "456",
         "revision": "a" * 40,
     }
 
     validator.validate(identity)
-    validator.validate({**identity, "server": "https://github.com"})
+    validator.validate({**identity, "server": "https://gitlab.com"})
     assert list(
         validator.iter_errors({**identity, "server": "https://ci.internal.example"})
     )
+    assert list(validator.iter_errors({**identity, "provider": "unsupported-ci"}))

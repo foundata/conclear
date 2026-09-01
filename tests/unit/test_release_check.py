@@ -54,16 +54,6 @@ def test_pytest_configuration_rejects_unknown_marker(tmp_path: Path) -> None:
     assert "not found in `markers`" in observed.stdout + observed.stderr
 
 
-def test_ci_delegates_to_provider_independent_release_gate() -> None:
-    workflow = (
-        Path(__file__).parents[2] / ".github" / "workflows" / "checks.yml"
-    ).read_text(encoding="utf-8")
-    assert "python -m conclear.release_check" in workflow
-    assert "conclear.conformance --check --guide" in workflow
-    assert "ruff check" not in workflow
-    assert "pytest" not in workflow
-
-
 def test_wheel_hygiene_requires_embedded_identity(tmp_path: Path) -> None:
     wheel = tmp_path / "conclear.whl"
     with zipfile.ZipFile(wheel, mode="w") as archive:

@@ -211,25 +211,25 @@ def test_regular_file_reader_rejects_symlink_and_oversized_file(
 def test_ci_identity_requires_complete_validated_provider_values() -> None:
     identity = observe_ci_identity(
         {
-            "GITHUB_ACTIONS": "true",
-            "GITHUB_SERVER_URL": "https://github.com",
-            "GITHUB_REPOSITORY": "foundata/example",
-            "GITHUB_WORKFLOW_REF": "foundata/example/.github/workflows/release.yml@refs/heads/main",
-            "GITHUB_RUN_ID": "1234",
-            "GITHUB_SHA": "a" * 40,
+            "GITLAB_CI": "true",
+            "CI_SERVER_URL": "https://gitlab.com",
+            "CI_PROJECT_PATH": "foundata/example",
+            "CI_PIPELINE_ID": "1234",
+            "CI_JOB_ID": "5678",
+            "CI_COMMIT_SHA": "a" * 40,
         }
     )
 
-    assert identity["provider"] == "github-actions"
-    with pytest.raises(InvalidInvocationError, match="run id"):
+    assert identity["provider"] == "gitlab-ci"
+    with pytest.raises(InvalidInvocationError, match="pipeline id"):
         observe_ci_identity(
             {
-                "GITHUB_ACTIONS": "true",
-                "GITHUB_SERVER_URL": "https://github.com",
-                "GITHUB_REPOSITORY": "foundata/example",
-                "GITHUB_WORKFLOW_REF": "workflow",
-                "GITHUB_RUN_ID": "not-a-number",
-                "GITHUB_SHA": "a" * 40,
+                "GITLAB_CI": "true",
+                "CI_SERVER_URL": "https://gitlab.com",
+                "CI_PROJECT_PATH": "foundata/example",
+                "CI_PIPELINE_ID": "not-a-number",
+                "CI_JOB_ID": "5678",
+                "CI_COMMIT_SHA": "a" * 40,
             }
         )
 
@@ -246,17 +246,15 @@ def test_ci_identity_must_match_isolated_checkout(
 ) -> None:
     identity = observe_ci_identity(
         {
-            "GITHUB_ACTIONS": "true",
-            "GITHUB_SERVER_URL": "https://github.com",
-            "GITHUB_REPOSITORY": repository,
-            "GITHUB_WORKFLOW_REF": (
-                f"{repository}/.github/workflows/release.yml@refs/heads/main"
-            ),
-            "GITHUB_RUN_ID": "1234",
-            "GITHUB_SHA": revision,
+            "GITLAB_CI": "true",
+            "CI_SERVER_URL": "https://gitlab.com",
+            "CI_PROJECT_PATH": repository,
+            "CI_PIPELINE_ID": "1234",
+            "CI_JOB_ID": "5678",
+            "CI_COMMIT_SHA": revision,
         }
     )
-    source = SourceIdentity("https://github.com/foundata/example", "a" * 40)
+    source = SourceIdentity("https://gitlab.com/foundata/example", "a" * 40)
 
     with pytest.raises(OperationalError, match=message):
         validate_ci_identity(identity, source)
@@ -265,21 +263,19 @@ def test_ci_identity_must_match_isolated_checkout(
 def test_ci_identity_is_bound_to_matching_isolated_checkout() -> None:
     identity = observe_ci_identity(
         {
-            "GITHUB_ACTIONS": "true",
-            "GITHUB_SERVER_URL": "https://github.com",
-            "GITHUB_REPOSITORY": "foundata/example",
-            "GITHUB_WORKFLOW_REF": (
-                "foundata/example/.github/workflows/release.yml@refs/heads/main"
-            ),
-            "GITHUB_RUN_ID": "1234",
-            "GITHUB_SHA": "a" * 40,
+            "GITLAB_CI": "true",
+            "CI_SERVER_URL": "https://gitlab.com",
+            "CI_PROJECT_PATH": "foundata/example",
+            "CI_PIPELINE_ID": "1234",
+            "CI_JOB_ID": "5678",
+            "CI_COMMIT_SHA": "a" * 40,
         }
     )
 
     assert (
         validate_ci_identity(
             identity,
-            SourceIdentity("https://github.com/foundata/example", "a" * 40),
+            SourceIdentity("https://gitlab.com/foundata/example", "a" * 40),
         )
         == identity
     )

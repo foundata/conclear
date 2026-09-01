@@ -311,7 +311,7 @@ Commit a catalog change together with the check definition, implementation, test
 
 ## CI identity trust<a id="ci-identity-trust"></a>
 
-Before CI metadata enters signed release evidence, ConClear requires the claimed provider repository and revision to match the canonical repository and commit observed from the isolated checkout. The provider workflow and run identifiers remain observations from the protected runner environment rather than independently authenticated identities, and an internal server origin is omitted from public evidence.
+Before GitLab CI metadata enters signed release evidence, ConClear requires the claimed project and revision to match the canonical repository and commit observed from the isolated checkout. The job and pipeline identifiers remain observations from the protected runner environment rather than independently authenticated identities, and an internal server origin is omitted from public evidence.
 
 ConClear does not acquire or accept OIDC tokens because the release profile defines no issuer and audience trust root against which to authenticate those claims.
 
@@ -377,7 +377,7 @@ The command checks formatting, linting, strict typing, the generated conformance
 
 The release check does not create a release, write to a registry, sign content, create transparency-log entries, tag Git or push commits.
 
-The GitHub Actions workflow installs those interpreters and delegates all project checks to this command. It separately checks the catalog against the OCI guide at the exact embedded revision, so the workflow never redefines formatting, typing, test or distribution-build logic.
+CI configuration should delegate project checks to this command and verify the catalog against the OCI guide at the exact embedded revision. The provider configuration must not redefine formatting, typing, test or distribution-build logic.
 
 The source tree uses `development-source-tree` as its local identity. Distribution builds generate `conclear/_embedded_identity.py` from an externally observed full Git revision; identity is never derived from an application repository at runtime. A build without an embedded revision cannot produce release evidence.
 

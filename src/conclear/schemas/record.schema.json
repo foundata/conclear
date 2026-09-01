@@ -297,34 +297,17 @@
       }
     },
     "ciIdentity": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["provider", "repository", "workflow", "runId", "revision"],
-          "properties": {
-            "provider": {"const": "github-actions"},
-            "server": {"enum": ["https://github.com", "https://gitlab.com"]},
-            "repository": {"type": "string", "minLength": 1},
-            "workflow": {"type": "string", "minLength": 1},
-            "runId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-            "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["provider", "repository", "pipelineId", "jobId", "revision"],
-          "properties": {
-            "provider": {"const": "gitlab-ci"},
-            "server": {"enum": ["https://github.com", "https://gitlab.com"]},
-            "repository": {"type": "string", "minLength": 1},
-            "pipelineId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-            "jobId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
-            "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
-          }
-        }
-      ]
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "repository", "pipelineId", "jobId", "revision"],
+      "properties": {
+        "provider": {"const": "gitlab-ci"},
+        "server": {"const": "https://gitlab.com"},
+        "repository": {"type": "string", "minLength": 1},
+        "pipelineId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "jobId": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
+      }
     },
     "platformQualification": {
       "type": "object",
