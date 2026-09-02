@@ -1,12 +1,12 @@
 import os
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from conclear.context import hash_build_context
+from conclear.context import hash_build_context, load_containerignore
 from conclear.errors import InvalidInvocationError, OperationalError
 
 
@@ -28,6 +28,70 @@ def test_context_hash_is_deterministic_and_excludes_ignored_content(
         ".containerignore",
         "Containerfile",
     ]
+
+
+def test_context_hash_applies_default_deny_allowlist_with_nested_content(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".containerignore").write_text(
+        "*\n!allowed/\n!allowed/**\n!Containerfile\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "Containerfile").write_text("FROM scratch\n", encoding="utf-8")
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    (allowed / "input.txt").write_text("included", encoding="utf-8")
+    hidden = tmp_path / ".git"
+    hidden.mkdir()
+    (hidden / "config").write_text("secret", encoding="utf-8")
+
+    observation = hash_build_context(tmp_path)
+
+    assert [entry.path for entry in observation.entries] == [
+        "Containerfile",
+        "allowed/input.txt",
+    ]
+
+
+def test_containerignore_models_anchoring_directories_and_rule_order(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / ".containerignore"
+    path.write_text(
+        "/root.key\n**/.git/\n!nested/.git/\n**/.git/\n!root.key\n",
+        encoding="utf-8",
+    )
+    ignore = load_containerignore(path)
+
+    assert not ignore.ignored(PurePosixPath("root.key"), is_directory=False)
+    assert not ignore.ignored(PurePosixPath("nested/root.key"), is_directory=False)
+    assert ignore.ignored(PurePosixPath(".git/config"), is_directory=False)
+    assert ignore.ignored(PurePosixPath("nested/.git/config"), is_directory=False)
+
+
+@given(
+    dangerous_path=st.sampled_from(
+        (
+            ".git/config",
+            "nested/.env.local",
+            "nested/release.key",
+            "nested/.venv/pyvenv.cfg",
+        )
+    )
+)
+def test_containerignore_last_matching_rule_controls_dangerous_paths(
+    dangerous_path: str,
+) -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / ".containerignore"
+        path.write_text(f"**\n!{dangerous_path}\n", encoding="utf-8")
+        included = load_containerignore(path)
+        path.write_text(f"**\n!{dangerous_path}\n{dangerous_path}\n", encoding="utf-8")
+        excluded = load_containerignore(path)
+        relative = PurePosixPath(dangerous_path)
+
+        assert not included.ignored(relative, is_directory=False)
+        assert excluded.ignored(relative, is_directory=False)
 
 
 def test_context_hash_rejects_nonignored_symlink(tmp_path: Path) -> None:

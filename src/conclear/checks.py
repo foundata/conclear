@@ -4,11 +4,11 @@ import json
 import re
 import shlex
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from conclear.config import ImageConfig
-from conclear.context import MAX_CONTAINERIGNORE_BYTES
-from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.context import load_containerignore
+from conclear.errors import InvalidInvocationError
 from conclear.fileio import read_regular_file
 from conclear.jsonutil import structure_depth_is_bounded
 from conclear.presentation import Finding
@@ -429,32 +429,34 @@ def _check_context(context: Path) -> tuple[Finding, ...]:
                 str(ignore_path),
             ),
         )
-    try:
-        lines = (
-            read_regular_file(
-                ignore_path,
-                maximum_bytes=MAX_CONTAINERIGNORE_BYTES,
-                label=".containerignore",
-            )
-            .decode("utf-8")
-            .splitlines()
-        )
-    except UnicodeError as exc:
-        raise OperationalError(f"Unable to read {ignore_path}") from exc
-    patterns = {
-        line.strip().rstrip("/")
-        for line in lines
-        if line.strip() and not line.lstrip().startswith("#")
-    }
+    ignore = load_containerignore(ignore_path)
     categories = {
-        "source control": {".git", ".git/**", "**/.git"},
-        "environment files": {".env", ".env*", "**/.env*"},
-        "private keys": {"*.key", "*.pem", "**/*.key", "**/*.pem"},
-        "local environments": {".venv", ".venv/**", "venv", "venv/**"},
+        "source control": (".git/config", "nested/.git/config"),
+        "environment files": (
+            ".env",
+            ".env.local",
+            "nested/.env",
+            "nested/.env.production",
+        ),
+        "private keys": (
+            "release.key",
+            "certificate.pem",
+            "nested/release.key",
+            "nested/certificate.pem",
+        ),
+        "local environments": (
+            ".venv/pyvenv.cfg",
+            "venv/pyvenv.cfg",
+            "nested/.venv/pyvenv.cfg",
+            "nested/venv/pyvenv.cfg",
+        ),
     }
     findings: list[Finding] = []
-    for category, accepted_patterns in categories.items():
-        if patterns.isdisjoint(accepted_patterns):
+    for category, representatives in categories.items():
+        if any(
+            not ignore.ignored(PurePosixPath(path), is_directory=False)
+            for path in representatives
+        ):
             findings.append(
                 _finding(
                     "CC0202",

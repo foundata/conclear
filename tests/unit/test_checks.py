@@ -173,18 +173,59 @@ def test_created_label_is_optional_but_verified_when_present() -> None:
     assert [finding.check_id for finding in findings] == ["CC0113"]
 
 
-def test_bare_double_star_does_not_satisfy_required_context_exclusions(
+def test_default_deny_allowlist_satisfies_required_context_exclusions(
     repository_factory: Callable[..., Path],
 ) -> None:
     root = repository_factory()
-    (root / ".containerignore").write_text("**\n", encoding="utf-8")
+    (root / ".containerignore").write_text(
+        "*\n!Containerfile\n!conclear.toml\n", encoding="utf-8"
+    )
     image = load_repository_config(root / "conclear.toml").image("app")
 
     findings = [
         finding for finding in check_image_static(image) if finding.check_id == "CC0202"
     ]
 
-    assert len(findings) == 4
+    assert findings == []
+
+
+def test_default_deny_allowlist_rejects_later_private_key_reinclusion(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    (root / ".containerignore").write_text(
+        "*\n!Containerfile\n!conclear.toml\n!nested/\n!nested/release.key\n",
+        encoding="utf-8",
+    )
+    image = load_repository_config(root / "conclear.toml").image("app")
+
+    findings = [
+        finding for finding in check_image_static(image) if finding.check_id == "CC0202"
+    ]
+
+    assert any("private keys" in finding.message for finding in findings)
+
+
+def test_context_exclusion_check_rejects_misleading_near_matches(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    (root / ".containerignore").write_text(
+        ".git-safe/\n.env.example.txt\n*.key.txt\n.venv-cache/\n",
+        encoding="utf-8",
+    )
+    image = load_repository_config(root / "conclear.toml").image("app")
+
+    findings = [
+        finding for finding in check_image_static(image) if finding.check_id == "CC0202"
+    ]
+
+    assert {finding.message for finding in findings} == {
+        ".containerignore does not exclude source control",
+        ".containerignore does not exclude environment files",
+        ".containerignore does not exclude private keys",
+        ".containerignore does not exclude local environments",
+    }
 
 
 def test_hadolint_diagnostics_use_the_adapter_check_identifier(

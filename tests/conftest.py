@@ -26,7 +26,7 @@ def repository_factory(tmp_path: Path) -> Callable[..., Path]:
             encoding="utf-8",
         )
         (root / ".containerignore").write_text(
-            ".git/\n.env*\n*.key\n*.pem\n.venv/\n",
+            "**/.git/\n**/.env*\n**/*.key\n**/*.pem\n**/.venv/\n**/venv/\n",
             encoding="utf-8",
         )
         digest = "a" * 64

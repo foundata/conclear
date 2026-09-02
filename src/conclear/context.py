@@ -1,8 +1,9 @@
 """Deterministic, containment-safe build context hashing."""
 
-import fnmatch
 import hashlib
 import os
+import posixpath
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -52,20 +53,54 @@ class IgnoreRule:
     include: bool
     directory_only: bool
     anchored: bool
+    expression: re.Pattern[str]
 
     def matches(self, relative: PurePosixPath, *, is_directory: bool) -> bool:
         """Return whether this rule applies to a normalized relative path."""
         if self.directory_only and not is_directory:
             return False
-        path = relative.as_posix()
-        pattern = self.pattern
-        if self.anchored:
-            return fnmatch.fnmatchcase(path, pattern)
-        if "/" in pattern:
-            return fnmatch.fnmatchcase(path, pattern) or fnmatch.fnmatchcase(
-                path, f"**/{pattern}"
+        return self.expression.fullmatch(relative.as_posix()) is not None
+
+
+@dataclass(frozen=True, slots=True)
+class ContainerIgnore:
+    """Validated ordered build-context exclusion semantics."""
+
+    rules: tuple[IgnoreRule, ...]
+
+    def ignored(self, relative: PurePosixPath, *, is_directory: bool) -> bool:
+        """Return the effective last-match result for one context path."""
+        ignored = False
+        parents = tuple(
+            PurePosixPath(*relative.parts[:index])
+            for index in range(1, len(relative.parts))
+        )
+        for rule in self.rules:
+            matches = rule.matches(relative, is_directory=is_directory) or any(
+                rule.matches(parent, is_directory=True) for parent in parents
             )
-        return any(fnmatch.fnmatchcase(part, pattern) for part in relative.parts)
+            if matches:
+                ignored = not rule.include
+        return ignored
+
+    def may_include_descendant(self, relative: PurePosixPath) -> bool:
+        """Return whether an exception may require traversing an ignored directory."""
+        directory = relative.as_posix()
+        for rule in self.rules:
+            if not rule.include:
+                continue
+            wildcard = min(
+                (
+                    rule.pattern.find(marker)
+                    for marker in "*?["
+                    if marker in rule.pattern
+                ),
+                default=len(rule.pattern),
+            )
+            fixed_prefix = rule.pattern[:wildcard].rstrip("/")
+            if not fixed_prefix or fixed_prefix.startswith(f"{directory}/"):
+                return True
+        return False
 
 
 def hash_build_context(root: Path) -> ContextObservation:
@@ -76,7 +111,7 @@ def hash_build_context(root: Path) -> ContextObservation:
         raise InvalidInvocationError(f"Build context does not exist: {root}") from exc
     if not resolved_root.is_dir():
         raise InvalidInvocationError(f"Build context is not a directory: {root}")
-    rules = _load_ignore_rules(resolved_root / ".containerignore")
+    ignore = load_containerignore(resolved_root / ".containerignore")
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -90,7 +125,7 @@ def hash_build_context(root: Path) -> ContextObservation:
         _walk_context(
             root_descriptor,
             PurePosixPath(),
-            rules,
+            ignore,
             entries,
             paths_seen,
         )
@@ -111,7 +146,7 @@ def hash_build_context(root: Path) -> ContextObservation:
 def _walk_context(
     directory_descriptor: int,
     relative_directory: PurePosixPath,
-    rules: tuple[IgnoreRule, ...],
+    ignore: ContainerIgnore,
     entries: list[ContextEntry],
     paths_seen: list[int],
 ) -> None:
@@ -139,7 +174,10 @@ def _walk_context(
                 f"Unable to inspect build context path {relative}"
             ) from exc
         is_directory = stat.S_ISDIR(child_stat.st_mode)
-        if _ignored(relative, is_directory=is_directory, rules=rules):
+        ignored = ignore.ignored(relative, is_directory=is_directory)
+        if ignored and (
+            not is_directory or not ignore.may_include_descendant(relative)
+        ):
             continue
         if stat.S_ISLNK(child_stat.st_mode):
             raise InvalidInvocationError(
@@ -158,7 +196,7 @@ def _walk_context(
                 _walk_context(
                     child_descriptor,
                     relative,
-                    rules,
+                    ignore,
                     entries,
                     paths_seen,
                 )
@@ -185,7 +223,8 @@ def _walk_context(
         )
 
 
-def _load_ignore_rules(path: Path) -> tuple[IgnoreRule, ...]:
+def load_containerignore(path: Path) -> ContainerIgnore:
+    """Load and validate one `.containerignore` matcher."""
     try:
         lines = (
             read_regular_file(
@@ -201,7 +240,7 @@ def _load_ignore_rules(path: Path) -> tuple[IgnoreRule, ...]:
     rules: list[IgnoreRule] = []
     for line in lines:
         value = line.strip()
-        if not value or value.startswith("#"):
+        if not value or line.startswith("#"):
             continue
         include = value.startswith("!")
         if include:
@@ -210,10 +249,63 @@ def _load_ignore_rules(path: Path) -> tuple[IgnoreRule, ...]:
         value = value.removeprefix("/")
         directory_only = value.endswith("/")
         value = value.removesuffix("/")
-        if not value or "\\" in value or any(part == ".." for part in value.split("/")):
+        normalized = posixpath.normpath(value)
+        if (
+            not value
+            or "\\" in value
+            or normalized in {"", ".", ".."}
+            or normalized.startswith("../")
+            or "//" in value
+        ):
             raise InvalidInvocationError(f"Unsafe .containerignore rule: {line}")
-        rules.append(IgnoreRule(value, include, directory_only, anchored))
-    return tuple(rules)
+        rules.append(
+            IgnoreRule(
+                normalized,
+                include,
+                directory_only,
+                anchored,
+                _compile_ignore_pattern(normalized, line=line),
+            )
+        )
+    return ContainerIgnore(tuple(rules))
+
+
+def _compile_ignore_pattern(value: str, *, line: str) -> re.Pattern[str]:
+    expression = ["^"]
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character == "*":
+            if index + 1 < len(value) and value[index + 1] == "*":
+                index += 2
+                if index < len(value) and value[index] == "/":
+                    expression.append("(?:.*/)?")
+                    index += 1
+                else:
+                    expression.append(".*")
+                continue
+            expression.append("[^/]*")
+        elif character == "?":
+            expression.append("[^/]")
+        elif character == "[":
+            closing = value.find("]", index + 1)
+            if closing < 0:
+                raise InvalidInvocationError(f"Unsafe .containerignore rule: {line}")
+            content = value[index + 1 : closing]
+            if not content:
+                raise InvalidInvocationError(f"Unsafe .containerignore rule: {line}")
+            if content.startswith("!"):
+                content = "^" + content[1:]
+            expression.extend(("[", content.replace("\\", "\\\\"), "]"))
+            index = closing
+        else:
+            expression.append(re.escape(character))
+        index += 1
+    expression.append("$")
+    try:
+        return re.compile("".join(expression))
+    except re.error as exc:
+        raise InvalidInvocationError(f"Unsafe .containerignore rule: {line}") from exc
 
 
 def _open_observed_directory(
@@ -287,16 +379,3 @@ def _same_observation(first: os.stat_result, second: os.stat_result) -> bool:
         and first.st_mtime_ns == second.st_mtime_ns
         and first.st_ctime_ns == second.st_ctime_ns
     )
-
-
-def _ignored(
-    relative: PurePosixPath,
-    *,
-    is_directory: bool,
-    rules: tuple[IgnoreRule, ...],
-) -> bool:
-    ignored = False
-    for rule in rules:
-        if rule.matches(relative, is_directory=is_directory):
-            ignored = not rule.include
-    return ignored
