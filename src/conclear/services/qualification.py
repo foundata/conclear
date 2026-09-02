@@ -1,5 +1,6 @@
 """Build, runtime-test, evidence and platform qualification services."""
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -33,6 +34,8 @@ from conclear.workspace import (
     ResourceStatus,
     RunWorkspace,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Builder(Protocol):
@@ -963,4 +966,8 @@ def _mark_failed(workspace: RunWorkspace, *resource_ids: str) -> None:
         try:
             workspace.journal.update(resource_id, ResourceStatus.FAILED)
         except BaseException:
-            continue
+            LOGGER.debug(
+                "Failed to record resource failure for %s",
+                resource_id,
+                exc_info=True,
+            )

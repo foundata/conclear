@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Any
 import pytest
 
 import conclear.records as records_module
+import conclear.services.qualification as qualification_module
 from conclear.adapters.buildah import BuildObservation
 from conclear.adapters.podman import (
     ContainerObservation,
@@ -41,7 +43,7 @@ from conclear.services.qualification import (
 )
 from conclear.services.qualification import test_platform as run_platform_tests
 from conclear.values import Platform
-from conclear.workspace import ResourceStatus, RunWorkspace
+from conclear.workspace import ResourceJournal, ResourceStatus, RunWorkspace
 
 
 class IdFactory:
@@ -454,6 +456,27 @@ def test_runtime_failure_attempts_cleanup_without_replacing_original_error(
         if entry.resource_id == "podman-linux-amd64"
     )
     assert status is (ResourceStatus.FAILED if fail_remove else ResourceStatus.REMOVED)
+
+
+def test_failed_qualification_journal_update_leaves_debug_trace(
+    repository_factory: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    workspace = inputs(repository_factory(), tmp_path).workspace
+
+    def fail_update(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise OSError("injected journal failure")
+
+    monkeypatch.setattr(ResourceJournal, "update", fail_update)
+    caplog.set_level(logging.DEBUG, logger="conclear.services.qualification")
+
+    qualification_module._mark_failed(workspace, "layout-linux-amd64")
+
+    assert "Failed to record resource failure for layout-linux-amd64" in caplog.text
+    assert "injected journal failure" in caplog.text
 
 
 def test_runtime_rejects_observed_effective_capabilities(

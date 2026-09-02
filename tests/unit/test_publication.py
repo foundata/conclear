@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -54,6 +55,7 @@ from conclear.services.publication import (
 )
 from conclear.values import Digest, OCIReference, Platform, candidate_tag
 from conclear.workspace import (
+    ResourceJournal,
     ResourceKind,
     ResourceStatus,
     RunState,
@@ -391,6 +393,31 @@ def test_signature_coverage_failure_uses_stable_check_identifier(
         )
 
     assert caught.value.code == "CC0702"
+
+
+def test_failed_journal_update_leaves_debug_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    workspace = RunWorkspace.create(
+        state_home=tmp_path / "state",
+        immutable_inputs={"sourceRevision": "b" * 40},
+        id_factory=IdFactory(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    def fail_update(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise OSError("injected journal failure")
+
+    monkeypatch.setattr(ResourceJournal, "update", fail_update)
+    caplog.set_level(logging.DEBUG, logger="conclear.services.publication")
+
+    publication_module._mark_failed(workspace, "candidate")
+
+    assert "Failed to record resource failure for candidate" in caplog.text
+    assert "injected journal failure" in caplog.text
 
 
 def test_failed_publication_retains_digest_ownership_and_expiration(

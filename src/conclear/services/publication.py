@@ -1,5 +1,6 @@
 """Candidate publication, signing, verification and promotion services."""
 
+import logging
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -51,6 +52,8 @@ from conclear.workspace import (
     RunState,
     RunWorkspace,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Registry(Protocol):
@@ -1298,7 +1301,9 @@ def _mark_failed(workspace: RunWorkspace, resource_id: str) -> None:
     try:
         workspace.journal.update(resource_id, ResourceStatus.FAILED)
     except Exception:
-        return
+        LOGGER.debug(
+            "Failed to record resource failure for %s", resource_id, exc_info=True
+        )
 
 
 def _object(value: object, label: str) -> dict[str, object]:
