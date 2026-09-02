@@ -153,6 +153,21 @@ def test_resource_journal_records_intent_before_mutation(tmp_path: Path) -> None
         )
 
 
+def test_resource_journal_can_record_planned_resource_as_absent(tmp_path: Path) -> None:
+    workspace = create_workspace(tmp_path)
+    workspace.journal.plan(
+        resource_id="test-inputs",
+        kind=ResourceKind.TEST_INPUTS,
+        identifier=str(workspace.root / "reports" / "test-inputs"),
+        ephemeral=True,
+    )
+
+    entry = workspace.journal.update("test-inputs", ResourceStatus.REMOVED)
+
+    assert entry.status is ResourceStatus.REMOVED
+    assert workspace.journal.cleanup_candidates() == ()
+
+
 def test_atomic_write_failure_preserves_previous_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

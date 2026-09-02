@@ -14,10 +14,11 @@ from conclear.adapters.buildah import BuildahAdapter
 from conclear.adapters.cosign import CosignAdapter
 from conclear.adapters.git import GitAdapter
 from conclear.adapters.hadolint import HadolintAdapter
-from conclear.adapters.podman import PodmanAdapter
+from conclear.adapters.podman import BindMount, PodmanAdapter
 from conclear.adapters.quay import QuayAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
+from conclear.config import load_repository_config
 from conclear.errors import (
     CommandExecutionError,
     InvalidInvocationError,
@@ -223,6 +224,116 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
 
     assert observation.writable_mounts == ("/run", "/tmp")
     assert not observation.effective_capabilities
+
+
+def test_podman_launch_inputs_remain_argument_arrays_and_redact_secret_mounts(
+    tmp_path: Path,
+    repository_factory: Callable[..., Path],
+) -> None:
+    runner = FakeRunner(
+        result(),
+        result(
+            json.dumps(
+                [
+                    {
+                        "Id": "container-id",
+                        "State": {
+                            "Pid": 100,
+                            "ExitCode": None,
+                            "Status": "running",
+                        },
+                    }
+                ]
+            )
+        ),
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+    runtime = (
+        load_repository_config(repository_factory() / "conclear.toml")
+        .image("app")
+        .runtime
+    )
+    secret = tmp_path / "private-input"
+    secret.mkdir()
+
+    adapter.create_container(
+        root=tmp_path / "root",
+        runroot=tmp_path / "runroot",
+        name="test",
+        image_name="localhost/exact@sha256:fixture",
+        runtime=runtime,
+        platform=Platform.parse("linux/amd64"),
+        arguments=("literal;not-shell", "$(false)"),
+        environment=(("SERVICE_MODE", "test"),),
+        mounts=(BindMount(secret, "/input", True, secret=True),),
+        entrypoint=("/generator", "prepare"),
+    )
+
+    request = runner.requests[0]
+    assert request.argv[-5:] == (
+        "/generator",
+        "localhost/exact@sha256:fixture",
+        "prepare",
+        "literal;not-shell",
+        "$(false)",
+    )
+    assert "SERVICE_MODE=test" in request.argv
+    assert "literal;not-shell" in request.argv
+    assert "$(false)" in request.argv
+    assert request.secret_paths == (secret,)
+
+
+def test_podman_observes_writable_bind_as_runtime_write_surface(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(
+        result(
+            json.dumps(
+                [
+                    {
+                        "EffectiveCaps": [],
+                        "Mounts": [
+                            {
+                                "Type": "bind",
+                                "RW": True,
+                                "Destination": "/output",
+                            },
+                            {
+                                "Type": "bind",
+                                "RW": False,
+                                "Destination": "/input",
+                            },
+                        ],
+                        "Config": {"User": "10001"},
+                        "HostConfig": {
+                            "ReadonlyRootfs": True,
+                            "Tmpfs": {},
+                            "Memory": 536870912,
+                            "NanoCpus": 1000000000,
+                            "PidsLimit": 128,
+                            "Ulimits": [
+                                {
+                                    "Name": "RLIMIT_NOFILE",
+                                    "Soft": 1024,
+                                    "Hard": 1024,
+                                }
+                            ],
+                            "CapAdd": [],
+                            "CapDrop": ["ALL"],
+                            "SecurityOpt": ["no-new-privileges"],
+                        },
+                    }
+                ]
+            )
+        )
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    observation = adapter.inspect_controls(
+        root=tmp_path / "root", runroot=tmp_path / "runroot", name="test"
+    )
+
+    assert observation.writable_mounts == ("/output",)
 
 
 def test_podman_import_digest_mismatch_uses_stable_check_identifier(

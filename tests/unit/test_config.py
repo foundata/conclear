@@ -44,6 +44,383 @@ def test_repository_configuration_is_validated_and_narrowed(
     assert str(config.image("app").platforms[0]) == "linux/amd64"
 
 
+def test_repository_configuration_parses_exact_runtime_test_inputs(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    fixture = root / "test-fixture"
+    fixture.mkdir()
+    (fixture / "input.txt").write_text("input\n", encoding="utf-8")
+    path = root / "conclear.toml"
+    content = (
+        path.read_text(encoding="utf-8")
+        .replace(
+            "[images.release]",
+            """[images.test]
+dependencies = ["generator"]
+
+[[images.test.fixtures]]
+name = "input"
+path = "test-fixture"
+
+[[images.test.outputs]]
+name = "result"
+
+[[images.test.preparations]]
+name = "generate"
+image = "generator"
+command = ["/generator", "--input", "/input", "--output", "/output"]
+environment = { TEST_MODE = "compatibility" }
+expected_exit_status = 0
+
+[[images.test.preparations.mounts]]
+source = "fixture"
+name = "input"
+target = "/input"
+read_only = true
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "result"
+target = "/output"
+read_only = false
+
+[images.test.launch]
+arguments = ["serve"]
+environment = { SERVICE_MODE = "test" }
+
+[[images.test.launch.mounts]]
+source = "output"
+name = "result"
+target = "/run/result"
+read_only = true
+
+[images.release]""",
+        )
+        .replace(
+            "read_only = true\nmemory",
+            'read_only = true\nwritable_mounts = ["/run/result"]\nmemory',
+            1,
+        )
+    )
+    content += _image_text("generator", writable_mount="/output")
+    path.write_text(content, encoding="utf-8")
+
+    config = load_repository_config(path)
+    image = config.image("app")
+
+    assert [item.image_id for item in config.test_dependencies("app")] == ["generator"]
+    assert image.test.launch.arguments == ("serve",)
+    assert image.test.preparations[0].command[0] == "/generator"
+    assert image.test.fixtures[0].path == fixture.resolve()
+
+
+@pytest.mark.parametrize(
+    ("dependencies", "include_generator"),
+    (
+        (("missing",), False),
+        (("app",), False),
+        (("generator", "generator"), True),
+    ),
+)
+def test_repository_configuration_rejects_invalid_test_dependency_graph(
+    repository_factory: Callable[..., Path],
+    dependencies: tuple[str, ...],
+    include_generator: bool,
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    rendered = ", ".join(f'"{item}"' for item in dependencies)
+    content = path.read_text(encoding="utf-8").replace(
+        "[images.release]",
+        f"[images.test]\ndependencies = [{rendered}]\n\n[images.release]",
+    )
+    if include_generator:
+        content += _image_text("generator")
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(InvalidInvocationError):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_test_dependency_cycle(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    content = path.read_text(encoding="utf-8").replace(
+        "[images.release]",
+        '[images.test]\ndependencies = ["generator"]\n\n[images.release]',
+    )
+    content += _image_text("generator", dependencies=("app",))
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(InvalidInvocationError, match="cycle"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_writable_fixture_mount(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    (root / "fixture").mkdir()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[images.test]
+[[images.test.fixtures]]
+name = "input"
+path = "fixture"
+[images.test.launch]
+[[images.test.launch.mounts]]
+source = "fixture"
+name = "input"
+target = "/input"
+read_only = false
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="read_only"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_secret_test_environment(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            '[images.test.launch]\nenvironment = { API_TOKEN = "not-allowed" }\n\n[images.release]',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="API_TOKEN"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_symlinked_test_fixture(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    fixture = root / "fixture"
+    fixture.mkdir()
+    (root / "fixture-link").symlink_to(fixture, target_is_directory=True)
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[images.test]
+[[images.test.fixtures]]
+name = "input"
+path = "fixture-link"
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="symbolic link"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_test_fixture_traversal(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[images.test]
+[[images.test.fixtures]]
+name = "input"
+path = "../outside"
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError):
+        load_repository_config(path)
+
+
+@pytest.mark.parametrize("target", ("/proc/input", "/sys", "/dev/keys"))
+def test_repository_configuration_rejects_unsafe_test_mount_target(
+    repository_factory: Callable[..., Path], target: str
+) -> None:
+    root = repository_factory()
+    (root / "fixture").mkdir()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            f'''[images.test]
+[[images.test.fixtures]]
+name = "input"
+path = "fixture"
+[images.test.launch]
+[[images.test.launch.mounts]]
+source = "fixture"
+name = "input"
+target = "{target}"
+read_only = true
+[images.release]''',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="Unsafe test mount"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_overlapping_test_mount_targets(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    (root / "fixture").mkdir()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[images.test]
+[[images.test.fixtures]]
+name = "first"
+path = "fixture"
+[[images.test.fixtures]]
+name = "second"
+path = "fixture"
+[images.test.launch]
+[[images.test.launch.mounts]]
+source = "fixture"
+name = "first"
+target = "/input"
+read_only = true
+[[images.test.launch.mounts]]
+source = "fixture"
+name = "second"
+target = "/input/nested"
+read_only = true
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="overlapping mount targets"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_writable_test_gate_override(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[images.test]
+[[images.test.outputs]]
+name = "result"
+[[images.test.preparations]]
+name = "prepare"
+image = "app"
+command = ["/app", "prepare"]
+[[images.test.preparations.mounts]]
+source = "output"
+name = "result"
+target = "/undeclared"
+read_only = false
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="not declared by image"):
+        load_repository_config(path)
+
+
+@pytest.mark.parametrize("dependency", ("missing", "generator:latest"))
+def test_repository_configuration_rejects_undeclared_or_mutable_test_image(
+    repository_factory: Callable[..., Path], dependency: str
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            f'[images.test]\ndependencies = ["{dependency}"]\n\n[images.release]',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_test_dependency_platform_gap(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    content = path.read_text(encoding="utf-8").replace(
+        "[images.release]",
+        '[images.test]\ndependencies = ["generator"]\n\n[images.release]',
+    )
+    content = content.replace(
+        'platforms = ["linux/amd64"]',
+        'platforms = ["linux/amd64", "linux/arm64"]',
+        1,
+    )
+    content += _image_text("generator")
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(InvalidInvocationError, match="does not cover"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_undeclared_preparation_image(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[images.test]
+[[images.test.preparations]]
+name = "prepare"
+image = "generator"
+command = ["/generator", "prepare"]
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="undeclared test image"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_test_launch_control_key(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            "[images.test.launch]\nread_only = false\n\n[images.release]",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="Additional properties"):
+        load_repository_config(path)
+
+
 def test_repository_configuration_rejects_unknown_keys(
     repository_factory: Callable[..., Path],
 ) -> None:
@@ -417,3 +794,42 @@ def test_release_profile_rejects_ambiguous_registry_api_url(tmp_path: Path) -> N
 
     with pytest.raises(InvalidInvocationError, match="credential-free HTTPS"):
         load_release_profile("release", config_home=config_home)
+
+
+def _image_text(
+    image_id: str,
+    *,
+    writable_mount: str | None = None,
+    dependencies: tuple[str, ...] = (),
+) -> str:
+    dependency_table = ""
+    if dependencies:
+        rendered = ", ".join(f'"{item}"' for item in dependencies)
+        dependency_table = f"\n[images.test]\ndependencies = [{rendered}]\n"
+    writable = (
+        "" if writable_mount is None else f'writable_mounts = ["{writable_mount}"]\n'
+    )
+    return f'''
+
+[[images]]
+id = "{image_id}"
+containerfile = "Containerfile"
+context = "."
+repository = "quay.io/example/{image_id}"
+platforms = ["linux/amd64"]
+native_test_platforms = ["linux/amd64"]
+arm64_omission_reason = "Only amd64 is required for this test."
+
+[images.release]
+immutable_tags = ["{{version}}"]
+moving_tags = ["stable"]
+
+[images.runtime]
+profile = "one-shot"
+user = 10001
+read_only = true
+{writable}memory = "512MiB"
+cpus = 1.0
+pids = 128
+nofile = 1024
+{dependency_table}'''

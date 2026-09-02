@@ -31,6 +31,16 @@ class ContainerObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class BindMount:
+    """One prevalidated bind mount supplied to a test container."""
+
+    source: Path
+    target: str
+    read_only: bool
+    secret: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeControlObservation:
     """Effective runtime controls observed from Podman state."""
 
@@ -132,10 +142,14 @@ class PodmanAdapter(ToolAdapter):
         image_name: str,
         runtime: RuntimeConfig,
         platform: Platform,
-        command: tuple[str, ...] = (),
+        arguments: tuple[str, ...] = (),
+        environment: tuple[tuple[str, str], ...] = (),
+        mounts: tuple[BindMount, ...] = (),
+        entrypoint: tuple[str, ...] = (),
     ) -> ContainerObservation:
         """Create and start a container with all declared resource controls."""
-        arguments = [
+        mounted_targets = {mount.target for mount in mounts}
+        command = [
             *self._storage(root, runroot),
             "run",
             "--detach",
@@ -145,6 +159,8 @@ class PodmanAdapter(ToolAdapter):
             str(platform),
             "--user",
             str(runtime.user),
+            "--userns",
+            f"keep-id:uid={runtime.user},gid={runtime.user}",
             "--memory",
             runtime.memory,
             "--cpus",
@@ -159,14 +175,32 @@ class PodmanAdapter(ToolAdapter):
             "no-new-privileges",
         ]
         if runtime.read_only:
-            arguments.append("--read-only")
+            command.append("--read-only")
         for mount in runtime.writable_mounts:
-            arguments.extend(("--tmpfs", f"{mount}:rw,nosuid,nodev"))
+            if mount not in mounted_targets:
+                command.extend(("--tmpfs", f"{mount}:rw,nosuid,nodev"))
+        for name_value in environment:
+            command.extend(("--env", f"{name_value[0]}={name_value[1]}"))
+        for bind in mounts:
+            option = (
+                f"type=bind,src={bind.source},target={bind.target},"
+                f"{('ro' if bind.read_only else 'rw')},nosuid,nodev"
+            )
+            command.extend(("--mount", option))
         for capability in runtime.capabilities:
-            arguments.extend(("--cap-add", capability.removeprefix("CAP_")))
-        arguments.append(image_name)
-        arguments.extend(command)
-        self._run(arguments, timeout_seconds=300, operation=OperationKind.WRITE)
+            command.extend(("--cap-add", capability.removeprefix("CAP_")))
+        if entrypoint:
+            command.extend(("--entrypoint", entrypoint[0]))
+        command.append(image_name)
+        if entrypoint:
+            command.extend(entrypoint[1:])
+        command.extend(arguments)
+        self._run(
+            command,
+            timeout_seconds=300,
+            operation=OperationKind.WRITE,
+            secret_paths=tuple(mount.source for mount in mounts if mount.secret),
+        )
         return self.inspect_container(root=root, runroot=runroot, name=name)
 
     def inspect_container(
@@ -259,9 +293,7 @@ class PodmanAdapter(ToolAdapter):
         return RuntimeControlObservation(
             user=string_value(config.get("User"), label="Podman effective user"),
             read_only=_bool(host.get("ReadonlyRootfs"), "Podman read-only root"),
-            writable_mounts=_string_mapping_keys(
-                host.get("Tmpfs"), "Podman tmpfs mounts"
-            ),
+            writable_mounts=_writable_mounts(item, host),
             memory_bytes=_int(host.get("Memory"), "Podman memory limit"),
             nano_cpus=_int(host.get("NanoCpus"), "Podman CPU limit"),
             pids_limit=_int(host.get("PidsLimit"), "Podman PID limit"),
@@ -348,3 +380,22 @@ def _string_mapping_keys(value: object, label: str) -> tuple[str, ...]:
     ):
         raise OperationalError(f"{label} are malformed")
     return tuple(sorted(value))
+
+
+def _writable_mounts(
+    item: dict[str, object], host: dict[str, object]
+) -> tuple[str, ...]:
+    writable = set(_string_mapping_keys(host.get("Tmpfs"), "Podman tmpfs mounts"))
+    mounts = item.get("Mounts")
+    if mounts is None:
+        mounts = []
+    if not isinstance(mounts, list):
+        raise OperationalError("Podman mount observation is malformed")
+    for value in mounts:
+        mount = object_value(value, label="Podman mount")
+        if mount.get("Type") != "bind" or mount.get("RW") is not True:
+            continue
+        writable.add(
+            string_value(mount.get("Destination"), label="Podman mount destination")
+        )
+    return tuple(sorted(writable))

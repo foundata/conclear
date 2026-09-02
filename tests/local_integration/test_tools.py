@@ -1,19 +1,31 @@
 import os
 import shutil
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from conclear.assembly import PlatformLayout, assemble_layout
-from conclear.config import RuntimeConfig
+from conclear.config import RuntimeConfig, load_repository_config
 from conclear.errors import CommandExecutionError
+from conclear.hooks import HookRunner
+from conclear.jsonutil import sha256_bytes
 from conclear.oci import validate_layout
 from conclear.path_safety import contained_path
 from conclear.process import CommandRequest, OperationKind
+from conclear.records import SourceIdentity
 from conclear.runtime import ApplicationRuntime
+from conclear.services.cleanup import cleanup_run
+from conclear.services.qualification import (
+    QualificationInputs,
+    build_platform,
+    build_test_dependencies,
+)
+from conclear.services.qualification import test_platform as run_platform_tests
 from conclear.tools import SUPPORTED_TOOLS, ToolName
 from conclear.values import Platform
+from conclear.workspace import RunWorkspace
 
 pytestmark = pytest.mark.local_integration
 
@@ -41,6 +53,37 @@ func main() {
 	}
 	switch mode {
 	case "health", "one-shot":
+		return
+	case "keygen":
+		if err := os.WriteFile("/output/key", []byte("private-test-key"), 0600); err != nil {
+			os.Exit(1)
+		}
+		return
+	case "prepare":
+		input, err := os.ReadFile("/input/value")
+		if err != nil || string(input) != "fixture-value" {
+			os.Exit(1)
+		}
+		key, err := os.ReadFile("/key/key")
+		if err != nil || string(key) != "private-test-key" {
+			os.Exit(1)
+		}
+		if err := os.WriteFile("/output/result", []byte("compatible"), 0600); err != nil {
+			os.Exit(1)
+		}
+		return
+	case "health-input", "one-shot-input":
+		result, err := os.ReadFile("/input/result")
+		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
+			os.Exit(1)
+		}
+		return
+	case "service-input":
+		result, err := os.ReadFile("/input/result")
+		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
+			os.Exit(1)
+		}
+		waitForSignal()
 		return
 	case "supervisor-health":
 		if _, err := os.Stat("/tmp/conclear-supervisor-ready"); err != nil {
@@ -390,7 +433,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
             image_name=image_name,
             runtime=_runtime_config(profile="one-shot"),
             platform=Platform.parse("linux/amd64"),
-            command=("one-shot",),
+            arguments=("one-shot",),
         )
         assert (
             runtime.podman().wait(
@@ -409,7 +452,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
             image_name=image_name,
             runtime=service_runtime,
             platform=Platform.parse("linux/amd64"),
-            command=("supervisor",),
+            arguments=("supervisor",),
         )
         assert supervisor.status == "running"
         _wait_for_supervisor(
@@ -451,6 +494,91 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
                 root=buildah_root,
                 runroot=buildah_runroot,
             )
+
+
+@pytest.mark.parametrize(
+    ("profile", "launch_argument"),
+    (("service", "service-input"), ("one-shot", "one-shot-input")),
+)
+def test_real_exact_image_preparation_and_launch_inputs(
+    tmp_path: Path, profile: str, launch_argument: str
+) -> None:
+    external_run_id = _run_id()
+    root = contained_path(
+        tmp_path, f"{external_run_id}-test-inputs-{profile}", must_exist=False
+    )
+    runtime = ApplicationRuntime.create(
+        root / "environment", names=(ToolName.BUILDAH, ToolName.PODMAN)
+    )
+    context = _compile_fixture(runtime, root=root, architecture="amd64")
+    _write_test_input_configuration(
+        context, profile=profile, launch_argument=launch_argument
+    )
+    repository = load_repository_config(context / "conclear.toml")
+    workspace = RunWorkspace.create(
+        state_home=root / "state",
+        immutable_inputs={
+            "sourceRevision": "a" * 40,
+            "sourceRepository": repository.project.source,
+            "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "image": "runtime",
+            "version": "integration",
+        },
+        id_factory=_IntegrationIdFactory(_workspace_run_id(profile)),
+        now=datetime(2026, 9, 3, tzinfo=UTC),
+    )
+    inputs = QualificationInputs(
+        repository=repository,
+        image=repository.image("runtime"),
+        workspace=workspace,
+        source=SourceIdentity(repository.project.source, "a" * 40),
+        source_time=datetime(2000, 1, 1, tzinfo=UTC),
+        version="integration",
+        platform=Platform.parse("linux/amd64"),
+        tools=(runtime.tools[ToolName.BUILDAH].record_identity(),),
+        auth_file=None,
+        host_architecture="x86_64",
+    )
+    try:
+        build = build_platform(inputs, runtime.buildah())
+        dependencies = build_test_dependencies(inputs, runtime.buildah())
+        evidence = run_platform_tests(
+            inputs,
+            build,
+            runtime.podman(),
+            HookRunner(
+                runner=runtime.runner,
+                environment=runtime.environment,
+                source_root=context,
+                log_directory=workspace.root / "logs",
+            ),
+            dependencies=dependencies,
+        )
+
+        assert not evidence.findings
+        assert evidence.dependencies[0]["imageId"] == "generator"
+        assert evidence.dependencies[0]["sourceRevision"] == "a" * 40
+        assert any(
+            value["name"]
+            == ("signalAndShutdown" if profile == "service" else "oneShotExit")
+            and value["status"] == "passed"
+            for value in evidence.test_results
+        )
+        report = (
+            workspace.root / "reports" / "runtime" / "linux-amd64" / "tests.json"
+        ).read_text(encoding="utf-8")
+        assert "private-test-key" not in report
+        assert not (
+            workspace.root / "reports" / "runtime" / "linux-amd64" / "test-inputs"
+        ).exists()
+    finally:
+        cleanup_run(
+            workspace,
+            buildah=runtime.buildah(),
+            podman=runtime.podman(),
+            registry_control=None,
+        )
+    assert not workspace.journal.cleanup_candidates()
 
 
 def test_manual_cosign_no_service_blob_signing(
@@ -557,6 +685,154 @@ def _run_id() -> str:
     if value is None:
         pytest.skip("local integration tests require a manifest-owned run ID")
     return value
+
+
+class _IntegrationIdFactory:
+    def __init__(self, value: str) -> None:
+        self._value = value
+
+    def create(self) -> str:
+        return self._value
+
+
+def _workspace_run_id(profile: str) -> str:
+    name = f"CONCLEAR_TEST_{profile.replace('-', '_').upper()}_ULID"
+    value = os.environ.get(name)
+    if value is None:
+        pytest.skip(f"local integration test requires {name}")
+    return value
+
+
+def _write_test_input_configuration(
+    context: Path, *, profile: str, launch_argument: str
+) -> None:
+    (context / "Containerfile").write_text(
+        _FIXTURE_CONTAINERFILE.replace("ARG IMAGE_SOURCE\n", "").replace(
+            "org.opencontainers.image.source=$IMAGE_SOURCE",
+            "org.opencontainers.image.source=https://github.com/example/runtime-inputs",
+        ),
+        encoding="utf-8",
+    )
+    (context / ".containerignore").write_text(
+        "**/.git/\n**/.env*\n**/*.key\n**/*.pem\n**/.venv/\n**/venv/\n",
+        encoding="utf-8",
+    )
+    fixture = context / "fixture"
+    fixture.mkdir(mode=0o700)
+    (fixture / "value").write_text("fixture-value", encoding="utf-8")
+    (context / "conclear.toml").write_text(
+        f'''schema_version = 1
+
+[project]
+name = "runtime-inputs"
+source = "https://github.com/example/runtime-inputs"
+
+[[images]]
+id = "runtime"
+containerfile = "Containerfile"
+context = "."
+repository = "quay.io/example/runtime-inputs"
+platforms = ["linux/amd64"]
+native_test_platforms = ["linux/amd64"]
+arm64_omission_reason = "This isolated integration fixture exercises the native runtime."
+
+[images.test]
+dependencies = ["generator"]
+
+[[images.test.fixtures]]
+name = "source"
+path = "fixture"
+
+[[images.test.outputs]]
+name = "private-key"
+secret = true
+
+[[images.test.outputs]]
+name = "result"
+
+[[images.test.preparations]]
+name = "keygen"
+image = "generator"
+command = ["/app/conclear-fixture", "keygen"]
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "private-key"
+target = "/output"
+read_only = false
+
+[[images.test.preparations]]
+name = "generate"
+image = "generator"
+command = ["/app/conclear-fixture", "prepare"]
+
+[[images.test.preparations.mounts]]
+source = "fixture"
+name = "source"
+target = "/input"
+read_only = true
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "private-key"
+target = "/key"
+read_only = true
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "result"
+target = "/output"
+read_only = false
+
+[images.test.launch]
+arguments = ["{launch_argument}"]
+environment = {{ SERVICE_SELECTOR = "test" }}
+
+[[images.test.launch.mounts]]
+source = "output"
+name = "result"
+target = "/input"
+read_only = true
+
+[images.release]
+immutable_tags = ["{{version}}"]
+moving_tags = ["stable"]
+
+[images.runtime]
+profile = "{profile}"
+user = 65532
+read_only = true
+memory = "128MiB"
+cpus = 1.0
+pids = 64
+nofile = 256
+health_command = ["/app/conclear-fixture", "health-input"]
+
+[[images]]
+id = "generator"
+containerfile = "Containerfile"
+context = "."
+repository = "quay.io/example/runtime-input-generator"
+platforms = ["linux/amd64"]
+native_test_platforms = ["linux/amd64"]
+arm64_omission_reason = "This isolated integration fixture exercises the native runtime."
+
+[images.release]
+immutable_tags = ["{{version}}"]
+moving_tags = ["stable"]
+
+[images.runtime]
+profile = "one-shot"
+user = 65532
+read_only = true
+writable_mounts = ["/output"]
+memory = "128MiB"
+cpus = 1.0
+pids = 64
+nofile = 256
+''',
+        encoding="utf-8",
+    )
 
 
 def _compile_fixture(

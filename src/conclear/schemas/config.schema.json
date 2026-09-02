@@ -31,6 +31,97 @@
       "minItems": 1,
       "items": {"type": "string", "minLength": 1}
     },
+    "testEnvironment": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(?!.*(?:^|_)(?:PASSWORD|PASSPHRASE|SECRET|TOKEN)(?:_|$))[A-Z_][A-Z0-9_]{0,127}$"
+      },
+      "additionalProperties": {"type": "string", "maxLength": 4096}
+    },
+    "testMount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "name", "target", "read_only"],
+      "properties": {
+        "source": {"enum": ["fixture", "output"]},
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "target": {"type": "string", "pattern": "^/[^.].*"},
+        "read_only": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"source": {"const": "fixture"}}, "required": ["source"]},
+          "then": {"properties": {"read_only": {"const": true}}}
+        }
+      ]
+    },
+    "testPreparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "image", "command"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "image": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "command": {"$ref": "#/$defs/command"},
+        "environment": {"$ref": "#/$defs/testEnvironment"},
+        "mounts": {"type": "array", "items": {"$ref": "#/$defs/testMount"}},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "expected_exit_status": {"type": "integer", "minimum": 0, "maximum": 255}
+      }
+    },
+    "testLaunch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "environment": {"$ref": "#/$defs/testEnvironment"},
+        "mounts": {"type": "array", "items": {"$ref": "#/$defs/testMount"}},
+        "expected_exit_status": {"type": "integer", "minimum": 0, "maximum": 255}
+      }
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"}
+        },
+        "fixtures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "path"],
+            "properties": {
+              "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+              "path": {"$ref": "#/$defs/relativePath"}
+            }
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+              "secret": {"type": "boolean"}
+            }
+          }
+        },
+        "preparations": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/testPreparation"}
+        },
+        "launch": {"$ref": "#/$defs/testLaunch"}
+      }
+    },
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -152,6 +243,7 @@
         "rescan_scope": {"enum": ["sbom-vulnerabilities", "full-image"]},
         "release": {"$ref": "#/$defs/release"},
         "runtime": {"$ref": "#/$defs/runtime"},
+        "test": {"$ref": "#/$defs/test"},
         "hooks": {"type": "array", "items": {"$ref": "#/$defs/hook"}},
         "pins": {"type": "array", "items": {"$ref": "#/$defs/pin"}},
         "vulnerability_exceptions": {"type": "array", "items": {"$ref": "#/$defs/exception"}},

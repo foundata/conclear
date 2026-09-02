@@ -29,6 +29,11 @@ _HOST_PATTERN = re.compile(
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
 _URL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
+_TEST_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_ENVIRONMENT_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
+_SECRET_ENVIRONMENT_PATTERN = re.compile(
+    r"(?:^|_)(?:PASSWORD|PASSPHRASE|SECRET|TOKEN)(?:_|$)"
+)
 
 
 class PinIntent(StrEnum):
@@ -86,6 +91,73 @@ class HookConfig:
     command: tuple[str, ...]
     timeout_seconds: int
     required: bool
+
+
+class TestMountSource(StrEnum):
+    """Declared source classes for container test mounts."""
+
+    FIXTURE = "fixture"
+    OUTPUT = "output"
+
+
+@dataclass(frozen=True, slots=True)
+class TestFixtureConfig:
+    """One immutable repository fixture exposed by a stable handle."""
+
+    name: str
+    path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class TestOutputConfig:
+    """One run-owned generated output handle."""
+
+    name: str
+    secret: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TestMountConfig:
+    """One typed container mount from a declared test input."""
+
+    source: TestMountSource
+    name: str
+    target: str
+    read_only: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TestPreparationConfig:
+    """One bounded preparation command run inside an exact test image."""
+
+    name: str
+    image: str
+    command: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...]
+    mounts: tuple[TestMountConfig, ...]
+    timeout_seconds: int
+    expected_exit_status: int
+
+
+@dataclass(frozen=True, slots=True)
+class TestLaunchConfig:
+    """Additional inputs supplied to the image's original entrypoint."""
+
+    arguments: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...]
+    mounts: tuple[TestMountConfig, ...]
+    expected_exit_status: int
+
+
+@dataclass(frozen=True, slots=True)
+class TestConfig:
+    """Typed runtime preparation and exact sibling-image dependencies."""
+
+    dependencies: tuple[str, ...]
+    fixtures: tuple[TestFixtureConfig, ...]
+    outputs: tuple[TestOutputConfig, ...]
+    preparations: tuple[TestPreparationConfig, ...]
+    launch: TestLaunchConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +218,7 @@ class ImageConfig:
     rescan_scope: str
     release: ReleaseTags
     runtime: RuntimeConfig
+    test: TestConfig
     hooks: tuple[HookConfig, ...]
     pins: tuple[PinConfig, ...]
     vulnerability_exceptions: tuple[VulnerabilityException, ...]
@@ -168,6 +241,25 @@ class RepositoryConfig:
         if not matches:
             raise InvalidInvocationError(f"Unknown image id: {image_id}")
         return matches[0]
+
+    def test_dependencies(self, image_id: str) -> tuple[ImageConfig, ...]:
+        """Return transitive test dependencies in stable dependency-first order."""
+        selected = self.image(image_id)
+        images = {image.image_id: image for image in self.images}
+        ordered: list[ImageConfig] = []
+        visited: set[str] = set()
+
+        def visit(current: ImageConfig) -> None:
+            for dependency_id in current.test.dependencies:
+                if dependency_id in visited:
+                    continue
+                dependency = images[dependency_id]
+                visit(dependency)
+                visited.add(dependency_id)
+                ordered.append(dependency)
+
+        visit(selected)
+        return tuple(ordered)
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,6 +341,7 @@ def load_repository_config(path: Path) -> RepositoryConfig:
     identifiers = [image.image_id for image in images]
     if len(identifiers) != len(set(identifiers)):
         raise InvalidInvocationError("Image identifiers must be unique")
+    _validate_test_graph(images)
     return RepositoryConfig(
         schema_version=_integer(value["schema_version"]),
         project=ProjectConfig(
@@ -423,6 +516,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         rescan_scope=_string(value.get("rescan_scope", "sbom-vulnerabilities")),
         release=release,
         runtime=_parse_runtime(runtime_value),
+        test=_parse_test(_object(value.get("test", {})), source_root),
         hooks=tuple(
             _parse_hook(_object(item)) for item in _list(value.get("hooks", []))
         ),
@@ -430,6 +524,280 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         vulnerability_exceptions=exceptions,
         limits=limits,
     )
+
+
+def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
+    fixtures = tuple(
+        TestFixtureConfig(
+            name=_test_name(_string(item_value["name"]), "fixture"),
+            path=_test_fixture_path(source_root, _string(item_value["path"])),
+        )
+        for item in _list(value.get("fixtures", []))
+        for item_value in (_object(item),)
+    )
+    outputs = tuple(
+        TestOutputConfig(
+            name=_test_name(_string(item_value["name"]), "output"),
+            secret=_boolean(item_value.get("secret", False)),
+        )
+        for item in _list(value.get("outputs", []))
+        for item_value in (_object(item),)
+    )
+    _require_unique_names(fixtures, "test fixtures")
+    _require_unique_names(outputs, "test outputs")
+    if {item.name for item in fixtures} & {item.name for item in outputs}:
+        raise InvalidInvocationError("Test fixture and output names must be distinct")
+    preparations = tuple(
+        _parse_test_preparation(_object(item))
+        for item in _list(value.get("preparations", []))
+    )
+    _require_unique_names(preparations, "test preparations")
+    launch = _parse_test_launch(_object(value.get("launch", {})))
+    test = TestConfig(
+        dependencies=tuple(_string_list(value.get("dependencies", []))),
+        fixtures=fixtures,
+        outputs=outputs,
+        preparations=preparations,
+        launch=launch,
+    )
+    _validate_mount_handles(test)
+    return test
+
+
+def _parse_test_preparation(value: dict[str, Any]) -> TestPreparationConfig:
+    return TestPreparationConfig(
+        name=_test_name(_string(value["name"]), "preparation"),
+        image=_test_name(_string(value["image"]), "preparation image"),
+        command=_command(value["command"], "preparation command"),
+        environment=_test_environment(value.get("environment", {})),
+        mounts=tuple(
+            _parse_test_mount(_object(item)) for item in _list(value.get("mounts", []))
+        ),
+        timeout_seconds=_integer(value.get("timeout_seconds", 300)),
+        expected_exit_status=_integer(value.get("expected_exit_status", 0)),
+    )
+
+
+def _parse_test_launch(value: dict[str, Any]) -> TestLaunchConfig:
+    return TestLaunchConfig(
+        arguments=_command(value.get("arguments", []), "launch arguments", empty=True),
+        environment=_test_environment(value.get("environment", {})),
+        mounts=tuple(
+            _parse_test_mount(_object(item)) for item in _list(value.get("mounts", []))
+        ),
+        expected_exit_status=_integer(value.get("expected_exit_status", 0)),
+    )
+
+
+def _parse_test_mount(value: dict[str, Any]) -> TestMountConfig:
+    source = TestMountSource(_string(value["source"]))
+    read_only = _boolean(value["read_only"])
+    if source is TestMountSource.FIXTURE and not read_only:
+        raise InvalidInvocationError("Repository test fixtures must be read-only")
+    target = _container_paths(
+        [value["target"]], field_name="test mount target", allow_root=False
+    )[0]
+    if (
+        "," in target
+        or target in {"/dev", "/proc", "/sys"}
+        or target.startswith(("/dev/", "/proc/", "/sys/"))
+    ):
+        raise InvalidInvocationError(f"Unsafe test mount target: {target}")
+    return TestMountConfig(
+        source=source,
+        name=_test_name(_string(value["name"]), "mount source"),
+        target=target,
+        read_only=read_only,
+    )
+
+
+def _test_environment(value: object) -> tuple[tuple[str, str], ...]:
+    environment = _object(value)
+    result: list[tuple[str, str]] = []
+    for name, item in environment.items():
+        if _ENVIRONMENT_NAME_PATTERN.fullmatch(name) is None:
+            raise InvalidInvocationError(f"Invalid test environment name: {name}")
+        if _SECRET_ENVIRONMENT_PATTERN.search(name):
+            raise InvalidInvocationError(
+                f"Test secrets must use declared private files, not environment {name}"
+            )
+        text = _string(item)
+        if "\x00" in text:
+            raise InvalidInvocationError(f"Test environment {name} contains NUL")
+        result.append((name, text))
+    return tuple(sorted(result))
+
+
+def _validate_mount_handles(test: TestConfig) -> None:
+    fixtures = {item.name for item in test.fixtures}
+    outputs = {item.name for item in test.outputs}
+    for owner, mounts in (
+        *((item.name, item.mounts) for item in test.preparations),
+        ("launch", test.launch.mounts),
+    ):
+        targets = [item.target for item in mounts]
+        if len(targets) != len(set(targets)):
+            raise InvalidInvocationError(f"{owner} contains duplicate mount targets")
+        if any(
+            _container_paths_overlap(left, right)
+            for index, left in enumerate(targets)
+            for right in targets[index + 1 :]
+        ):
+            raise InvalidInvocationError(f"{owner} contains overlapping mount targets")
+        for mount in mounts:
+            available = fixtures if mount.source is TestMountSource.FIXTURE else outputs
+            if mount.name not in available:
+                raise InvalidInvocationError(
+                    f"{owner} refers to undeclared {mount.source.value} {mount.name}"
+                )
+    available_outputs: set[str] = set()
+    for preparation in test.preparations:
+        for mount in preparation.mounts:
+            if (
+                mount.source is TestMountSource.OUTPUT
+                and mount.read_only
+                and mount.name not in available_outputs
+            ):
+                raise InvalidInvocationError(
+                    f"Preparation {preparation.name} consumes output {mount.name} before it is produced"
+                )
+        available_outputs.update(
+            mount.name
+            for mount in preparation.mounts
+            if mount.source is TestMountSource.OUTPUT and not mount.read_only
+        )
+    missing_producers = outputs - available_outputs
+    if missing_producers:
+        raise InvalidInvocationError(
+            "Test outputs have no preparation producer: "
+            + ", ".join(sorted(missing_producers))
+        )
+    for mount in test.launch.mounts:
+        if (
+            mount.source is TestMountSource.OUTPUT
+            and mount.name not in available_outputs
+        ):
+            raise InvalidInvocationError(
+                f"Launch consumes output {mount.name} before it is produced"
+            )
+
+
+def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
+    by_id = {image.image_id: image for image in images}
+    for image in images:
+        dependencies = image.test.dependencies
+        if len(dependencies) != len(set(dependencies)):
+            raise InvalidInvocationError(
+                f"Image {image.image_id} contains duplicate test dependencies"
+            )
+        unknown = sorted(set(dependencies) - by_id.keys())
+        if unknown:
+            raise InvalidInvocationError(
+                f"Image {image.image_id} has unknown test dependencies: {', '.join(unknown)}"
+            )
+        if image.image_id in dependencies:
+            raise InvalidInvocationError(
+                f"Image {image.image_id} cannot depend on itself for tests"
+            )
+        for dependency_id in dependencies:
+            if not set(image.platforms).issubset(by_id[dependency_id].platforms):
+                raise InvalidInvocationError(
+                    f"Test dependency {dependency_id} does not cover all platforms of {image.image_id}"
+                )
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(image_id: str) -> None:
+        if image_id in visiting:
+            raise InvalidInvocationError("Test image dependencies contain a cycle")
+        if image_id in visited:
+            return
+        visiting.add(image_id)
+        for dependency_id in by_id[image_id].test.dependencies:
+            visit(dependency_id)
+        visiting.remove(image_id)
+        visited.add(image_id)
+
+    for image in images:
+        visit(image.image_id)
+
+    for image in images:
+        permitted = {item.image_id for item in _dependency_order(image, by_id)} | {
+            image.image_id
+        }
+        for preparation in image.test.preparations:
+            if preparation.image not in permitted:
+                raise InvalidInvocationError(
+                    f"Preparation {preparation.name} uses undeclared test image {preparation.image}"
+                )
+            selected = by_id[preparation.image]
+            _validate_writable_mounts(preparation.name, preparation.mounts, selected)
+        _validate_writable_mounts("launch", image.test.launch.mounts, image)
+
+
+def _dependency_order(
+    image: ImageConfig, by_id: dict[str, ImageConfig]
+) -> tuple[ImageConfig, ...]:
+    ordered: list[ImageConfig] = []
+    visited: set[str] = set()
+
+    def visit(current: ImageConfig) -> None:
+        for dependency_id in current.test.dependencies:
+            if dependency_id in visited:
+                continue
+            dependency = by_id[dependency_id]
+            visit(dependency)
+            visited.add(dependency_id)
+            ordered.append(dependency)
+
+    visit(image)
+    return tuple(ordered)
+
+
+def _validate_writable_mounts(
+    owner: str, mounts: tuple[TestMountConfig, ...], image: ImageConfig
+) -> None:
+    writable = set(image.runtime.writable_mounts)
+    for mount in mounts:
+        if not mount.read_only and mount.target not in writable:
+            raise InvalidInvocationError(
+                f"{owner} writable mount {mount.target} is not declared by image {image.image_id}"
+            )
+
+
+def _test_name(value: str, label: str) -> str:
+    if _TEST_NAME_PATTERN.fullmatch(value) is None:
+        raise InvalidInvocationError(f"Invalid {label} name: {value}")
+    return value
+
+
+def _test_fixture_path(source_root: Path, value: str) -> Path:
+    resolved = contained_path(source_root, value)
+    current = source_root.resolve(strict=True)
+    try:
+        for component in Path(value).parts:
+            current /= component
+            if current.is_symlink():
+                raise InvalidInvocationError(
+                    f"Test fixture path contains a symbolic link: {value}",
+                    code="CC0002",
+                )
+    except OSError as exc:
+        raise InvalidInvocationError(
+            f"Unable to inspect test fixture path: {value}", code="CC0002"
+        ) from exc
+    return resolved
+
+
+def _container_paths_overlap(left: str, right: str) -> bool:
+    return left.startswith(right + "/") or right.startswith(left + "/")
+
+
+def _require_unique_names(values: tuple[object, ...], label: str) -> None:
+    names = [getattr(item, "name", None) for item in values]
+    if len(names) != len(set(names)):
+        raise InvalidInvocationError(f"{label} must have unique names")
 
 
 def _parse_release_tags(value: dict[str, Any]) -> ReleaseTags:
@@ -464,7 +832,9 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
         cpus=_number(value["cpus"]),
         pids=_integer(value["pids"]),
         nofile=_integer(value["nofile"]),
-        health_command=_command(value.get("health_command", []), "health_command"),
+        health_command=_command(
+            value.get("health_command", []), "health_command", empty=True
+        ),
         immutable_paths=immutable_paths,
         capabilities=tuple(_string_list(value.get("capabilities", []))),
         startup_timeout_seconds=_integer(value.get("startup_timeout_seconds", 60)),
@@ -536,8 +906,10 @@ def _container_paths(
     return tuple(sorted(paths))
 
 
-def _command(value: object, field_name: str) -> tuple[str, ...]:
+def _command(value: object, field_name: str, *, empty: bool = False) -> tuple[str, ...]:
     command = tuple(_string_list(value))
+    if not empty and not command:
+        raise InvalidInvocationError(f"{field_name} cannot be empty")
     if any("\x00" in item for item in command):
         raise InvalidInvocationError(f"{field_name} contains NUL")
     return command

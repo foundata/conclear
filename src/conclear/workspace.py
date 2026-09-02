@@ -84,6 +84,7 @@ class ResourceKind(StrEnum):
     GIT_WORKTREE = "gitWorktree"
     BUILDAH_STORAGE = "buildahStorage"
     PODMAN_IMPORT = "podmanImport"
+    TEST_INPUTS = "testInputs"
     CANDIDATE_REFERENCE = "candidateReference"
     TAG_WRITE = "tagWrite"
     SIGNATURE = "signature"
@@ -413,7 +414,11 @@ class ResourceJournal:
                 raise InvalidInvocationError(f"Unknown resource id: {resource_id}")
             previous = matches[0]
             allowed = {
-                ResourceStatus.PLANNED: {ResourceStatus.CREATED, ResourceStatus.FAILED},
+                ResourceStatus.PLANNED: {
+                    ResourceStatus.CREATED,
+                    ResourceStatus.FAILED,
+                    ResourceStatus.REMOVED,
+                },
                 ResourceStatus.CREATED: {ResourceStatus.REMOVED, ResourceStatus.FAILED},
                 ResourceStatus.FAILED: {ResourceStatus.CREATED, ResourceStatus.REMOVED},
                 ResourceStatus.REMOVED: set(),

@@ -193,7 +193,7 @@ def resume_release(
             )
             if record_path.is_file():
                 qualification_transport(workspace, image, platform)
-                protected_resources.add(f"layout-{platform.key}")
+                protected_resources.add(f"layout-{image.image_id}-{platform.key}")
         registry_control = create_registry_control(
             profile, destinations=(image.repository,)
         )

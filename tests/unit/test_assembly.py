@@ -236,6 +236,18 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
                 "nofile": 1024,
                 "capabilities": [],
             },
+            "testInputs": {
+                "fixtures": [],
+                "outputs": [],
+                "preparations": [],
+                "launch": {
+                    "argumentsDigest": digest,
+                    "environmentDigest": digest,
+                    "mounts": [],
+                    "expectedExitStatus": 0,
+                },
+            },
+            "testImageDependencies": [],
             "testResults": [],
             "sbom": {"digest": payload_digest, "spdxVersion": "SPDX-2.3"},
             "scans": [],

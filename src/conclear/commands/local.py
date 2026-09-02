@@ -2,6 +2,7 @@
 
 import platform as host_platform
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,9 @@ from conclear.services.local_phases import (
 )
 from conclear.services.qualification import (
     QualificationInputs,
+    TestDependencyBuild,
     build_platform,
+    build_test_dependencies,
     generate_evidence,
     qualify_platform,
     test_platform,
@@ -123,7 +126,15 @@ def build_command(
     inputs = _inputs(source_run, platform_text, selected)
     build = build_platform(inputs, source_run.runtime.buildah())
     build_path = write_build_evidence(inputs, build)
-    accepted = not any(finding.severity == "error" for finding in build.findings)
+    dependencies = build_test_dependencies(inputs, source_run.runtime.buildah())
+    dependency_paths = [
+        write_build_evidence(replace(inputs, image=item.image), item.build)
+        for item in dependencies
+    ]
+    build_findings = build.findings + tuple(
+        finding for item in dependencies for finding in item.build.findings
+    )
+    accepted = not any(finding.severity == "error" for finding in build_findings)
     if not accepted:
         source_run.workspace.transition(RunState.REJECTED)
     emit(
@@ -135,12 +146,13 @@ def build_command(
                 if accepted
                 else f"Built {inputs.platform}, but metadata was rejected"
             ),
-            findings=build.findings,
+            findings=build_findings,
             data={
                 "runId": source_run.workspace.run_id,
                 "layout": str(build.observation.layout_path),
                 "digest": str(build.observation.graph.digest),
                 "buildEvidence": str(build_path),
+                "testDependencyEvidence": [str(path) for path in dependency_paths],
             },
         ),
         output_format,
@@ -160,13 +172,28 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
     )
     inputs = _inputs(source_run, platform_text, None)
     build = load_build_evidence(inputs)
+    dependencies = tuple(
+        TestDependencyBuild(
+            image=dependency,
+            build=load_build_evidence(replace(inputs, image=dependency)),
+            source_revision=inputs.source.revision,
+            platform=inputs.platform,
+        )
+        for dependency in inputs.repository.test_dependencies(inputs.image.image_id)
+    )
     hooks = HookRunner(
         runner=source_run.runtime.runner,
         environment=source_run.runtime.environment,
         source_root=source_run.repository.path.parent,
         log_directory=source_run.workspace.root / "logs",
     )
-    result = test_platform(inputs, build, source_run.runtime.podman(), hooks)
+    result = test_platform(
+        inputs,
+        build,
+        source_run.runtime.podman(),
+        hooks,
+        dependencies=dependencies,
+    )
     accepted = not result.incomplete and not any(
         finding.severity == "error" for finding in result.findings
     )

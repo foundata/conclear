@@ -18,7 +18,7 @@ from conclear.adapters.podman import (
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.artifacts import qualification_transport
 from conclear.config import load_repository_config
-from conclear.errors import OperationalError, RuleRejectionError
+from conclear.errors import CommandTimeoutError, OperationalError, RuleRejectionError
 from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
@@ -39,10 +39,11 @@ from conclear.records import (
 from conclear.services.qualification import (
     QualificationInputs,
     build_platform,
+    build_test_dependencies,
     qualify_platform,
 )
 from conclear.services.qualification import test_platform as run_platform_tests
-from conclear.values import Platform
+from conclear.values import Digest, Platform
 from conclear.workspace import ResourceJournal, ResourceStatus, RunWorkspace
 
 
@@ -148,25 +149,65 @@ class Runtime:
         fail_health: bool = False,
         fail_remove: bool = False,
         effective_capabilities: tuple[str, ...] = (),
+        write_preparation_outputs: bool = True,
+        main_exit_status: int = 0,
+        timeout_preparation: bool = False,
+        fail_import_call: int | None = None,
+        fail_create_call: int | None = None,
     ) -> None:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
         self.effective_capabilities = effective_capabilities
+        self.write_preparation_outputs = write_preparation_outputs
+        self.main_exit_status = main_exit_status
+        self.timeout_preparation = timeout_preparation
+        self.fail_import_call = fail_import_call
+        self.fail_create_call = fail_create_call
         self.removals = 0
+        self.removed_names: list[str] = []
+        self.import_calls = 0
+        self.created: list[dict[str, Any]] = []
+        self.runtimes: dict[str, Any] = {}
+        self.saw_private_input = False
 
     def import_layout(self, **values: Any) -> ImportObservation:
+        self.import_calls += 1
+        if self.import_calls == self.fail_import_call:
+            raise OperationalError("injected import boundary failure")
         return ImportObservation(str(values["image_name"]), values["expected_digest"])
 
     def create_container(self, **values: Any) -> ContainerObservation:
-        return ContainerObservation(
-            str(values["name"]), "container-id", "running", 100, None
-        )
+        self.created.append(values)
+        name = str(values["name"])
+        if len(self.created) == self.fail_create_call:
+            raise OperationalError("injected create boundary failure")
+        self.runtimes[name] = values["runtime"]
+        entrypoint = values.get("entrypoint", ())
+        if entrypoint and self.write_preparation_outputs:
+            for mount in values.get("mounts", ()):
+                if mount.read_only:
+                    if mount.source.name == "private-key":
+                        self.saw_private_input = (mount.source / "payload").read_text(
+                            encoding="utf-8"
+                        ) == "private-value"
+                    continue
+                output = mount.source / "payload"
+                output.write_text(
+                    "private-value"
+                    if mount.source.name == "private-key"
+                    else "generated-result",
+                    encoding="utf-8",
+                )
+                output.chmod(0o600)
+        return ContainerObservation(name, "container-id", "running", 100, None)
 
     def inspect_controls(self, **values: Any) -> RuntimeControlObservation:
+        runtime = self.runtimes.get(str(values["name"]))
+        writable_mounts = () if runtime is None else tuple(runtime.writable_mounts)
         return RuntimeControlObservation(
             user="10001",
             read_only=True,
-            writable_mounts=(),
+            writable_mounts=writable_mounts,
             memory_bytes=512 * 1024 * 1024,
             nano_cpus=1_000_000_000,
             pids_limit=128,
@@ -187,10 +228,13 @@ class Runtime:
         return None
 
     def wait(self, **values: Any) -> int:
-        return 0
+        if self.timeout_preparation and "-prepare-" in str(values["name"]):
+            raise CommandTimeoutError("injected preparation timeout")
+        return 0 if "-prepare-" in str(values["name"]) else self.main_exit_status
 
     def remove(self, **values: Any) -> None:
         self.removals += 1
+        self.removed_names.append(str(values["name"]))
         if self.fail_remove:
             raise OperationalError("injected removal failure")
         return None
@@ -232,6 +276,27 @@ class Scanner:
 class NoopRunner:
     def run(self, request: CommandRequest) -> ProcessResult:
         raise AssertionError(f"Unexpected hook: {request.argv}")
+
+
+class CapturingRunner:
+    def __init__(self) -> None:
+        self.requests: list[CommandRequest] = []
+        self.manifests: list[dict[str, object]] = []
+
+    def run(self, request: CommandRequest) -> ProcessResult:
+        self.requests.append(request)
+        manifest_path = Path(request.environment["CC_TEST_INPUT_MANIFEST"])
+        self.manifests.append(json.loads(manifest_path.read_text(encoding="utf-8")))
+        return ProcessResult(
+            argv=request.argv,
+            returncode=0,
+            stdout="hook passed",
+            stderr="",
+            duration_seconds=0.01,
+            attempts=1,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
 
 
 DATABASE_METADATA: dict[str, object] = {
@@ -281,6 +346,134 @@ def hook_runner(value: QualificationInputs) -> HookRunner:
         source_root=value.repository.path.parent,
         log_directory=value.workspace.root / "logs",
     )
+
+
+def configured_hook_runner(
+    value: QualificationInputs, runner: CapturingRunner
+) -> HookRunner:
+    return HookRunner(
+        runner=runner,
+        environment={"PATH": "/usr/bin"},
+        source_root=value.repository.path.parent,
+        log_directory=value.workspace.root / "logs",
+    )
+
+
+def configure_test_inputs(
+    root: Path, *, profile: str = "service", expected_exit_status: int = 0
+) -> None:
+    fixture = root / "fixture"
+    fixture.mkdir()
+    (fixture / "input.txt").write_text("fixture-value\n", encoding="utf-8")
+    scripts = root / "scripts"
+    scripts.mkdir()
+    hook = scripts / "hook"
+    hook.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    hook.chmod(0o755)
+    path = root / "conclear.toml"
+    content = (
+        path.read_text(encoding="utf-8")
+        .replace(
+            "[images.release]",
+            """[images.test]
+dependencies = ["generator"]
+
+[[images.test.fixtures]]
+name = "source"
+path = "fixture"
+
+[[images.test.outputs]]
+name = "private-key"
+secret = true
+
+[[images.test.outputs]]
+name = "result"
+
+[[images.test.preparations]]
+name = "keygen"
+image = "generator"
+command = ["/generator", "keygen"]
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "private-key"
+target = "/output"
+read_only = false
+
+[[images.test.preparations]]
+name = "generate"
+image = "generator"
+command = ["/generator", "generate"]
+environment = { GENERATOR_MODE = "compatibility" }
+
+[[images.test.preparations.mounts]]
+source = "fixture"
+name = "source"
+target = "/input"
+read_only = true
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "private-key"
+target = "/key"
+read_only = true
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "result"
+target = "/output"
+read_only = false
+
+[images.test.launch]
+arguments = ["serve", "--fixture", "/input"]
+environment = { SERVICE_SELECTOR = "test" }
+expected_exit_status = EXPECTED_EXIT_STATUS
+
+[[images.test.launch.mounts]]
+source = "output"
+name = "result"
+target = "/input"
+read_only = true
+
+[images.release]""",
+        )
+        .replace('profile = "service"', f'profile = "{profile}"', 1)
+    )
+    content = content.replace("EXPECTED_EXIT_STATUS", str(expected_exit_status))
+    content = content.replace(
+        "[[images.pins]]",
+        """[[images.hooks]]
+name = "compatibility"
+command = ["scripts/hook"]
+
+[[images.pins]]""",
+    )
+    content += """
+
+[[images]]
+id = "generator"
+containerfile = "Containerfile"
+context = "."
+repository = "quay.io/example/generator"
+platforms = ["linux/amd64"]
+native_test_platforms = ["linux/amd64"]
+arm64_omission_reason = "Only amd64 is required for this test."
+
+[images.release]
+immutable_tags = ["{version}"]
+moving_tags = ["stable"]
+
+[images.runtime]
+profile = "one-shot"
+user = 10001
+read_only = true
+writable_mounts = ["/output"]
+memory = "512MiB"
+cpus = 1.0
+pids = 128
+nofile = 1024
+"""
+    path.write_text(content, encoding="utf-8")
 
 
 def pin_observations(
@@ -453,7 +646,7 @@ def test_runtime_failure_attempts_cleanup_without_replacing_original_error(
     status = next(
         entry.status
         for entry in value.workspace.journal.entries()
-        if entry.resource_id == "podman-linux-amd64"
+        if entry.resource_id == "podman-app-linux-amd64"
     )
     assert status is (ResourceStatus.FAILED if fail_remove else ResourceStatus.REMOVED)
 
@@ -521,3 +714,375 @@ def test_qualification_rejects_stale_pin_resolution(
 
     assert result.verdict is Verdict.REJECTED
     assert any(item.check_id == "CC0204" for item in result.findings)
+
+
+def test_service_uses_exact_dependency_preparation_and_cleans_secrets(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    build = build_platform(value, Builder())
+    dependencies = build_test_dependencies(value, Builder())
+    runtime = Runtime()
+    runner = CapturingRunner()
+
+    evidence = run_platform_tests(
+        value,
+        build,
+        runtime,
+        configured_hook_runner(value, runner),
+        dependencies=dependencies,
+    )
+
+    assert not evidence.findings
+    assert [call.get("entrypoint", ()) for call in runtime.created] == [
+        ("/generator", "keygen"),
+        ("/generator", "generate"),
+        (),
+    ]
+    assert runtime.created[-1]["arguments"] == (
+        "serve",
+        "--fixture",
+        "/input",
+    )
+    assert runtime.created[-1]["environment"] == (("SERVICE_SELECTOR", "test"),)
+    assert runtime.saw_private_input
+    assert len(runner.requests) == 1
+    manifest_text = json.dumps(runner.manifests[0], sort_keys=True)
+    assert "private-key" not in manifest_text
+    assert "private-value" not in manifest_text
+    manifest_dependencies = runner.manifests[0]["dependencies"]
+    assert isinstance(manifest_dependencies, list)
+    assert manifest_dependencies == [
+        {
+            "imageId": "generator",
+            "layout": str(dependencies[0].build.observation.layout_path),
+            "digest": str(dependencies[0].build.observation.graph.digest),
+        }
+    ]
+    assert not (
+        value.workspace.root / "reports" / "app" / "linux-amd64" / "test-inputs"
+    ).exists()
+    output_observations = evidence.test_inputs["outputs"]
+    assert isinstance(output_observations, list)
+    secret_observation = next(
+        item
+        for item in output_observations
+        if isinstance(item, dict) and item.get("secret") is True
+    )
+    assert "digest" not in secret_observation
+    report = (
+        value.workspace.root / "reports" / "app" / "linux-amd64" / "tests.json"
+    ).read_text(encoding="utf-8")
+    assert "private-value" not in report
+    assert str(tmp_path) not in report
+
+
+def test_qualification_record_binds_test_inputs_and_sibling_result(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=configured_hook_runner(value, CapturingRunner()),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        pin_observations=pin_observations(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    record = json.loads(result.record_path.read_text(encoding="utf-8"))
+    validate_record(record)
+    assert record["schemaVersion"] == 1
+    payload = record["payload"]
+    dependency = payload["testImageDependencies"][0]
+    assert dependency["imageId"] == "generator"
+    assert dependency["sourceRevision"] == value.source.revision
+    assert dependency["testResultDigest"] in payload["payloadDigests"]
+    secret = next(item for item in payload["testInputs"]["outputs"] if item["secret"])
+    assert "digest" not in secret
+
+
+def test_one_shot_launch_uses_arguments_and_expected_exit_contract(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root, profile="one-shot", expected_exit_status=7)
+    value = inputs(root, tmp_path)
+    runtime = Runtime(main_exit_status=7)
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        configured_hook_runner(value, CapturingRunner()),
+        dependencies=build_test_dependencies(value, Builder()),
+    )
+
+    assert not evidence.findings
+    assert evidence.test_results[-2] == {
+        "name": "oneShotExit",
+        "status": "passed",
+        "exitStatus": 7,
+    }
+    assert runtime.created[-1].get("entrypoint", ()) == ()
+    assert runtime.created[-1]["arguments"][0] == "serve"
+
+
+def test_partial_preparation_rejects_before_repository_hook(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    runner = CapturingRunner()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        Runtime(write_preparation_outputs=False),
+        configured_hook_runner(value, runner),
+        dependencies=build_test_dependencies(value, Builder()),
+    )
+
+    assert any(
+        finding.check_id == "CC0403" and "produced no files" in finding.message
+        for finding in evidence.findings
+    )
+    assert not runner.requests
+
+
+def test_preparation_timeout_preserves_failure_and_cleans_private_inputs(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    runner = CapturingRunner()
+
+    with pytest.raises(CommandTimeoutError, match="injected preparation timeout"):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            Runtime(timeout_preparation=True),
+            configured_hook_runner(value, runner),
+            dependencies=build_test_dependencies(value, Builder()),
+        )
+
+    assert not runner.requests
+    assert not (
+        value.workspace.root / "reports" / "app" / "linux-amd64" / "test-inputs"
+    ).exists()
+    statuses = {
+        item.resource_id: item.status for item in value.workspace.journal.entries()
+    }
+    assert statuses["podman-preparation-app-linux-amd64-1"] is ResourceStatus.REMOVED
+    assert statuses["podman-app-linux-amd64"] is ResourceStatus.REMOVED
+    assert statuses["test-inputs-app-linux-amd64"] is ResourceStatus.REMOVED
+
+
+def test_incomplete_dependency_build_set_fails_before_runtime_mutation(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    runtime = Runtime()
+
+    with pytest.raises(OperationalError, match="do not match configuration"):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            runtime,
+            configured_hook_runner(value, CapturingRunner()),
+            dependencies=(),
+        )
+
+    assert not runtime.created
+
+
+def test_dependency_revision_mismatch_fails_before_runtime_mutation(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    dependencies = build_test_dependencies(value, Builder())
+    changed = (replace(dependencies[0], source_revision="f" * 40),)
+    runtime = Runtime()
+
+    with pytest.raises(OperationalError, match="source revision changed"):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            runtime,
+            configured_hook_runner(value, CapturingRunner()),
+            dependencies=changed,
+        )
+
+    assert not runtime.created
+
+
+def test_dependency_platform_mismatch_fails_before_runtime_mutation(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    dependencies = build_test_dependencies(value, Builder())
+    changed = (replace(dependencies[0], platform=Platform.parse("linux/arm64")),)
+    runtime = Runtime()
+
+    with pytest.raises(OperationalError, match="platform changed"):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            runtime,
+            configured_hook_runner(value, CapturingRunner()),
+            dependencies=changed,
+        )
+
+    assert not runtime.created
+
+
+def test_dependency_recorded_digest_mismatch_fails_before_repository_hook(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    dependencies = build_test_dependencies(value, Builder())
+    dependency = dependencies[0]
+    changed_graph = replace(
+        dependency.build.observation.graph,
+        root=replace(
+            dependency.build.observation.graph.root,
+            digest=Digest("sha256:" + "f" * 64),
+        ),
+    )
+    changed_observation = replace(dependency.build.observation, graph=changed_graph)
+    changed = (
+        replace(
+            dependency, build=replace(dependency.build, observation=changed_observation)
+        ),
+    )
+    runtime = Runtime()
+    runner = CapturingRunner()
+
+    with pytest.raises(OperationalError, match="layout changed after build"):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            runtime,
+            configured_hook_runner(value, runner),
+            dependencies=changed,
+        )
+
+    assert not runtime.created
+    assert not runner.requests
+
+
+def test_dependency_layout_tampering_fails_before_repository_hook(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    dependencies = build_test_dependencies(value, Builder())
+    layout = dependencies[0].build.observation.layout_path
+    manifest_digest = (
+        dependencies[0].build.observation.graph.manifests[0].descriptor.digest
+    )
+    manifest_path = layout / "blobs" / "sha256" / manifest_digest.encoded
+    manifest_path.write_bytes(manifest_path.read_bytes() + b"changed")
+    runner = CapturingRunner()
+
+    with pytest.raises(OperationalError):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            Runtime(),
+            configured_hook_runner(value, runner),
+            dependencies=dependencies,
+        )
+
+    assert not runner.requests
+
+
+def test_preexisting_test_input_path_is_retained_on_failed_materialization(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    build = build_platform(value, Builder())
+    path = value.workspace.root / "reports" / "app" / "linux-amd64" / "test-inputs"
+    path.mkdir(parents=True)
+    caller_file = path / "caller-owned"
+    caller_file.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(OperationalError, match="Unable to create run-owned"):
+        run_platform_tests(value, build, Runtime(), hook_runner(value))
+
+    assert caller_file.read_text(encoding="utf-8") == "keep"
+    entry = next(
+        item
+        for item in value.workspace.journal.entries()
+        if item.resource_id == "test-inputs-app-linux-amd64"
+    )
+    assert entry.status is ResourceStatus.FAILED
+
+
+@pytest.mark.parametrize(
+    ("failure", "call"),
+    (
+        ("import", 1),
+        ("import", 2),
+        ("create", 1),
+        ("create", 2),
+        ("create", 3),
+    ),
+)
+def test_runtime_creation_boundary_failure_cleans_only_run_owned_resources(
+    repository_factory: Any,
+    tmp_path: Path,
+    failure: str,
+    call: int,
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    caller_owned = tmp_path / "caller-owned"
+    caller_owned.write_text("keep\n", encoding="utf-8")
+    runtime = Runtime(
+        fail_import_call=call if failure == "import" else None,
+        fail_create_call=call if failure == "create" else None,
+    )
+    runner = CapturingRunner()
+
+    with pytest.raises(OperationalError, match=f"injected {failure} boundary failure"):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            runtime,
+            configured_hook_runner(value, runner),
+            dependencies=build_test_dependencies(value, Builder()),
+        )
+
+    prefix = f"cc-{value.workspace.run_id}-{value.platform.key}"
+    assert set(runtime.removed_names).issubset(
+        {prefix, f"{prefix}-prepare-1", f"{prefix}-prepare-2"}
+    )
+    assert caller_owned.read_text(encoding="utf-8") == "keep\n"
+    assert not runner.requests
+    assert not (
+        value.workspace.root / "reports" / "app" / "linux-amd64" / "test-inputs"
+    ).exists()

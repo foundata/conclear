@@ -3,9 +3,12 @@ from pathlib import Path
 
 import pytest
 
+from conclear.config import TestConfig as RuntimeTestConfig
+from conclear.config import TestLaunchConfig as RuntimeTestLaunchConfig
 from conclear.errors import OperationalError
 from conclear.registry_control import TagObservation
 from conclear.services.cleanup import cleanup_run
+from conclear.test_inputs import materialize_test_inputs
 from conclear.values import Digest, OCIReference
 from conclear.workspace import (
     ResourceKind,
@@ -142,6 +145,90 @@ def test_cleanup_removes_container_and_isolated_podman_storage(tmp_path: Path) -
     assert podman.removed == ["owned-container"]
     assert podman.reset == [(storage, runroot)]
     assert not storage.parent.exists()
+
+
+def test_cleanup_removes_preparation_without_resetting_shared_storage(
+    tmp_path: Path,
+) -> None:
+    run = workspace(tmp_path)
+    storage = run.root / "podman" / "linux-amd64" / "root"
+    storage.mkdir(parents=True)
+    runroot = storage.parent / "runroot"
+    runroot.mkdir()
+    run.journal.plan(
+        resource_id="preparation",
+        kind=ResourceKind.PODMAN_IMPORT,
+        identifier="owned-preparation",
+        ephemeral=True,
+        metadata={"storageRoot": str(storage), "resetStorage": False},
+    )
+    run.journal.update("preparation", ResourceStatus.CREATED)
+    podman = FakePodman()
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=podman,
+        registry_control=None,
+    )
+
+    assert result.removed == ("preparation",)
+    assert podman.removed == ["owned-preparation"]
+    assert not podman.reset
+    assert storage.is_dir()
+
+
+def test_cleanup_requires_run_marker_for_test_input_tree(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    root = run.root / "reports" / "test-inputs"
+    test = RuntimeTestConfig(
+        dependencies=(),
+        fixtures=(),
+        outputs=(),
+        preparations=(),
+        launch=RuntimeTestLaunchConfig((), (), (), 0),
+    )
+    materialize_test_inputs(root, run_id=run.run_id, test=test)
+    run.journal.plan(
+        resource_id="test-inputs",
+        kind=ResourceKind.TEST_INPUTS,
+        identifier=str(root),
+        ephemeral=True,
+    )
+    run.journal.update("test-inputs", ResourceStatus.CREATED)
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=FakePodman(),
+        registry_control=None,
+    )
+
+    assert result.removed == ("test-inputs",)
+    assert not root.exists()
+
+
+def test_cleanup_closes_planned_test_inputs_that_were_never_created(
+    tmp_path: Path,
+) -> None:
+    run = workspace(tmp_path)
+    root = run.root / "reports" / "test-inputs"
+    run.journal.plan(
+        resource_id="test-inputs",
+        kind=ResourceKind.TEST_INPUTS,
+        identifier=str(root),
+        ephemeral=True,
+    )
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=FakePodman(),
+        registry_control=None,
+    )
+
+    assert result.removed == ("test-inputs",)
+    assert run.journal.entries()[0].status is ResourceStatus.REMOVED
 
 
 def test_cleanup_refuses_candidate_when_recorded_digest_changed(tmp_path: Path) -> None:

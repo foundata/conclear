@@ -242,6 +242,86 @@
         "outputDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
       }
     },
+    "testMountDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "name", "target", "readOnly"],
+      "properties": {
+        "source": {"enum": ["fixture", "output"]},
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "target": {"type": "string", "pattern": "^/"},
+        "readOnly": {"type": "boolean"}
+      }
+    },
+    "testInputTree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "secret", "files", "bytes"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "secret": {"type": "boolean"},
+        "files": {"type": "integer", "minimum": 0},
+        "bytes": {"type": "integer", "minimum": 0},
+        "digest": {"$ref": "#/$defs/digest"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"secret": {"const": false}}, "required": ["secret"]},
+          "then": {"required": ["digest"]},
+          "else": {"not": {"required": ["digest"]}}
+        }
+      ]
+    },
+    "testPreparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "imageId", "commandDigest", "environmentDigest", "mounts", "timeoutSeconds", "expectedExitStatus", "imageManifestDigest"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "imageId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "commandDigest": {"$ref": "#/$defs/digest"},
+        "environmentDigest": {"$ref": "#/$defs/digest"},
+        "mounts": {"type": "array", "items": {"$ref": "#/$defs/testMountDeclaration"}},
+        "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "expectedExitStatus": {"type": "integer", "minimum": 0, "maximum": 255},
+        "imageManifestDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "testLaunch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argumentsDigest", "environmentDigest", "mounts", "expectedExitStatus"],
+      "properties": {
+        "argumentsDigest": {"$ref": "#/$defs/digest"},
+        "environmentDigest": {"$ref": "#/$defs/digest"},
+        "mounts": {"type": "array", "items": {"$ref": "#/$defs/testMountDeclaration"}},
+        "expectedExitStatus": {"type": "integer", "minimum": 0, "maximum": 255}
+      }
+    },
+    "testInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtures", "outputs", "preparations", "launch"],
+      "properties": {
+        "fixtures": {"type": "array", "items": {"$ref": "#/$defs/testInputTree"}},
+        "outputs": {"type": "array", "items": {"$ref": "#/$defs/testInputTree"}},
+        "preparations": {"type": "array", "items": {"$ref": "#/$defs/testPreparation"}},
+        "launch": {"$ref": "#/$defs/testLaunch"}
+      }
+    },
+    "testImageDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageId", "platform", "manifestDigest", "layoutDescriptor", "sourceRevision", "testResultDigest"],
+      "properties": {
+        "imageId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "platform": {"$ref": "#/$defs/platform"},
+        "manifestDigest": {"$ref": "#/$defs/digest"},
+        "layoutDescriptor": {"$ref": "#/$defs/descriptor"},
+        "sourceRevision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "testResultDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
     "scan": {
       "type": "object",
       "additionalProperties": false,
@@ -319,7 +399,7 @@
     "platformQualification": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageId", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "buildExecution", "testExecution", "runtimeConstraints", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest", "databaseMetadata", "findings"],
+      "required": ["imageId", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "buildExecution", "testExecution", "runtimeConstraints", "testInputs", "testImageDependencies", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest", "databaseMetadata", "findings"],
       "properties": {
         "imageId": {"type": "string"},
         "platform": {"$ref": "#/$defs/platform"},
@@ -334,6 +414,8 @@
         "buildExecution": {"$ref": "#/$defs/execution"},
         "testExecution": {"$ref": "#/$defs/execution"},
         "runtimeConstraints": {"$ref": "#/$defs/runtimeConstraints"},
+        "testInputs": {"$ref": "#/$defs/testInputs"},
+        "testImageDependencies": {"type": "array", "items": {"$ref": "#/$defs/testImageDependency"}},
         "testResults": {"type": "array", "items": {"$ref": "#/$defs/testResult"}},
         "sbom": {"type": "object", "additionalProperties": false, "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"const": "SPDX-2.3"}}},
         "scans": {"type": "array", "items": {"$ref": "#/$defs/scan"}},

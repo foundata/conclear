@@ -8,6 +8,7 @@ from typing import Protocol
 
 from conclear.errors import OperationalError
 from conclear.registry_control import TagObservation
+from conclear.test_inputs import remove_materialized_test_inputs
 from conclear.values import Digest, OCIReference
 from conclear.workspace import (
     ResourceEntry,
@@ -151,6 +152,10 @@ def _cleanup_entry(
         buildah.remove_storage(root=root / "root", runroot=root / "runroot")
         _remove_local(root)
         return True
+    if entry.kind is ResourceKind.TEST_INPUTS:
+        path = _owned_path(workspace, entry.identifier)
+        remove_materialized_test_inputs(path, run_id=workspace.run_id)
+        return True
     if entry.kind is ResourceKind.PODMAN_IMPORT:
         storage = _metadata_path(workspace, entry, "storageRoot")
         runroot = storage.parent / "runroot"
@@ -160,8 +165,9 @@ def _cleanup_entry(
             name=entry.identifier,
             force=True,
         )
-        podman.remove_storage(root=storage, runroot=runroot)
-        _remove_local(storage.parent)
+        if entry.metadata.get("resetStorage", True) is True:
+            podman.remove_storage(root=storage, runroot=runroot)
+            _remove_local(storage.parent)
         return True
     if entry.kind is ResourceKind.CANDIDATE_REFERENCE:
         if registry_control is None:

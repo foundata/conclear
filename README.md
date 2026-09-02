@@ -13,6 +13,7 @@ ConClear takes a container image from a reviewed source commit to a signed, veri
 - [Installation](#installation)
 - [Usage](#usage)
   - [Repository configuration](#usage-repository-configuration)
+  - [Exact runtime test inputs](#usage-runtime-test-inputs)
   - [Release profiles](#usage-release-profiles)
   - [Running a release](#usage-release)
   - [Resuming an interrupted run](#usage-resume)
@@ -64,6 +65,80 @@ The `release` command runs the complete workflow. The sections below cover its r
 ### Repository configuration<a id="usage-repository-configuration"></a>
 
 Repository behavior is declared in a reviewed `conclear.toml` at the selected source revision. It holds project facts and the exceptions the guide permits, never credentials. Unknown keys are errors, so a misspelled security setting cannot be silently ignored.
+
+
+### Exact runtime test inputs<a id="usage-runtime-test-inputs"></a>
+
+An image can declare non-secret repository fixtures, run-owned generated outputs, ordered preparation commands, launch inputs and exact sibling image dependencies. ConClear builds every dependency from the same isolated source revision, timestamp, platform, version input and Buildah toolchain, then imports each validated layout by digest before preparation starts.
+
+This example lets a one-shot sibling create a private key and a generated test artifact, then launches the primary image with only the non-secret artifact:
+
+```toml
+[images.test]
+dependencies = ["generator"]
+
+[[images.test.fixtures]]
+name = "definition"
+path = "tests/fixtures/definition"
+
+[[images.test.outputs]]
+name = "test-key"
+secret = true
+
+[[images.test.outputs]]
+name = "generated"
+
+[[images.test.preparations]]
+name = "create-key"
+image = "generator"
+command = ["/usr/local/bin/generator", "keygen"]
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "test-key"
+target = "/output"
+read_only = false
+
+[[images.test.preparations]]
+name = "generate"
+image = "generator"
+command = ["/usr/local/bin/generator", "build", "--input", "/input", "--key", "/key", "--output", "/output"]
+
+[[images.test.preparations.mounts]]
+source = "fixture"
+name = "definition"
+target = "/input"
+read_only = true
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "test-key"
+target = "/key"
+read_only = true
+
+[[images.test.preparations.mounts]]
+source = "output"
+name = "generated"
+target = "/output"
+read_only = false
+
+[images.test.launch]
+arguments = ["--test-input", "/run/generated"]
+environment = { SERVICE_SELECTOR = "test" }
+expected_exit_status = 0
+
+[[images.test.launch.mounts]]
+source = "output"
+name = "generated"
+target = "/run/generated"
+read_only = true
+```
+
+The `generator` image must be another `[[images]]` entry in the same file, cover every tested platform and declare `/output` in its runtime `writable_mounts`. Preparation commands replace only that exact image's entrypoint; launch arguments retain the primary image's original entrypoint. Commands are arrays and are never interpreted by a shell.
+
+Fixtures must be ordinary source-tree files or directories with no symbolic links or unsafe permissions, and are always mounted read-only. Writable outputs exist only below the run workspace and only at destinations already declared by the selected image's runtime contract. Output names marked `secret = true` have no path, value or content digest in public evidence, are unavailable to repository hooks and are destroyed before a hook runs.
+
+ConClear continues to own layout validation, digest-preserving import, runtime controls, startup, health, signals, expected exit status and cleanup. A reviewed repository hook receives `CC_TEST_INPUT_MANIFEST`, which contains exact layout paths and digests plus non-secret fixture and output handles. Hooks add assertions but cannot mark a built-in gate as passed; ConClear records their command and result but does not sandbox a reviewed hook from invoking other host executables.
 
 
 ### Release profiles<a id="usage-release-profiles"></a>

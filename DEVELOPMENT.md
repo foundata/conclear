@@ -291,6 +291,19 @@ The run ID becomes part of an OCI repository name, so it must be lowercase.
 
 The local suite compiles network-free `scratch` fixtures with Go, uses isolated Buildah and Podman storage, copies only between local OCI layouts with Skopeo and creates disposable Cosign key material under the run workspace. Its manual no-log Cosign check stays outside the production adapter and follows the guide's no-service signing configuration, bundle and verification flags. Record the workspace and all created resources in the external run manifest before invoking it, then record the observed assertions and cleanup result.
 
+The exact runtime-input integration case needs two additional manifest-owned lowercase ULIDs because its service and one-shot parameterizations create separate ConClear workspaces:
+
+```sh
+CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
+CONCLEAR_TEST_SERVICE_ULID=<manifest-owned-lowercase-ulid> \
+CONCLEAR_TEST_ONE_SHOT_ULID=<manifest-owned-lowercase-ulid> \
+uv run pytest -m local_integration \
+  tests/local_integration/test_tools.py::test_real_exact_image_preparation_and_launch_inputs \
+  --basetemp <external-run-workspace>/tmp/pytest
+```
+
+Record the primary and preparation container names for both ULIDs before invoking the test. A passing run proves exact sibling-layout import, private output generation and destruction, read-only fixture and generated-output mounts, non-secret launch environment, service health and TERM behavior, one-shot exit behavior, and journal-owned cleanup without using the workstation's existing container storage.
+
 
 ### Network tests<a id="network-tests"></a>
 
