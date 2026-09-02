@@ -125,7 +125,9 @@ def test_buildah_info_uses_supported_go_template_json(tmp_path: Path) -> None:
     assert "{{json .}}" in runner.requests[0].argv
 
 
-def test_buildah_build_uses_unambiguous_pull_option(tmp_path: Path) -> None:
+def test_buildah_build_uses_unambiguous_reproducibility_options(
+    tmp_path: Path,
+) -> None:
     runner = FakeRunner(CommandExecutionError("stop after command observation"))
     adapter = adapter_arguments(tmp_path, ToolName.BUILDAH, runner).create(
         BuildahAdapter
@@ -148,6 +150,9 @@ def test_buildah_build_uses_unambiguous_pull_option(tmp_path: Path) -> None:
 
     assert "--pull=always" in runner.requests[0].argv
     assert "--pull" not in runner.requests[0].argv
+    assert "--source-date-epoch" in runner.requests[0].argv
+    assert "--rewrite-timestamp" in runner.requests[0].argv
+    assert "--timestamp" not in runner.requests[0].argv
     assert (tmp_path / "outputs").is_dir()
 
 
