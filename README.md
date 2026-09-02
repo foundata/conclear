@@ -51,6 +51,8 @@ uv sync --frozen --all-groups
 uv run conclear --help
 ```
 
+Maintainers can build and retain a locally installable, identity-bearing wheel without PyPI or a CI service. The complete command and clean-environment installation procedure are documented in [`DEVELOPMENT.md`](./DEVELOPMENT.md#releases).
+
 Release workflows additionally need the rootless container toolchain listed under [Supported tools](#supported-tools). The hermetic unit suite needs none of it.
 
 

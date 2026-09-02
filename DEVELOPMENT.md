@@ -393,6 +393,26 @@ uv run python -m conclear.release_check
 
 The command checks formatting, linting, strict typing, the generated conformance documentation and the unit-test matrix on every supported interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
 
+To retain the exact source distribution and wheel that passed the complete gate, create a private parent directory and select a new revision-specific output directory:
+
+```sh
+install -d -m 0700 "${HOME}/.local/share/conclear/distributions"
+revision=$(git rev-parse HEAD)
+uv run python -m conclear.release_check \
+  --output-directory "${HOME}/.local/share/conclear/distributions/${revision}"
+```
+
+The destination must not exist before the command starts. ConClear publishes the directory only after all source, matrix, distribution-content, clean-install and smoke checks pass. `artifacts.json` records the embedded ConClear and guide revisions plus the SHA-256 digest of each retained file.
+
+Install that retained wheel into a new environment without rebuilding it:
+
+```sh
+uv venv --python python3.12 /tmp/conclear-dogfood
+uv pip install --python /tmp/conclear-dogfood/bin/python \
+  "${HOME}/.local/share/conclear/distributions/${revision}"/*.whl
+/tmp/conclear-dogfood/bin/conclear version --format json
+```
+
 The release check does not create a release, write to a registry, sign content, create transparency-log entries, tag Git or push commits.
 
 CI configuration should delegate project checks to this command and verify the catalog against the OCI guide at the exact embedded revision. The provider configuration must not redefine formatting, typing, test or distribution-build logic.
@@ -408,6 +428,7 @@ Keep validation and test isolation intact when resolving the following failures.
 
 - **Import errors**: Ensure the environment is installed with `uv sync --frozen --all-groups`.
 - **`uv run conclear version` reports `development-source-tree`**: Expected in a source checkout. Only a distribution build embeds a real revision, and only such a build can emit records.
+- **The retained distribution destination already exists**: Choose a new path. The release gate never merges with or overwrites prior output.
 - **Conformance check fails after editing `docs/conformance.md`**: The file is generated. Change `src/conclear/data/checks.json` and regenerate.
 - **A local integration test fails on the run ID**: The identifier becomes part of an OCI repository name and must be lowercase.
 - **Unit tests suddenly need the network or container storage**: A test landed in `tests/unit/` that belongs in `local_integration` or `network`. Move it rather than relaxing the tier.

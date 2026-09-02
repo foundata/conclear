@@ -1,5 +1,6 @@
 """Provider-independent clean-checkout distribution release gate."""
 
+import argparse
 import os
 import shutil
 import stat
@@ -7,6 +8,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -18,6 +20,7 @@ from conclear.errors import (
     OperationalError,
 )
 from conclear.identity import GUIDE_REVISION
+from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.path_safety import extract_tar_safely
 from conclear.process import (
     CommandRequest,
@@ -116,9 +119,29 @@ class GateRuntime:
             ) from exc
 
 
-def run_release_check(repository: Path | None = None) -> None:
+@dataclass(frozen=True, slots=True)
+class RetainedArtifacts:
+    """Exact validated distributions published by a successful release gate."""
+
+    directory: Path
+    sdist: Path
+    wheel: Path
+    sdist_digest: str
+    wheel_digest: str
+
+
+def run_release_check(
+    repository: Path | None = None,
+    *,
+    output_directory: Path | None = None,
+) -> RetainedArtifacts | None:
     """Run all local release-readiness checks from one clean committed tree."""
     selected = (repository or Path.cwd()).resolve(strict=True)
+    destination = (
+        None
+        if output_directory is None
+        else _validate_new_artifact_destination(output_directory)
+    )
     with tempfile.TemporaryDirectory(prefix="conclear-release-check-") as value:
         temporary_root = Path(value)
         runtime = GateRuntime.create(temporary_root)
@@ -177,7 +200,81 @@ def run_release_check(repository: Path | None = None) -> None:
         wheel = _one_artifact(artifacts, "*.whl")
         validate_distribution_artifact(wheel, kind="wheel")
         _smoke_wheel(runtime, temporary_root, wheel, revision)
+        retained = (
+            None
+            if destination is None
+            else retain_distribution_artifacts(
+                sdist=sdist,
+                wheel=wheel,
+                destination=destination,
+                source_revision=revision,
+            )
+        )
     print("release-check: all checks passed", flush=True)
+    if retained is not None:
+        print(f"release-check: retained artifacts at {retained.directory}", flush=True)
+    return retained
+
+
+def retain_distribution_artifacts(
+    *,
+    sdist: Path,
+    wheel: Path,
+    destination: Path,
+    source_revision: str,
+) -> RetainedArtifacts:
+    """Atomically publish the exact distributions that passed the release gate."""
+    revision = validate_source_revision(source_revision)
+    target = _validate_new_artifact_destination(destination)
+    parent = target.parent
+    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}.conclear-", dir=parent))
+    try:
+        staging.chmod(0o700)
+        sdist_digest = _copy_validated_artifact(sdist, staging / sdist.name)
+        wheel_digest = _copy_validated_artifact(wheel, staging / wheel.name)
+        atomic_write_json(
+            staging / "artifacts.json",
+            {
+                "schemaVersion": 1,
+                "conclearRevision": revision,
+                "guideRevision": GUIDE_REVISION,
+                "artifacts": [
+                    {"filename": sdist.name, "sha256": sdist_digest},
+                    {"filename": wheel.name, "sha256": wheel_digest},
+                ],
+            },
+            mode=0o644,
+        )
+        directory_descriptor = os.open(
+            staging, os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+        _validate_new_artifact_destination(target)
+        staging.rename(target)
+    except (OSError, OperationalError) as exc:
+        try:
+            shutil.rmtree(staging)
+        except FileNotFoundError:
+            pass
+        except OSError as cleanup_exc:
+            raise OperationalError(
+                f"Unable to clean partial artifact output {staging}"
+            ) from cleanup_exc
+        if isinstance(exc, OperationalError):
+            raise
+        raise OperationalError(
+            f"Unable to retain validated distributions at {target}"
+        ) from exc
+    return RetainedArtifacts(
+        directory=target,
+        sdist=target / sdist.name,
+        wheel=target / wheel.name,
+        sdist_digest=sdist_digest,
+        wheel_digest=wheel_digest,
+    )
 
 
 def validate_distribution_artifact(path: Path, *, kind: str) -> None:
@@ -385,6 +482,67 @@ def _one_artifact(directory: Path, pattern: str) -> Path:
     return matches[0]
 
 
+def _validate_new_artifact_destination(destination: Path) -> Path:
+    target = destination.absolute()
+    if target.name in {"", ".", ".."}:
+        raise OperationalError("Artifact output must name a new directory")
+    current = Path(target.anchor)
+    for component in target.parent.parts[1:]:
+        current /= component
+        try:
+            observed = current.lstat()
+        except OSError as exc:
+            raise OperationalError(
+                f"Artifact output parent is unavailable: {current}"
+            ) from exc
+        if stat.S_ISLNK(observed.st_mode):
+            raise OperationalError(
+                f"Artifact output cannot cross a symbolic link: {current}"
+            )
+        if not stat.S_ISDIR(observed.st_mode):
+            raise OperationalError(
+                f"Artifact output parent is not a directory: {current}"
+            )
+    parent_stat = target.parent.stat(follow_symlinks=False)
+    if parent_stat.st_uid != os.getuid() or stat.S_IMODE(parent_stat.st_mode) & 0o022:
+        raise OperationalError(
+            "Artifact output parent must be user-owned and not group- or other-writable"
+        )
+    try:
+        target.lstat()
+    except FileNotFoundError:
+        return target
+    except OSError as exc:
+        raise OperationalError(f"Unable to inspect artifact output {target}") from exc
+    raise OperationalError(f"Artifact output must not already exist: {target}")
+
+
+def _copy_validated_artifact(source: Path, destination: Path) -> str:
+    try:
+        observed = source.lstat()
+    except OSError as exc:
+        raise OperationalError(
+            f"Validated distribution is unavailable: {source}"
+        ) from exc
+    if stat.S_ISLNK(observed.st_mode) or not stat.S_ISREG(observed.st_mode):
+        raise OperationalError(
+            f"Validated distribution is not a regular file: {source}"
+        )
+    expected_digest = sha256_file(source)
+    try:
+        shutil.copyfile(source, destination)
+        destination.chmod(0o644)
+    except OSError as exc:
+        raise OperationalError(
+            f"Unable to stage validated distribution {source.name}"
+        ) from exc
+    if sha256_file(destination) != expected_digest:
+        raise OperationalError(
+            f"Retained distribution changed while copying: {source.name}"
+        )
+    return expected_digest
+
+
 def _tar_names(path: Path) -> tuple[str, ...]:
     try:
         with tarfile.open(path, mode="r:gz") as archive:
@@ -463,10 +621,20 @@ def _executable(name: str) -> Path:
     return path
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """Run the release gate as a Python module."""
+    parser = argparse.ArgumentParser(
+        prog="python -m conclear.release_check",
+        description="Run the clean-checkout ConClear distribution gate.",
+    )
+    parser.add_argument(
+        "--output-directory",
+        type=Path,
+        help="retain the validated sdist and wheel in this new directory",
+    )
+    arguments = parser.parse_args(argv)
     try:
-        run_release_check()
+        run_release_check(output_directory=arguments.output_directory)
     except (ConClearError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
