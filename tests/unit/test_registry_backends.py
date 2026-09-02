@@ -7,6 +7,7 @@ from conclear.adapters.registry_control import (
     supported_registry_backends,
 )
 from conclear.config import (
+    BuilderConfig,
     CIContextPolicy,
     QuayRegistryConfig,
     RegistryProvider,
@@ -20,6 +21,9 @@ def _profile(tmp_path: Path) -> ReleaseProfile:
     return ReleaseProfile(
         name="test",
         ci_context=CIContextPolicy.OMIT,
+        builder=BuilderConfig(
+            "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+        ),
         auth_file=None,
         registry=QuayRegistryConfig(
             provider=RegistryProvider.QUAY,

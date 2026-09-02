@@ -502,6 +502,7 @@ def _generate_release_provenance(
             source_repository=source.repository,
             source_revision=source.revision,
             configuration_digest=Digest(sha256_bytes(repository.raw_bytes)),
+            builder_id=request.profile.builder.id,
             image_id=request.image_id,
             version=request.version,
             run_id=workspace.run_id,
@@ -520,6 +521,7 @@ def profile_inputs(profile: ReleaseProfile) -> dict[str, str]:
 
 def _profile_inputs(profile: ReleaseProfile) -> dict[str, str]:
     return {
+        "builderId": profile.builder.id,
         "profileConfigurationDigest": profile.configuration_digest,
         "profilePublicKeyDigest": profile.public_key_digest,
     }

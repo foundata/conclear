@@ -14,7 +14,7 @@ from conclear.provenance import (
 from conclear.values import Digest, Platform
 
 
-def test_provenance_uses_observed_builder_source_and_subject_identities(
+def test_provenance_separates_configured_builder_and_conclear_identities(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
@@ -32,6 +32,7 @@ def test_provenance_uses_observed_builder_source_and_subject_identities(
             source_repository="https://github.com/foundata/example",
             source_revision="b" * 40,
             configuration_digest=digest,
+            builder_id=("https://foundata.com/en/projects/conclear/builder/simple-v1/"),
             image_id="example",
             version="1.2.3",
             run_id="01arz3ndektsv4rrffq69g5fav",
@@ -45,7 +46,13 @@ def test_provenance_uses_observed_builder_source_and_subject_identities(
     value = load_json(output)
     assert generated.startswith("sha256:")
     assert value["subject"][0]["digest"]["sha256"] == "a" * 64
-    assert value["predicate"]["runDetails"]["builder"]["id"].endswith("c" * 40)
+    assert value["predicate"]["runDetails"]["builder"] == {
+        "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/",
+        "version": {
+            "conclear": "0.1.0",
+            "conclearSourceRevision": "c" * 40,
+        },
+    }
     assert (
         value["predicate"]["buildDefinition"]["resolvedDependencies"][0]["digest"][
             "gitCommit"

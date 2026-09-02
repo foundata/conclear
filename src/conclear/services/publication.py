@@ -604,7 +604,8 @@ def verify_candidate(
     now: datetime,
 ) -> VerificationResult:
     """Verify every subject and evidence payload, then sign the verification result."""
-    if workspace.load().state is not RunState.ATTESTED:
+    snapshot = workspace.load()
+    if snapshot.state is not RunState.ATTESTED:
         raise InvalidInvocationError("Verification requires attested state")
     if signer_mode not in {"managed-key", "kms", "hsm"}:
         raise InvalidInvocationError("Unsupported signer mode")
@@ -614,6 +615,8 @@ def verify_candidate(
         raise InvalidInvocationError("CI context must be omitted by this profile")
     if profile.ci_context is CIContextPolicy.REQUIRE and ci_context is None:
         raise OperationalError("Required CI context is unavailable")
+    if snapshot.immutable_inputs.get("builderId") != profile.builder.id:
+        raise InvalidInvocationError("Release builder identity differs from the run")
     Digest(evidence.configuration_digest)
     for evidence_digest in (
         *evidence.qualification_digests,
@@ -703,6 +706,7 @@ def verify_candidate(
                 {} if ci_context is None else {"ciContext": ci_context.to_public_dict()}
             ),
         },
+        "builder": {"id": profile.builder.id},
         "signer": {"mode": signer_mode, "keyId": signer_key_id},
         "evidence": {
             "platformQualifications": list(evidence.qualification_digests),
@@ -1261,8 +1265,15 @@ def validate_release_provenance(
             "Provenance resolved dependencies changed", code="CC0703"
         )
     details = _object(predicate.get("runDetails"), "provenance run details")
+    builder_id = snapshot.immutable_inputs.get("builderId")
+    if builder_id is None:
+        raise OperationalError("Release run has no trusted builder identity")
     if details.get("builder") != {
-        "id": f"https://github.com/foundata/conclear/commit/{IDENTITY.source_revision}"
+        "id": builder_id,
+        "version": {
+            "conclear": IDENTITY.version,
+            "conclearSourceRevision": IDENTITY.source_revision,
+        },
     }:
         raise RuleRejectionError("Provenance builder identity changed", code="CC0704")
     metadata = _object(details.get("metadata"), "provenance run metadata")

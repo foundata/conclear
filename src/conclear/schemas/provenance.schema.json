@@ -63,7 +63,23 @@
           "additionalProperties": false,
           "required": ["builder", "metadata", "byproducts"],
           "properties": {
-            "builder": {"type": "object", "additionalProperties": false, "required": ["id"], "properties": {"id": {"type": "string", "pattern": "^https://github\\.com/foundata/conclear/commit/[0-9a-f]{40,64}$"}}},
+            "builder": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "version"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^https://[^\\s?#]+$"},
+                "version": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["conclear", "conclearSourceRevision"],
+                  "properties": {
+                    "conclear": {"type": "string", "minLength": 1},
+                    "conclearSourceRevision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
+                  }
+                }
+              }
+            },
             "metadata": {
               "type": "object",
               "additionalProperties": false,

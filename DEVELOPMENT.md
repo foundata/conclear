@@ -332,6 +332,7 @@ Provider environment variables are ordinary process inputs. They support audit c
 
 ConClear does not acquire or accept OIDC tokens because the release profile defines no issuer and audience trust root against which to authenticate those claims.
 
+The protected release profile supplies the SLSA builder identity independently of CI observation. The identity names a documented trust domain and remains stable across ConClear versions. Security-significant environment changes require another builder URI, and consumers must approve the corresponding signer and builder pair.
 
 ## Recommended development workflow<a id="development-workflow"></a>
 

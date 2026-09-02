@@ -8,6 +8,7 @@ import pytest
 
 import conclear.config as config_module
 from conclear.config import (
+    BuilderConfig,
     CIContextPolicy,
     QuayRegistryConfig,
     RegistryProvider,
@@ -19,7 +20,15 @@ from conclear.errors import InvalidInvocationError
 
 
 def _profile_text(*root_lines: str, api_url: str | None = None) -> str:
-    registry_lines = ["", "[registry]", 'provider = "quay"', 'host = "quay.io"']
+    registry_lines = [
+        "",
+        "[builder]",
+        'id = "https://foundata.com/en/projects/conclear/builder/simple-v1/"',
+        "",
+        "[registry]",
+        'provider = "quay"',
+        'host = "quay.io"',
+    ]
     if api_url is not None:
         registry_lines.append(f'api_url = "{api_url}"')
     return "\n".join((*root_lines, *registry_lines))
@@ -260,6 +269,45 @@ def test_release_profile_parses_explicit_registry_backend(tmp_path: Path) -> Non
         "https://quay.io/api/v1",
         token_file.resolve(),
     )
+    assert selected.builder == BuilderConfig(
+        "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+    )
+
+
+@pytest.mark.parametrize(
+    "builder_id",
+    (
+        "http://foundata.com/en/projects/conclear/builder/simple-v1/",
+        "https://user:secret@foundata.com/conclear/builder/",
+        "https://foundata.com/conclear/builder/?environment=test",
+        "https://foundata.com/conclear/builder/#simple-v1",
+        "https://foundata.com/conclear/../admin/",
+    ),
+)
+def test_release_profile_rejects_unsafe_builder_identity(
+    tmp_path: Path, builder_id: str
+) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    profile_path = profile_directory / "release.toml"
+    profile_path.write_text(
+        _profile_text(
+            'ci_context = "omit"',
+            f'cosign_public_key = "{public_key}"',
+        ).replace(
+            "https://foundata.com/en/projects/conclear/builder/simple-v1/",
+            builder_id,
+        ),
+        encoding="utf-8",
+    )
+    profile_path.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError):
+        load_release_profile("release", config_home=config_home)
 
 
 def test_release_profile_rejects_legacy_release_mode(tmp_path: Path) -> None:

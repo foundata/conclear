@@ -25,13 +25,14 @@ from conclear.attestations import (
     STATEMENT_TYPE,
 )
 from conclear.config import (
+    BuilderConfig,
     CIContextPolicy,
     QuayRegistryConfig,
     RegistryProvider,
     ReleaseProfile,
     load_repository_config,
 )
-from conclear.errors import OperationalError, RuleRejectionError
+from conclear.errors import InvalidInvocationError, OperationalError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
     atomic_write_json,
@@ -51,6 +52,7 @@ from conclear.services.publication import (
     attest_candidate,
     promote_candidate,
     publish_candidate,
+    validate_release_provenance,
     verify_candidate,
 )
 from conclear.values import Digest, OCIReference, Platform, candidate_tag
@@ -61,6 +63,8 @@ from conclear.workspace import (
     RunState,
     RunWorkspace,
 )
+
+BUILDER_ID = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
 
 
 class IdFactory:
@@ -513,6 +517,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             "sourceRevision": "b" * 40,
             "sourceRepository": repository.project.source,
             "configurationDigest": "sha256:" + "2" * 64,
+            "builderId": BUILDER_ID,
             "image": "app",
             "version": "1.2.3",
         },
@@ -568,6 +573,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             source_repository=repository.project.source,
             source_revision="b" * 40,
             configuration_digest=configuration_digest,
+            builder_id=BUILDER_ID,
             image_id=image.image_id,
             version="1.2.3",
             run_id=workspace.run_id,
@@ -595,11 +601,25 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         candidate_record_digest=candidate_digest,
         qualification_digests=candidate.qualification_digests,
     )
+    changed_builder_provenance = load_json(provenance)
+    changed_builder_provenance["predicate"]["runDetails"]["builder"]["id"] = (
+        "https://example.com/builders/other-v1/"
+    )
+    with pytest.raises(RuleRejectionError, match="builder identity changed") as caught:
+        validate_release_provenance(
+            changed_builder_provenance,
+            observation.graph,
+            evidence=evidence,
+            workspace=workspace,
+            image=image,
+        )
+    assert caught.value.code == "CC0704"
     public_key = tmp_path / "cosign.pub"
     public_key.write_text("test public key", encoding="utf-8")
     profile = ReleaseProfile(
         name="test",
         ci_context=CIContextPolicy.OBSERVE,
+        builder=BuilderConfig(BUILDER_ID),
         auth_file=None,
         registry=QuayRegistryConfig(
             RegistryProvider.QUAY,
@@ -700,14 +720,16 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     )
     assert len(signer.statements[(str(platform_subject), SPDX_DOCUMENT_TYPE)]) == 1
 
-    def run_verification(now: datetime) -> VerificationResult:
+    def run_verification(
+        now: datetime, profile_value: ReleaseProfile = profile
+    ) -> VerificationResult:
         return verify_candidate(
             published,
             candidate,
             evidence,
             workspace=workspace,
             image=image,
-            profile=profile,
+            profile=profile_value,
             signer=signer,
             registry=registry,
             auth_file=None,
@@ -723,6 +745,15 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
                 run_id="1234",
             ),
             now=now,
+        )
+
+    with pytest.raises(InvalidInvocationError, match="builder identity differs"):
+        run_verification(
+            datetime(2026, 1, 1, 0, 4, tzinfo=UTC),
+            replace(
+                profile,
+                builder=BuilderConfig("https://example.com/builders/other-v1/"),
+            ),
         )
 
     signer.fail_once = RELEASE_VERIFICATION_TYPE
@@ -755,6 +786,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             "runId": "1234",
         },
     }
+    assert statement_value["predicate"]["payload"]["builder"] == {"id": BUILDER_ID}
     statement_value["predicate"]["verdict"] = "rejected"
     verification.statement_path.write_text(
         json.dumps(statement_value), encoding="utf-8"

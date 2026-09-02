@@ -59,7 +59,7 @@ def test_conformance_generation_is_deterministic(tmp_path: Path) -> None:
     path = tmp_path / "conformance.md"
     write_conformance(path)
     assert path.read_text(encoding="utf-8") == render_conformance()
-    assert "07cb64015caa781cb66eb9635c68cf66f0fbe56e" in render_conformance()
+    assert "cd914cd5a9b7ec7c171f92d4a80b5e48f0c67c9b" in render_conformance()
 
 
 def test_catalog_records_unimplemented_optional_scanner_stack() -> None:

@@ -4,9 +4,10 @@
   "title": "ConClear maintainer release profile",
   "type": "object",
   "additionalProperties": false,
-  "required": ["ci_context", "registry", "cosign_public_key"],
+  "required": ["ci_context", "builder", "registry", "cosign_public_key"],
   "properties": {
     "ci_context": {"enum": ["omit", "observe", "require"]},
+    "builder": {"$ref": "#/$defs/builder"},
     "auth_file": {"type": "string", "minLength": 1},
     "registry": {"$ref": "#/$defs/registry"},
     "cosign_private_key": {"type": "string", "minLength": 1},
@@ -14,6 +15,14 @@
     "passphrase_file": {"type": "string", "minLength": 1}
   },
   "$defs": {
+    "builder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^https://[^\\s?#]+$"}
+      }
+    },
     "registry": {
       "oneOf": [
         {

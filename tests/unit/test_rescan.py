@@ -426,6 +426,9 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
                 "hostArchitecture": "x86_64",
                 "runId": run.run_id,
             },
+            "builder": {
+                "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+            },
             "signer": {"mode": "managed-key", "keyId": "test-key"},
             "evidence": {
                 "platformQualifications": ["sha256:" + "1" * 64],

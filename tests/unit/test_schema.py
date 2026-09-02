@@ -59,6 +59,9 @@ def test_release_profile_schema_has_a_closed_registry_backend_matrix() -> None:
     validator = Draft202012Validator(load_schema("profile.schema.json"))
     profile = {
         "ci_context": "omit",
+        "builder": {
+            "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+        },
         "cosign_public_key": "/run/secrets/cosign.pub",
         "registry": {"provider": "quay", "host": "quay.io"},
     }
@@ -72,5 +75,15 @@ def test_release_profile_schema_has_a_closed_registry_backend_matrix() -> None:
     assert list(
         validator.iter_errors(
             {**profile, "registry": {"provider": "quay", "host": "docker.io"}}
+        )
+    )
+    assert list(
+        validator.iter_errors(
+            {key: value for key, value in profile.items() if key != "builder"}
+        )
+    )
+    assert list(
+        validator.iter_errors(
+            {**profile, "builder": {"id": "https://foundata.com/builder/?id=v1"}}
         )
     )

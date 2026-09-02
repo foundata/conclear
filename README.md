@@ -75,6 +75,9 @@ cosign_private_key = "/home/example/.config/conclear/cosign.key"
 cosign_public_key = "/home/example/.config/conclear/cosign.pub"
 passphrase_file = "/home/example/.config/conclear/cosign.passphrase"
 
+[builder]
+id = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+
 [registry]
 provider = "quay"
 host = "quay.io"
@@ -83,6 +86,8 @@ token_file = "/home/example/.config/conclear/quay.token"
 ```
 
 The profile and every secret file must be owned by the invoking user and carry private permissions. CI may supply the signing passphrase through `--passphrase-fd` instead of a file. Secret values are never accepted through project configuration, command-line literals or inherited environment variables.
+
+`builder.id` names the complete build-platform trust domain and must be a public, credential-free HTTPS documentation URI. The simple v1 identity covers foundata's operator-controlled workstation workflow and claims SLSA Build L1 only. A different workstation policy or CI trust boundary needs a different builder identity. ConClear records its own version and source revision separately and verifies the configured signer and builder identities before promotion.
 
 `ci_context` controls optional CI correlation metadata. `omit` does not inspect CI variables, `observe` records complete matching context when available, and `require` stops when recognized context is absent, malformed or inconsistent with the isolated checkout. ConClear recognizes GitHub Actions, GitLab CI, Gitea Actions, Forgejo Actions and Woodpecker CI. The normalized public record contains the provider, repository, full revision and provider run identifier. Provider environment variables are not authentication and never control the release verdict, source identity, signer identity or artifact digest.
 

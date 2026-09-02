@@ -76,6 +76,11 @@ def provenance_command(run_id: str, output_format: str) -> None:
     if source_run.workspace.load().state is not RunState.ASSEMBLED:
         raise InvalidInvocationError("Provenance requires assembled state")
     snapshot = source_run.workspace.load()
+    builder_id = snapshot.immutable_inputs.get("builderId")
+    if builder_id is None:
+        raise InvalidInvocationError(
+            "Provenance requires a run initialized with a release profile"
+        )
     image = source_run.repository.image(snapshot.immutable_inputs["image"])
     candidate = load_candidate(source_run.workspace, image)
     materials = load_provenance_materials(source_run.workspace, image)
@@ -93,6 +98,7 @@ def provenance_command(run_id: str, output_format: str) -> None:
                 configuration_digest=Digest(
                     sha256_bytes(source_run.repository.raw_bytes)
                 ),
+                builder_id=builder_id,
                 image_id=image.image_id,
                 version=snapshot.immutable_inputs.get("version") or None,
                 run_id=source_run.workspace.run_id,

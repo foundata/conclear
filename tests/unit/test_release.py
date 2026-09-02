@@ -12,6 +12,7 @@ import conclear.records as records_module
 import conclear.services.assembly as assembly_module
 import conclear.services.publication as publication_module
 from conclear.config import (
+    BuilderConfig,
     CIContextPolicy,
     QuayRegistryConfig,
     RegistryProvider,
@@ -32,6 +33,8 @@ from conclear.values import OCIReference
 from conclear.workspace import RunState, RunWorkspace
 from tests.release_fakes import FakeRuntime
 
+BUILDER_ID = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+
 
 class FixedIdFactory:
     def create(self) -> str:
@@ -42,6 +45,7 @@ def profile(tmp_path: Path) -> ReleaseProfile:
     return ReleaseProfile(
         name="production",
         ci_context=CIContextPolicy.OMIT,
+        builder=BuilderConfig(BUILDER_ID),
         auth_file=None,
         registry=QuayRegistryConfig(
             RegistryProvider.QUAY,
@@ -73,6 +77,7 @@ def workspace(
             "profile": profile_value.name,
             "profileConfigurationDigest": profile_value.configuration_digest,
             "profilePublicKeyDigest": profile_value.public_key_digest,
+            "builderId": profile_value.builder.id,
         },
         id_factory=FixedIdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
@@ -266,6 +271,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
             "profile": profile_value.name,
             "profileConfigurationDigest": profile_value.configuration_digest,
             "profilePublicKeyDigest": profile_value.public_key_digest,
+            "builderId": profile_value.builder.id,
         },
         id_factory=FixedIdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
@@ -313,6 +319,22 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
     )
     assert summary["state"] == "promoted"
     assert summary["subject"] == result.subject
+    provenance = json.loads(
+        (run_workspace.root / "records" / "provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["predicate"]["runDetails"]["builder"] == {
+        "id": BUILDER_ID,
+        "version": {
+            "conclear": "0.1.0",
+            "conclearSourceRevision": "c" * 40,
+        },
+    }
+    verification = json.loads(
+        (run_workspace.root / "records" / "release-verification.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert verification["payload"]["builder"] == {"id": BUILDER_ID}
 
 
 def test_resume_release_rejects_changed_trust_profile_before_continuing(

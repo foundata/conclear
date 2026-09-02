@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from conclear.config import normalize_builder_id
 from conclear.errors import OperationalError
 from conclear.identity import IDENTITY
 from conclear.jsonutil import atomic_write_json, sha256_file
@@ -38,6 +39,7 @@ class ProvenanceInput:
     source_repository: str
     source_revision: str
     configuration_digest: Digest
+    builder_id: str
     image_id: str
     version: str | None
     run_id: str
@@ -51,6 +53,7 @@ def generate_provenance(value: ProvenanceInput, output_path: Path) -> str:
     validate_run_id(value.run_id)
     validate_source_revision(value.source_revision)
     validate_source_revision(IDENTITY.source_revision)
+    builder_id = normalize_builder_id(value.builder_id)
     if value.started_at.tzinfo is None or value.finished_at.tzinfo is None:
         raise OperationalError("Provenance timestamps must be timezone-aware")
     if value.finished_at < value.started_at:
@@ -105,10 +108,11 @@ def generate_provenance(value: ProvenanceInput, output_path: Path) -> str:
             },
             "runDetails": {
                 "builder": {
-                    "id": (
-                        "https://github.com/foundata/conclear/commit/"
-                        f"{IDENTITY.source_revision}"
-                    )
+                    "id": builder_id,
+                    "version": {
+                        "conclear": IDENTITY.version,
+                        "conclearSourceRevision": IDENTITY.source_revision,
+                    },
                 },
                 "metadata": {
                     "invocationId": value.run_id,

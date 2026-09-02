@@ -171,6 +171,13 @@ class RepositoryConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BuilderConfig:
+    """Protected SLSA build-platform trust-domain identity."""
+
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
 class QuayRegistryConfig:
     """Protected Quay control-plane configuration."""
 
@@ -189,6 +196,7 @@ class ReleaseProfile:
 
     name: str
     ci_context: CIContextPolicy
+    builder: BuilderConfig
     auth_file: Path | None
     registry: RegistryConfig
     cosign_private_key: str | None
@@ -301,6 +309,9 @@ def load_release_profile(
     validate_external(value, "profile.schema.json", label="release profile")
     profile = _object(value)
     auth_file = _optional_private_path(profile.get("auth_file"))
+    builder = BuilderConfig(
+        normalize_builder_id(_string(_object(profile["builder"])["id"]))
+    )
     registry = _parse_registry_profile(_object(profile["registry"]))
     public_key = _private_path(profile["cosign_public_key"], allow_group_read=True)
     public_key_bytes = read_protected_file(
@@ -318,6 +329,7 @@ def load_release_profile(
     return ReleaseProfile(
         name=name,
         ci_context=CIContextPolicy(_string(profile["ci_context"])),
+        builder=builder,
         auth_file=auth_file,
         registry=registry,
         cosign_private_key=private_key,
@@ -543,6 +555,38 @@ def _parse_registry_profile(value: dict[str, Any]) -> RegistryConfig:
             token_file=_optional_private_path(value.get("token_file")),
         )
     raise InvalidInvocationError(f"Unsupported registry provider: {provider.value}")
+
+
+def normalize_builder_id(value: str) -> str:
+    """Validate and normalize a public SLSA builder documentation URI."""
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidInvocationError("Builder identity URI is malformed") from exc
+    hostname = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or _HOST_PATTERN.fullmatch(hostname.lower()) is None
+    ):
+        raise InvalidInvocationError(
+            "Builder identity must be a credential-free HTTPS URI without a query or fragment"
+        )
+    components = parsed.path.rstrip("/").split("/")[1:]
+    if not components or any(
+        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
+        for item in components
+    ):
+        raise InvalidInvocationError(
+            "Builder identity must name a public documentation path"
+        )
+    authority = hostname.lower() + ("" if port is None else f":{port}")
+    return urlunsplit(("https", authority, parsed.path, "", ""))
 
 
 def _registry_api_url(value: str) -> str:
