@@ -34,6 +34,8 @@ from conclear.commands.version import version_command, write_version
 from conclear.errors import ConClearError, ExitStatus
 from conclear.presentation import CommandResult, Finding, ResultStatus
 
+LOGGER = logging.getLogger(__name__)
+
 
 def _version_callback(
     context: click.Context,
@@ -125,14 +127,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         return int(exc.exit_status)
     except Exception as exc:
+        if not wants_json:
+            raise
         message = "ConClear encountered an internal error"
+        LOGGER.debug(
+            "%s (%s); traceback: %s",
+            message,
+            type(exc).__name__,
+            _traceback_locations(exc),
+        )
         print(f"{message} ({type(exc).__name__})", file=sys.stderr)
-        if wants_json:
-            _write_error_json(
-                command=_command_name(arguments),
-                status=ResultStatus.OPERATIONAL_FAILURE,
-                message=message,
-            )
+        _write_error_json(
+            command=_command_name(arguments),
+            status=ResultStatus.OPERATIONAL_FAILURE,
+            message=message,
+        )
         return int(ExitStatus.OPERATIONAL_FAILURE)
     return int(result) if isinstance(result, int) else int(ExitStatus.SUCCESS)
 
@@ -149,6 +158,17 @@ def _command_name(arguments: Sequence[str]) -> str:
     return next(
         (argument for argument in arguments if not argument.startswith("-")), "root"
     )
+
+
+def _traceback_locations(exc: Exception) -> str:
+    """Return traceback locations without exception values or source text."""
+    locations: list[str] = []
+    traceback = exc.__traceback__
+    while traceback is not None:
+        code = traceback.tb_frame.f_code
+        locations.append(f"{code.co_filename}:{traceback.tb_lineno} in {code.co_name}")
+        traceback = traceback.tb_next
+    return " <- ".join(locations)
 
 
 def _write_error_json(

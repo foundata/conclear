@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -209,6 +210,7 @@ def test_main_redacts_unhandled_exception_and_writes_one_json_result(
     repository_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     root_path = repository_factory()
     monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
@@ -220,6 +222,7 @@ def test_main_redacts_unhandled_exception_and_writes_one_json_result(
         ),
     )
 
+    caplog.set_level(logging.DEBUG, logger="conclear.cli")
     assert (
         main(
             [
@@ -240,7 +243,34 @@ def test_main_redacts_unhandled_exception_and_writes_one_json_result(
     assert result["message"] == "ConClear encountered an internal error"
     assert captured.out.count("\n") == 1
     assert "ValueError" in captured.err
-    assert "/run/secrets" not in captured.out + captured.err
+    assert "traceback:" in caplog.text
+    assert "tests/unit/test_cli.py" in caplog.text
+    assert "in <lambda>" in caplog.text
+    assert "/run/secrets" not in captured.out + captured.err + caplog.text
+
+
+def test_main_allows_unhandled_exception_to_retain_human_traceback(
+    repository_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_path = repository_factory()
+    monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
+    monkeypatch.setattr(
+        local_commands,
+        "check_image",
+        lambda image, hadolint: (_ for _ in ()).throw(ValueError("unexpected")),
+    )
+
+    with pytest.raises(ValueError, match="unexpected"):
+        main(
+            [
+                "check",
+                "--config",
+                str(root_path / "conclear.toml"),
+                "--image",
+                "app",
+            ]
+        )
 
 
 def test_main_preserves_rule_identifier_in_human_and_json_output(
