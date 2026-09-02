@@ -418,6 +418,8 @@ The [foundata declarative OpenLDAP image](https://github.com/foundata/oci-openld
 
 The acceptance test for release behavior is a complete workstation invocation from an ordinary checkout, even when that checkout is dirty: ConClear must isolate the selected reviewed commit, qualify every required platform, publish and verify a unique candidate, sign with externally supplied managed key material, promote the verified digest and retain the required evidence without CI-only services.
 
+The provider-independent distribution gate may retain its validated source distribution and wheel in a caller-selected new directory. It embeds the clean committed ConClear revision before building, builds the wheel from the source distribution, validates both artifacts, installs and smoke-tests that exact wheel, and makes the artifact directory visible only after every gate succeeds. It never rebuilds retained artifacts, derives identity from an application repository, follows a symbolic-link destination or overwrites a pre-existing output.
+
 
 
 ## Maintaining this document<a id="maintaining-this-document"></a>
