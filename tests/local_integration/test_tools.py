@@ -231,6 +231,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
     tmp_path: Path,
 ) -> None:
     run_id = _run_id()
+    resource_id = run_id.lower()
     root = contained_path(tmp_path, run_id, must_exist=False)
     runtime = ApplicationRuntime.create(
         root / "environment",
@@ -243,9 +244,9 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
     buildah_ready = False
     podman_ready = False
     containers = (
-        f"cc-{run_id}-service",
-        f"cc-{run_id}-one-shot",
-        f"cc-{run_id}-supervisor",
+        f"cc-{resource_id}-service",
+        f"cc-{resource_id}-one-shot",
+        f"cc-{resource_id}-supervisor",
     )
     try:
         assert runtime.buildah().info(root=buildah_root, runroot=buildah_runroot)
@@ -266,7 +267,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
                 containerfile=context / "Containerfile",
                 context=context,
                 platform=platform,
-                image_name=f"localhost/conclear-{run_id}-{architecture}:fixture",
+                image_name=f"localhost/conclear-{resource_id}-{architecture}:fixture",
                 layout_path=root / "layouts" / architecture,
                 layout_reference="fixture",
                 source_epoch=946684800,
@@ -315,7 +316,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
         assert copied.digest == assembled.graph.digest
         assert copied.platforms == assembled.graph.platforms
 
-        image_name = f"localhost/conclear-{run_id}:runtime"
+        image_name = f"localhost/conclear-{resource_id}:runtime"
         runtime.podman().import_layout(
             root=podman_root,
             runroot=podman_runroot,
