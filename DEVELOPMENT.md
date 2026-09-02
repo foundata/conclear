@@ -247,7 +247,7 @@ uv run pytest -m local_integration
 
 ### Test tiers and markers<a id="test-tiers"></a>
 
-`addopts` selects the `unit` marker, so a bare `uv run pytest` is always hermetic. `tests/conftest.py` assigns markers by directory, and `--strict-markers` rejects an unregistered marker.
+`addopts` selects the `unit` marker, so a bare `uv run pytest` is always hermetic. `tests/conftest.py` assigns markers by directory, and pytest's `strict = true` mode rejects an unregistered marker.
 
 | Marker | Location | Requires |
 |---|---|---|

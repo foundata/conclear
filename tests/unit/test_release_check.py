@@ -12,13 +12,14 @@ from conclear.errors import OperationalError
 from conclear.release_check import validate_distribution_artifact
 
 
-def test_pytest_configuration_enforces_strict_markers() -> None:
+def test_pytest_configuration_enables_pytest_nine_strict_mode() -> None:
     project = tomllib.loads(
         (Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8")
     )
-    addopts = project["tool"]["pytest"]["ini_options"]["addopts"]
-    assert "--strict-config" in addopts
-    assert "--strict-markers" in addopts
+    options = project["tool"]["pytest"]["ini_options"]
+    assert options["strict"] is True
+    assert "--strict-config" not in options["addopts"]
+    assert "--strict-markers" not in options["addopts"]
 
 
 def test_pytest_configuration_rejects_unknown_marker(tmp_path: Path) -> None:
