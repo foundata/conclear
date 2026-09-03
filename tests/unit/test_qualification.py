@@ -159,6 +159,7 @@ class Runtime:
         health_statuses: tuple[int, ...] = (0,),
         health_outputs: tuple[str, ...] = ("",),
         container_observations: tuple[ContainerObservation, ...] = (),
+        immutable_stat_output: str = "",
     ) -> None:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
@@ -172,6 +173,7 @@ class Runtime:
         self.health_statuses = health_statuses
         self.health_outputs = health_outputs
         self.container_observations = list(container_observations)
+        self.immutable_stat_output = immutable_stat_output
         self.removals = 0
         self.removed_names: list[str] = []
         self.import_calls = 0
@@ -241,7 +243,7 @@ class Runtime:
         )
 
     def exec(self, **values: Any) -> str:
-        return ""
+        return self.immutable_stat_output
 
     def exec_observe(self, **values: Any) -> ExecObservation:
         if self.fail_health:
@@ -948,6 +950,68 @@ def test_runtime_rejects_observed_effective_capabilities(
         finding.check_id == "CC0401" and "capability" in finding.message
         for finding in evidence.findings
     )
+
+
+@pytest.mark.parametrize("mode", ["755", "644", "555", "444"])
+def test_immutable_path_allows_root_owned_modes_without_group_or_other_write(
+    repository_factory: Any, tmp_path: Path, mode: str
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(value.image.runtime, immutable_paths=("/app",)),
+        ),
+    )
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        Runtime(immutable_stat_output=f"0:{mode}\n"),
+        hook_runner(value),
+    )
+
+    assert not evidence.findings
+
+
+@pytest.mark.parametrize(
+    "stat_output",
+    [
+        pytest.param("10001:555\n", id="runtime-owned"),
+        pytest.param("0:775\n", id="group-writable"),
+        pytest.param("0:757\n", id="world-writable"),
+    ],
+)
+def test_immutable_path_rejects_non_root_owner_and_group_or_other_write(
+    repository_factory: Any, tmp_path: Path, stat_output: str
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(value.image.runtime, immutable_paths=("/app",)),
+        ),
+    )
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        Runtime(immutable_stat_output=stat_output),
+        hook_runner(value),
+    )
+
+    assert [
+        (finding.check_id, finding.message, finding.location)
+        for finding in evidence.findings
+    ] == [
+        (
+            "CC0404",
+            "Immutable runtime path is not root-owned or has a group/other write bit",
+            "/app",
+        )
+    ]
 
 
 def test_qualification_rejects_stale_pin_resolution(

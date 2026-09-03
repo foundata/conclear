@@ -39,7 +39,7 @@
     {"id": "CC0401", "summary": "Test the declared user and read-only hardening controls", "severity": "error", "behavior": "automated", "anchor": "users-and-runtime-filesystem"},
     {"id": "CC0402", "summary": "Apply and observe memory, CPU, PID and nofile limits", "severity": "error", "behavior": "automated", "anchor": "users-and-runtime-filesystem"},
     {"id": "CC0403", "summary": "Test startup, health, signal forwarding, shutdown and exit status", "severity": "error", "behavior": "automated", "anchor": "entrypoint-command-and-signal-handling"},
-    {"id": "CC0404", "summary": "Verify immutable runtime paths are root-owned and non-writable", "severity": "error", "behavior": "automated", "anchor": "files-ownership-and-permissions"},
+    {"id": "CC0404", "summary": "Verify immutable runtime paths are root-owned and deny group/other writes", "severity": "error", "behavior": "automated", "anchor": "files-ownership-and-permissions"},
     {"id": "CC0501", "summary": "Run local package, vulnerability, secret and configuration scans", "severity": "error", "behavior": "automated", "anchor": "vulnerability-and-configuration-scanning"},
     {"id": "CC0502", "summary": "Reject fixable HIGH and CRITICAL findings without an exact exception", "severity": "error", "behavior": "automated", "anchor": "vulnerability-and-configuration-scanning"},
     {"id": "CC0503", "summary": "Validate exception completeness, expiry and exact finding matches", "severity": "error", "behavior": "automated", "anchor": "vulnerability-and-configuration-scanning"},

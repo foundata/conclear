@@ -1689,12 +1689,15 @@ def _check_immutable_paths(
             mode = int(mode_text, 8)
         except ValueError as exc:
             raise OperationalError("Immutable path mode probe is malformed") from exc
-        if separator != ":" or owner != "0" or mode & 0o222:
+        if separator != ":" or owner != "0" or mode & 0o022:
             findings.append(
                 Finding(
                     "CC0404",
                     "error",
-                    "Immutable runtime path is not root-owned and non-writable",
+                    (
+                        "Immutable runtime path is not root-owned or has a "
+                        "group/other write bit"
+                    ),
                     path,
                 )
             )
