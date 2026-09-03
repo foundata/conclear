@@ -37,6 +37,34 @@ def test_public_record_schema_has_a_stable_identifier() -> None:
     )
 
 
+def test_readiness_result_schema_requires_complete_bounded_evidence() -> None:
+    validator = Draft202012Validator(
+        load_schema("record.schema.json")["$defs"]["testResult"]
+    )
+    result = {
+        "name": "health",
+        "status": "passed",
+        "outcome": "ready",
+        "attempts": 3,
+        "elapsedSeconds": 0.5,
+        "timeoutSeconds": 60,
+        "containerStatus": "running",
+        "containerExitStatus": None,
+        "exitStatus": 0,
+        "outputDigest": "sha256:" + "a" * 64,
+    }
+
+    validator.validate(result)
+    assert list(validator.iter_errors({**result, "outcome": "unknown"}))
+    assert list(validator.iter_errors({**result, "attempts": -1}))
+    assert list(validator.iter_errors({**result, "timeoutSeconds": 0}))
+    assert list(
+        validator.iter_errors(
+            {key: value for key, value in result.items() if key != "outputDigest"}
+        )
+    )
+
+
 def test_public_ci_context_is_provider_neutral_and_omits_server_origins() -> None:
     ci_schema = load_schema("record.schema.json")["$defs"]["ciContext"]
     validator = Draft202012Validator(ci_schema)

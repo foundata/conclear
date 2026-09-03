@@ -6,7 +6,7 @@ from pathlib import Path
 from conclear.adapters.base import ToolAdapter
 from conclear.adapters.parsing import json_value, object_value, string_value
 from conclear.config import RuntimeConfig
-from conclear.errors import OperationalError
+from conclear.errors import CommandExecutionError, OperationalError
 from conclear.process import OperationKind
 from conclear.values import Digest, Platform
 
@@ -28,6 +28,15 @@ class ContainerObservation:
     status: str
     pid: int
     exit_code: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecObservation:
+    """Bounded output and exit status from one in-container command."""
+
+    exit_status: int
+    stdout: str
+    stderr: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,7 +213,12 @@ class PodmanAdapter(ToolAdapter):
         return self.inspect_container(root=root, runroot=runroot, name=name)
 
     def inspect_container(
-        self, *, root: Path, runroot: Path, name: str
+        self,
+        *,
+        root: Path,
+        runroot: Path,
+        name: str,
+        timeout_seconds: float = 120,
     ) -> ContainerObservation:
         """Inspect one run-owned container without trusting Podman JSON types."""
         output = self._run(
@@ -216,7 +230,7 @@ class PodmanAdapter(ToolAdapter):
                 "json",
                 name,
             ),
-            timeout_seconds=120,
+            timeout_seconds=timeout_seconds,
         ).stdout
         value = json_value(output, label="Podman inspect")
         if not isinstance(value, list) or len(value) != 1:
@@ -253,6 +267,27 @@ class PodmanAdapter(ToolAdapter):
             (*self._storage(root, runroot), "exec", name, *command),
             timeout_seconds=timeout_seconds,
         ).stdout
+
+    def exec_observe(
+        self,
+        *,
+        root: Path,
+        runroot: Path,
+        name: str,
+        command: tuple[str, ...],
+        timeout_seconds: float,
+    ) -> ExecObservation:
+        """Observe an in-container status without hiding Podman failures."""
+        try:
+            result = self._run(
+                (*self._storage(root, runroot), "exec", name, *command),
+                timeout_seconds=timeout_seconds,
+            )
+        except CommandExecutionError as exc:
+            if exc.returncode is None or exc.returncode in {125, 126, 127}:
+                raise
+            return ExecObservation(exc.returncode, exc.stdout, exc.stderr)
+        return ExecObservation(result.returncode, result.stdout, result.stderr)
 
     def inspect_controls(
         self, *, root: Path, runroot: Path, name: str

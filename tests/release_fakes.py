@@ -15,6 +15,7 @@ from conclear.adapters.cosign import (
 from conclear.adapters.hadolint import HadolintFinding
 from conclear.adapters.podman import (
     ContainerObservation,
+    ExecObservation,
     ImportObservation,
     RuntimeControlObservation,
 )
@@ -164,9 +165,18 @@ class FakePodman:
             security_options=("no-new-privileges",),
         )
 
+    def inspect_container(self, **values: Any) -> ContainerObservation:
+        return ContainerObservation(
+            str(values["name"]), "container-id", "running", 100, None
+        )
+
     def exec(self, **values: Any) -> str:
         del values
         return ""
+
+    def exec_observe(self, **values: Any) -> ExecObservation:
+        del values
+        return ExecObservation(0, "", "")
 
     def signal(self, **values: Any) -> None:
         del values

@@ -12,6 +12,7 @@ import conclear.services.qualification as qualification_module
 from conclear.adapters.buildah import BuildObservation
 from conclear.adapters.podman import (
     ContainerObservation,
+    ExecObservation,
     ImportObservation,
     RuntimeControlObservation,
 )
@@ -154,6 +155,10 @@ class Runtime:
         timeout_preparation: bool = False,
         fail_import_call: int | None = None,
         fail_create_call: int | None = None,
+        timeout_health: bool = False,
+        health_statuses: tuple[int, ...] = (0,),
+        health_outputs: tuple[str, ...] = ("",),
+        container_observations: tuple[ContainerObservation, ...] = (),
     ) -> None:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
@@ -163,12 +168,20 @@ class Runtime:
         self.timeout_preparation = timeout_preparation
         self.fail_import_call = fail_import_call
         self.fail_create_call = fail_create_call
+        self.timeout_health = timeout_health
+        self.health_statuses = health_statuses
+        self.health_outputs = health_outputs
+        self.container_observations = list(container_observations)
         self.removals = 0
         self.removed_names: list[str] = []
         self.import_calls = 0
         self.created: list[dict[str, Any]] = []
         self.runtimes: dict[str, Any] = {}
         self.saw_private_input = False
+        self.health_calls = 0
+        self.health_timeouts: list[float] = []
+        self.inspect_timeouts: list[float] = []
+        self.signals = 0
 
     def import_layout(self, **values: Any) -> ImportObservation:
         self.import_calls += 1
@@ -219,12 +232,36 @@ class Runtime:
             security_options=("no-new-privileges",),
         )
 
+    def inspect_container(self, **values: Any) -> ContainerObservation:
+        self.inspect_timeouts.append(float(values["timeout_seconds"]))
+        if self.container_observations:
+            return self.container_observations.pop(0)
+        return ContainerObservation(
+            str(values["name"]), "container-id", "running", 100, None
+        )
+
     def exec(self, **values: Any) -> str:
-        if self.fail_health:
-            raise OperationalError("injected health failure")
         return ""
 
+    def exec_observe(self, **values: Any) -> ExecObservation:
+        if self.fail_health:
+            raise OperationalError("injected health failure")
+        if self.timeout_health:
+            raise CommandTimeoutError(
+                "injected health command timeout",
+                stdout="initializing\n",
+                stderr="",
+            )
+        index = min(self.health_calls, len(self.health_statuses) - 1)
+        output_index = min(self.health_calls, len(self.health_outputs) - 1)
+        self.health_calls += 1
+        self.health_timeouts.append(float(values["timeout_seconds"]))
+        return ExecObservation(
+            self.health_statuses[index], self.health_outputs[output_index], ""
+        )
+
     def signal(self, **values: Any) -> None:
+        self.signals += 1
         return None
 
     def wait(self, **values: Any) -> int:
@@ -241,6 +278,24 @@ class Runtime:
 
     def remove_storage(self, **values: Any) -> None:
         return None
+
+
+class FakeReadinessTiming:
+    def __init__(self, *, interval_seconds: float = 0.25) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+        self.value = qualification_module._ReadinessTiming(
+            monotonic=self.monotonic,
+            sleep=self.sleep,
+            interval_seconds=interval_seconds,
+        )
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
 
 
 class Scanner:
@@ -649,6 +704,210 @@ def test_runtime_failure_attempts_cleanup_without_replacing_original_error(
         if entry.resource_id == "podman-app-linux-amd64"
     )
     assert status is (ResourceStatus.FAILED if fail_remove else ResourceStatus.REMOVED)
+
+
+def test_health_command_timeout_remains_operational_and_cleans_runtime(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    runtime = Runtime(timeout_health=True)
+
+    with pytest.raises(CommandTimeoutError, match="injected health command timeout"):
+        run_platform_tests(
+            value,
+            build_platform(value, Builder()),
+            runtime,
+            hook_runner(value),
+        )
+
+    assert runtime.health_calls == 0
+    assert runtime.removals == 1
+    assert (
+        next(
+            item.status
+            for item in value.workspace.journal.entries()
+            if item.resource_id == "podman-app-linux-amd64"
+        )
+        is ResourceStatus.REMOVED
+    )
+
+
+def test_service_health_succeeds_on_first_attempt(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    runtime = Runtime(health_outputs=("ready\n",))
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+    )
+
+    health = next(item for item in evidence.test_results if item["name"] == "health")
+    assert isinstance(health["elapsedSeconds"], float)
+    assert health["elapsedSeconds"] >= 0
+    assert health == {
+        "name": "health",
+        "status": "passed",
+        "outcome": "ready",
+        "attempts": 1,
+        "elapsedSeconds": health["elapsedSeconds"],
+        "timeoutSeconds": 60,
+        "containerStatus": "running",
+        "containerExitStatus": None,
+        "outputDigest": sha256_bytes(
+            canonical_json_bytes({"stdout": "ready\n", "stderr": ""})
+        ),
+        "exitStatus": 0,
+    }
+    assert runtime.health_timeouts[0] <= 60
+    assert runtime.removals == 1
+
+
+def test_service_health_retries_with_one_remaining_deadline(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(value.image.runtime, startup_timeout_seconds=1),
+        ),
+    )
+    runtime = Runtime(
+        health_statuses=(1, 1, 0),
+        health_outputs=("starting-1\n", "starting-2\n", "ready\n"),
+    )
+    timing = FakeReadinessTiming()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+        _readiness_timing=timing.value,
+    )
+
+    health = next(item for item in evidence.test_results if item["name"] == "health")
+    assert health["status"] == "passed"
+    assert health["outcome"] == "ready"
+    assert health["attempts"] == 3
+    assert health["elapsedSeconds"] == 0.5
+    assert health["exitStatus"] == 0
+    assert health["outputDigest"] == sha256_bytes(
+        canonical_json_bytes({"stdout": "ready\n", "stderr": ""})
+    )
+    assert runtime.health_timeouts == [1.0, 0.75, 0.5]
+    assert runtime.inspect_timeouts == [0.75, 0.5]
+    assert timing.sleeps == [0.25, 0.25]
+    assert runtime.removals == 1
+
+
+def test_service_health_timeout_rejects_and_cleans_runtime(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(value.image.runtime, startup_timeout_seconds=1),
+        ),
+    )
+    runtime = Runtime(health_statuses=(4,), health_outputs=("still starting\n",))
+    timing = FakeReadinessTiming()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+        _readiness_timing=timing.value,
+    )
+
+    health = next(item for item in evidence.test_results if item["name"] == "health")
+    assert health["status"] == "failed"
+    assert health["outcome"] == "timeout"
+    assert health["attempts"] == 4
+    assert health["elapsedSeconds"] == 1.0
+    assert health["timeoutSeconds"] == 1
+    assert health["containerStatus"] == "running"
+    assert health["exitStatus"] == 4
+    assert health["outputDigest"] == sha256_bytes(
+        canonical_json_bytes({"stdout": "still starting\n", "stderr": ""})
+    )
+    assert [finding.check_id for finding in evidence.findings] == ["CC0403"]
+    assert evidence.findings[0].message == (
+        "Service health did not succeed within 1s after 4 attempts"
+    )
+    assert runtime.health_timeouts == [1.0, 0.75, 0.5, 0.25]
+    assert runtime.inspect_timeouts == [0.75, 0.5, 0.25, 5.0]
+    assert runtime.signals == 1
+    assert runtime.removals == 1
+    assert (
+        next(
+            item.status
+            for item in value.workspace.journal.entries()
+            if item.resource_id == "podman-app-linux-amd64"
+        )
+        is ResourceStatus.REMOVED
+    )
+
+
+def test_service_exit_during_readiness_rejects_without_signal(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    stopped = ContainerObservation("test", "container-id", "exited", 0, 23)
+    runtime = Runtime(health_statuses=(1,), container_observations=(stopped,))
+    timing = FakeReadinessTiming()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+        _readiness_timing=timing.value,
+    )
+
+    health = next(item for item in evidence.test_results if item["name"] == "health")
+    assert health["outcome"] == "exited"
+    assert health["attempts"] == 1
+    assert health["containerStatus"] == "exited"
+    assert health["containerExitStatus"] == 23
+    assert evidence.findings[0].message == (
+        "Service exited with status 23 before becoming ready"
+    )
+    assert runtime.signals == 0
+    assert runtime.removals == 1
+
+
+def test_service_without_health_command_does_not_poll(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(value.image.runtime, health_command=()),
+        ),
+    )
+    runtime = Runtime()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+    )
+
+    assert runtime.health_calls == 0
+    assert all(item["name"] != "health" for item in evidence.test_results)
+    assert runtime.signals == 1
 
 
 def test_failed_qualification_journal_update_leaves_debug_trace(

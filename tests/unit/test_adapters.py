@@ -336,6 +336,44 @@ def test_podman_observes_writable_bind_as_runtime_write_surface(
     assert observation.writable_mounts == ("/output",)
 
 
+def test_podman_observes_in_container_command_status(tmp_path: Path) -> None:
+    runner = FakeRunner(
+        CommandExecutionError(
+            "not ready", returncode=1, stdout="initializing\n", stderr=""
+        )
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    observation = adapter.exec_observe(
+        root=tmp_path / "root",
+        runroot=tmp_path / "runroot",
+        name="test",
+        command=("/app/health",),
+        timeout_seconds=7.5,
+    )
+
+    assert observation.exit_status == 1
+    assert observation.stdout == "initializing\n"
+    assert runner.requests[0].timeout_seconds == 7.5
+
+
+@pytest.mark.parametrize("returncode", [125, 126, 127])
+def test_podman_exec_observation_preserves_operational_failures(
+    tmp_path: Path, returncode: int
+) -> None:
+    runner = FakeRunner(CommandExecutionError("podman failed", returncode=returncode))
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    with pytest.raises(CommandExecutionError, match="podman failed"):
+        adapter.exec_observe(
+            root=tmp_path / "root",
+            runroot=tmp_path / "runroot",
+            name="test",
+            command=("/app/health",),
+            timeout_seconds=5,
+        )
+
+
 def test_podman_import_digest_mismatch_uses_stable_check_identifier(
     tmp_path: Path,
 ) -> None:

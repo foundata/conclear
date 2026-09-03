@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import time
@@ -33,10 +34,12 @@ _FIXTURE_SOURCE = r"""
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func waitForSignal() os.Signal {
@@ -72,7 +75,18 @@ func main() {
 			os.Exit(1)
 		}
 		return
-	case "health-input", "one-shot-input":
+	case "health-input":
+		result, err := os.ReadFile("/input/result")
+		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
+			os.Exit(1)
+		}
+		if _, err := os.Stat("/tmp/conclear-service-ready"); err != nil {
+			fmt.Fprintln(os.Stderr, "service is initializing")
+			os.Exit(1)
+		}
+		fmt.Println("service is ready")
+		return
+	case "one-shot-input":
 		result, err := os.ReadFile("/input/result")
 		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
 			os.Exit(1)
@@ -81,6 +95,10 @@ func main() {
 	case "service-input":
 		result, err := os.ReadFile("/input/result")
 		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
+			os.Exit(1)
+		}
+		time.Sleep(750 * time.Millisecond)
+		if err := os.WriteFile("/tmp/conclear-service-ready", []byte("ok"), 0600); err != nil {
 			os.Exit(1)
 		}
 		waitForSignal()
@@ -564,6 +582,32 @@ def test_real_exact_image_preparation_and_launch_inputs(
             and value["status"] == "passed"
             for value in evidence.test_results
         )
+        if profile == "service":
+            health = next(
+                value for value in evidence.test_results if value["name"] == "health"
+            )
+            assert health["status"] == "passed"
+            attempts = health["attempts"]
+            assert isinstance(attempts, int)
+            assert attempts >= 2
+            command_logs = [
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in (runtime.root / "logs").glob("podman-*.json")
+            ]
+            health_logs = [
+                log
+                for log in command_logs
+                if log.get("argv", [])[-1:] == ["health-input"]
+            ]
+            assert any(
+                log.get("outcome") == "failure"
+                and str(log.get("stderr", "")).endswith("service is initializing\n")
+                for log in health_logs
+            )
+            assert any(
+                log.get("returncode") == 0 and log.get("stdout") == "service is ready\n"
+                for log in health_logs
+            )
         report = (
             workspace.root / "reports" / "runtime" / "linux-amd64" / "tests.json"
         ).read_text(encoding="utf-8")

@@ -1,15 +1,18 @@
 """Build, runtime-test, evidence and platform qualification services."""
 
 import logging
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from conclear.adapters.buildah import BuildObservation
 from conclear.adapters.podman import (
     BindMount,
     ContainerObservation,
+    ExecObservation,
     ImportObservation,
     RuntimeControlObservation,
 )
@@ -24,7 +27,12 @@ from conclear.config import (
 from conclear.context import ContextObservation, hash_build_context
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.hooks import HookObservation, HookRunner, HookStatus
-from conclear.jsonutil import atomic_write_json, sha256_bytes, sha256_file
+from conclear.jsonutil import (
+    atomic_write_json,
+    canonical_json_bytes,
+    sha256_bytes,
+    sha256_file,
+)
 from conclear.oci import validate_layout
 from conclear.pins import PinObservation
 from conclear.presentation import Finding
@@ -53,6 +61,8 @@ from conclear.workspace import (
 )
 
 LOGGER = logging.getLogger(__name__)
+_HEALTH_POLL_INTERVAL_SECONDS = 0.25
+_HEALTH_DIAGNOSTIC_TIMEOUT_SECONDS = 5.0
 
 
 class Builder(Protocol):
@@ -116,6 +126,17 @@ class RuntimeAdapter(Protocol):
         """Observe effective runtime controls."""
         ...
 
+    def inspect_container(
+        self,
+        *,
+        root: Path,
+        runroot: Path,
+        name: str,
+        timeout_seconds: float = 120,
+    ) -> ContainerObservation:
+        """Observe the current container process state."""
+        ...
+
     def exec(
         self,
         *,
@@ -126,6 +147,18 @@ class RuntimeAdapter(Protocol):
         timeout_seconds: float,
     ) -> str:
         """Execute one fixed argument array."""
+        ...
+
+    def exec_observe(
+        self,
+        *,
+        root: Path,
+        runroot: Path,
+        name: str,
+        command: tuple[str, ...],
+        timeout_seconds: float,
+    ) -> ExecObservation:
+        """Observe one in-container command without rejecting its exit status."""
         ...
 
     def signal(self, *, root: Path, runroot: Path, name: str, signal_name: str) -> None:
@@ -233,6 +266,27 @@ class RuntimeEvidence:
     incomplete: bool
     test_inputs: dict[str, object]
     dependencies: tuple[dict[str, object], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ReadinessTiming:
+    """Inject monotonic time and bounded sleeping into readiness tests."""
+
+    monotonic: Callable[[], float]
+    sleep: Callable[[float], None]
+    interval_seconds: float = _HEALTH_POLL_INTERVAL_SECONDS
+
+
+@dataclass(frozen=True, slots=True)
+class _HealthObservation:
+    """Final bounded observation from service readiness polling."""
+
+    outcome: Literal["ready", "timeout", "exited"]
+    attempts: int
+    elapsed_seconds: float
+    timeout_seconds: int
+    command: ExecObservation | None
+    container: ContainerObservation
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,6 +408,8 @@ def test_platform(
     runtime: RuntimeAdapter,
     hooks: HookRunner,
     dependencies: tuple[TestDependencyBuild, ...] = (),
+    *,
+    _readiness_timing: _ReadinessTiming | None = None,
 ) -> RuntimeEvidence:
     """Import the exact layout and apply generic and repository-specific tests."""
     try:
@@ -462,6 +518,7 @@ def test_platform(
                 storage_root=storage_root,
                 runroot=runroot,
                 container_name=container_name,
+                readiness_timing=_readiness_timing,
             )
             findings.extend(runtime_findings)
             results.extend(runtime_results)
@@ -1000,6 +1057,7 @@ def _exercise_container(
     storage_root: Path,
     runroot: Path,
     container_name: str,
+    readiness_timing: _ReadinessTiming | None,
 ) -> tuple[list[Finding], list[dict[str, object]], dict[str, object]]:
     findings: list[Finding] = []
     results: list[dict[str, object]] = [
@@ -1042,6 +1100,7 @@ def _exercise_container(
             container_name=container_name,
             findings=findings,
             results=results,
+            readiness_timing=readiness_timing,
         )
     else:
         exit_status = runtime.wait(
@@ -1081,20 +1140,78 @@ def _exercise_service(
     container_name: str,
     findings: list[Finding],
     results: list[dict[str, object]],
+    readiness_timing: _ReadinessTiming | None,
 ) -> None:
-    if container.status != "running" or container.pid <= 0:
+    running = _container_is_running(container)
+    if not running:
         findings.append(Finding("CC0403", "error", "Service did not remain running"))
+        results.append(
+            {
+                "name": "startup",
+                "status": "failed",
+                "containerStatus": container.status,
+                "containerExitStatus": container.exit_code,
+            }
+        )
     else:
-        results.append({"name": "startup", "status": "passed"})
+        results.append(
+            {
+                "name": "startup",
+                "status": "passed",
+                "containerStatus": container.status,
+                "containerExitStatus": container.exit_code,
+            }
+        )
     if inputs.image.runtime.health_command:
-        runtime.exec(
+        health = _wait_for_service_health(
+            runtime,
             root=storage_root,
             runroot=runroot,
             name=container_name,
             command=inputs.image.runtime.health_command,
+            initial=container,
             timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
+            timing=(
+                readiness_timing
+                or _ReadinessTiming(monotonic=time.monotonic, sleep=time.sleep)
+            ),
         )
-        results.append({"name": "health", "status": "passed"})
+        results.append(_health_test_result(health))
+        container = health.container
+        running = _container_is_running(container)
+        if health.outcome == "timeout":
+            findings.append(
+                Finding(
+                    "CC0403",
+                    "error",
+                    "Service health did not succeed within "
+                    f"{health.timeout_seconds}s after {health.attempts} attempts",
+                )
+            )
+        elif health.outcome == "exited" and not any(
+            finding.message == "Service did not remain running" for finding in findings
+        ):
+            suffix = (
+                "unknown" if container.exit_code is None else str(container.exit_code)
+            )
+            findings.append(
+                Finding(
+                    "CC0403",
+                    "error",
+                    f"Service exited with status {suffix} before becoming ready",
+                )
+            )
+    if not running:
+        shutdown_result: dict[str, object] = {
+            "name": "signalAndShutdown",
+            "status": "failed",
+            "containerStatus": container.status,
+            "containerExitStatus": container.exit_code,
+        }
+        if container.exit_code is not None:
+            shutdown_result["exitStatus"] = container.exit_code
+        results.append(shutdown_result)
+        return
     _check_immutable_paths(
         inputs, runtime, storage_root, runroot, container_name, findings
     )
@@ -1126,6 +1243,106 @@ def _exercise_service(
             "exitStatus": exit_status,
         }
     )
+
+
+def _wait_for_service_health(
+    runtime: RuntimeAdapter,
+    *,
+    root: Path,
+    runroot: Path,
+    name: str,
+    command: tuple[str, ...],
+    initial: ContainerObservation,
+    timeout_seconds: int,
+    timing: _ReadinessTiming,
+) -> _HealthObservation:
+    if timing.interval_seconds <= 0:
+        raise OperationalError("Readiness polling interval must be positive")
+    start = timing.monotonic()
+    deadline = start + timeout_seconds
+    attempts = 0
+    current = initial
+    final_command: ExecObservation | None = None
+    while True:
+        now = timing.monotonic()
+        if not _container_is_running(current):
+            return _HealthObservation(
+                "exited",
+                attempts,
+                max(0.0, now - start),
+                timeout_seconds,
+                final_command,
+                current,
+            )
+        remaining = deadline - now
+        if remaining <= 0:
+            return _HealthObservation(
+                "timeout",
+                attempts,
+                max(0.0, now - start),
+                timeout_seconds,
+                final_command,
+                current,
+            )
+        attempts += 1
+        final_command = runtime.exec_observe(
+            root=root,
+            runroot=runroot,
+            name=name,
+            command=command,
+            timeout_seconds=remaining,
+        )
+        now = timing.monotonic()
+        if final_command.exit_status == 0:
+            return _HealthObservation(
+                "ready",
+                attempts,
+                max(0.0, now - start),
+                timeout_seconds,
+                final_command,
+                current,
+            )
+        remaining = deadline - now
+        if remaining > 0:
+            timing.sleep(min(timing.interval_seconds, remaining))
+        remaining = deadline - timing.monotonic()
+        current = runtime.inspect_container(
+            root=root,
+            runroot=runroot,
+            name=name,
+            timeout_seconds=(
+                remaining if remaining > 0 else _HEALTH_DIAGNOSTIC_TIMEOUT_SECONDS
+            ),
+        )
+
+
+def _health_test_result(observation: _HealthObservation) -> dict[str, object]:
+    command = observation.command
+    result: dict[str, object] = {
+        "name": "health",
+        "status": "passed" if observation.outcome == "ready" else "failed",
+        "outcome": observation.outcome,
+        "attempts": observation.attempts,
+        "elapsedSeconds": round(observation.elapsed_seconds, 6),
+        "timeoutSeconds": observation.timeout_seconds,
+        "containerStatus": observation.container.status,
+        "containerExitStatus": observation.container.exit_code,
+        "outputDigest": sha256_bytes(
+            canonical_json_bytes(
+                {
+                    "stdout": "" if command is None else command.stdout,
+                    "stderr": "" if command is None else command.stderr,
+                }
+            )
+        ),
+    }
+    if command is not None:
+        result["exitStatus"] = command.exit_status
+    return result
+
+
+def _container_is_running(container: ContainerObservation) -> bool:
+    return container.status == "running" and container.pid > 0
 
 
 def _remove_test_container(

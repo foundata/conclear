@@ -230,12 +230,21 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "status"],
+      "dependentRequired": {
+        "outcome": ["attempts", "elapsedSeconds", "timeoutSeconds", "containerStatus", "containerExitStatus", "outputDigest"]
+      },
       "properties": {
         "name": {"type": "string", "minLength": 1},
         "status": {"enum": ["passed", "failed", "skipped"]},
         "digest": {"$ref": "#/$defs/digest"},
         "observed": {"$ref": "#/$defs/runtimeObservation"},
         "exitStatus": {"type": "integer"},
+        "outcome": {"enum": ["ready", "timeout", "exited"]},
+        "attempts": {"type": "integer", "minimum": 0},
+        "elapsedSeconds": {"type": "number", "minimum": 0},
+        "timeoutSeconds": {"type": "integer", "minimum": 1, "maximum": 600},
+        "containerStatus": {"type": "string", "minLength": 1},
+        "containerExitStatus": {"type": ["integer", "null"]},
         "required": {"type": "boolean"},
         "executable": {"type": ["string", "null"]},
         "executableDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
