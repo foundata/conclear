@@ -54,6 +54,8 @@ uv run conclear --help
 
 Maintainers can build and retain a locally installable, identity-bearing wheel without PyPI or a CI service. The complete command and clean-environment installation procedure are documented in [`DEVELOPMENT.md`](./DEVELOPMENT.md#releases).
 
+Container projects can follow the [ConClear quick start](./docs/quickstart.md) for the required repository files, runtime test inputs and release-profile setup.
+
 Release workflows additionally need the rootless container toolchain listed under [Supported tools](#supported-tools). The hermetic unit suite needs none of it.
 
 
