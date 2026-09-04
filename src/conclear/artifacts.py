@@ -201,7 +201,9 @@ def qualification_transport(
         )
     layout_path = workspace.root / "layouts" / image.image_id / platform.key
     graph = validate_layout(layout_path, reference="qualified")
-    if len(graph.manifests) != 1 or graph.manifests[0].platform != platform:
+    if len(graph.manifests) != 1 or not graph.manifests[
+        0
+    ].platform.semantically_matches(platform):
         raise RuleRejectionError(
             f"Qualification layout platform differs from {platform}", code="CC0303"
         )

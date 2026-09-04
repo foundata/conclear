@@ -59,6 +59,14 @@ def _before_release(addition: str) -> Callable[[str], str]:
         ),
         (
             lambda text: text.replace(
+                'platforms = ["linux/amd64"]',
+                'platforms = ["linux/amd64", "linux/arm64", "linux/arm64/v8"]',
+                1,
+            ),
+            "duplicate platforms",
+        ),
+        (
+            lambda text: text.replace(
                 'platforms = ["linux/amd64"]', 'platforms = ["linux/arm64"]', 1
             ),
             "must include linux/amd64",
@@ -246,6 +254,7 @@ command = ["/app"]
     ],
     ids=[
         "duplicate-image-id",
+        "duplicate-semantic-platform",
         "missing-amd64",
         "native-not-subset",
         "missing-arm64-reason",

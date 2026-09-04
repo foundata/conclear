@@ -267,7 +267,9 @@ class LayoutValidator:
         platform = Platform(operating_system, architecture, variant)
         Platform.parse(str(platform))
         declared_platform = descriptor.platform or inherited_platform
-        if declared_platform is not None and declared_platform != platform:
+        if declared_platform is not None and not declared_platform.semantically_matches(
+            platform
+        ):
             raise InvalidInvocationError(
                 f"OCI descriptor platform {declared_platform} does not match config {platform}"
             )

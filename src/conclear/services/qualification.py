@@ -372,7 +372,9 @@ def build_platform(inputs: QualificationInputs, builder: Builder) -> BuildEviden
     workspace.journal.update(storage_id, ResourceStatus.CREATED)
     workspace.journal.update(layout_id, ResourceStatus.CREATED)
     graph = observation.graph
-    if len(graph.manifests) != 1 or graph.manifests[0].platform != inputs.platform:
+    if len(graph.manifests) != 1 or not graph.manifests[
+        0
+    ].platform.semantically_matches(inputs.platform):
         raise OperationalError(
             f"Build output does not contain exactly platform {inputs.platform}"
         )
@@ -663,7 +665,9 @@ def _validate_dependency_builds(
             ) from exc
         if observed_graph.digest != graph.digest:
             raise OperationalError("Test dependency layout changed after build")
-        if len(graph.manifests) != 1 or graph.manifests[0].platform != inputs.platform:
+        if len(graph.manifests) != 1 or not graph.manifests[
+            0
+        ].platform.semantically_matches(inputs.platform):
             raise OperationalError("Test dependency layout platform is inconsistent")
 
 

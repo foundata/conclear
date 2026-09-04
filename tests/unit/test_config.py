@@ -50,6 +50,29 @@ def test_repository_configuration_is_validated_and_narrowed(
     assert image.runtime.read_only is True
 
 
+def test_repository_configuration_accepts_explicit_arm64_v8(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace(
+            'platforms = ["linux/amd64"]',
+            'platforms = ["linux/amd64", "linux/arm64/v8"]',
+        )
+        .replace(
+            'arm64_omission_reason = "The dependency is not available for arm64."\n',
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    image = load_repository_config(path).image("app")
+
+    assert str(image.platforms[-1]) == "linux/arm64/v8"
+
+
 def test_repository_configuration_parses_exact_runtime_test_inputs(
     repository_factory: Callable[..., Path],
 ) -> None:

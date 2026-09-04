@@ -33,17 +33,26 @@ def write_blob(layout: Path, content: bytes) -> tuple[str, int]:
     return digest, len(content)
 
 
-def platform_layout(root: Path, architecture: str) -> Path:
+def platform_layout(
+    root: Path, architecture: str, *, variant: str | None = None
+) -> Path:
     root.mkdir()
     (root / "oci-layout").write_text(
         '{"imageLayoutVersion":"1.0.0"}\n', encoding="utf-8"
     )
+    config_platform: dict[str, object] = {
+        "architecture": architecture,
+        "os": "linux",
+    }
+    descriptor_platform = dict(config_platform)
+    if variant is not None:
+        config_platform["variant"] = variant
+        descriptor_platform["variant"] = variant
     config, config_size = write_blob(
         root,
         canonical_json_bytes(
             {
-                "architecture": architecture,
-                "os": "linux",
+                **config_platform,
                 "config": {"User": "10001"},
                 "rootfs": {"type": "layers", "diff_ids": []},
             }
@@ -73,7 +82,7 @@ def platform_layout(root: Path, architecture: str) -> Path:
                         "mediaType": OCI_MANIFEST,
                         "digest": manifest,
                         "size": manifest_size,
-                        "platform": {"os": "linux", "architecture": architecture},
+                        "platform": descriptor_platform,
                         "annotations": {
                             "org.opencontainers.image.ref.name": "qualified"
                         },
@@ -107,6 +116,19 @@ def test_assembly_preserves_platform_manifests_and_creates_index(
         Platform.parse("linux/arm64"),
     )
     assert len(observation.platform_manifests) == 2
+
+
+def test_assembly_accepts_explicit_v8_for_implicit_arm64(tmp_path: Path) -> None:
+    arm64 = platform_layout(tmp_path / "arm64", "arm64", variant="v8")
+
+    observation = assemble_layout(
+        (PlatformLayout(Platform.parse("linux/arm64"), arm64, "qualified"),),
+        output_path=tmp_path / "assembled",
+        output_reference="candidate",
+    )
+
+    assert observation.graph.platforms == (Platform.parse("linux/arm64/v8"),)
+    assert observation.platform_manifests[0][0] == Platform.parse("linux/arm64/v8")
 
 
 def test_assembly_rejects_duplicate_platform(tmp_path: Path) -> None:

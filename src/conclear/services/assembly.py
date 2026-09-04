@@ -255,7 +255,9 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
             f"Transported payload digests do not match qualification for {platform}"
         )
     graph = validate_layout(transport.layout_path, reference=transport.layout_reference)
-    if len(graph.manifests) != 1 or graph.manifests[0].platform != platform:
+    if len(graph.manifests) != 1 or not graph.manifests[
+        0
+    ].platform.semantically_matches(platform):
         raise InvalidInvocationError(
             f"Transported layout does not match qualification platform {platform}"
         )

@@ -62,8 +62,11 @@ def write_blob(layout: Path, content: bytes) -> tuple[str, int]:
 
 
 class Builder:
-    def __init__(self, *, invalid_labels: bool = False) -> None:
+    def __init__(
+        self, *, invalid_labels: bool = False, observed_variant: str | None = None
+    ) -> None:
         self.invalid_labels = invalid_labels
+        self.observed_variant = observed_variant
 
     def build(self, **values: Any) -> BuildObservation:
         layout = values["layout_path"]
@@ -86,12 +89,17 @@ class Builder:
         }
         if self.invalid_labels:
             labels["org.opencontainers.image.revision"] = "wrong"
+        observed_platform: dict[str, object] = {
+            "architecture": platform.architecture,
+            "os": "linux",
+        }
+        if self.observed_variant is not None:
+            observed_platform["variant"] = self.observed_variant
         config, config_size = write_blob(
             layout,
             canonical_json_bytes(
                 {
-                    "architecture": platform.architecture,
-                    "os": "linux",
+                    **observed_platform,
                     "config": {"User": "10001", "Labels": labels},
                     "rootfs": {"type": "layers", "diff_ids": []},
                 }
@@ -121,10 +129,7 @@ class Builder:
                             "mediaType": OCI_MANIFEST,
                             "digest": manifest,
                             "size": manifest_size,
-                            "platform": {
-                                "os": platform.os,
-                                "architecture": platform.architecture,
-                            },
+                            "platform": observed_platform,
                             "annotations": {
                                 "org.opencontainers.image.ref.name": "qualified"
                             },
@@ -582,6 +587,20 @@ def _register_arm64_handler(root: Path) -> Path:
         encoding="ascii",
     )
     return root
+
+
+def test_build_accepts_explicit_v8_for_implicit_arm64(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = replace(
+        inputs(repository_factory(), tmp_path),
+        platform=Platform.parse("linux/arm64"),
+        binfmt_root=_register_arm64_handler(tmp_path / "binfmt"),
+    )
+
+    evidence = build_platform(value, Builder(observed_variant="v8"))
+
+    assert evidence.observation.graph.platforms == (Platform.parse("linux/arm64/v8"),)
 
 
 def test_foreign_platform_without_binfmt_handler_is_not_qualified(

@@ -480,17 +480,24 @@ def load_release_profile(
 def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     image_id = _string(value["id"])
     platforms = tuple(Platform.parse(item) for item in _string_list(value["platforms"]))
-    if len(platforms) != len(set(platforms)):
+    if any(
+        left.semantically_matches(right)
+        for index, left in enumerate(platforms)
+        for right in platforms[index + 1 :]
+    ):
         raise InvalidInvocationError("An image cannot declare duplicate platforms")
     amd64 = Platform.parse("linux/amd64")
     arm64 = Platform.parse("linux/arm64")
-    if amd64 not in platforms:
+    if not any(platform.semantically_matches(amd64) for platform in platforms):
         raise InvalidInvocationError("Every image must include linux/amd64")
     native_platforms = tuple(
         Platform.parse(item)
         for item in _string_list(value.get("native_test_platforms", ["linux/amd64"]))
     )
-    if not set(native_platforms).issubset(platforms):
+    if not all(
+        any(platform.semantically_matches(candidate) for candidate in platforms)
+        for platform in native_platforms
+    ):
         raise InvalidInvocationError(
             "native_test_platforms must be a subset of platforms"
         )
@@ -498,7 +505,10 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     omission_reason = (
         _string(omission_reason_value) if omission_reason_value is not None else None
     )
-    if arm64 not in platforms and omission_reason is None:
+    if (
+        not any(platform.semantically_matches(arm64) for platform in platforms)
+        and omission_reason is None
+    ):
         raise InvalidInvocationError(
             "An image omitting linux/arm64 must provide arm64_omission_reason"
         )
@@ -754,7 +764,13 @@ def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
                 f"Image {image.image_id} cannot depend on itself for tests"
             )
         for dependency_id in dependencies:
-            if not set(image.platforms).issubset(by_id[dependency_id].platforms):
+            if not all(
+                any(
+                    platform.semantically_matches(candidate)
+                    for candidate in by_id[dependency_id].platforms
+                )
+                for platform in image.platforms
+            ):
                 raise InvalidInvocationError(
                     f"Test dependency {dependency_id} does not cover all platforms of {image.image_id}"
                 )

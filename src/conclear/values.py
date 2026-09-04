@@ -59,6 +59,24 @@ class Platform:
     architecture: str
     variant: str | None = None
 
+    def semantically_matches(self, other: "Platform") -> bool:
+        """Return whether two OCI platform spellings select the same target."""
+        return (
+            self.os,
+            self.architecture,
+            self._effective_variant,
+        ) == (
+            other.os,
+            other.architecture,
+            other._effective_variant,
+        )
+
+    @property
+    def _effective_variant(self) -> str | None:
+        if self.architecture == "arm64" and self.variant is None:
+            return "v8"
+        return self.variant
+
     @classmethod
     def parse(cls, value: str) -> "Platform":
         """Parse a canonical slash-separated OCI platform."""

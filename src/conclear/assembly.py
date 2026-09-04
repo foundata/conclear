@@ -67,7 +67,7 @@ def assemble_layout(
                 f"Platform input {item.platform} must select one image manifest"
             )
         manifest = graph.manifests[0]
-        if manifest.platform != item.platform:
+        if not manifest.platform.semantically_matches(item.platform):
             raise InvalidInvocationError(
                 f"Platform input {item.platform} contains {manifest.platform}"
             )
@@ -75,7 +75,7 @@ def assemble_layout(
             media_type=graph.root.media_type,
             digest=graph.root.digest,
             size=graph.root.size,
-            platform=item.platform,
+            platform=manifest.platform,
         )
         validated.append((item, graph, descriptor))
         _copy_graph_blobs(item.path, graph, output_path)
@@ -113,7 +113,9 @@ def assemble_layout(
         reference=output_reference,
         graph=graph,
         platform_manifests=tuple(
-            (item.platform, descriptor.digest) for item, _graph, descriptor in validated
+            (descriptor.platform, descriptor.digest)
+            for _item, _graph, descriptor in validated
+            if descriptor.platform is not None
         ),
     )
 

@@ -55,6 +55,14 @@ def test_platform_round_trip(
     assert str(Platform.parse(value)) == value
 
 
+def test_arm64_default_variant_matches_explicit_v8_only() -> None:
+    implicit = Platform.parse("linux/arm64")
+
+    assert implicit.semantically_matches(Platform.parse("linux/arm64/v8"))
+    assert not implicit.semantically_matches(Platform.parse("linux/arm64/v9"))
+    assert not implicit.semantically_matches(Platform.parse("freebsd/arm64/v8"))
+
+
 def test_candidate_tag_uses_required_version_first_shape() -> None:
     assert (
         candidate_tag(
