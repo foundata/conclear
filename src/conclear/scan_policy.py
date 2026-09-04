@@ -53,6 +53,11 @@ class ScanEvaluation:
         return not any(finding.severity == "error" for finding in self.findings)
 
 
+# The guide forbids HEALTHCHECK in OCI-format images and CC0112 rejects it, so
+# Trivy's "No HEALTHCHECK defined" Dockerfile check can never be satisfied.
+_INAPPLICABLE_MISCONFIGURATIONS = frozenset({"DS-0026", "DS026", "AVD-DS-0026"})
+
+
 def evaluate_trivy_report(
     value: object,
     *,
@@ -91,6 +96,8 @@ def evaluate_trivy_report(
             identifier = string_value(
                 misconfiguration.get("ID"), label="Trivy misconfiguration ID"
             )
+            if identifier in _INAPPLICABLE_MISCONFIGURATIONS:
+                continue
             findings.append(
                 Finding(
                     "CC0501",

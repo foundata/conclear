@@ -78,3 +78,24 @@ def test_scan_policy_rejects_secrets_and_failed_misconfiguration() -> None:
         "CC0501",
         "CC0501",
     ]
+
+
+def test_scan_policy_ignores_only_the_inapplicable_healthcheck_check() -> None:
+    value = {
+        "Results": [
+            {
+                "Target": "Containerfile",
+                "Misconfigurations": [
+                    {"ID": "DS-0026", "Status": "FAIL"},
+                    {"ID": "DS-0002", "Status": "FAIL"},
+                    {"ID": "DS-0001", "Status": "PASS"},
+                ],
+            }
+        ]
+    }
+    evaluation = evaluate_trivy_report(
+        value, image_id="app", exceptions=(), today=date(2026, 8, 31)
+    )
+    assert [finding.message for finding in evaluation.findings] == [
+        "Configuration finding DS-0002"
+    ]
