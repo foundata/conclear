@@ -440,7 +440,7 @@ Network operations are bounded and classified by idempotency. Reads may retry. A
 
 ## Testing<a id="testing"></a>
 
-Ruff, strict mypy, pytest and coverage run for the Python code. Tests use explicit markers for unit, local integration, emulation and network access so the default suite never publishes or requires credentials.
+Ruff, strict mypy, pytest and coverage run for the Python code. The hermetic unit suite carries an enforced minimum branch-coverage floor that the distribution gate applies; the floor is raised as coverage grows and is never met by excluding code. Tests use explicit markers for unit, local integration, emulation and network access so the default suite never publishes or requires credentials.
 
 Unit tests cover configuration validation, limit narrowing, check identifiers, candidate naming, state transitions, record schemas, digest binding, platform coverage, command redaction, error classification, deterministic pin-proposal generation with an injected resolver and clock, and all-or-nothing proposal application with injected write, flush, replace and verification faults. Property tests cover reference parsing, path containment, archive extraction and OCI descriptor graphs.
 
@@ -462,4 +462,4 @@ This document describes target behavior, including behavior not yet implemented.
 
 A guide revision update requires reviewing every changed normative rule, updating the embedded guide identity, check catalog, generated conformance document, affected schemas and tests. ConClear must not advertise the new guide revision until its automatable rules are implemented and passing.
 
-Public command behavior and record schemas change deliberately. Each JSON schema has its own integer version; incompatible field or meaning changes increment its major schema version, while readers may accept explicitly documented older versions. Stable check identifiers and published Markdown anchors are never silently repurposed.
+Public command behavior and record schemas change deliberately. Each JSON schema has its own integer version; incompatible field or meaning changes increment its major schema version, while readers may accept explicitly documented older versions. Stable check identifiers and published Markdown anchors are never silently repurposed. A generated, committed contract inventory enumerates the command hierarchy with its options and arguments, the schema identifiers and versions, the public record types, the exit statuses and the active and retired check identifiers; tests and the release gate verify that it is current, so every change to a compatibility surface is an explicit, reviewable regeneration.
