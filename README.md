@@ -182,7 +182,7 @@ No command offers an option that disables a gate, skips verification or affects 
 
 ### Updating pinned references<a id="usage-pin-updates"></a>
 
-Base-image digest updates are three explicit steps. `pins propose` resolves every declared readable tag exactly once, binds that digest to each `[[images.pins]]` declaration and each `FROM`, `COPY --from` and `RUN --mount=from` input that names the same reference, and writes one schema-validated proposal without touching the repository:
+Pin maintenance does not require Renovate, another updater, CI, a branch or a pull request. `pins propose` resolves every declared readable tag exactly once, binds that digest to each `[[images.pins]]` declaration and each `FROM`, `COPY --from` and `RUN --mount=from` input that names the same reference, and writes one schema-validated proposal without touching the repository:
 
 ```sh
 uv run conclear pins propose --output /tmp/pins.json --profile foundata
@@ -195,9 +195,14 @@ The proposal records the ConClear and guide identity, the canonical repository a
 ```sh
 uv run conclear pins apply --proposal /tmp/pins.json
 uv run conclear pins check --image app
+uv run conclear check --image app
+git diff --check
+git diff
 ```
 
-`pins check` remains the freshness and divergence gate and the only command that updates durable pin observations; run it after applying and review the complete diff before merging. A pinned, self-hosted updater such as Renovate may deliver the same proposal through a review branch or pull request, but that delivery is optional: a maintainer can complete the whole update locally.
+`pins apply` reports one follow-up `pins check` command for every affected image; run all of them, and run each image's repository checks before accepting the update. `pins check` remains the freshness and divergence gate and the only command that updates durable pin observations. Review the complete diff, commit it through the repository's normal process, and qualify that committed revision. This is the complete local workflow; qualification and release do not require an external updater either.
+
+A pinned, self-hosted updater such as Renovate may schedule this workflow and place the resulting reviewed diff on an updater-owned branch or pull request. That is an optional delivery layer around ConClear's proposal and application operations, not a second pin resolver, a required writer or a release prerequisite.
 
 
 ### Distributed qualification<a id="usage-distributed"></a>
