@@ -134,19 +134,22 @@ def _parameter(parameter: click.Parameter) -> dict[str, object]:
     if isinstance(parameter, click.Option) and parameter.is_flag:
         value["flag"] = True
     default = parameter.default
-    if default is not None and not callable(default):
+    if isinstance(default, _PUBLIC_DEFAULT_TYPES):
         value["default"] = _jsonable(default)
     return value
+
+
+_PUBLIC_DEFAULT_TYPES = (str, int, float, bool, Path, list, tuple)
 
 
 def _jsonable(value: object) -> Any:
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, (list, tuple)):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, (str, int, float, bool)):
-        return value
-    return str(value)
+        return [
+            _jsonable(item) for item in value if isinstance(item, _PUBLIC_DEFAULT_TYPES)
+        ]
+    return value
 
 
 def _schema(name: str) -> dict[str, object]:
