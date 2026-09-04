@@ -32,6 +32,7 @@ from conclear.process import (
 from conclear.values import validate_source_revision
 
 _PYTHON_VERSIONS = ("3.12", "3.13", "3.14")
+MINIMUM_BRANCH_COVERAGE = 85
 _FORBIDDEN_PARTS = frozenset(
     {
         ".git",
@@ -339,6 +340,10 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
             "check generated conformance documentation",
             ("python", "-m", "conclear.conformance", "--check"),
         ),
+        (
+            "check public contract inventory",
+            ("python", "-m", "conclear.contract", "--check"),
+        ),
     ):
         runtime.run(
             label,
@@ -366,6 +371,7 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
                 "--cov=conclear",
                 "--cov-branch",
                 "--cov-report=term-missing",
+                f"--cov-fail-under={MINIMUM_BRANCH_COVERAGE}",
             )
             if version == "3.12"
             else ()

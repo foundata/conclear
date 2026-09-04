@@ -89,6 +89,7 @@ quote-style = "double"
 skip-magic-trailing-comma = false
 
 [tool.mypy]
+files = ["src", "tests"]
 python_version = "3.12"
 strict = true
 enable_error_code = ["explicit-override"]
@@ -115,5 +116,6 @@ branch = true
 source = ["conclear"]
 
 [tool.coverage.report]
+fail_under = 85
 show_missing = true
 skip_covered = true
