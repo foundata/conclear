@@ -25,6 +25,7 @@ from conclear.config import (
     TestMountConfig,
 )
 from conclear.context import ContextObservation, hash_build_context
+from conclear.emulation import BINFMT_ROOT, detect_execution_mode
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.hooks import HookObservation, HookRunner, HookStatus
 from conclear.jsonutil import (
@@ -231,6 +232,7 @@ class QualificationInputs:
     tools: tuple[ToolIdentity, ...]
     auth_file: Path | None
     host_architecture: str
+    binfmt_root: Path = BINFMT_ROOT
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,6 +315,7 @@ class QualificationResult:
 
 def build_platform(inputs: QualificationInputs, builder: Builder) -> BuildEvidence:
     """Build one isolated platform layout and verify its labels and platform."""
+    _require_execution_mode(inputs)
     workspace = inputs.workspace
     platform_key = inputs.platform.key
     layout_path = workspace.root / "layouts" / inputs.image.image_id / platform_key
@@ -412,6 +415,7 @@ def test_platform(
     _readiness_timing: _ReadinessTiming | None = None,
 ) -> RuntimeEvidence:
     """Import the exact layout and apply generic and repository-specific tests."""
+    _require_execution_mode(inputs)
     try:
         primary_graph = validate_layout(
             build.observation.layout_path, reference="qualified"
@@ -1746,18 +1750,18 @@ def _normalized_architecture(value: str) -> str:
     return {"x86_64": "amd64", "aarch64": "arm64"}.get(value, value)
 
 
-def _execution_observation(inputs: QualificationInputs) -> dict[str, object]:
-    """Describe the execution mode selected for this platform workflow."""
-    native = (
-        _normalized_architecture(inputs.host_architecture)
-        == inputs.platform.architecture
+def _require_execution_mode(inputs: QualificationInputs) -> None:
+    """Refuse to build or test a foreign platform without an enabled handler."""
+    detect_execution_mode(
+        inputs.host_architecture, inputs.platform, binfmt_root=inputs.binfmt_root
     )
-    return {
-        "targetPlatform": str(inputs.platform),
-        "hostArchitecture": inputs.host_architecture,
-        "executionArchitecture": inputs.platform.architecture,
-        "mechanism": "native" if native else "qemu-user",
-    }
+
+
+def _execution_observation(inputs: QualificationInputs) -> dict[str, object]:
+    """Describe the verified execution mode selected for this platform workflow."""
+    return detect_execution_mode(
+        inputs.host_architecture, inputs.platform, binfmt_root=inputs.binfmt_root
+    ).to_dict()
 
 
 def _timestamp(value: datetime) -> str:

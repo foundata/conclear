@@ -572,12 +572,65 @@ def test_qualification_writes_accepted_digest_bound_record(
     ]
 
 
+def _register_arm64_handler(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "qemu-aarch64").write_text(
+        "enabled\ninterpreter /usr/bin/qemu-aarch64-static\nflags: F\n",
+        encoding="ascii",
+    )
+    return root
+
+
+def test_foreign_platform_without_binfmt_handler_is_not_qualified(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = replace(
+        inputs(repository_factory(), tmp_path),
+        platform=Platform.parse("linux/arm64"),
+        binfmt_root=tmp_path / "binfmt-without-handler",
+    )
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+
+    class UnexpectedBuilder:
+        def build(self, **values: Any) -> BuildObservation:
+            raise AssertionError("foreign platform was built without a handler")
+
+    with pytest.raises(OperationalError, match="No enabled binfmt handler") as caught:
+        qualify_platform(
+            value,
+            builder=UnexpectedBuilder(),
+            runtime=Runtime(),
+            hooks=hook_runner(value),
+            scanner=Scanner(),
+            database=DatabaseObservation(
+                database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+            ),
+            pin_observations=pin_observations(value),
+            now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        )
+
+    assert caught.value.exit_status == 1
+    assert "not qualified" in str(caught.value)
+    assert not list((value.workspace.root / "records").glob("platform-qualification-*"))
+    with pytest.raises(OperationalError, match="No enabled binfmt handler"):
+        run_platform_tests(
+            value,
+            build_platform(
+                replace(value, platform=Platform.parse("linux/amd64")), Builder()
+            ),
+            Runtime(),
+            hook_runner(value),
+        )
+
+
 def test_foreign_build_and_test_record_the_same_qemu_execution_mode(
     repository_factory: Any, tmp_path: Path
 ) -> None:
     value = replace(
         inputs(repository_factory(), tmp_path),
         platform=Platform.parse("linux/arm64"),
+        binfmt_root=_register_arm64_handler(tmp_path / "binfmt"),
     )
     database_path = tmp_path / "database"
     database_path.mkdir()

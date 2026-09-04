@@ -101,7 +101,7 @@ def test_missing_binfmt_handler_is_an_operational_failure(
         ),
     )
     monkeypatch.setattr(platform, "machine", lambda: "x86_64")
-    monkeypatch.setattr(doctor_module, "_binfmt_available", lambda architecture: False)
+    monkeypatch.setattr(doctor_module, "binfmt_handler", lambda architecture: None)
 
     with pytest.raises(OperationalError) as raised:
         diagnose_environment(

@@ -11,6 +11,7 @@ from conclear.assembly import (
     assemble_layout,
 )
 from conclear.config import ImageConfig, RepositoryConfig
+from conclear.emulation import validate_execution_observation
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import IDENTITY
 from conclear.jsonutil import load_json, sha256_bytes, sha256_file
@@ -266,6 +267,8 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
     descriptor = _object(payload.get("layoutDescriptor"), "layout descriptor")
     if descriptor.get("digest") != str(graph.root.digest):
         raise InvalidInvocationError(f"Transported layout root differs for {platform}")
+    for name in ("buildExecution", "testExecution"):
+        validate_execution_observation(payload.get(name), platform=platform)
     source_value = _object(record.get("source"), "qualification source")
     configuration = _object(
         record.get("repositoryConfiguration"), "qualification configuration"
