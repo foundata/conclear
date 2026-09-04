@@ -1,0 +1,1523 @@
+{
+  "checks": {
+    "active": [
+      {
+        "anchor": "build-arguments-configuration-and-secrets",
+        "behavior": "automated",
+        "id": "CC0001",
+        "severity": "error"
+      },
+      {
+        "anchor": "build-context",
+        "behavior": "automated",
+        "id": "CC0002",
+        "severity": "error"
+      },
+      {
+        "anchor": "signing-and-verification",
+        "behavior": "automated",
+        "id": "CC0003",
+        "severity": "error"
+      },
+      {
+        "anchor": "files-and-layout",
+        "behavior": "automated",
+        "id": "CC0101",
+        "severity": "error"
+      },
+      {
+        "anchor": "files-and-layout",
+        "behavior": "automated",
+        "id": "CC0102",
+        "severity": "error"
+      },
+      {
+        "anchor": "files-and-layout",
+        "behavior": "automated",
+        "id": "CC0103",
+        "severity": "error"
+      },
+      {
+        "anchor": "stages-and-dependencies",
+        "behavior": "automated",
+        "id": "CC0104",
+        "severity": "error"
+      },
+      {
+        "anchor": "registries-and-image-names",
+        "behavior": "automated",
+        "id": "CC0105",
+        "severity": "error"
+      },
+      {
+        "anchor": "pinning-image-references",
+        "behavior": "automated",
+        "id": "CC0106",
+        "severity": "error"
+      },
+      {
+        "anchor": "files-ownership-and-permissions",
+        "behavior": "automated",
+        "id": "CC0107",
+        "severity": "error"
+      },
+      {
+        "anchor": "run-instructions-and-package-installation",
+        "behavior": "automated",
+        "id": "CC0108",
+        "severity": "error"
+      },
+      {
+        "anchor": "files-ownership-and-permissions",
+        "behavior": "automated",
+        "id": "CC0109",
+        "severity": "error"
+      },
+      {
+        "anchor": "users-and-runtime-filesystem",
+        "behavior": "automated",
+        "id": "CC0110",
+        "severity": "error"
+      },
+      {
+        "anchor": "entrypoint-command-and-signal-handling",
+        "behavior": "automated",
+        "id": "CC0111",
+        "severity": "error"
+      },
+      {
+        "anchor": "ports-volumes-and-health-checks",
+        "behavior": "automated",
+        "id": "CC0112",
+        "severity": "error"
+      },
+      {
+        "anchor": "image-metadata",
+        "behavior": "automated",
+        "id": "CC0113",
+        "severity": "error"
+      },
+      {
+        "anchor": "linting-and-testing",
+        "behavior": "automated",
+        "id": "CC0114",
+        "severity": "error"
+      },
+      {
+        "anchor": "build-context",
+        "behavior": "automated",
+        "id": "CC0201",
+        "severity": "error"
+      },
+      {
+        "anchor": "build-context",
+        "behavior": "automated",
+        "id": "CC0202",
+        "severity": "error"
+      },
+      {
+        "anchor": "pinning-image-references",
+        "behavior": "automated",
+        "id": "CC0203",
+        "severity": "error"
+      },
+      {
+        "anchor": "pinning-image-references",
+        "behavior": "automated",
+        "id": "CC0204",
+        "severity": "error"
+      },
+      {
+        "anchor": "updating-pinned-references",
+        "behavior": "automated",
+        "id": "CC0205",
+        "severity": "warning"
+      },
+      {
+        "anchor": "updating-pinned-references",
+        "behavior": "automated",
+        "id": "CC0206",
+        "severity": "error"
+      },
+      {
+        "anchor": "updating-pinned-references",
+        "behavior": "automated",
+        "id": "CC0207",
+        "severity": "error"
+      },
+      {
+        "anchor": "supported-tools-syntax-and-platforms",
+        "behavior": "automated",
+        "id": "CC0301",
+        "severity": "error"
+      },
+      {
+        "anchor": "multi-platform-images",
+        "behavior": "automated",
+        "id": "CC0302",
+        "severity": "error"
+      },
+      {
+        "anchor": "multi-platform-images",
+        "behavior": "automated",
+        "id": "CC0303",
+        "severity": "error"
+      },
+      {
+        "anchor": "multi-platform-images",
+        "behavior": "automated",
+        "id": "CC0304",
+        "severity": "error"
+      },
+      {
+        "anchor": "linting-and-testing",
+        "behavior": "automated",
+        "id": "CC0305",
+        "severity": "error"
+      },
+      {
+        "anchor": "users-and-runtime-filesystem",
+        "behavior": "automated",
+        "id": "CC0401",
+        "severity": "error"
+      },
+      {
+        "anchor": "users-and-runtime-filesystem",
+        "behavior": "automated",
+        "id": "CC0402",
+        "severity": "error"
+      },
+      {
+        "anchor": "entrypoint-command-and-signal-handling",
+        "behavior": "automated",
+        "id": "CC0403",
+        "severity": "error"
+      },
+      {
+        "anchor": "files-ownership-and-permissions",
+        "behavior": "automated",
+        "id": "CC0404",
+        "severity": "error"
+      },
+      {
+        "anchor": "vulnerability-and-configuration-scanning",
+        "behavior": "automated",
+        "id": "CC0501",
+        "severity": "error"
+      },
+      {
+        "anchor": "vulnerability-and-configuration-scanning",
+        "behavior": "automated",
+        "id": "CC0502",
+        "severity": "error"
+      },
+      {
+        "anchor": "vulnerability-and-configuration-scanning",
+        "behavior": "automated",
+        "id": "CC0503",
+        "severity": "error"
+      },
+      {
+        "anchor": "sboms",
+        "behavior": "automated",
+        "id": "CC0504",
+        "severity": "error"
+      },
+      {
+        "anchor": "vulnerability-and-configuration-scanning",
+        "behavior": "automated",
+        "id": "CC0505",
+        "severity": "error"
+      },
+      {
+        "anchor": "vulnerability-and-configuration-scanning",
+        "behavior": "not implemented",
+        "id": "CC0506",
+        "severity": "info"
+      },
+      {
+        "anchor": "registries-and-image-names",
+        "behavior": "automated",
+        "id": "CC0601",
+        "severity": "error"
+      },
+      {
+        "anchor": "vulnerability-and-configuration-scanning",
+        "behavior": "automated",
+        "id": "CC0602",
+        "severity": "error"
+      },
+      {
+        "anchor": "registries-and-image-names",
+        "behavior": "automated",
+        "id": "CC0603",
+        "severity": "error"
+      },
+      {
+        "anchor": "rescans-and-remediation",
+        "behavior": "automated",
+        "id": "CC0604",
+        "severity": "error"
+      },
+      {
+        "anchor": "registries-and-image-names",
+        "behavior": "automated",
+        "id": "CC0605",
+        "severity": "error"
+      },
+      {
+        "anchor": "signing-and-verification",
+        "behavior": "automated",
+        "id": "CC0701",
+        "severity": "error"
+      },
+      {
+        "anchor": "signing-and-verification",
+        "behavior": "automated",
+        "id": "CC0702",
+        "severity": "error"
+      },
+      {
+        "anchor": "release-evidence-and-retention",
+        "behavior": "automated",
+        "id": "CC0703",
+        "severity": "error"
+      },
+      {
+        "anchor": "provenance",
+        "behavior": "automated",
+        "id": "CC0704",
+        "severity": "error"
+      },
+      {
+        "anchor": "rescans-and-remediation",
+        "behavior": "automated",
+        "id": "CC0801",
+        "severity": "error"
+      },
+      {
+        "anchor": "rescans-and-remediation",
+        "behavior": "automated",
+        "id": "CC0802",
+        "severity": "error"
+      },
+      {
+        "anchor": "choosing-a-base-image",
+        "behavior": "manual",
+        "id": "CC9001",
+        "severity": "info"
+      },
+      {
+        "anchor": "updating-pinned-references",
+        "behavior": "manual",
+        "id": "CC9002",
+        "severity": "info"
+      },
+      {
+        "anchor": "vulnerability-and-configuration-scanning",
+        "behavior": "manual",
+        "id": "CC9003",
+        "severity": "info"
+      },
+      {
+        "anchor": "multi-platform-images",
+        "behavior": "manual",
+        "id": "CC9004",
+        "severity": "info"
+      },
+      {
+        "anchor": "release-evidence-and-retention",
+        "behavior": "manual",
+        "id": "CC9005",
+        "severity": "info"
+      }
+    ],
+    "retired": []
+  },
+  "commandResultSchemaVersion": 1,
+  "commands": [
+    {
+      "group": false,
+      "help": "Verify exact platform coverage and assemble a release candidate.",
+      "name": "assemble",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--version"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "version",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Attach SPDX and provenance and sign every unique subject digest.",
+      "name": "attest",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--passphrase-fd"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "passphrase_fd",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Build one platform into isolated storage and an OCI layout.",
+      "name": "build",
+      "parameters": [
+        {
+          "declarations": [
+            "--source"
+          ],
+          "default": ".",
+          "kind": "option",
+          "multiple": false,
+          "name": "source_root",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--revision"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "selector",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--version"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "version",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--platform"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "platform_text",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Run static Containerfile, context, metadata and pin-declaration checks.",
+      "name": "check",
+      "parameters": [
+        {
+          "declarations": [
+            "--config"
+          ],
+          "default": "conclear.toml",
+          "kind": "option",
+          "multiple": false,
+          "name": "config_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Remove only ephemeral resources owned by one release run.",
+      "name": "cleanup",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Validate the release environment without publishing or signing.",
+      "name": "doctor",
+      "parameters": [
+        {
+          "declarations": [
+            "--config"
+          ],
+          "default": "conclear.toml",
+          "kind": "option",
+          "multiple": false,
+          "name": "config_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Generate and validate platform scans and SPDX inventory.",
+      "name": "evidence",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--platform"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "platform_text",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": true,
+      "help": "Inspect durable external image pin observations.",
+      "name": "pins",
+      "parameters": []
+    },
+    {
+      "group": false,
+      "help": "Verify one proposal against the worktree and apply it all-or-nothing.",
+      "name": "pins apply",
+      "parameters": [
+        {
+          "declarations": [
+            "--proposal"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "proposal_path",
+          "required": true,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--config"
+          ],
+          "default": "conclear.toml",
+          "kind": "option",
+          "multiple": false,
+          "name": "config_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Resolve pins, update durable history and report divergence.",
+      "name": "pins check",
+      "parameters": [
+        {
+          "declarations": [
+            "--config"
+          ],
+          "default": "conclear.toml",
+          "kind": "option",
+          "multiple": false,
+          "name": "config_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Resolve each declared tag once and write a non-mutating update proposal.",
+      "name": "pins propose",
+      "parameters": [
+        {
+          "declarations": [
+            "--config"
+          ],
+          "default": "conclear.toml",
+          "kind": "option",
+          "multiple": false,
+          "name": "config_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": true,
+          "name": "image_ids",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--output"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_path",
+          "required": true,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Apply release tags to only the verified digest and remove the candidate.",
+      "name": "promote",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--version"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "release_version",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Generate SLSA Provenance v1 for one accepted candidate.",
+      "name": "provenance",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Publish one accepted candidate and verify its complete remote graph.",
+      "name": "publish",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Run all local gates and emit one platform qualification.",
+      "name": "qualify",
+      "parameters": [
+        {
+          "declarations": [
+            "--source"
+          ],
+          "default": ".",
+          "kind": "option",
+          "multiple": false,
+          "name": "source_root",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--revision"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "selector",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--version"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "version",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--platform"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "platform_text",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--database-digest"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "database_digest",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Execute or resume the complete isolated release through promotion.",
+      "name": "release",
+      "parameters": [
+        {
+          "declarations": [
+            "--source"
+          ],
+          "default": ".",
+          "kind": "option",
+          "multiple": false,
+          "name": "source_root",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--revision"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "selector",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--version"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "release_version",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--resume"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "resume_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--passphrase-fd"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "passphrase_fd",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Re-evaluate retained SBOMs for one immutable released subject.",
+      "name": "rescan",
+      "parameters": [
+        {
+          "declarations": [
+            "subject_text"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "subject_text",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--config"
+          ],
+          "default": "conclear.toml",
+          "kind": "option",
+          "multiple": false,
+          "name": "config_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--image-id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--authoritative"
+          ],
+          "default": "Sentinel.UNSET",
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "authoritative",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "declarations": [
+            "--passphrase-fd"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "passphrase_fd",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "declarations": [
+            "--previous-result"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "previous_result",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--triage-file"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "triage_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Import one exact layout and run declared constrained tests.",
+      "name": "test",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--platform"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "platform_text",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Verify remote evidence and attach signed release verification.",
+      "name": "verify",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--passphrase-fd"
+          ],
+          "default": "Sentinel.UNSET",
+          "kind": "option",
+          "multiple": false,
+          "name": "passphrase_fd",
+          "required": false,
+          "type": "integer range"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": false,
+      "help": "Report the application and implemented-guide identity.",
+      "name": "version",
+      "parameters": [
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    }
+  ],
+  "contractVersion": 1,
+  "exitStatuses": [
+    {
+      "meaning": "Success.",
+      "name": "success",
+      "value": 0
+    },
+    {
+      "meaning": "Operational failure: a required fact could not be established.",
+      "name": "operational-failure",
+      "value": 1
+    },
+    {
+      "meaning": "Rule rejection: observed content violates the guide or the effective configuration.",
+      "name": "rule-rejection",
+      "value": 2
+    },
+    {
+      "meaning": "Invalid invocation or configuration.",
+      "name": "invalid-invocation",
+      "value": 64
+    }
+  ],
+  "recordTypes": {
+    "pinUpdateProposal": 1,
+    "platformQualification": 1,
+    "releaseCandidate": 1,
+    "releaseVerification": 1,
+    "rescanResult": 1
+  },
+  "resultStatuses": {
+    "invalidInvocation": 64,
+    "operationalFailure": 1,
+    "ruleRejection": 2,
+    "success": 0
+  },
+  "schemas": [
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "config.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/config-v1.json",
+      "schemaVersion": null,
+      "title": "ConClear repository configuration"
+    },
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "profile.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/profile-v1.json",
+      "schemaVersion": null,
+      "title": "ConClear maintainer release profile"
+    },
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "proposal.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/proposal-v1.json",
+      "schemaVersion": 1,
+      "title": "ConClear pin update proposal"
+    },
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "provenance.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/provenance-v1.json",
+      "schemaVersion": null,
+      "title": "ConClear SLSA Provenance v1 statement"
+    },
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "record.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/record.json",
+      "schemaVersion": 1,
+      "title": "ConClear public record"
+    },
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "result.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/result-v1.json",
+      "schemaVersion": 1,
+      "title": "ConClear command result"
+    },
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "triage.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/triage-v1.json",
+      "schemaVersion": 1,
+      "title": "ConClear rescan triage input"
+    }
+  ]
+}
