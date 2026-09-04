@@ -18,6 +18,7 @@ The terms MUST, SHOULD and MAY are used as defined in [RFC 2119](https://datatra
 - [Guide identity and conformance](#guide-identity-and-conformance)
 - [Configuration and trust inputs](#configuration-and-trust-inputs)
 - [Built-in limits](#built-in-limits)
+- [Pin updates](#pin-updates)
 - [Command model](#command-model)
 - [Records and workspaces](#records-and-workspaces)
 - [Tool execution](#tool-execution)
@@ -35,9 +36,9 @@ The terms MUST, SHOULD and MAY are used as defined in [RFC 2119](https://datatra
 
 ConClear is a command-line application that checks, builds, tests and qualifies OCI container images; publishes accepted candidates; attaches release evidence; verifies the published subject; and promotes only a verified digest. The complete workflow runs on a maintainer-controlled Linux workstation and can run unchanged in protected CI.
 
-ConClear verifies declared container-image dependencies and base-image pins but never edits them. Renovate remains the sole automated proposal and write path for pin updates.
+ConClear verifies declared container-image dependencies and base-image pins, generates non-mutating pin-update proposals from its own registry resolution, and applies a proposal to the local worktree only after verifying it against the current repository state. Checking, proposing, applying and accepting a pin update are distinct operations; acceptance stays with the repository owner's review of the resulting diff.
 
-ConClear does not deploy workloads, operate registries, schedule recurring jobs, manage the supported-release inventory, perform vulnerability triage, rebuild affected projects, orchestrate running services, build virtual machines, process unrelated artifact types or invoke Renovate. Docker, Windows containers and GitHub container actions are outside the supported and tested surface.
+ConClear does not deploy workloads, operate registries, schedule recurring jobs, manage the supported-release inventory, perform vulnerability triage, rebuild affected projects, orchestrate running services, build virtual machines, process unrelated artifact types, or invoke Renovate or another external updater. An external updater may deliver a ConClear proposal through a review branch or pull request, but that delivery is optional and never required for an authorized local maintainer workflow. Docker, Windows containers and GitHub container actions are outside the supported and tested surface.
 
 
 
@@ -210,6 +211,18 @@ Changing a built-in limit changes release behavior and therefore requires a revi
 
 
 
+## Pin updates<a id="pin-updates"></a>
+
+`pins check` remains the freshness and divergence gate and the only owner of durable pin observations. It never edits project files. `pins propose` and `pins apply` are separate explicit operations that implement the guide's pin-update contract without an external updater.
+
+`pins propose` resolves every distinct readable tag exactly once through ConClear's authenticated Skopeo resolution and binds that one observed digest to every occurrence of the tag. It derives the required occurrence set from the parsed repository configuration and the parsed Containerfiles, not from a caller-supplied list or a repository-wide text search: the `reference` value of every `[[images.pins]]` declaration and the exact external image input of every `FROM`, `COPY --from` and `RUN --mount=from` instruction that names the same tagged and digest-pinned reference. A declared pin without a Containerfile occurrence, an undeclared Containerfile input, conflicting tag intents for one readable tag, a reference that appears in a comment, an unrelated value or an undeclared file, an ambiguous or unsupported spelling, and any duplicate or overlapping span are rejected; nothing is rewritten opportunistically. Proposal generation is repository-wide by default. An image selection is accepted only when it omits no other image bound to the same readable tag. `pins propose` does not modify project files, create commits or branches, or update durable pin observations. Its explicitly requested output file is its only persistent write, and it refuses to overwrite an existing file.
+
+The proposal is a schema-validated version-1 record with `recordType` `pinUpdateProposal`. It records the ConClear version, source revision and embedded guide revision; the resolving tool identity; the creation time from an injected UTC clock; the canonical repository identity, current full Git revision, configuration path and SHA-256 digest; the selected image IDs; one lookup per original tagged-digest reference with its affected image IDs, declared tag intent, resolved tagged-digest reference, old and new digest and resolution time; and one entry per affected file with its repository-relative path, original and expected resulting SHA-256 digests and exact non-overlapping byte spans with their exact old and replacement bytes. Only the digest of a reference changes; registry, repository and tag spelling are preserved byte for byte, and a fully qualified reference is never normalized into another name. The proposal contains no credentials, authentication-file paths or registry tokens. Its serialization is canonical JSON, so fixed repository bytes, clock, resolver observations and tool identity produce identical bytes; its identity is the SHA-256 of those exact stored bytes. An already-current repository produces a successful proposal with no file entries. A digest change under an `immutable-version` tag is recorded as review-required and reported with `CC0205`; there is no skip, override or automatic acceptance.
+
+`pins apply` consumes one proposal and never resolves a tag again. Before its first project-file write it completes a read-only preflight: it validates the proposal schema and ConClear-supported record identity, confines every path below the repository root without following symbolic links and rejects absolute paths, traversal, symbolic links and non-regular targets, matches the canonical repository identity and current full Git revision, matches the current configuration digest and every target file's complete SHA-256 digest, reparses the current configuration and Containerfiles and proves that their dependency set, paths and occurrence cardinality equal the proposal, validates every span boundary, old byte sequence, replacement reference, digest and non-overlap invariant, and rejects a proposal whose resolution time exceeds the effective pin-resolution freshness limit of the affected images without substituting a newer digest. It constructs every resulting file in memory, proves that only the proposed spans differ, writes each file through a same-directory temporary file created with restrictive permissions, preserves the original mode, flushes and durably replaces the target, then reparses and verifies the complete result against the proposal. A proposal with no file entries touches nothing, and a proposal whose files already carry the expected result is reported as already applied without writes. On any detected preparation, write, flush, replace or verification error, every target is restored to its exact original bytes and the command returns an operational failure; a known partial application is never left behind. `pins apply` never commits, creates a branch, pushes, merges, builds, qualifies, publishes, signs or promotes, and it names the follow-up `pins check` invocation that must confirm the result. A proposal and its application are not release evidence.
+
+
+
 ## Command model<a id="command-model"></a>
 
 The public command surface is composable, but `release` is the normal release interface. Individual commands support diagnosis, distributed platform work and recovery without defining an alternative workflow.
@@ -232,6 +245,8 @@ conclear release \
 | `doctor` | Validate configuration, rootless tools, supported versions, storage, target-platform execution, trust inputs, selected registry access and public Sigstore transparency-service access without publishing content. |
 | `check` | Run static Containerfile, context, metadata, pin-declaration and repository-hygiene checks. |
 | `pins check` | Resolve declared image references, update durable observations, report freshness and divergence, and never edit project files. |
+| `pins propose` | Resolve each declared readable tag once, bind the observed digest to every configuration declaration and Containerfile occurrence, and write one schema-validated non-mutating proposal. |
+| `pins apply` | Verify one proposal against the current worktree, Git revision and file digests, then replace only the proposed byte spans all-or-nothing without resolving, committing, building or publishing. |
 | `build` | Build one platform into isolated Buildah storage and export an OCI layout plus build metadata. |
 | `test` | Validate and import one layout, compare its imported digest, and run generic and repository-specific tests under the declared runtime constraints. |
 | `evidence` | Generate and validate the platform SBOM, scans and structured test results from the immutable layout. |
@@ -262,6 +277,8 @@ Every record is UTF-8 JSON validated against a versioned schema. It includes `sc
 
 `release-candidate.json` binds exactly one accepted qualification per required platform, every qualification and payload digest, every platform-manifest digest, the index digest when present, the required and accepted platform sets, candidate naming inputs and the aggregate verdict. A single-platform release uses the same aggregate schema and assembly step.
 
+A pin-update proposal uses its own version-1 schema rather than the public record envelope: it is a reviewable input to a repository change, not release evidence, and it carries no run identifier.
+
 `release-verification.json` contains the subject and platform digests; ConClear version and source revision; guide title, repository, path and revision; SHA-256 of `conclear.toml`; host architecture, run identity, protected builder identity and optional observed CI context; signer mode and public-key fingerprint or managed-key identity; and digests of the qualifications, SBOMs, scan results, provenance and candidate record. It is an intermediate predicate, not a source comment or committed project file. Its signed registry attestation is authoritative.
 
 A run workspace is stored under `$XDG_STATE_HOME/conclear/runs/<run-id>/`:
@@ -291,7 +308,7 @@ Rejected runs retain reports with `verdict: rejected`. Interrupted runs are `inc
 
 ## Tool execution<a id="tool-execution"></a>
 
-The required core tools are Git, Buildah, Podman, Skopeo, Hadolint, Trivy and Cosign. ConClear may run a supporting tool as a host executable or a digest-pinned tool image when its adapter supports that mode. Renovate and Testinfra project tests are not hidden ConClear services: Renovate remains external, while Testinfra may be invoked through a declared repository hook whose interpreter and dependency lock are recorded.
+The required core tools are Git, Buildah, Podman, Skopeo, Hadolint, Trivy and Cosign. ConClear may run a supporting tool as a host executable or a digest-pinned tool image when its adapter supports that mode. External updaters and Testinfra project tests are not hidden ConClear services: an updater such as Renovate stays outside ConClear as optional review delivery, while Testinfra may be invoked through a declared repository hook whose interpreter and dependency lock are recorded.
 
 Each ConClear release contains a supported-version matrix. At release start, ConClear resolves every executable to an absolute path, records its reported version and executable digest or its tool-image digest, and rejects unsupported combinations. It rechecks those identities before later use so a package upgrade during a run cannot silently change the toolchain. A later release run may use newer supported tools.
 
@@ -425,7 +442,7 @@ Network operations are bounded and classified by idempotency. Reads may retry. A
 
 Ruff, strict mypy, pytest and coverage run for the Python code. Tests use explicit markers for unit, local integration, emulation and network access so the default suite never publishes or requires credentials.
 
-Unit tests cover configuration validation, limit narrowing, check identifiers, candidate naming, state transitions, record schemas, digest binding, platform coverage, command redaction and error classification. Property tests cover reference parsing, path containment, archive extraction and OCI descriptor graphs.
+Unit tests cover configuration validation, limit narrowing, check identifiers, candidate naming, state transitions, record schemas, digest binding, platform coverage, command redaction, error classification, deterministic pin-proposal generation with an injected resolver and clock, and all-or-nothing proposal application with injected write, flush, replace and verification faults. Property tests cover reference parsing, path containment, archive extraction and OCI descriptor graphs.
 
 Rootless integration tests exercise real supported versions of Buildah, Podman, Skopeo, Hadolint, Trivy and Cosign. Fixtures include a non-root service, a one-shot image, a `scratch` image, a documented PID-1 supervisor and a multi-platform index. Tests assert that runtime resource controls remain effective and that OCI format does not preserve Docker-only health metadata.
 
