@@ -443,7 +443,8 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     if amd64 not in platforms:
         raise InvalidInvocationError("Every image must include linux/amd64")
     native_platforms = tuple(
-        Platform.parse(item) for item in _string_list(value["native_test_platforms"])
+        Platform.parse(item)
+        for item in _string_list(value.get("native_test_platforms", ["linux/amd64"]))
     )
     if not set(native_platforms).issubset(platforms):
         raise InvalidInvocationError(
@@ -462,7 +463,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     release = _parse_release_tags(release_value)
     runtime_value = _object(value["runtime"])
     limits_value = _object(value.get("limits", {}))
-    candidate_value = value.get("candidate_lifetime", "7d")
     limits = EffectiveLimits(
         pin_freshness=parse_duration(
             _string(limits_value.get("pin_freshness", "24h")),
@@ -475,7 +475,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
             field_name="pin_divergence",
         ),
         candidate_lifetime=parse_duration(
-            _string(candidate_value),
+            _string(limits_value.get("candidate_lifetime", "7d")),
             maximum=MAX_CANDIDATE_LIFETIME,
             field_name="candidate_lifetime",
         ),
@@ -492,13 +492,9 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     if repository.tag or repository.digest:
         raise InvalidInvocationError("Release repositories must be untagged names")
     exceptions = tuple(
-        _parse_exception(_object(item))
+        _parse_exception(_object(item), image_id)
         for item in _list(value.get("vulnerability_exceptions", []))
     )
-    if any(item.image != image_id for item in exceptions):
-        raise InvalidInvocationError(
-            f"Vulnerability exceptions for {image_id} must name that image exactly"
-        )
     exception_keys = [(item.component, item.advisory) for item in exceptions]
     if len(exception_keys) != len(set(exception_keys)):
         raise InvalidInvocationError(
@@ -506,8 +502,10 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         )
     return ImageConfig(
         image_id=image_id,
-        containerfile=contained_path(source_root, _string(value["containerfile"])),
-        context=contained_path(source_root, _string(value["context"])),
+        containerfile=contained_path(
+            source_root, _string(value.get("containerfile", "Containerfile"))
+        ),
+        context=contained_path(source_root, _string(value.get("context", "."))),
         repository=repository,
         platforms=platforms,
         native_test_platforms=native_platforms,
@@ -547,12 +545,16 @@ def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
     _require_unique_names(outputs, "test outputs")
     if {item.name for item in fixtures} & {item.name for item in outputs}:
         raise InvalidInvocationError("Test fixture and output names must be distinct")
+    handles = {
+        **{item.name: TestMountSource.FIXTURE for item in fixtures},
+        **{item.name: TestMountSource.OUTPUT for item in outputs},
+    }
     preparations = tuple(
-        _parse_test_preparation(_object(item))
+        _parse_test_preparation(_object(item), handles)
         for item in _list(value.get("preparations", []))
     )
     _require_unique_names(preparations, "test preparations")
-    launch = _parse_test_launch(_object(value.get("launch", {})))
+    launch = _parse_test_launch(_object(value.get("launch", {})), handles)
     test = TestConfig(
         dependencies=tuple(_string_list(value.get("dependencies", []))),
         fixtures=fixtures,
@@ -564,36 +566,51 @@ def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
     return test
 
 
-def _parse_test_preparation(value: dict[str, Any]) -> TestPreparationConfig:
+def _parse_test_preparation(
+    value: dict[str, Any], handles: dict[str, TestMountSource]
+) -> TestPreparationConfig:
     return TestPreparationConfig(
         name=_test_name(_string(value["name"]), "preparation"),
         image=_test_name(_string(value["image"]), "preparation image"),
         command=_command(value["command"], "preparation command"),
         environment=_test_environment(value.get("environment", {})),
         mounts=tuple(
-            _parse_test_mount(_object(item)) for item in _list(value.get("mounts", []))
+            _parse_test_mount(_object(item), handles)
+            for item in _list(value.get("mounts", []))
         ),
         timeout_seconds=_integer(value.get("timeout_seconds", 300)),
         expected_exit_status=_integer(value.get("expected_exit_status", 0)),
     )
 
 
-def _parse_test_launch(value: dict[str, Any]) -> TestLaunchConfig:
+def _parse_test_launch(
+    value: dict[str, Any], handles: dict[str, TestMountSource]
+) -> TestLaunchConfig:
     return TestLaunchConfig(
         arguments=_command(value.get("arguments", []), "launch arguments", empty=True),
         environment=_test_environment(value.get("environment", {})),
         mounts=tuple(
-            _parse_test_mount(_object(item)) for item in _list(value.get("mounts", []))
+            _parse_test_mount(_object(item), handles)
+            for item in _list(value.get("mounts", []))
         ),
         expected_exit_status=_integer(value.get("expected_exit_status", 0)),
     )
 
 
-def _parse_test_mount(value: dict[str, Any]) -> TestMountConfig:
-    source = TestMountSource(_string(value["source"]))
-    read_only = _boolean(value["read_only"])
+def _parse_test_mount(
+    value: dict[str, Any], handles: dict[str, TestMountSource]
+) -> TestMountConfig:
+    name = _test_name(_string(value["name"]), "mount source")
+    source = handles.get(name)
+    if source is None:
+        raise InvalidInvocationError(
+            f"Test mount refers to undeclared fixture or output {name}"
+        )
+    read_only = _boolean(value.get("read_only", True))
     if source is TestMountSource.FIXTURE and not read_only:
-        raise InvalidInvocationError("Repository test fixtures must be read-only")
+        raise InvalidInvocationError(
+            f"Repository test fixture {name} cannot be mounted with read_only = false"
+        )
     target = _container_paths(
         [value["target"]], field_name="test mount target", allow_root=False
     )[0]
@@ -605,7 +622,7 @@ def _parse_test_mount(value: dict[str, Any]) -> TestMountConfig:
         raise InvalidInvocationError(f"Unsafe test mount target: {target}")
     return TestMountConfig(
         source=source,
-        name=_test_name(_string(value["name"]), "mount source"),
+        name=name,
         target=target,
         read_only=read_only,
     )
@@ -629,7 +646,6 @@ def _test_environment(value: object) -> tuple[tuple[str, str], ...]:
 
 
 def _validate_mount_handles(test: TestConfig) -> None:
-    fixtures = {item.name for item in test.fixtures}
     outputs = {item.name for item in test.outputs}
     for owner, mounts in (
         *((item.name, item.mounts) for item in test.preparations),
@@ -644,12 +660,6 @@ def _validate_mount_handles(test: TestConfig) -> None:
             for right in targets[index + 1 :]
         ):
             raise InvalidInvocationError(f"{owner} contains overlapping mount targets")
-        for mount in mounts:
-            available = fixtures if mount.source is TestMountSource.FIXTURE else outputs
-            if mount.name not in available:
-                raise InvalidInvocationError(
-                    f"{owner} refers to undeclared {mount.source.value} {mount.name}"
-                )
     available_outputs: set[str] = set()
     for preparation in test.preparations:
         for mount in preparation.mounts:
@@ -826,7 +836,7 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
     return RuntimeConfig(
         profile=_string(value["profile"]),
         user=_integer(value["user"]),
-        read_only=_boolean(value["read_only"]),
+        read_only=True,
         writable_mounts=writable_mounts,
         memory=_string(value["memory"]),
         cpus=_number(value["cpus"]),
@@ -863,7 +873,7 @@ def _parse_pin(value: dict[str, Any]) -> PinConfig:
     )
 
 
-def _parse_exception(value: dict[str, Any]) -> VulnerabilityException:
+def _parse_exception(value: dict[str, Any], image_id: str) -> VulnerabilityException:
     expires = _string(value["expires"])
     try:
         date.fromisoformat(expires)
@@ -872,7 +882,7 @@ def _parse_exception(value: dict[str, Any]) -> VulnerabilityException:
             f"Vulnerability exception expiry is not an ISO date: {expires}"
         ) from exc
     return VulnerabilityException(
-        image=_string(value["image"]),
+        image=image_id,
         component=_string(value["component"]),
         advisory=_string(value["advisory"]),
         rationale=_string(value["rationale"]),

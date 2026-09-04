@@ -798,45 +798,22 @@ name = "result"
 name = "keygen"
 image = "generator"
 command = ["/app/conclear-fixture", "keygen"]
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "private-key"
-target = "/output"
-read_only = false
+mounts = [{{ name = "private-key", target = "/output", read_only = false }}]
 
 [[images.test.preparations]]
 name = "generate"
 image = "generator"
 command = ["/app/conclear-fixture", "prepare"]
-
-[[images.test.preparations.mounts]]
-source = "fixture"
-name = "source"
-target = "/input"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "private-key"
-target = "/key"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "result"
-target = "/output"
-read_only = false
+mounts = [
+  {{ name = "source", target = "/input" }},
+  {{ name = "private-key", target = "/key" }},
+  {{ name = "result", target = "/output", read_only = false }},
+]
 
 [images.test.launch]
 arguments = ["{launch_argument}"]
 environment = {{ SERVICE_SELECTOR = "test" }}
-
-[[images.test.launch.mounts]]
-source = "output"
-name = "result"
-target = "/input"
-read_only = true
+mounts = [{{ name = "result", target = "/input" }}]
 
 [images.release]
 immutable_tags = ["{{version}}"]
@@ -845,7 +822,6 @@ moving_tags = ["stable"]
 [images.runtime]
 profile = "{profile}"
 user = 65532
-read_only = true
 memory = "128MiB"
 cpus = 1.0
 pids = 64
@@ -868,7 +844,6 @@ moving_tags = ["stable"]
 [images.runtime]
 profile = "one-shot"
 user = 65532
-read_only = true
 writable_mounts = ["/output"]
 memory = "128MiB"
 cpus = 1.0

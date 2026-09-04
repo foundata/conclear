@@ -41,19 +41,12 @@
     "testMount": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source", "name", "target", "read_only"],
+      "required": ["name", "target"],
       "properties": {
-        "source": {"enum": ["fixture", "output"]},
         "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
         "target": {"type": "string", "pattern": "^/[^.].*"},
         "read_only": {"type": "boolean"}
-      },
-      "allOf": [
-        {
-          "if": {"properties": {"source": {"const": "fixture"}}, "required": ["source"]},
-          "then": {"properties": {"read_only": {"const": true}}}
-        }
-      ]
+      }
     },
     "testPreparation": {
       "type": "object",
@@ -151,11 +144,10 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "user", "read_only", "memory", "cpus", "pids", "nofile"],
+      "required": ["profile", "user", "memory", "cpus", "pids", "nofile"],
       "properties": {
         "profile": {"enum": ["service", "one-shot", "scratch"]},
         "user": {"type": "integer", "minimum": 1, "maximum": 4294967294},
-        "read_only": {"const": true},
         "writable_mounts": {
           "type": "array",
           "uniqueItems": true,
@@ -203,9 +195,8 @@
     "exception": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["image", "component", "advisory", "rationale", "reachability", "exposure", "compensating_controls", "owner", "expires", "review_trigger"],
+      "required": ["component", "advisory", "rationale", "reachability", "exposure", "compensating_controls", "owner", "expires", "review_trigger"],
       "properties": {
-        "image": {"$ref": "#/$defs/nonEmptyString"},
         "component": {"$ref": "#/$defs/nonEmptyString"},
         "advisory": {"$ref": "#/$defs/nonEmptyString"},
         "rationale": {"$ref": "#/$defs/nonEmptyString"},
@@ -223,13 +214,14 @@
       "properties": {
         "pin_freshness": {"$ref": "#/$defs/duration"},
         "pin_divergence": {"$ref": "#/$defs/duration"},
+        "candidate_lifetime": {"$ref": "#/$defs/duration"},
         "remediation": {"$ref": "#/$defs/duration"}
       }
     },
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "containerfile", "context", "repository", "platforms", "native_test_platforms", "release", "runtime"],
+      "required": ["id", "repository", "platforms", "release", "runtime"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
         "containerfile": {"$ref": "#/$defs/relativePath"},
@@ -238,7 +230,6 @@
         "platforms": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
         "native_test_platforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
         "arm64_omission_reason": {"type": "string", "minLength": 1},
-        "candidate_lifetime": {"$ref": "#/$defs/duration"},
         "scanner": {"const": "trivy"},
         "rescan_scope": {"enum": ["sbom-vulnerabilities", "full-image"]},
         "release": {"$ref": "#/$defs/release"},

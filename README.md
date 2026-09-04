@@ -94,51 +94,28 @@ name = "generated"
 name = "create-key"
 image = "generator"
 command = ["/usr/local/bin/generator", "keygen"]
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "test-key"
-target = "/output"
-read_only = false
+mounts = [{ name = "test-key", target = "/output", read_only = false }]
 
 [[images.test.preparations]]
 name = "generate"
 image = "generator"
 command = ["/usr/local/bin/generator", "build", "--input", "/input", "--key", "/key", "--output", "/output"]
-
-[[images.test.preparations.mounts]]
-source = "fixture"
-name = "definition"
-target = "/input"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "test-key"
-target = "/key"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "generated"
-target = "/output"
-read_only = false
+mounts = [
+  { name = "definition", target = "/input" },
+  { name = "test-key", target = "/key" },
+  { name = "generated", target = "/output", read_only = false },
+]
 
 [images.test.launch]
 arguments = ["--test-input", "/run/generated"]
 environment = { SERVICE_SELECTOR = "test" }
 expected_exit_status = 0
-
-[[images.test.launch.mounts]]
-source = "output"
-name = "generated"
-target = "/run/generated"
-read_only = true
+mounts = [{ name = "generated", target = "/run/generated" }]
 ```
 
 The `generator` image must be another `[[images]]` entry in the same file, cover every tested platform and declare `/output` in its runtime `writable_mounts`. Preparation commands replace only that exact image's entrypoint; launch arguments retain the primary image's original entrypoint. Commands are arrays and are never interpreted by a shell.
 
-Fixtures must be ordinary source-tree files or directories with no symbolic links or unsafe permissions, and are always mounted read-only. Writable outputs exist only below the run workspace and only at destinations already declared by the selected image's runtime contract. Output names marked `secret = true` have no path, value or content digest in public evidence, are unavailable to repository hooks and are destroyed before a hook runs.
+A mount names a declared fixture or output and is read-only unless it sets `read_only = false`. Fixtures must be ordinary source-tree files or directories with no symbolic links or unsafe permissions, and are always mounted read-only. Writable outputs exist only below the run workspace and only at destinations already declared by the selected image's runtime contract. Output names marked `secret = true` have no path, value or content digest in public evidence, are unavailable to repository hooks and are destroyed before a hook runs.
 
 ConClear continues to own layout validation, digest-preserving import, runtime controls, startup, health, signals, expected exit status and cleanup. A reviewed repository hook receives `CC_TEST_INPUT_MANIFEST`, which contains exact layout paths and digests plus non-secret fixture and output handles. Hooks add assertions but cannot mark a built-in gate as passed; ConClear records their command and result but does not sandbox a reviewed hook from invoking other host executables.
 

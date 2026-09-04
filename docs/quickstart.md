@@ -126,12 +126,10 @@ source = "https://git.example.com/foundata/example"
 
 [[images]]
 id = "app"
-containerfile = "Containerfile"
-context = "."
 repository = "quay.io/foundata/example"
 platforms = ["linux/amd64"]
-native_test_platforms = ["linux/amd64"]
 arm64_omission_reason = "The required runtime dependency is not available for arm64."
+scanner = "trivy"
 
 [images.release]
 immutable_tags = ["{version}"]
@@ -140,7 +138,6 @@ moving_tags = ["stable"]
 [images.runtime]
 profile = "service"
 user = 65532
-read_only = true
 writable_mounts = ["/tmp"]
 memory = "512MiB"
 cpus = 1.0
@@ -153,9 +150,9 @@ reference = "quay.io/example/base:1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 tag_intent = "immutable-version"
 ```
 
-Every image must include `linux/amd64`. Add `linux/arm64` when the image supports it; otherwise record the reason in `arm64_omission_reason`. `native_test_platforms` identifies platforms that must run without emulation.
+Every image must include `linux/amd64`. Add `linux/arm64` when the image supports it; otherwise record the reason in `arm64_omission_reason`. `containerfile` defaults to `Containerfile` and `context` to `.`, both relative to the repository root. `native_test_platforms` identifies platforms that must run without emulation and defaults to `["linux/amd64"]`. `scanner` is optional and currently accepts only `trivy`; it documents the gating scanner for the reader.
 
-Use `profile = "one-shot"` for a command that should exit. The test launch contract may set its expected exit status. Runtime writable paths must be listed explicitly, and repository configuration can narrow ConClear's built-in time limits but cannot extend or disable them.
+Use `profile = "one-shot"` for a command that should exit. The test launch contract may set its expected exit status. The root filesystem is always read-only, so runtime writable paths must be listed explicitly. Repository configuration can narrow ConClear's built-in time limits in `[images.limits]` but cannot extend or disable them.
 
 
 ## 6. Describe application test inputs when needed
@@ -192,12 +189,7 @@ name = "generated"
 name = "create-key"
 image = "generator"
 command = ["/usr/local/bin/generator", "keygen"]
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "test-key"
-target = "/output"
-read_only = false
+mounts = [{ name = "test-key", target = "/output", read_only = false }]
 
 [[images.test.preparations]]
 name = "generate"
@@ -205,38 +197,20 @@ image = "generator"
 command = ["/usr/local/bin/generator", "--input", "/input", "--key", "/key", "--output", "/output"]
 timeout_seconds = 300
 expected_exit_status = 0
-
-[[images.test.preparations.mounts]]
-source = "fixture"
-name = "definition"
-target = "/input"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "test-key"
-target = "/key"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "generated"
-target = "/output"
-read_only = false
+mounts = [
+  { name = "definition", target = "/input" },
+  { name = "test-key", target = "/key" },
+  { name = "generated", target = "/output", read_only = false },
+]
 
 [images.test.launch]
 arguments = ["--test-input", "/run/generated"]
 environment = { SERVICE_SELECTOR = "test" }
 expected_exit_status = 0
-
-[[images.test.launch.mounts]]
-source = "output"
-name = "generated"
-target = "/run/generated"
-read_only = true
+mounts = [{ name = "generated", target = "/run/generated" }]
 ```
 
-Every output must have a writable producer before it is consumed. In this example, the `generator` image must declare `/output` in its own `images.runtime.writable_mounts`.
+A mount names a declared fixture or output and is read-only unless it sets `read_only = false`. Every output must have a writable producer before it is consumed. In this example, the `generator` image must declare `/output` in its own `images.runtime.writable_mounts`.
 
 ConClear still owns layout validation, digest-preserving import, container hardening, startup, health, signal and exit observation, journaling and cleanup. Hooks can add application assertions, but they cannot replace or mark those checks as passed.
 

@@ -39,9 +39,14 @@ def test_repository_configuration_is_validated_and_narrowed(
 ) -> None:
     root = repository_factory()
     config = load_repository_config(root / "conclear.toml")
+    image = config.image("app")
     assert config.project.source == "https://github.com/example/app"
-    assert config.image("app").limits.candidate_lifetime == timedelta(days=7)
-    assert str(config.image("app").platforms[0]) == "linux/amd64"
+    assert image.limits.candidate_lifetime == timedelta(days=7)
+    assert str(image.platforms[0]) == "linux/amd64"
+    assert image.containerfile == (root / "Containerfile").resolve()
+    assert image.context == root.resolve()
+    assert image.native_test_platforms == image.platforms
+    assert image.runtime.read_only is True
 
 
 def test_repository_configuration_parses_exact_runtime_test_inputs(
@@ -73,33 +78,21 @@ command = ["/generator", "--input", "/input", "--output", "/output"]
 environment = { TEST_MODE = "compatibility" }
 expected_exit_status = 0
 
-[[images.test.preparations.mounts]]
-source = "fixture"
-name = "input"
-target = "/input"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "result"
-target = "/output"
-read_only = false
+mounts = [
+  { name = "input", target = "/input" },
+  { name = "result", target = "/output", read_only = false },
+]
 
 [images.test.launch]
 arguments = ["serve"]
 environment = { SERVICE_MODE = "test" }
-
-[[images.test.launch.mounts]]
-source = "output"
-name = "result"
-target = "/run/result"
-read_only = true
+mounts = [{ name = "result", target = "/run/result" }]
 
 [images.release]""",
         )
         .replace(
-            "read_only = true\nmemory",
-            'read_only = true\nwritable_mounts = ["/run/result"]\nmemory',
+            "user = 10001\nmemory",
+            'user = 10001\nwritable_mounts = ["/run/result"]\nmemory',
             1,
         )
     )
@@ -113,6 +106,14 @@ read_only = true
     assert image.test.launch.arguments == ("serve",)
     assert image.test.preparations[0].command[0] == "/generator"
     assert image.test.fixtures[0].path == fixture.resolve()
+    assert [
+        (item.source, item.read_only) for item in image.test.preparations[0].mounts
+    ] == [
+        (config_module.TestMountSource.FIXTURE, True),
+        (config_module.TestMountSource.OUTPUT, False),
+    ]
+    assert image.test.launch.mounts[0].source is config_module.TestMountSource.OUTPUT
+    assert image.test.launch.mounts[0].read_only is True
 
 
 @pytest.mark.parametrize(
@@ -173,17 +174,32 @@ def test_repository_configuration_rejects_writable_fixture_mount(
 name = "input"
 path = "fixture"
 [images.test.launch]
-[[images.test.launch.mounts]]
-source = "fixture"
-name = "input"
-target = "/input"
-read_only = false
+mounts = [{ name = "input", target = "/input", read_only = false }]
 [images.release]""",
         ),
         encoding="utf-8",
     )
 
     with pytest.raises(InvalidInvocationError, match="read_only"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_undeclared_test_mount_handle(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[images.test.launch]
+mounts = [{ name = "missing", target = "/input" }]
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="undeclared fixture or output"):
         load_repository_config(path)
 
 
@@ -264,11 +280,7 @@ def test_repository_configuration_rejects_unsafe_test_mount_target(
 name = "input"
 path = "fixture"
 [images.test.launch]
-[[images.test.launch.mounts]]
-source = "fixture"
-name = "input"
-target = "{target}"
-read_only = true
+mounts = [{{ name = "input", target = "{target}" }}]
 [images.release]''',
         ),
         encoding="utf-8",
@@ -295,16 +307,10 @@ path = "fixture"
 name = "second"
 path = "fixture"
 [images.test.launch]
-[[images.test.launch.mounts]]
-source = "fixture"
-name = "first"
-target = "/input"
-read_only = true
-[[images.test.launch.mounts]]
-source = "fixture"
-name = "second"
-target = "/input/nested"
-read_only = true
+mounts = [
+  { name = "first", target = "/input" },
+  { name = "second", target = "/input/nested" },
+]
 [images.release]""",
         ),
         encoding="utf-8",
@@ -329,11 +335,7 @@ name = "result"
 name = "prepare"
 image = "app"
 command = ["/app", "prepare"]
-[[images.test.preparations.mounts]]
-source = "output"
-name = "result"
-target = "/undeclared"
-read_only = false
+mounts = [{ name = "result", target = "/undeclared", read_only = false }]
 [images.release]""",
         ),
         encoding="utf-8",
@@ -439,38 +441,70 @@ def test_repository_configuration_cannot_extend_builtin_limits(
     root = repository_factory()
     path = root / "conclear.toml"
     content = path.read_text(encoding="utf-8").replace(
-        "arm64_omission_reason =",
-        'candidate_lifetime = "8d"\narm64_omission_reason =',
+        "[images.release]",
+        '[images.limits]\ncandidate_lifetime = "8d"\n\n[images.release]',
     )
     path.write_text(content, encoding="utf-8")
     with pytest.raises(InvalidInvocationError, match="exceeds"):
         load_repository_config(path)
 
 
-def test_candidate_lifetime_is_accepted_only_at_image_scope(
+def test_candidate_lifetime_is_accepted_only_in_limits(
     repository_factory: Callable[..., Path],
 ) -> None:
     root = repository_factory()
     path = root / "conclear.toml"
-    direct = path.read_text(encoding="utf-8").replace(
-        "arm64_omission_reason =",
-        'candidate_lifetime = "24h"\narm64_omission_reason =',
-    )
-    path.write_text(direct, encoding="utf-8")
-    assert load_repository_config(path).image("app").limits.candidate_lifetime == (
-        timedelta(hours=24)
-    )
-
-    nested = direct.replace(
-        'candidate_lifetime = "24h"\narm64_omission_reason =',
-        "arm64_omission_reason =",
-    ).replace(
+    nested = path.read_text(encoding="utf-8").replace(
         "[images.release]",
         '[images.limits]\ncandidate_lifetime = "24h"\n\n[images.release]',
     )
     path.write_text(nested, encoding="utf-8")
+    assert load_repository_config(path).image("app").limits.candidate_lifetime == (
+        timedelta(hours=24)
+    )
+
+    direct = (
+        path.read_text(encoding="utf-8")
+        .replace(
+            '[images.limits]\ncandidate_lifetime = "24h"\n\n[images.release]',
+            "[images.release]",
+        )
+        .replace(
+            "arm64_omission_reason =",
+            'candidate_lifetime = "24h"\narm64_omission_reason =',
+        )
+    )
+    path.write_text(direct, encoding="utf-8")
     with pytest.raises(InvalidInvocationError, match="Additional properties"):
         load_repository_config(path)
+
+
+def test_vulnerability_exception_is_bound_to_its_declaring_image(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[[images.vulnerability_exceptions]]
+component = "openssl"
+advisory = "CVE-2026-0001"
+rationale = "The fixed base image is not released yet."
+reachability = "The affected cipher suite is disabled."
+exposure = "Internal network only."
+compensating_controls = "TLS 1.3 only."
+owner = "security@example.com"
+expires = "2026-12-31"
+review_trigger = "Base image update"
+
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    exceptions = load_repository_config(path).image("app").vulnerability_exceptions
+    assert [item.image for item in exceptions] == ["app"]
 
 
 @pytest.mark.parametrize(
@@ -522,8 +556,8 @@ def test_repository_configuration_rejects_unsafe_container_mount(
     root = repository_factory()
     path = root / "conclear.toml"
     content = path.read_text(encoding="utf-8").replace(
-        "read_only = true",
-        'read_only = true\nwritable_mounts = ["/tmp/../etc"]',
+        "user = 10001",
+        'user = 10001\nwritable_mounts = ["/tmp/../etc"]',
     )
     path.write_text(content, encoding="utf-8")
 
@@ -813,11 +847,8 @@ def _image_text(
 
 [[images]]
 id = "{image_id}"
-containerfile = "Containerfile"
-context = "."
 repository = "quay.io/example/{image_id}"
 platforms = ["linux/amd64"]
-native_test_platforms = ["linux/amd64"]
 arm64_omission_reason = "Only amd64 is required for this test."
 
 [images.release]
@@ -827,7 +858,6 @@ moving_tags = ["stable"]
 [images.runtime]
 profile = "one-shot"
 user = 10001
-read_only = true
 {writable}memory = "512MiB"
 cpus = 1.0
 pids = 128

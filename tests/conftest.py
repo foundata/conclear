@@ -39,11 +39,8 @@ source = "https://github.com/example/app.git"
 
 [[images]]
 id = "app"
-containerfile = "Containerfile"
-context = "."
 repository = "quay.io/example/app"
 platforms = ["linux/amd64"]
-native_test_platforms = ["linux/amd64"]
 arm64_omission_reason = "The dependency is not available for arm64."
 
 [images.release]
@@ -53,7 +50,6 @@ moving_tags = ["stable"]
 [images.runtime]
 profile = "service"
 user = 10001
-read_only = true
 memory = "512MiB"
 cpus = 1.0
 pids = 128

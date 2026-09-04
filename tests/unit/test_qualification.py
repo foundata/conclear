@@ -450,47 +450,24 @@ name = "result"
 name = "keygen"
 image = "generator"
 command = ["/generator", "keygen"]
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "private-key"
-target = "/output"
-read_only = false
+mounts = [{ name = "private-key", target = "/output", read_only = false }]
 
 [[images.test.preparations]]
 name = "generate"
 image = "generator"
 command = ["/generator", "generate"]
 environment = { GENERATOR_MODE = "compatibility" }
-
-[[images.test.preparations.mounts]]
-source = "fixture"
-name = "source"
-target = "/input"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "private-key"
-target = "/key"
-read_only = true
-
-[[images.test.preparations.mounts]]
-source = "output"
-name = "result"
-target = "/output"
-read_only = false
+mounts = [
+  { name = "source", target = "/input" },
+  { name = "private-key", target = "/key" },
+  { name = "result", target = "/output", read_only = false },
+]
 
 [images.test.launch]
 arguments = ["serve", "--fixture", "/input"]
 environment = { SERVICE_SELECTOR = "test" }
 expected_exit_status = EXPECTED_EXIT_STATUS
-
-[[images.test.launch.mounts]]
-source = "output"
-name = "result"
-target = "/input"
-read_only = true
+mounts = [{ name = "result", target = "/input" }]
 
 [images.release]""",
         )
@@ -509,11 +486,8 @@ command = ["scripts/hook"]
 
 [[images]]
 id = "generator"
-containerfile = "Containerfile"
-context = "."
 repository = "quay.io/example/generator"
 platforms = ["linux/amd64"]
-native_test_platforms = ["linux/amd64"]
 arm64_omission_reason = "Only amd64 is required for this test."
 
 [images.release]
@@ -523,7 +497,6 @@ moving_tags = ["stable"]
 [images.runtime]
 profile = "one-shot"
 user = 10001
-read_only = true
 writable_mounts = ["/output"]
 memory = "512MiB"
 cpus = 1.0
