@@ -257,6 +257,16 @@ class FakeHadolint:
         return ()
 
 
+class FakeGit:
+    """Remove run-owned worktrees without touching the ordinary checkout."""
+
+    def __init__(self) -> None:
+        self.removed: list[tuple[Path, Path]] = []
+
+    def remove_worktree(self, repository: Path, destination: Path) -> None:
+        self.removed.append((repository, destination))
+
+
 class NoopRunner:
     """Reject unexpected repository hook execution."""
 
@@ -542,6 +552,7 @@ class FakeRuntime:
         self.podman_adapter = FakePodman()
         self.trivy_adapter = FakeTrivy()
         self.hadolint_adapter = FakeHadolint()
+        self.git_adapter = FakeGit()
         self.runner = NoopRunner()
         self.environment = {"PATH": "/usr/bin"}
         digest = "sha256:" + "f" * 64
@@ -559,6 +570,9 @@ class FakeRuntime:
 
     def assert_unchanged(self) -> None:
         return None
+
+    def git(self) -> FakeGit:
+        return self.git_adapter
 
     def buildah(self) -> FakeBuilder:
         return self.builder

@@ -1,0 +1,267 @@
+"""Distribution-gate helpers refuse unsafe artifacts and destinations."""
+
+import io
+import os
+import shutil
+import stat
+import tarfile
+import zipfile
+from pathlib import Path
+
+import pytest
+
+import conclear.release_check as release_check_module
+from conclear.errors import (
+    CommandExecutionError,
+    InvalidInvocationError,
+    OperationalError,
+)
+from conclear.jsonutil import load_json, sha256_file
+from conclear.process import CommandRequest, ProcessResult
+from conclear.release_check import (
+    GateRuntime,
+    main,
+    retain_distribution_artifacts,
+    validate_distribution_artifact,
+)
+
+REVISION = "a" * 40
+
+
+def _artifacts(tmp_path: Path) -> tuple[Path, Path]:
+    sdist = tmp_path / "conclear-0.1.0.tar.gz"
+    sdist.write_bytes(b"sdist")
+    wheel = tmp_path / "conclear-0.1.0-py3-none-any.whl"
+    wheel.write_bytes(b"wheel")
+    return sdist, wheel
+
+
+def test_retained_artifacts_are_published_atomically_with_their_digests(
+    tmp_path: Path,
+) -> None:
+    sdist, wheel = _artifacts(tmp_path)
+    parent = tmp_path / "distributions"
+    parent.mkdir(mode=0o700)
+
+    retained = retain_distribution_artifacts(
+        sdist=sdist,
+        wheel=wheel,
+        destination=parent / REVISION,
+        source_revision=REVISION,
+    )
+
+    assert retained.directory == parent / REVISION
+    assert retained.sdist_digest == sha256_file(sdist)
+    assert retained.wheel_digest == sha256_file(wheel)
+    manifest = load_json(retained.directory / "artifacts.json")
+    assert manifest["conclearRevision"] == REVISION
+    assert [item["filename"] for item in manifest["artifacts"]] == [
+        sdist.name,
+        wheel.name,
+    ]
+    assert stat.S_IMODE(retained.wheel.stat().st_mode) == 0o644
+    assert [path.name for path in parent.iterdir()] == [REVISION]
+
+    with pytest.raises(OperationalError, match="must not already exist"):
+        retain_distribution_artifacts(
+            sdist=sdist,
+            wheel=wheel,
+            destination=parent / REVISION,
+            source_revision=REVISION,
+        )
+
+
+def test_artifact_destination_refuses_unsafe_parents(tmp_path: Path) -> None:
+    sdist, wheel = _artifacts(tmp_path)
+
+    def attempt(destination: Path) -> None:
+        retain_distribution_artifacts(
+            sdist=sdist, wheel=wheel, destination=destination, source_revision=REVISION
+        )
+
+    with pytest.raises(OperationalError, match="name a new directory"):
+        attempt(Path("/"))
+    with pytest.raises(OperationalError, match="parent is unavailable"):
+        attempt(tmp_path / "missing" / REVISION)
+    file_parent = tmp_path / "file"
+    file_parent.write_text("x", encoding="utf-8")
+    with pytest.raises(OperationalError, match="not a directory"):
+        attempt(file_parent / REVISION)
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    with pytest.raises(OperationalError, match="cannot cross a symbolic link"):
+        attempt(link / REVISION)
+    if os.geteuid() != 0:
+        shared = tmp_path / "shared"
+        shared.mkdir()
+        shared.chmod(0o775)
+        with pytest.raises(OperationalError, match="group- or other-writable"):
+            attempt(shared / REVISION)
+    with pytest.raises(InvalidInvocationError, match="lowercase hexadecimal"):
+        retain_distribution_artifacts(
+            sdist=sdist, wheel=wheel, destination=real / "x", source_revision="HEAD"
+        )
+    assert list(real.iterdir()) == []
+
+
+def test_retention_rejects_symlinked_or_missing_distributions(tmp_path: Path) -> None:
+    sdist, wheel = _artifacts(tmp_path)
+    parent = tmp_path / "distributions"
+    parent.mkdir(mode=0o700)
+    linked = tmp_path / "linked.whl"
+    linked.symlink_to(wheel)
+
+    with pytest.raises(OperationalError, match="not a regular file"):
+        retain_distribution_artifacts(
+            sdist=sdist,
+            wheel=linked,
+            destination=parent / REVISION,
+            source_revision=REVISION,
+        )
+    with pytest.raises(OperationalError, match="unavailable"):
+        retain_distribution_artifacts(
+            sdist=tmp_path / "absent.tar.gz",
+            wheel=wheel,
+            destination=parent / REVISION,
+            source_revision=REVISION,
+        )
+    assert list(parent.iterdir()) == []
+
+
+def _sdist(path: Path, names: list[str], *, symlink: str | None = None) -> Path:
+    with tarfile.open(path, mode="w:gz") as archive:
+        for name in names:
+            info = tarfile.TarInfo(name)
+            info.size = 1
+            archive.addfile(info, io.BytesIO(b"x"))
+        if symlink is not None:
+            info = tarfile.TarInfo(symlink)
+            info.type = tarfile.SYMTYPE
+            info.linkname = "pyproject.toml"
+            archive.addfile(info)
+    return path
+
+
+REQUIRED_SDIST = [
+    "conclear-0.1.0/pyproject.toml",
+    "conclear-0.1.0/uv.lock",
+    "conclear-0.1.0/docs/conformance.md",
+    "conclear-0.1.0/LICENSES/GPL-3.0-or-later.txt",
+    "conclear-0.1.0/src/conclear/_embedded_identity.py",
+]
+
+
+def test_source_distribution_hygiene(tmp_path: Path) -> None:
+    validate_distribution_artifact(
+        _sdist(tmp_path / "ok.tar.gz", REQUIRED_SDIST), kind="sdist"
+    )
+
+    with pytest.raises(OperationalError, match="missing required file"):
+        validate_distribution_artifact(
+            _sdist(tmp_path / "incomplete.tar.gz", REQUIRED_SDIST[:-1]), kind="sdist"
+        )
+    with pytest.raises(OperationalError, match="generated path"):
+        validate_distribution_artifact(
+            _sdist(
+                tmp_path / "venv.tar.gz", [*REQUIRED_SDIST, "conclear-0.1.0/.venv/bin"]
+            ),
+            kind="sdist",
+        )
+    with pytest.raises(OperationalError, match="generated file"):
+        validate_distribution_artifact(
+            _sdist(
+                tmp_path / "pyc.tar.gz",
+                [*REQUIRED_SDIST, "conclear-0.1.0/src/conclear/cli.pyc"],
+            ),
+            kind="sdist",
+        )
+    with pytest.raises(OperationalError, match="unsafe member"):
+        validate_distribution_artifact(
+            _sdist(
+                tmp_path / "link.tar.gz", REQUIRED_SDIST, symlink="conclear-0.1.0/link"
+            ),
+            kind="sdist",
+        )
+    with pytest.raises(OperationalError, match="unsafe path"):
+        validate_distribution_artifact(
+            _sdist(tmp_path / "escape.tar.gz", [*REQUIRED_SDIST, "../escape"]),
+            kind="sdist",
+        )
+    with pytest.raises(OperationalError, match="Unable to inspect"):
+        validate_distribution_artifact(tmp_path / "absent.tar.gz", kind="sdist")
+    with pytest.raises(OperationalError, match="Unknown distribution kind"):
+        validate_distribution_artifact(tmp_path / "ok.tar.gz", kind="egg")
+
+
+def test_wheel_hygiene_rejects_symlinks_and_unreadable_archives(tmp_path: Path) -> None:
+    wheel = tmp_path / "link.whl"
+    with zipfile.ZipFile(wheel, mode="w") as archive:
+        info = zipfile.ZipInfo("conclear/link.py")
+        info.external_attr = 0o120777 << 16
+        archive.writestr(info, "cli.py")
+    with pytest.raises(OperationalError, match="symbolic link"):
+        validate_distribution_artifact(wheel, kind="wheel")
+
+    corrupt = tmp_path / "corrupt.whl"
+    corrupt.write_bytes(b"not a zip")
+    with pytest.raises(OperationalError, match="Unable to inspect wheel"):
+        validate_distribution_artifact(corrupt, kind="wheel")
+
+
+class _FailingRunner:
+    def run(self, request: CommandRequest) -> ProcessResult:
+        raise CommandExecutionError("exit 1", returncode=1, stdout="", stderr="boom")
+
+
+def test_gate_runtime_wraps_step_failures_with_their_label(tmp_path: Path) -> None:
+    runtime = GateRuntime(
+        git=tmp_path / "git",
+        uv=tmp_path / "uv",
+        pythons={},
+        environment={"PATH": "/usr/bin"},
+        runner=_FailingRunner(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(OperationalError, match="failed during lint: exit 1"):
+        runtime.run("lint", (str(tmp_path / "ruff"), "check"))
+
+
+def test_gate_helpers_reject_missing_executables_and_ambiguous_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    with pytest.raises(OperationalError, match="requires executable"):
+        release_check_module._executable("uv")
+
+    with pytest.raises(OperationalError, match="exactly one release artifact"):
+        release_check_module._one_artifact(tmp_path, "*.whl")
+
+    for name in (".venv", "htmlcov"):
+        (tmp_path / name).mkdir()
+    (tmp_path / ".coverage").write_bytes(b"")
+    release_check_module._clear_generated_files(tmp_path)
+    assert not (tmp_path / ".venv").exists()
+    assert not (tmp_path / ".coverage").exists()
+    release_check_module._clear_generated_files(tmp_path)
+
+
+def test_module_entry_point_reports_gate_failures(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def failing(*, output_directory: Path | None) -> None:
+        raise OperationalError("Release check requires a clean checkout")
+
+    monkeypatch.setattr(release_check_module, "run_release_check", failing)
+    assert main([]) == 1
+    assert "clean checkout" in capsys.readouterr().err
+
+    seen: list[Path | None] = []
+
+    def passing(*, output_directory: Path | None) -> None:
+        seen.append(output_directory)
+
+    monkeypatch.setattr(release_check_module, "run_release_check", passing)
+    assert main(["--output-directory", "/tmp/x"]) == 0
+    assert seen == [Path("/tmp/x")]
