@@ -31,6 +31,8 @@
     {"id": "CC0203", "summary": "Match every declared pin to exactly one Containerfile image input", "severity": "error", "behavior": "automated", "anchor": "pinning-image-references"},
     {"id": "CC0204", "summary": "Enforce bounded pin freshness and divergence observations", "severity": "error", "behavior": "automated", "anchor": "pinning-image-references"},
     {"id": "CC0205", "summary": "Report immutable-tag digest changes for supply-chain review", "severity": "warning", "behavior": "automated", "anchor": "updating-pinned-references"},
+    {"id": "CC0206", "summary": "Bind one tag resolution to every declared pin occurrence in a non-mutating proposal", "severity": "error", "behavior": "automated", "anchor": "updating-pinned-references"},
+    {"id": "CC0207", "summary": "Verify a pin proposal against the current worktree before all-or-nothing application", "severity": "error", "behavior": "automated", "anchor": "updating-pinned-references"},
     {"id": "CC0301", "summary": "Resolve and hold the supported release toolchain constant", "severity": "error", "behavior": "automated", "anchor": "supported-tools-syntax-and-platforms"},
     {"id": "CC0302", "summary": "Recursively verify every OCI descriptor size and digest", "severity": "error", "behavior": "automated", "anchor": "multi-platform-images"},
     {"id": "CC0303", "summary": "Match OCI descriptor platforms to image configuration", "severity": "error", "behavior": "automated", "anchor": "multi-platform-images"},
