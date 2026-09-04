@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -1107,3 +1108,155 @@ def test_untrusted_tool_output_validators_reject_malformed_values(
 ) -> None:
     with pytest.raises(OperationalError, match=message):
         validate(value)
+
+
+def _write_snapshot(
+    snapshot: Path,
+    *,
+    vulnerability_metadata: str,
+    java_metadata: str,
+) -> None:
+    (snapshot / "db").mkdir(parents=True)
+    (snapshot / "db" / "trivy.db").write_bytes(b"database")
+    (snapshot / "db" / "metadata.json").write_text(
+        vulnerability_metadata, encoding="utf-8"
+    )
+    (snapshot / "java-db").mkdir(parents=True)
+    (snapshot / "java-db" / "trivy-java.db").write_bytes(b"java-database")
+    (snapshot / "java-db" / "metadata.json").write_text(java_metadata, encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("pointer", "message"),
+    [
+        (
+            {
+                "schemaVersion": 2,
+                "databaseDigest": "sha256:" + "a" * 64,
+                "snapshot": "a" * 64,
+            },
+            "unsupported schema",
+        ),
+        (
+            {
+                "schemaVersion": 1,
+                "databaseDigest": "sha256:" + "a" * 64,
+                "snapshot": "../escape",
+            },
+            "snapshot name is malformed",
+        ),
+        (
+            {
+                "schemaVersion": 1,
+                "databaseDigest": "sha256:" + "a" * 64,
+                "snapshot": "A" * 64,
+            },
+            "snapshot name is malformed",
+        ),
+        (
+            {"schemaVersion": 1, "databaseDigest": "", "snapshot": "a" * 64},
+            "non-empty string",
+        ),
+    ],
+    ids=["schema", "traversal", "uppercase", "digest"],
+)
+def test_trivy_database_pointer_validation(
+    tmp_path: Path, pointer: dict[str, object], message: str
+) -> None:
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, FakeRunner()).create(
+        TrivyAdapter
+    )
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    (cache_root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+
+    with pytest.raises(OperationalError, match=message):
+        adapter.select_database(cache_root)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        (
+            '{"Version": 0, "UpdatedAt": "2026-01-01T00:00:00Z", "NextUpdate": "2026-01-02T00:00:00Z", "DownloadedAt": "2026-01-01T00:01:00Z"}',
+            "version is malformed",
+        ),
+        (
+            '{"Version": true, "UpdatedAt": "2026-01-01T00:00:00Z", "NextUpdate": "2026-01-02T00:00:00Z", "DownloadedAt": "2026-01-01T00:01:00Z"}',
+            "version is malformed",
+        ),
+        (
+            '{"Version": 2, "UpdatedAt": 1, "NextUpdate": "2026-01-02T00:00:00Z", "DownloadedAt": "2026-01-01T00:01:00Z"}',
+            "updated-at time is malformed",
+        ),
+        (
+            '{"Version": 2, "UpdatedAt": "2026-01-01T00:00:00Z", "NextUpdate": "yesterday", "DownloadedAt": "2026-01-01T00:01:00Z"}',
+            "next-update time is malformed",
+        ),
+        (
+            '{"Version": 2, "UpdatedAt": "2026-01-01T00:00:00Z", "NextUpdate": "2026-01-02T00:00:00Z", "DownloadedAt": "2026-01-01T00:01:00"}',
+            "downloaded-at time lacks a timezone",
+        ),
+        ("[]", "must be a JSON object"),
+    ],
+    ids=[
+        "version-zero",
+        "version-bool",
+        "updated-type",
+        "next-format",
+        "naive",
+        "shape",
+    ],
+)
+def test_trivy_database_metadata_validation(
+    tmp_path: Path, metadata: str, message: str
+) -> None:
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, FakeRunner()).create(
+        TrivyAdapter
+    )
+    cache_root = tmp_path / "cache"
+    _write_snapshot(
+        cache_root / "snapshots" / ("b" * 64),
+        vulnerability_metadata=metadata,
+        java_metadata=trivy_metadata(1),
+    )
+
+    with pytest.raises(OperationalError, match=message):
+        adapter.select_database_by_digest(cache_root, Digest("sha256:" + "b" * 64))
+
+
+def test_trivy_database_refresh_reports_installation_failures(tmp_path: Path) -> None:
+    def create_database(request: CommandRequest) -> ProcessResult:
+        cache = Path(request.argv[request.argv.index("--cache-dir") + 1])
+        component = "db" if "--download-db-only" in request.argv else "java-db"
+        (cache / component).mkdir(parents=True)
+        (
+            cache / component / f"trivy{'' if component == 'db' else '-java'}.db"
+        ).write_bytes(b"x")
+        (cache / component / "metadata.json").write_text(
+            trivy_metadata(2 if component == "db" else 1), encoding="utf-8"
+        )
+        return result()
+
+    runner = FakeRunner(create_database, create_database)
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, runner).create(TrivyAdapter)
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    (cache_root / "snapshots").write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(OperationalError, match="Unable to install refreshed"):
+        adapter.refresh_database(cache_root)
+    assert not list(cache_root.glob(".db.*/"))
+    assert not (cache_root / "current.json").exists()
+
+
+def test_trivy_database_lock_must_be_a_regular_file(tmp_path: Path) -> None:
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, FakeRunner()).create(
+        TrivyAdapter
+    )
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    os.mkfifo(cache_root / ".db.lock")
+
+    with pytest.raises(OperationalError, match="lock is not a regular file"):
+        adapter.refresh_database(cache_root)

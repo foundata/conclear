@@ -328,6 +328,8 @@ uv run pytest -m "local_integration or emulation" \
 
 `tests/local_integration/test_adapter_failures.py` drives the installed Git, Buildah, Podman, Skopeo and Hadolint binaries into the failures that the adapter fakes can only imitate: refused connections, missing objects, failed builds, unrepresentable commit times, invalid output paths and Podman's real capability reporting. Skopeo cases target the closed local port `localhost:1` only; nothing listens, nothing is pulled and nothing is published. When a real tool contradicts a fake, fix the adapter and the fake together and keep the real case.
 
+`tests/local_integration/test_trivy_database.py` exercises the real vulnerability-database snapshot, layout scan, SPDX generation and SBOM rescan paths. It needs a manifest-owned cache directory in `CONCLEAR_TEST_TRIVY_CACHE`. When that cache holds no snapshot, the case skips unless `CONCLEAR_TEST_TRIVY_DOWNLOAD=1` is also set, in which case the production adapter downloads the current Trivy and Java databases once (about 1.1 GB compressed, several GB on disk). Every later run is offline and reuses the pinned snapshot, so record the cache directory and its snapshot digest in the run manifest and remove it when the run ends.
+
 The emulation case builds the shared `linux/arm64` fixture with Buildah, imports it into run-owned Podman storage and runs its architecture self-check through the host's enabled `qemu-aarch64` handler, then records the observed execution mode below `--basetemp`. On a host without an enabled handler the case is reported as skipped with the same diagnostic that `conclear build` and `conclear test` raise for that platform; a skipped emulation case is not evidence that arm64 qualification works.
 
 
