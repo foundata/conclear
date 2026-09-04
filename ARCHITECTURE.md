@@ -146,6 +146,9 @@ context = "."
 repository = "quay.io/foundata/example"
 platforms = ["linux/amd64", "linux/arm64"]
 native_test_platforms = ["linux/amd64"]
+scanner = "trivy"
+
+[images.limits]
 candidate_lifetime = "168h"
 
 [images.release]
@@ -154,7 +157,7 @@ moving_tags = ["stable"]
 
 [images.runtime]
 profile = "service"
-read_only = true
+user = 65532
 memory = "512MiB"
 cpus = 1.0
 pids = 256
@@ -166,17 +169,17 @@ reference = "quay.io/fedora/fedora-minimal:<release>@sha256:<digest>"
 tag_intent = "moving-release-line"
 ```
 
-An image that omits `linux/arm64` supplies `arm64_omission_reason`. Release tag templates may use only the documented `{version}` value; unversioned projects omit version-dependent templates. Candidate tags remain entirely ConClear-owned.
+An image that omits `linux/arm64` supplies `arm64_omission_reason`. `containerfile`, `context` and `native_test_platforms` default to `Containerfile`, `.` and `["linux/amd64"]`. The optional `scanner` key names the gating scanner for the reader and accepts only the supported stack. The root filesystem is always read-only and has no configuration key; writable paths are declared individually. Release tag templates may use only the documented `{version}` value; unversioned projects omit version-dependent templates. Candidate tags remain entirely ConClear-owned.
 
 Repository test hooks are argument arrays, not shell strings. ConClear supplies documented paths and immutable references as individual environment values. Hooks cannot interpolate command text and cannot override release state, evidence fields, registry subjects or signer identity.
 
-An image may declare a `test` table containing repository fixture handles, run-owned output handles, ordered preparation steps, launch inputs and dependencies on other image IDs from the same configuration. A fixture names an immutable source-tree path and is always mounted read-only. An output names a newly created run-owned directory and may be mounted writable only at a destination already declared by the selected image's runtime profile. An output marked secret is never exposed to repository hooks or included by value or content digest in public evidence.
+An image may declare a `test` table containing repository fixture handles, run-owned output handles, ordered preparation steps, launch inputs and dependencies on other image IDs from the same configuration. A fixture names an immutable source-tree path and is always mounted read-only. An output names a newly created run-owned directory and may be mounted writable only at a destination already declared by the selected image's runtime profile. Fixture and output names share one namespace, so a mount identifies its source by name alone and is read-only unless it declares otherwise. An output marked secret is never exposed to repository hooks or included by value or content digest in public evidence.
 
 Each preparation step selects the primary image or one of its declared test-image dependencies, replaces that exact image's entrypoint with an argument array, supplies only declared non-secret environment values and mounts, and declares a bounded timeout and expected exit status. Preparation executes under the selected image's configured user, read-only root, capability, `no-new-privileges`, platform and resource controls. It cannot alter those controls or the main launch verdict. The main launch retains the tested image's original entrypoint and may add an explicit argument array, non-secret environment values and declared mounts; its expected one-shot exit status defaults to zero.
 
 Test-image dependencies form an acyclic graph of image IDs declared in the same `conclear.toml`. ConClear rejects unknown IDs, self-dependencies, duplicates, cycles and dependencies that do not cover every platform of the depending image. For a qualification, ConClear builds each dependency once from the same isolated revision, source timestamp, target platform, version input and resolved Buildah toolchain, validates its OCI layout and labels, imports it by its reverified manifest digest, and exposes no mutable reference. A dependency participates only in the primary image's tests and is not represented as independently qualified or releasable.
 
-Vulnerability exceptions use a dedicated typed table and contain every field required by the guide, including image, component, advisory, rationale, reachability, exposure, compensating controls, owner, expiry and review trigger. ConClear verifies structure, expiry and an exact finding match. Security-owner review remains a repository merge-control responsibility and is not inferred from a self-declared field.
+Vulnerability exceptions use a dedicated typed table declared inside the image they apply to, which identifies the image as the guide requires; each exception states component, advisory, rationale, reachability, exposure, compensating controls, owner, expiry and review trigger. ConClear verifies structure, expiry and an exact finding match, and records the image identifier with every applied exception. Security-owner review remains a repository merge-control responsibility and is not inferred from a self-declared field.
 
 Maintainer-controlled release configuration is separate from the application repository. A named profile under `$XDG_CONFIG_HOME/conclear/` supplies a public HTTPS SLSA builder identity and explicitly selects one compiled registry control backend with its host, API and credential locations. The profile may also identify a containers-auth file, Cosign private-key and public-key paths, a passphrase provider, or a KMS/HSM key handle. It contains trust identities and credential locations, not alternative guide rules or secret values. ConClear rejects release configuration and file-based credentials with unsafe ownership or permissions. Backend selection is never inferred from a repository hostname.
 
