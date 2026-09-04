@@ -94,6 +94,9 @@ conclear/
 │   ├── checks.py                 # Static Containerfile and context checks
 │   ├── conformance.py            # docs/conformance.md generator
 │   ├── records.py                # Record envelopes and digests
+│   ├── pins.py                   # Durable pin observations and divergence policy
+│   ├── pin_updates.py            # Pin proposals and verified application
+│   ├── toml_spans.py             # Structural TOML string spans
 │   ├── workspace.py              # Run state machine and ownership journal
 │   ├── process.py                # Supervised execution and redaction
 │   ├── oci.py                    # Layout, descriptor and graph validation
@@ -178,7 +181,8 @@ Commit messages follow the [foundata guideline (`guidelines/git-commits.md`)](ht
 | `process` | Supervised child processes, sanitized environments, redaction and executable discovery |
 | `records` | Public record envelopes, layouts, schemas and deterministic serialization |
 | `workspace` | Run state, ownership journals, atomic local writes and persisted workspace validation |
-| `qualification` | Source isolation, build-context checks, pins, image builds, runtime tests and per-platform evidence |
+| `qualification` | Source isolation, build-context checks, image builds, runtime tests and per-platform evidence |
+| `pins` | Pin declarations, durable pin observations, pin-update proposals and their verified application |
 | `assembly` | Verified multi-platform OCI assembly |
 | `scanner` | Scan policy, immutable database snapshots and scanner behavior shared by qualification and rescans |
 | `release` | Release-run orchestration, resume behavior and terminal summaries |

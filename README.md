@@ -18,6 +18,7 @@ ConClear takes a container image from a reviewed source commit to a signed, veri
   - [Running a release](#usage-release)
   - [Resuming an interrupted run](#usage-resume)
   - [Composable commands](#usage-commands)
+  - [Updating pinned references](#usage-pin-updates)
   - [Distributed qualification](#usage-distributed)
   - [JSON output and exit codes](#usage-json-exit-codes)
   - [Rescan triage](#usage-rescan-triage)
@@ -174,9 +175,29 @@ A candidate reference is never reused for a second publication attempt. If an am
 
 ### Composable commands<a id="usage-commands"></a>
 
-`release` is the normal interface. The composable commands support diagnosis, distributed platform work and recovery without defining an alternative workflow: `doctor`, `check`, `pins check`, `build`, `test`, `evidence`, `qualify`, `assemble`, `provenance`, `publish`, `attest`, `verify`, `promote`, `rescan` and `cleanup`. Run any of them with `--help` for its exact inputs.
+`release` is the normal interface. The composable commands support diagnosis, distributed platform work and recovery without defining an alternative workflow: `doctor`, `check`, `pins check`, `pins propose`, `pins apply`, `build`, `test`, `evidence`, `qualify`, `assemble`, `provenance`, `publish`, `attest`, `verify`, `promote`, `rescan` and `cleanup`. Run any of them with `--help` for its exact inputs.
 
 No command offers an option that disables a gate, skips verification or affects transparency-log behavior.
+
+
+### Updating pinned references<a id="usage-pin-updates"></a>
+
+Base-image digest updates are three explicit steps. `pins propose` resolves every declared readable tag exactly once, binds that digest to each `[[images.pins]]` declaration and each `FROM`, `COPY --from` and `RUN --mount=from` input that names the same reference, and writes one schema-validated proposal without touching the repository:
+
+```sh
+uv run conclear pins propose --output /tmp/pins.json --profile foundata
+```
+
+The proposal records the ConClear and guide identity, the canonical repository and its current commit, the configuration digest, one lookup per pinned reference with old and new digest and resolution time, and every file with its digest and the exact byte spans that would change. Only the digest of a reference changes; registry, repository and tag spelling stay as written. A change under an `immutable-version` tag is marked as requiring supply-chain review and reported as `CC0205`; ConClear offers no way to skip that review. An already-current repository yields a successful proposal that changes nothing.
+
+`pins apply` reads the proposal, verifies the repository, commit, configuration digest, every target file digest, the reparsed dependency set and every old byte sequence, and only then replaces the proposed spans through same-directory temporary files. It never resolves a tag again and never commits, builds, publishes or signs. If anything fails, every target keeps its original bytes:
+
+```sh
+uv run conclear pins apply --proposal /tmp/pins.json
+uv run conclear pins check --image app
+```
+
+`pins check` remains the freshness and divergence gate and the only command that updates durable pin observations; run it after applying and review the complete diff before merging. A pinned, self-hosted updater such as Renovate may deliver the same proposal through a review branch or pull request, but that delivery is optional: a maintainer can complete the whole update locally.
 
 
 ### Distributed qualification<a id="usage-distributed"></a>

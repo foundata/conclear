@@ -9,12 +9,20 @@ import click
 
 from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.registry_control import create_registry_control
-from conclear.config import load_repository_config
+from conclear.config import load_repository_config, normalize_source_url
 from conclear.database import select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import sha256_bytes
+from conclear.pin_updates import (
+    ApplicationStatus,
+    PinUpdateProposal,
+    apply_pin_proposal,
+    load_proposal,
+    propose_pin_updates,
+)
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
+from conclear.records import SourceIdentity
 from conclear.registry_control import RegistryControl
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime
@@ -158,6 +166,189 @@ def pins_check_command(
             data={"observations": [item.to_dict() for item in observations]},
         ),
         output_format,
+    )
+
+
+@pins_group.command("propose")
+@click.option(
+    "config_path",
+    "--config",
+    type=click.Path(path_type=Path),
+    default=Path("conclear.toml"),
+    show_default=True,
+)
+@click.option(
+    "image_ids",
+    "--image",
+    multiple=True,
+    help="Limit the proposal to these image IDs; every image sharing one of "
+    "their dependencies must be included. Defaults to every image.",
+)
+@click.option(
+    "output_path",
+    "--output",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="New file that receives the proposal. An existing file is never overwritten.",
+)
+@click.option("profile_name", "--profile")
+@_format_option
+def pins_propose_command(
+    config_path: Path,
+    image_ids: tuple[str, ...],
+    output_path: Path,
+    profile_name: str | None,
+    output_format: str,
+) -> None:
+    """Resolve each declared tag once and write a non-mutating update proposal."""
+    _require_configuration_name(config_path)
+    repository = load_repository_config(config_path)
+    selected = profile(profile_name) if profile_name else None
+    auth_file = selected.auth_file if selected else None
+    if output_path.is_symlink() or output_path.exists():
+        raise InvalidInvocationError(f"Proposal output already exists: {output_path}")
+    with command_runtime((ToolName.GIT, ToolName.SKOPEO)) as runtime:
+        source = _observed_source(runtime, repository.path.parent)
+        proposal = propose_pin_updates(
+            repository,
+            source=source,
+            resolver=AuthenticatedPinResolver(runtime, auth_file),
+            tools=(runtime.tools[ToolName.SKOPEO].record_identity(),),
+            now=lambda: datetime.now(UTC),
+            image_ids=tuple(image_ids) or None,
+        )
+    digest = proposal.write(output_path)
+    changed = [item for item in proposal.lookups if item.changed]
+    message = (
+        f"Proposed {len(changed)} digest update(s) across {len(proposal.files)} file(s)"
+        if proposal.changed
+        else "Pinned references are current; the proposal changes nothing"
+    )
+    emit(
+        CommandResult(
+            "pins propose",
+            ResultStatus.SUCCESS,
+            message,
+            findings=proposal.findings,
+            data={
+                "proposal": str(output_path),
+                "proposalDigest": digest,
+                "changed": proposal.changed,
+                "reviewRequired": proposal.review_required,
+                "lookups": [item.to_dict() for item in proposal.lookups],
+                "files": [item.path for item in proposal.files],
+            },
+            details=(
+                *_lookup_details(proposal),
+                *(f"file: {item.path}" for item in proposal.files),
+                f"proposal: {output_path} ({digest})",
+            ),
+        ),
+        output_format,
+    )
+
+
+@pins_group.command("apply")
+@click.option(
+    "proposal_path",
+    "--proposal",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Proposal written by pins propose.",
+)
+@click.option(
+    "config_path",
+    "--config",
+    type=click.Path(path_type=Path),
+    default=Path("conclear.toml"),
+    show_default=True,
+)
+@_format_option
+def pins_apply_command(
+    proposal_path: Path, config_path: Path, output_format: str
+) -> None:
+    """Verify one proposal against the worktree and apply it all-or-nothing."""
+    _require_configuration_name(config_path)
+    proposal = load_proposal(proposal_path)
+    try:
+        root = config_path.resolve(strict=True).parent
+    except OSError as exc:
+        raise InvalidInvocationError(
+            f"Repository configuration is unavailable: {config_path}"
+        ) from exc
+    with command_runtime((ToolName.GIT,)) as runtime:
+        source = _observed_source(runtime, root)
+    outcome = apply_pin_proposal(
+        proposal,
+        repository_root=root,
+        source=source,
+        now=datetime.now(UTC),
+    )
+    messages = {
+        ApplicationStatus.APPLIED: (
+            f"Applied the pin update proposal to {len(outcome.changed_paths)} file(s)"
+        ),
+        ApplicationStatus.ALREADY_APPLIED: (
+            "The pin update proposal was already applied; no file changed"
+        ),
+        ApplicationStatus.NO_CHANGE: (
+            "The pin update proposal changes nothing; no file was touched"
+        ),
+    }
+    follow_up = tuple(
+        f"conclear pins check --config {config_path} --image {image_id}"
+        for image_id in proposal.image_ids
+    )
+    emit(
+        CommandResult(
+            "pins apply",
+            ResultStatus.SUCCESS,
+            messages[outcome.status],
+            findings=proposal.findings,
+            data={
+                "status": outcome.status.value,
+                "proposalDigest": proposal.digest(),
+                "changedPaths": list(outcome.changed_paths),
+                "reviewRequired": proposal.review_required,
+                "lookups": [item.to_dict() for item in proposal.lookups],
+                "followUp": list(follow_up),
+            },
+            details=(
+                *_lookup_details(proposal),
+                *(f"changed: {path}" for path in outcome.changed_paths),
+                *(f"next: {command}" for command in follow_up),
+            ),
+        ),
+        output_format,
+    )
+
+
+def _require_configuration_name(config_path: Path) -> None:
+    if config_path.name != "conclear.toml":
+        raise InvalidInvocationError(
+            "Pin update proposals require the repository configuration conclear.toml"
+        )
+
+
+def _observed_source(runtime: ApplicationRuntime, root: Path) -> SourceIdentity:
+    observation = runtime.git().observe(root, "HEAD")
+    return SourceIdentity(
+        repository=normalize_source_url(observation.remote_url),
+        revision=observation.revision,
+    )
+
+
+def _lookup_details(proposal: PinUpdateProposal) -> tuple[str, ...]:
+    return tuple(
+        f"{item.original_reference.repository_name}:{item.original_reference.tag}: "
+        f"{item.old_digest} -> {item.new_digest} ({', '.join(item.image_ids)})"
+        + (
+            " [immutable-version: supply-chain review required]"
+            if item.review_required
+            else ""
+        )
+        for item in proposal.lookups
+        if item.changed
     )
 
 

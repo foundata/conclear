@@ -37,6 +37,16 @@ class Instruction:
     keyword: str
     argument: str
     line_number: int
+    end_line_number: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceOccurrence:
+    """One external image input and the logical instruction that names it."""
+
+    reference: str
+    line_number: int
+    end_line_number: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +217,58 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
     )
 
 
+def external_reference_occurrences(path: Path) -> tuple[ReferenceOccurrence, ...]:
+    """Return every external image input in instruction order, including repeats.
+
+    The same structural rules as `analyze_containerfile` apply: `scratch` and
+    earlier stage names are not external, `COPY --from` and `ADD --from` name
+    one input, and each `RUN --mount=from=` option names one input.
+    """
+    content = read_regular_file(
+        path,
+        maximum_bytes=MAX_CONTAINERFILE_BYTES,
+        label="Containerfile",
+    )
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise InvalidInvocationError(f"Containerfile is not UTF-8: {path}") from exc
+    occurrences: list[ReferenceOccurrence] = []
+    stage_names: set[str] = set()
+    for instruction in _logical_instructions(text, path):
+        keyword = instruction.keyword.upper()
+        argument = instruction.argument.strip()
+        references: list[str] = []
+        if keyword == "FROM":
+            reference, stage_name = _parse_from(argument, "", [])
+            if reference is not None and reference != "scratch":
+                if reference not in stage_names:
+                    references.append(reference)
+            if stage_name is not None:
+                stage_names.add(stage_name)
+        elif keyword in {"COPY", "ADD"}:
+            match = _COPY_FROM_PATTERN.search(argument)
+            if match is not None:
+                reference = match.group("value")
+                if not reference.isdecimal() and reference not in stage_names:
+                    references.append(reference)
+        elif keyword == "RUN":
+            for mount_match in _MOUNT_FROM_PATTERN.finditer(argument):
+                for option in mount_match.group("options").split(","):
+                    key, separator, value = option.partition("=")
+                    if key == "from" and separator and value not in stage_names:
+                        references.append(value)
+        occurrences.extend(
+            ReferenceOccurrence(
+                reference=reference,
+                line_number=instruction.line_number,
+                end_line_number=instruction.end_line_number,
+            )
+            for reference in references
+        )
+    return tuple(occurrences)
+
+
 def check_image_static(image: ImageConfig) -> tuple[Finding, ...]:
     """Run all hermetic source and context checks for one image."""
     analysis = analyze_containerfile(image.containerfile)
@@ -336,6 +398,7 @@ def _logical_instructions(text: str, path: Path) -> tuple[Instruction, ...]:
                 keyword=match.group("keyword"),
                 argument=match.group("argument") or "",
                 line_number=start_line,
+                end_line_number=line_number,
             )
         )
         pending = ""

@@ -48,6 +48,7 @@ class CommandResult:
     message: str
     findings: tuple[Finding, ...] = ()
     data: dict[str, object] = field(default_factory=dict)
+    details: tuple[str, ...] = ()
 
     @property
     def exit_status(self) -> ExitStatus:
@@ -80,8 +81,14 @@ def present_json(result: CommandResult, stream: TextIO) -> None:
 
 
 def present_human(result: CommandResult, stream: TextIO) -> None:
-    """Write concise human-readable output."""
+    """Write concise human-readable output.
+
+    Detail lines carry human context whose structured form already lives in
+    `data`; they never appear in JSON mode.
+    """
     stream.write(f"{result.message}\n")
+    for detail in result.details:
+        stream.write(f"  {detail}\n")
     for finding in result.findings:
         location = f" ({finding.location})" if finding.location else ""
         stream.write(

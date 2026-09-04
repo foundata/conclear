@@ -245,6 +245,16 @@ conclear qualify \
 
 ConClear writes run state below `$XDG_STATE_HOME/conclear/` and keeps Trivy database snapshots below `$XDG_CACHE_HOME/conclear/`. Preserve the protected pin history and distribute the exact selected Trivy database snapshot when qualification runs on more than one worker.
 
+When a base image publishes a new digest, let ConClear propose and apply the pin update instead of editing digests by hand. `pins propose` resolves each declared tag once and writes a proposal covering every `conclear.toml` declaration and Containerfile occurrence; `pins apply` verifies that proposal against the current worktree and replaces only the recorded byte spans, all-or-nothing:
+
+```sh
+conclear pins propose --output ../pins-proposal.json
+conclear pins apply --proposal ../pins-proposal.json
+conclear pins check --image app
+```
+
+Neither command commits, builds or publishes. Review the resulting diff before merging; a digest change under an `immutable-version` tag is a supply-chain event that ConClear reports and never accepts automatically. Delivering the proposal through a review branch with a pinned self-hosted updater such as Renovate is optional.
+
 
 ## 8. Create a release profile
 
