@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from conclear.adapters import parsing
 from conclear.adapters.base import ToolAdapter
 from conclear.adapters.buildah import BuildahAdapter
 from conclear.adapters.cosign import CosignAdapter
@@ -994,3 +995,111 @@ def test_skopeo_registry_copy_requires_an_absent_layout_destination(
             auth_file=None,
         )
     assert runner.requests == []
+
+
+def test_skopeo_deletion_requires_a_tag_reference_before_running(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    adapter = adapter_arguments(tmp_path, ToolName.SKOPEO, runner).create(SkopeoAdapter)
+    auth_file = tmp_path / "auth.json"
+
+    for reference in (
+        "quay.io/foundata/example@sha256:" + "3" * 64,
+        "quay.io/foundata/example:candidate@sha256:" + "3" * 64,
+        "quay.io/foundata/example",
+    ):
+        with pytest.raises(InvalidInvocationError, match="requires a tag reference"):
+            adapter.delete(OCIReference.parse(reference), auth_file=auth_file)
+    assert runner.requests == []
+
+
+def test_cosign_release_subjects_must_be_immutable_digests(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+
+    for reference in (
+        "quay.io/foundata/example:candidate",
+        "quay.io/foundata/example:candidate@sha256:" + "4" * 64,
+    ):
+        subject = OCIReference.parse(reference)
+        with pytest.raises(OperationalError, match="immutable digest"):
+            adapter.download_signatures(subject=subject)
+        with pytest.raises(OperationalError, match="immutable digest"):
+            adapter.verify_attestation(
+                subject=subject,
+                public_key=tmp_path / "cosign.pub",
+                predicate_type="https://slsa.dev/provenance/v1",
+            )
+    assert runner.requests == []
+
+
+def test_cosign_downloads_and_attestation_verification_parse_tool_output(
+    tmp_path: Path,
+) -> None:
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "5" * 64)
+    runner = FakeRunner(
+        result('{"payload": "first"}\n\n{"payload": "second"}\n'),
+        result('[{"critical": {"type": "cosign container image signature"}}]'),
+        result("not json"),
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+
+    assert adapter.download_signatures(subject=subject) == (
+        {"payload": "first"},
+        {"payload": "second"},
+    )
+    assert runner.requests[0].argv[1:] == ("download", "signature", str(subject))
+    assert runner.requests[0].retries == 2
+
+    verification = adapter.verify_attestation(
+        subject=subject,
+        public_key=tmp_path / "cosign.pub",
+        predicate_type="https://slsa.dev/provenance/v1",
+    )
+    assert verification.subject == subject
+    assert len(verification.entries) == 1
+    argv = runner.requests[1].argv
+    assert argv[argv.index("--type") + 1] == "https://slsa.dev/provenance/v1"
+    assert tmp_path / "cosign.pub" in runner.requests[1].secret_paths
+
+    with pytest.raises(OperationalError, match="did not return valid JSON"):
+        adapter.download_signatures(subject=subject)
+
+
+@pytest.mark.parametrize(
+    ("validate", "value", "message"),
+    [
+        (
+            lambda v: parsing.json_value(v, label="Tool"),
+            "{",
+            "did not return valid JSON",
+        ),
+        (
+            lambda v: parsing.json_value(v, label="Tool"),
+            "[" * 200 + "]" * 200,
+            "exceeds the nesting limit",
+        ),
+        (lambda v: parsing.object_value(v, label="Tool"), [], "must be a JSON object"),
+        (lambda v: parsing.array_value(v, label="Tool"), {}, "must be a JSON array"),
+        (lambda v: parsing.string_value(v, label="Tool"), "", "non-empty string"),
+        (lambda v: parsing.string_value(v, label="Tool"), 1, "non-empty string"),
+        (lambda v: parsing.integer_value(v, label="Tool"), True, "must be an integer"),
+        (lambda v: parsing.integer_value(v, label="Tool"), "1", "must be an integer"),
+    ],
+    ids=[
+        "invalid-json",
+        "nesting",
+        "object",
+        "array",
+        "empty-string",
+        "non-string",
+        "boolean-integer",
+        "string-integer",
+    ],
+)
+def test_untrusted_tool_output_validators_reject_malformed_values(
+    validate: Callable[[object], object], value: object, message: str
+) -> None:
+    with pytest.raises(OperationalError, match=message):
+        validate(value)
