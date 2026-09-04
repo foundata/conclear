@@ -14,6 +14,7 @@ from conclear.config import (
     RegistryProvider,
     load_release_profile,
     load_repository_config,
+    normalize_observed_source_url,
     normalize_source_url,
 )
 from conclear.errors import InvalidInvocationError
@@ -548,6 +549,56 @@ def test_repository_configuration_rejects_ambiguous_source_urls(
 ) -> None:
     with pytest.raises(InvalidInvocationError):
         normalize_source_url(source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "git@github.com:example/app.git",
+        "ssh://git@github.com/example/app.git",
+    ),
+)
+def test_repository_configuration_rejects_ssh_source_identity(source: str) -> None:
+    with pytest.raises(InvalidInvocationError, match="credential-free HTTPS"):
+        normalize_source_url(source)
+
+
+@pytest.mark.parametrize(
+    "remote",
+    (
+        "https://GitHub.com/example/app.git/",
+        "git@GitHub.com:example/app.git",
+        "ssh://git@GitHub.com/example/app.git",
+        "git@gitlab.example.com:group/subgroup/app.git",
+    ),
+)
+def test_observed_source_normalizes_supported_git_transports(remote: str) -> None:
+    expected = (
+        "https://gitlab.example.com/group/subgroup/app"
+        if "gitlab" in remote
+        else "https://github.com/example/app"
+    )
+
+    assert normalize_observed_source_url(remote) == expected
+
+
+@pytest.mark.parametrize(
+    "remote",
+    (
+        "ssh://alice@github.com/example/app.git",
+        "ssh://git:secret@github.com/example/app.git",
+        "ssh://git@github.com:22/example/app.git",
+        "git@github.com:/srv/git/example/app.git",
+        "git@github.com:example/../app.git",
+        "git@github.com:app.git",
+        "git://github.com/example/app.git",
+        "file:///home/example/app",
+        "/home/example/app",
+    ),
+)
+def test_observed_source_rejects_ambiguous_git_remotes(remote: str) -> None:
+    with pytest.raises(InvalidInvocationError):
+        normalize_observed_source_url(remote)
 
 
 def test_repository_configuration_rejects_unsafe_container_mount(

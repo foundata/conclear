@@ -29,6 +29,7 @@ _HOST_PATTERN = re.compile(
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
 _URL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
+_SCP_GIT_REMOTE_PATTERN = re.compile(r"^git@(?P<host>[^/:@]+):(?P<path>[^?#]+)$")
 _TEST_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _ENVIRONMENT_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
 _SECRET_ENVIRONMENT_PATTERN = re.compile(
@@ -355,7 +356,7 @@ def load_repository_config(path: Path) -> RepositoryConfig:
 
 
 def normalize_source_url(value: str) -> str:
-    """Normalize an HTTPS Git source URL for observed comparisons."""
+    """Normalize a configured HTTPS Git repository identity."""
     try:
         parsed = urlsplit(value)
         port = parsed.port
@@ -382,6 +383,49 @@ def normalize_source_url(value: str) -> str:
         raise InvalidInvocationError("Project source must name a repository")
     authority = hostname.lower() + ("" if port is None else f":{port}")
     return urlunsplit(("https", authority, "/" + "/".join(components), "", ""))
+
+
+def normalize_observed_source_url(value: str) -> str:
+    """Convert a supported observed Git remote to its HTTPS identity."""
+    scp_remote = _SCP_GIT_REMOTE_PATTERN.fullmatch(value)
+    if scp_remote is not None:
+        return _normalize_ssh_repository(
+            scp_remote.group("host"), scp_remote.group("path")
+        )
+
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidInvocationError("Observed Git remote is malformed") from exc
+    if parsed.scheme == "https":
+        return normalize_source_url(value)
+    if (
+        parsed.scheme != "ssh"
+        or parsed.hostname is None
+        or parsed.username != "git"
+        or parsed.password is not None
+        or port is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise InvalidInvocationError(
+            "Observed Git remote must be canonical HTTPS or an equivalent Git SSH URL"
+        )
+    return _normalize_ssh_repository(parsed.hostname, parsed.path.removeprefix("/"))
+
+
+def _normalize_ssh_repository(hostname: str, path: str) -> str:
+    """Normalize one unambiguous Git SSH host and repository path."""
+    if _HOST_PATTERN.fullmatch(hostname.lower()) is None or path.startswith("/"):
+        raise InvalidInvocationError("Observed Git SSH remote is malformed")
+    components = path.removesuffix("/").removesuffix(".git").split("/")
+    if len(components) < 2 or any(
+        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
+        for item in components
+    ):
+        raise InvalidInvocationError("Observed Git SSH remote must name a repository")
+    return urlunsplit(("https", hostname.lower(), "/" + "/".join(components), "", ""))
 
 
 def load_release_profile(

@@ -9,7 +9,7 @@ from pathlib import Path
 from conclear.config import (
     RepositoryConfig,
     load_repository_config,
-    normalize_source_url,
+    normalize_observed_source_url,
 )
 from conclear.errors import (
     InvalidInvocationError,
@@ -63,7 +63,7 @@ def create_source_run(
     ) as temporary:
         bootstrap = ApplicationRuntime.create(Path(temporary), names=(ToolName.GIT,))
         observation = bootstrap.git().observe(source_repository, selector)
-        observed_source = normalize_source_url(observation.remote_url)
+        observed_source = normalize_observed_source_url(observation.remote_url)
         config_text = bootstrap.git().read_text(
             source_repository, observation.revision, "conclear.toml"
         )

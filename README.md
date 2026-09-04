@@ -160,6 +160,7 @@ uv run conclear release --image app --revision v1.2.3 --version 1.2.3 --profile 
 ```
 
 The ordinary checkout may be dirty. Uncommitted and untracked files cannot enter the build context.
+The project configuration records a credential-free canonical HTTPS source identity, while the local Git remote may use the equivalent HTTPS or Git SSH form. ConClear canonicalizes the observed transport before comparison and records only the HTTPS identity in evidence.
 
 
 ### Resuming an interrupted run<a id="usage-resume"></a>

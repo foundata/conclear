@@ -9,7 +9,7 @@ import click
 
 from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.registry_control import create_registry_control
-from conclear.config import load_repository_config, normalize_source_url
+from conclear.config import load_repository_config, normalize_observed_source_url
 from conclear.database import select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import sha256_bytes
@@ -333,7 +333,7 @@ def _require_configuration_name(config_path: Path) -> None:
 def _observed_source(runtime: ApplicationRuntime, root: Path) -> SourceIdentity:
     observation = runtime.git().observe(root, "HEAD")
     return SourceIdentity(
-        repository=normalize_source_url(observation.remote_url),
+        repository=normalize_observed_source_url(observation.remote_url),
         revision=observation.revision,
     )
 

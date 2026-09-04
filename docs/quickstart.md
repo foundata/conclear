@@ -51,7 +51,7 @@ Use rootless Buildah and Podman. ConClear creates isolated storage for each run 
 
 ## 2. Prepare the repository
 
-ConClear reads a committed Git revision through an isolated checkout. The configured source URL must match the checkout's observed Git remote. Uncommitted and untracked files do not enter a release build.
+ConClear reads a committed Git revision through an isolated checkout. Configure the credential-free canonical HTTPS repository identity. The checkout's observed remote may use that HTTPS URL or the equivalent `git@host:owner/repository.git` or `ssh://git@host/owner/repository.git` form; ConClear canonicalizes supported SSH transports before comparison and records only HTTPS in evidence. Uncommitted and untracked files do not enter a release build.
 
 Add these files to the container project:
 
