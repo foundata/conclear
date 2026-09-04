@@ -150,6 +150,7 @@ class Runtime:
         fail_health: bool = False,
         fail_remove: bool = False,
         effective_capabilities: tuple[str, ...] = (),
+        bounding_capabilities: tuple[str, ...] = (),
         write_preparation_outputs: bool = True,
         main_exit_status: int = 0,
         timeout_preparation: bool = False,
@@ -164,6 +165,7 @@ class Runtime:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
         self.effective_capabilities = effective_capabilities
+        self.bounding_capabilities = bounding_capabilities
         self.write_preparation_outputs = write_preparation_outputs
         self.main_exit_status = main_exit_status
         self.timeout_preparation = timeout_preparation
@@ -230,6 +232,7 @@ class Runtime:
             nofile_hard=1024,
             cap_add=(),
             cap_drop=("CHOWN", "SETUID"),
+            bounding_capabilities=self.bounding_capabilities,
             effective_capabilities=self.effective_capabilities,
             security_options=("no-new-privileges",),
         )
@@ -976,6 +979,58 @@ def test_runtime_rejects_observed_effective_capabilities(
         finding.check_id == "CC0401" and "capability" in finding.message
         for finding in evidence.findings
     )
+
+
+def _capability_findings(evidence: Any) -> set[str]:
+    return {
+        finding.message
+        for finding in evidence.findings
+        if finding.check_id == "CC0401" and "capabilit" in finding.message
+    }
+
+
+def test_declared_capabilities_are_judged_by_the_bounding_set(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    repository = repository_factory()
+    configuration = repository / "conclear.toml"
+    configuration.write_text(
+        configuration.read_text(encoding="utf-8").replace(
+            "[images.runtime]\n",
+            '[images.runtime]\ncapabilities = ["CAP_NET_BIND_SERVICE"]\n',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    value = inputs(repository, tmp_path)
+    build = build_platform(value, Builder())
+
+    # Podman reports an added default-set capability with an empty CapAdd, so a
+    # correct grant is recognised from the bounding and effective sets alone.
+    granted = run_platform_tests(
+        value,
+        build,
+        Runtime(
+            bounding_capabilities=("CAP_NET_BIND_SERVICE",),
+            effective_capabilities=("CAP_NET_BIND_SERVICE",),
+        ),
+        hook_runner(value),
+    )
+    assert _capability_findings(granted) == set()
+
+    ungranted = run_platform_tests(value, build, Runtime(), hook_runner(value))
+    assert _capability_findings(ungranted)
+
+    excessive = run_platform_tests(
+        value,
+        build,
+        Runtime(
+            bounding_capabilities=("CAP_NET_BIND_SERVICE", "CAP_SYS_PTRACE"),
+            effective_capabilities=("CAP_NET_BIND_SERVICE",),
+        ),
+        hook_runner(value),
+    )
+    assert _capability_findings(excessive)
 
 
 @pytest.mark.parametrize("mode", ["755", "644", "555", "444"])

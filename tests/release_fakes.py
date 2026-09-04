@@ -161,6 +161,7 @@ class FakePodman:
             nofile_hard=1024,
             cap_add=(),
             cap_drop=("ALL",),
+            bounding_capabilities=(),
             effective_capabilities=(),
             security_options=("no-new-privileges",),
         )

@@ -222,6 +222,7 @@
         "nofile": {"type": "array", "prefixItems": [{"type": "integer"}, {"type": "integer"}], "items": false},
         "capAdd": {"$ref": "#/$defs/stringArray"},
         "capDrop": {"$ref": "#/$defs/stringArray"},
+        "boundingCapabilities": {"$ref": "#/$defs/stringArray"},
         "effectiveCapabilities": {"$ref": "#/$defs/stringArray"},
         "securityOptions": {"$ref": "#/$defs/stringArray"}
       }

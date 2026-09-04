@@ -190,6 +190,7 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
                 [
                     {
                         "EffectiveCaps": [],
+                        "BoundingCaps": [],
                         "Config": {"User": "10001:10001"},
                         "HostConfig": {
                             "ReadonlyRootfs": True,
@@ -292,6 +293,7 @@ def test_podman_observes_writable_bind_as_runtime_write_surface(
                 [
                     {
                         "EffectiveCaps": [],
+                        "BoundingCaps": [],
                         "Mounts": [
                             {
                                 "Type": "bind",
@@ -404,6 +406,17 @@ def test_podman_controls_require_effective_capability_observation(
     adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
 
     with pytest.raises(OperationalError, match="effective container capabilities"):
+        adapter.inspect_controls(
+            root=tmp_path / "root",
+            runroot=tmp_path / "runroot",
+            name="test",
+        )
+
+    runner = FakeRunner(
+        result(json.dumps([{"EffectiveCaps": [], "Config": {}, "HostConfig": {}}]))
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+    with pytest.raises(OperationalError, match="bounding container capabilities"):
         adapter.inspect_controls(
             root=tmp_path / "root",
             runroot=tmp_path / "runroot",

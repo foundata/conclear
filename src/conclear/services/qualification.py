@@ -1635,14 +1635,19 @@ def _control_findings(
         for value in observed.security_options
     ):
         mismatches.append("no-new-privileges")
-    cap_add = {item.removeprefix("CAP_").upper() for item in observed.cap_add}
+    # Podman reports CapAdd and CapDrop relative to its own default set, so an
+    # explicitly added default capability is invisible there; the bounding set
+    # is the authoritative statement of what the container may ever hold.
     expected_add = {item.removeprefix("CAP_") for item in expected.capabilities}
+    bounding = {
+        item.removeprefix("CAP_").upper() for item in observed.bounding_capabilities
+    }
     effective = {
         item.removeprefix("CAP_").upper() for item in observed.effective_capabilities
     }
     if not effective.issubset(expected_add):
         mismatches.append("capability drop")
-    if cap_add != expected_add:
+    if bounding != expected_add:
         mismatches.append("added capabilities")
     return tuple(
         Finding(
@@ -1718,6 +1723,7 @@ def _controls_dict(value: RuntimeControlObservation) -> dict[str, object]:
         "nofile": [value.nofile_soft, value.nofile_hard],
         "capAdd": list(value.cap_add),
         "capDrop": list(value.cap_drop),
+        "boundingCapabilities": list(value.bounding_capabilities),
         "effectiveCapabilities": list(value.effective_capabilities),
         "securityOptions": list(value.security_options),
     }
