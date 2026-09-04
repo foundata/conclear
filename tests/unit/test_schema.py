@@ -11,6 +11,7 @@ from conclear.schema import load_schema, validate_schema
     [
         "config.schema.json",
         "profile.schema.json",
+        "proposal.schema.json",
         "provenance.schema.json",
         "record.schema.json",
         "result.schema.json",
@@ -27,6 +28,7 @@ def test_shipped_schema_is_valid_draft_2020_12(name: str) -> None:
 def test_schema_files_are_packaged() -> None:
     schema_files = files("conclear.schemas")
     assert schema_files.joinpath("config.schema.json").is_file()
+    assert schema_files.joinpath("proposal.schema.json").is_file()
     assert schema_files.joinpath("triage.schema.json").is_file()
 
 
@@ -113,5 +115,82 @@ def test_release_profile_schema_has_a_closed_registry_backend_matrix() -> None:
     assert list(
         validator.iter_errors(
             {**profile, "builder": {"id": "https://foundata.com/builder/?id=v1"}}
+        )
+    )
+
+
+def test_pin_update_proposal_schema_is_closed_and_bounded() -> None:
+    validator = Draft202012Validator(load_schema("proposal.schema.json"))
+    digest = "sha256:" + "a" * 64
+    reference = "docker.io/library/debian:13-slim@" + digest
+    ruleset: dict[str, object] = {
+        "conclearVersion": "0.1.0",
+        "conclearRevision": "b" * 40,
+        "guideTitle": "OCI container image build and release guide",
+        "guideRepository": "https://github.com/foundata/guidelines",
+        "guidePath": "oci-container-image-guide.md",
+        "guideRevision": "4a8e713fdb065284a70a2687efdc322338138be1",
+    }
+    lookup: dict[str, object] = {
+        "imageIds": ["runtime"],
+        "tagIntent": "moving-release-line",
+        "originalReference": reference,
+        "resolvedReference": reference.replace("a" * 64, "b" * 64),
+        "oldDigest": digest,
+        "newDigest": "sha256:" + "b" * 64,
+        "resolvedAt": "2026-09-04T00:00:00Z",
+        "reviewRequired": False,
+    }
+    file_entry: dict[str, object] = {
+        "path": "Containerfile",
+        "sha256": digest,
+        "resultSha256": "sha256:" + "c" * 64,
+        "edits": [
+            {
+                "start": 5,
+                "end": 5 + len(reference),
+                "oldBytes": reference,
+                "newBytes": reference.replace("a" * 64, "b" * 64),
+            }
+        ],
+    }
+    proposal: dict[str, object] = {
+        "schemaVersion": 1,
+        "recordType": "pinUpdateProposal",
+        "createdAt": "2026-09-04T00:00:00Z",
+        "ruleset": ruleset,
+        "source": {
+            "repository": "https://github.com/example/app",
+            "revision": "c" * 40,
+        },
+        "repositoryConfiguration": {"path": "conclear.toml", "sha256": digest},
+        "tools": [{"name": "skopeo", "version": "1.22.2", "executableDigest": digest}],
+        "imageIds": ["runtime"],
+        "lookups": [lookup],
+        "files": [file_entry],
+        "reviewRequired": False,
+    }
+
+    validator.validate(proposal)
+    assert list(validator.iter_errors({**proposal, "unknown": True}))
+    assert list(validator.iter_errors({**proposal, "schemaVersion": 2}))
+    assert list(validator.iter_errors({**proposal, "recordType": "releaseCandidate"}))
+    assert list(validator.iter_errors({**proposal, "imageIds": []}))
+    assert list(
+        validator.iter_errors(
+            {**proposal, "files": [{**file_entry, "path": "../Containerfile"}]}
+        )
+    )
+    assert list(
+        validator.iter_errors(
+            {**proposal, "files": [{**file_entry, "path": "/Containerfile"}]}
+        )
+    )
+    assert list(
+        validator.iter_errors({**proposal, "lookups": [{**lookup, "authFile": "/x"}]})
+    )
+    assert list(
+        validator.iter_errors(
+            {**proposal, "ruleset": {**ruleset, "guideRevision": "c" * 40}}
         )
     )

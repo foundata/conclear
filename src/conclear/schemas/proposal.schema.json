@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/foundata/conclear/schemas/proposal-v1.json",
+  "title": "ConClear pin update proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recordType", "createdAt", "ruleset", "source", "repositoryConfiguration", "tools", "imageIds", "lookups", "files", "reviewRequired"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recordType": {"const": "pinUpdateProposal"},
+    "createdAt": {"$ref": "#/$defs/timestamp"},
+    "ruleset": {"$ref": "#/$defs/ruleset"},
+    "source": {"$ref": "#/$defs/source"},
+    "repositoryConfiguration": {"$ref": "#/$defs/configuration"},
+    "tools": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/tool"}},
+    "imageIds": {"type": "array", "minItems": 1, "maxItems": 1024, "uniqueItems": true, "items": {"$ref": "#/$defs/imageId"}},
+    "lookups": {"type": "array", "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "#/$defs/lookup"}},
+    "files": {"type": "array", "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "#/$defs/file"}},
+    "reviewRequired": {"type": "boolean"}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "timestamp": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
+    "imageId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+    "pinnedReference": {"type": "string", "maxLength": 1024, "pattern": "^[a-z0-9][a-z0-9.:-]*/[a-zA-Z0-9._/-]+:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}@sha256:[0-9a-f]{64}$"},
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*\\\\)(?!.*//).+$"
+    },
+    "ruleset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conclearVersion", "conclearRevision", "guideTitle", "guideRepository", "guidePath", "guideRevision"],
+      "properties": {
+        "conclearVersion": {"type": "string", "minLength": 1},
+        "conclearRevision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "guideTitle": {"const": "OCI container image build and release guide"},
+        "guideRepository": {"const": "https://github.com/foundata/guidelines"},
+        "guidePath": {"const": "oci-container-image-guide.md"},
+        "guideRevision": {"const": "4a8e713fdb065284a70a2687efdc322338138be1"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "revision"],
+      "properties": {
+        "repository": {"type": "string", "pattern": "^https://", "maxLength": 2048},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"const": "conclear.toml"}, "sha256": {"$ref": "#/$defs/digest"}}
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 64},
+        "version": {"type": "string", "minLength": 1, "maxLength": 128},
+        "executableDigest": {"$ref": "#/$defs/digest"},
+        "imageDigest": {"$ref": "#/$defs/digest"}
+      },
+      "oneOf": [
+        {"required": ["executableDigest"]},
+        {"required": ["imageDigest"]}
+      ]
+    },
+    "lookup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageIds", "tagIntent", "originalReference", "resolvedReference", "oldDigest", "newDigest", "resolvedAt", "reviewRequired"],
+      "properties": {
+        "imageIds": {"type": "array", "minItems": 1, "maxItems": 1024, "uniqueItems": true, "items": {"$ref": "#/$defs/imageId"}},
+        "tagIntent": {"enum": ["immutable-version", "moving-release-line"]},
+        "originalReference": {"$ref": "#/$defs/pinnedReference"},
+        "resolvedReference": {"$ref": "#/$defs/pinnedReference"},
+        "oldDigest": {"$ref": "#/$defs/digest"},
+        "newDigest": {"$ref": "#/$defs/digest"},
+        "resolvedAt": {"$ref": "#/$defs/timestamp"},
+        "reviewRequired": {"type": "boolean"}
+      }
+    },
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "oldBytes", "newBytes"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 1},
+        "oldBytes": {"$ref": "#/$defs/pinnedReference"},
+        "newBytes": {"$ref": "#/$defs/pinnedReference"}
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "resultSha256", "edits"],
+      "properties": {
+        "path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "resultSha256": {"$ref": "#/$defs/digest"},
+        "edits": {"type": "array", "minItems": 1, "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "#/$defs/edit"}}
+      }
+    }
+  }
+}

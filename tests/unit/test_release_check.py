@@ -71,6 +71,7 @@ def test_wheel_hygiene_requires_embedded_identity(tmp_path: Path) -> None:
             "conclear/data/checks.json",
             "conclear/schemas/config.schema.json",
             "conclear/schemas/profile.schema.json",
+            "conclear/schemas/proposal.schema.json",
             "conclear/schemas/provenance.schema.json",
             "conclear/schemas/record.schema.json",
             "conclear/schemas/result.schema.json",
