@@ -48,6 +48,7 @@ class ToolAdapter:
         extra_environment: Mapping[str, str] | None = None,
         secret_values: tuple[str, ...] = (),
         secret_paths: tuple[Path, ...] = (),
+        cwd: Path | None = None,
     ) -> ProcessResult:
         self._tool.assert_unchanged()
         environment = dict(self._environment)
@@ -67,5 +68,6 @@ class ToolAdapter:
                 ),
                 secret_values=secret_values,
                 secret_paths=secret_paths,
+                cwd=cwd,
             )
         )

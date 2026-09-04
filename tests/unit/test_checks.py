@@ -13,7 +13,10 @@ from conclear.services.checking import check_image
 
 
 class DiagnosticHadolint:
-    def check(self, _containerfile: Path) -> tuple[HadolintFinding, ...]:
+    def check(
+        self, _containerfile: Path, *, config_directory: Path
+    ) -> tuple[HadolintFinding, ...]:
+        del config_directory
         return (
             HadolintFinding(
                 code="DL3008",

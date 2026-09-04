@@ -1,5 +1,6 @@
 """Hadolint diagnostic adapter."""
 
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,7 +12,9 @@ from conclear.adapters.parsing import (
     object_value,
     string_value,
 )
-from conclear.errors import CommandExecutionError
+from conclear.errors import CommandExecutionError, InvalidInvocationError
+
+_CONFIG_NAMES = (".hadolint.yaml", ".hadolint.yml")
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,11 +31,17 @@ class HadolintFinding:
 class HadolintAdapter(ToolAdapter):
     """Run Hadolint and normalize its JSON diagnostics."""
 
-    def check(self, containerfile: Path) -> tuple[HadolintFinding, ...]:
+    def check(
+        self, containerfile: Path, *, config_directory: Path
+    ) -> tuple[HadolintFinding, ...]:
         """Return findings while preserving malformed output as an operation failure."""
+        config = _committed_config(config_directory)
+        arguments = () if config is None else ("--config", str(config))
         try:
             result = self._run(
-                ("--format", "json", str(containerfile)), timeout_seconds=120
+                (*arguments, "--format", "json", str(containerfile)),
+                timeout_seconds=120,
+                cwd=config_directory,
             )
             output = result.stdout
         except CommandExecutionError as exc:
@@ -53,3 +62,23 @@ class HadolintAdapter(ToolAdapter):
                 )
             )
         return tuple(findings)
+
+
+def _committed_config(directory: Path) -> Path | None:
+    """Return the reviewed Hadolint configuration in the image context, if any."""
+    for name in _CONFIG_NAMES:
+        candidate = directory / name
+        try:
+            file_stat = candidate.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise InvalidInvocationError(
+                f"Unable to inspect Hadolint configuration: {candidate}"
+            ) from exc
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise InvalidInvocationError(
+                f"Hadolint configuration must be a regular file: {candidate}"
+            )
+        return candidate
+    return None

@@ -247,7 +247,11 @@ class FakeTrivy:
 class FakeHadolint:
     """Return no external lint diagnostics."""
 
-    def check(self, containerfile: Path) -> tuple[HadolintFinding, ...]:
+    def check(
+        self, containerfile: Path, *, config_directory: Path
+    ) -> tuple[HadolintFinding, ...]:
+        if not config_directory.is_dir():
+            raise AssertionError("Hadolint configuration directory is unavailable")
         if not containerfile.is_file():
             raise AssertionError("Containerfile is unavailable")
         return ()

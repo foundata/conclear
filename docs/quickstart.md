@@ -223,6 +223,8 @@ Run the static checks first:
 conclear check --image app
 ```
 
+`check` runs ConClear's static checks and Hadolint. Hadolint uses a committed `.hadolint.yaml` or `.hadolint.yml` in the image's `context` directory when present; document each ignored rule there, as the guide requires, instead of passing flags.
+
 Resolve the declared tags and update the durable pin history:
 
 ```sh

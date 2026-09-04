@@ -453,10 +453,47 @@ def test_hadolint_adapter_retains_findings_from_nonzero_exit(tmp_path: Path) -> 
         HadolintAdapter
     )
 
-    findings = adapter.check(tmp_path / "Containerfile")
+    findings = adapter.check(tmp_path / "Containerfile", config_directory=tmp_path)
 
     assert findings[0].code == "DL3000"
     assert findings[0].line == 2
+    assert "--config" not in runner.requests[0].argv
+    assert runner.requests[0].cwd == tmp_path
+
+
+def test_hadolint_adapter_uses_committed_configuration_from_context(
+    tmp_path: Path,
+) -> None:
+    context = tmp_path / "context"
+    context.mkdir()
+    config = context / ".hadolint.yaml"
+    config.write_text("ignored:\n  - DL3008\n", encoding="utf-8")
+    runner = FakeRunner(result("[]"))
+    adapter = adapter_arguments(tmp_path, ToolName.HADOLINT, runner).create(
+        HadolintAdapter
+    )
+
+    assert adapter.check(context / "Containerfile", config_directory=context) == ()
+
+    argv = runner.requests[0].argv
+    assert argv[1:3] == ("--config", str(config))
+    assert argv[-1] == str(context / "Containerfile")
+    assert runner.requests[0].cwd == context
+
+
+def test_hadolint_adapter_rejects_symlinked_configuration(tmp_path: Path) -> None:
+    context = tmp_path / "context"
+    context.mkdir()
+    (tmp_path / "outside.yaml").write_text("ignored: []\n", encoding="utf-8")
+    (context / ".hadolint.yml").symlink_to(tmp_path / "outside.yaml")
+    runner = FakeRunner(result("[]"))
+    adapter = adapter_arguments(tmp_path, ToolName.HADOLINT, runner).create(
+        HadolintAdapter
+    )
+
+    with pytest.raises(InvalidInvocationError, match="regular file"):
+        adapter.check(context / "Containerfile", config_directory=context)
+    assert runner.requests == []
 
 
 def test_skopeo_adapter_uses_explicit_auth_and_fully_qualified_transport(

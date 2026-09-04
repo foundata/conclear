@@ -269,7 +269,7 @@ def test_real_rootless_storage_and_local_analysis_are_run_owned(
         'FROM scratch\nUSER 65532:65532\nENTRYPOINT ["/app"]\n',
         encoding="utf-8",
     )
-    assert runtime.hadolint().check(containerfile) == ()
+    assert runtime.hadolint().check(containerfile, config_directory=root) == ()
 
     source = root / "source"
     source.mkdir(mode=0o700)

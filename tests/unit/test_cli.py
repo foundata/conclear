@@ -34,8 +34,8 @@ DOCUMENTED_COMMANDS = {
 
 
 class FakeHadolint:
-    def check(self, path: Path) -> tuple[object, ...]:
-        del path
+    def check(self, path: Path, *, config_directory: Path) -> tuple[object, ...]:
+        del path, config_directory
         return ()
 
 
