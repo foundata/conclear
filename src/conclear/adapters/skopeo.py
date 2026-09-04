@@ -1,9 +1,10 @@
 """Skopeo registry and OCI transport adapter."""
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from conclear.adapters.base import ToolAdapter
+from conclear.adapters.base import ToolAdapter, prepare_new_layout_path
 from conclear.errors import (
     CommandExecutionError,
     InvalidInvocationError,
@@ -92,17 +93,22 @@ class SkopeoAdapter(ToolAdapter):
         auth_file: Path | None,
     ) -> RegistryCopyObservation:
         """Copy a complete remote graph and revalidate all local content digests."""
+        prepare_new_layout_path(layout_path)
         arguments = ["copy", "--all", "--preserve-digests"]
         if auth_file is not None:
             arguments.extend(("--src-authfile", str(auth_file)))
         arguments.extend(
             (f"docker://{source}", f"oci:{layout_path}:{layout_reference}")
         )
-        self._run(
-            arguments,
-            timeout_seconds=1800,
-            secret_paths=(() if auth_file is None else (auth_file,)),
-        )
+        try:
+            self._run(
+                arguments,
+                timeout_seconds=1800,
+                secret_paths=(() if auth_file is None else (auth_file,)),
+            )
+        except CommandExecutionError:
+            shutil.rmtree(layout_path, ignore_errors=True)
+            raise
         graph = validate_layout(layout_path, reference=layout_reference)
         if source.digest is not None and graph.digest != source.digest:
             raise OperationalError(

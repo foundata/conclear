@@ -976,3 +976,21 @@ def test_quay_adapter_rejects_oversized_response(
         adapter.observe_tag(quay_repository(), "candidate")
 
     client.close()
+
+
+def test_skopeo_registry_copy_requires_an_absent_layout_destination(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    adapter = adapter_arguments(tmp_path, ToolName.SKOPEO, runner).create(SkopeoAdapter)
+    existing = tmp_path / "layouts" / "existing"
+    existing.mkdir(parents=True)
+
+    with pytest.raises(InvalidInvocationError, match="already exists"):
+        adapter.copy_registry_to_layout(
+            source=OCIReference.parse("quay.io/foundata/example@sha256:" + "6" * 64),
+            layout_path=existing,
+            layout_reference="published",
+            auth_file=None,
+        )
+    assert runner.requests == []
