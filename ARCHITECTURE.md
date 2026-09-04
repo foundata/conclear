@@ -305,7 +305,7 @@ The Trivy database cache lives under `$XDG_CACHE_HOME/conclear/`. Refresh uses a
 
 ## Build and qualification<a id="build-and-qualification"></a>
 
-`release` creates its build context from an isolated detached worktree of the selected commit. The ordinary checkout may be dirty, but its uncommitted and untracked files cannot enter the context. ConClear validates `.containerignore`, rejects source paths outside the checkout and records the exact Containerfile and configuration digests.
+`release` creates its build context from an isolated detached worktree of the selected commit. The ordinary checkout may be dirty, but its uncommitted and untracked files cannot enter the context. ConClear validates `.containerignore`, rejects source paths outside the checkout and records the exact Containerfile and configuration digests. Hadolint runs with the image's context directory as its working directory and, when that directory contains a committed regular `.hadolint.yaml` or `.hadolint.yml`, receives it explicitly, so the reviewed checkout rather than the invoking directory or the operator's home defines lint policy.
 
 Buildah produces OCI format in rootless mode and exports an OCI layout. ConClear derives `SOURCE_DATE_EPOCH` from the source commit time where the project build supports it. Timestamp rewriting is a build input and is never applied after testing.
 
