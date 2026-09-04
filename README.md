@@ -283,7 +283,7 @@ Public qualification, candidate, verification and rescan records each carry thei
 
 The generated [conformance catalog](./docs/conformance.md) maps stable `CCnnnn` identifiers to guide requirements, records which requirements need human review rather than a mechanical check, lists guide options that ConClear does not implement, and states the built-in limits that repository configuration may narrow but never disable.
 
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) is the behavioral contract behind those checks.
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) is the behavioral contract behind those checks. The generated [contract inventory](./docs/contract-v1.json) lists the commands, options, schemas, record types, exit statuses and check identifiers that form the compatibility surface.
 
 
 ## Contributing<a id="contributing"></a>

@@ -21,12 +21,14 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Local integration tests](#local-integration-tests)
   - [Network tests](#network-tests)
 - [Generated conformance catalog](#conformance-catalog)
+- [Generated contract inventory](#contract-inventory)
 - [CI context observation](#ci-context-observation)
 - [Recommended development workflow](#development-workflow)
   - [Before making changes](#before-making-changes)
   - [Making changes](#making-changes)
   - [Before committing](#before-committing)
 - [Releases](#releases)
+  - [Local 1.0-readiness checklist](#local-readiness)
 - [Troubleshooting](#troubleshooting)
   - [Common issues](#common-issues)
 
@@ -83,7 +85,9 @@ conclear/
 ├── REUSE.toml
 ├── LICENSES/                     # License texts (SPDX)
 ├── docs/
-│   └── conformance.md            # Generated check catalog (do not edit by hand)
+│   ├── conformance.md            # Generated check catalog (do not edit by hand)
+│   ├── contract-v1.json          # Generated public contract inventory (do not edit by hand)
+│   └── quickstart.md             # Project adoption quick start
 ├── pyproject.toml                # Project configuration
 ├── uv.lock                       # Dependency lock file
 ├── src/conclear/          # Main package
@@ -93,6 +97,8 @@ conclear/
 │   ├── catalog.py                # CCnnnn check catalog loader
 │   ├── checks.py                 # Static Containerfile and context checks
 │   ├── conformance.py            # docs/conformance.md generator
+│   ├── contract.py               # docs/contract-v1.json generator
+│   ├── emulation.py              # binfmt handler detection and execution-mode facts
 │   ├── records.py                # Record envelopes and digests
 │   ├── pins.py                   # Durable pin observations and divergence policy
 │   ├── pin_updates.py            # Pin proposals and verified application
@@ -122,7 +128,7 @@ conclear/
     ├── fixtures/                 # Test data
     ├── release_fakes.py          # Stateful adapter fakes
     ├── unit/                     # Hermetic tests (default tier)
-    ├── local_integration/        # Opt-in, real local tools
+    ├── local_integration/        # Opt-in, real local tools; fixtures.py compiles the shared Go fixture
     └── network/                  # Opt-in, disposable external services
 ```
 
@@ -218,7 +224,7 @@ The guide that `ARCHITECTURE.md` implements is normative and lives outside this 
 
 ### Compatibility<a id="compatibility"></a>
 
-ConClear follows Semantic Versioning. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses and stable check identifiers are compatibility surfaces. Change them deliberately and document the effect.
+ConClear follows Semantic Versioning. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses and stable check identifiers are compatibility surfaces. Change them deliberately and document the effect. The committed [contract inventory](./docs/contract-v1.json) enumerates these surfaces; the unit suite and the release gate fail until a changed surface is regenerated and reviewed (see [Generated contract inventory](#contract-inventory)).
 
 A `CCnnnn` identifier is never reused for a different rule. Removing a check leaves a retired entry in the catalog so historical findings stay understandable.
 
@@ -241,12 +247,14 @@ uv run pytest tests/unit/test_publication.py
 # Run a specific test
 uv run pytest tests/unit/test_pins.py -k divergence
 
-# Run with branch coverage
+# Run with branch coverage; the configured floor fails the run below 85 %
 uv run pytest --cov=conclear --cov-branch --cov-report=term-missing
 
 # Run the opt-in local integration tier (see below)
 uv run pytest -m local_integration
 ```
+
+Branch coverage of the hermetic unit suite must stay at or above the `fail_under` floor in `pyproject.toml`. Raise the floor when coverage grows; never lower it, exclude a module or add `pragma: no cover` to reach it.
 
 
 ### Test tiers and markers<a id="test-tiers"></a>
@@ -257,7 +265,7 @@ uv run pytest -m local_integration
 |---|---|---|
 | `unit` | `tests/unit/` | Nothing. No container storage, credentials, network or wall-clock dependency. |
 | `local_integration` | `tests/local_integration/` | Installed rootless tools at supported versions. |
-| `emulation` | `tests/local_integration/` | Non-native execution through a registered binfmt handler. |
+| `emulation` | `tests/local_integration/` | Non-native execution through an enabled arm64 binfmt handler. The tier skips, with the handler diagnostic, on a host without one; ConClear never installs emulators or registers handlers. |
 | `network` | `tests/network/` | An explicitly authorized disposable Quay repository and test signing keys. |
 
 The default suite must stay independent of the workstation's container storage, configuration, credentials, network and clock. Inject clocks and identifier factories rather than reading the current time.
@@ -308,6 +316,18 @@ uv run pytest -m local_integration \
 
 Record the primary and preparation container names for both ULIDs before invoking the test. A passing run proves exact sibling-layout import, private output generation and destruction, read-only fixture and generated-output mounts, non-secret launch environment, service health and TERM behavior, one-shot exit behavior, and journal-owned cleanup without using the workstation's existing container storage.
 
+The complete local tier, including the emulation case, is one invocation with the same manifest-owned identifiers:
+
+```sh
+CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
+CONCLEAR_TEST_SERVICE_ULID=<manifest-owned-lowercase-ulid> \
+CONCLEAR_TEST_ONE_SHOT_ULID=<manifest-owned-lowercase-ulid> \
+uv run pytest -m "local_integration or emulation" \
+  --basetemp <external-run-workspace>/tmp/pytest
+```
+
+The emulation case builds the shared `linux/arm64` fixture with Buildah, imports it into run-owned Podman storage and runs its architecture self-check through the host's enabled `qemu-aarch64` handler, then records the observed execution mode below `--basetemp`. On a host without an enabled handler the case is reported as skipped with the same diagnostic that `conclear build` and `conclear test` raise for that platform; a skipped emulation case is not evidence that arm64 qualification works.
+
 
 ### Network tests<a id="network-tests"></a>
 
@@ -329,6 +349,21 @@ uv run python -m conclear.conformance --check
 ```
 
 Commit a catalog change together with the check definition, implementation, tests and affected documentation. Continuous integration verifies that identifiers are unique and well formed, that every claimed guide anchor exists at the embedded revision and that the committed document matches the generator.
+
+
+## Generated contract inventory<a id="contract-inventory"></a>
+
+`docs/contract-v1.json` is generated from the Click command hierarchy, the bundled JSON Schemas, the record and command-result schema versions, the exit statuses and the check catalog. It lists every prospective 1.0 compatibility surface in one reviewable file. Never edit it by hand.
+
+```sh
+# Regenerate the inventory
+uv run python -m conclear.contract
+
+# Verify the committed inventory is current
+uv run python -m conclear.contract --check
+```
+
+A diff in this file is a public contract change. Review it as such: a removed or renamed command, option, schema identifier, record type or exit status before 1.0.0 needs a deliberate decision, and after 1.0.0 it needs a major version. The unit suite and the release gate fail while the committed inventory is stale.
 
 
 ## CI context observation<a id="ci-context-observation"></a>
@@ -397,6 +432,9 @@ uv run pytest
 
 # 5. Verify the generated conformance catalog is current
 uv run python -m conclear.conformance --check
+
+# 6. Verify the generated contract inventory is current
+uv run python -m conclear.contract --check
 ```
 
 
@@ -408,7 +446,7 @@ The provider-independent release check requires a clean Git checkout and locally
 uv run python -m conclear.release_check
 ```
 
-The command checks formatting, linting, strict typing, the generated conformance documentation and the unit-test matrix on every supported interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
+The command checks formatting, linting, strict typing, the generated conformance documentation, the generated contract inventory and the unit-test matrix on every supported interpreter, enforcing the branch-coverage floor on the first interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate, create a private parent directory and select a new revision-specific output directory:
 
@@ -431,6 +469,21 @@ uv pip install --python /tmp/conclear-dogfood/bin/python \
 ```
 
 The release check does not create a release, write to a registry, sign content, create transparency-log entries, tag Git or push commits.
+
+
+### Local 1.0-readiness checklist<a id="local-readiness"></a>
+
+A revision is a locally validated 1.0 release candidate when all of the following pass from a clean checkout of that revision, in this order, without changing any gate, exception, coverage floor or configuration to obtain the result:
+
+1. The distribution gate on all supported interpreters, retaining its artifacts under a directory named for the full revision:
+   `uv run python -m conclear.release_check --output-directory "${HOME}/.local/share/conclear/distributions/$(git rev-parse HEAD)"`.
+2. The complete local tier from an external run manifest, `uv run pytest -m "local_integration or emulation"` with manifest-owned identifiers as described under [Local integration tests](#local-integration-tests); record any skipped emulation case as a missing platform, not as a pass.
+3. The retained wheel installed into a fresh environment, with `conclear version --format json` reporting the embedded revision and `conclear doctor` reporting the supported tool versions.
+4. `conclear check` and `conclear pins check` run from that installed wheel against the current [OpenLDAP compatibility project](https://github.com/foundata/oci-openldap-declarative) checkout for every image it declares, with every `CCnnnn` finding recorded verbatim and no exception added to reach an accepted verdict.
+
+Local readiness does not prove the release path. It cannot show that Quay's tag immutability, candidate expiry and post-write observation behave as the typed fakes assume, that Cosign writes the expected predicate and bundle to the public transparency log, that Rekor inclusion verifies, that an ambiguous remote write is recovered correctly, or that arm64 qualification works on a host that has no enabled emulation handler. Those facts exist only on the external side of the trust boundary.
+
+Before tagging `1.0.0`, one complete external release drill is mandatory: the opt-in [network tests](#network-tests) against an explicitly authorized disposable Quay repository with dedicated test signing keys, followed by a complete `conclear release` of the OpenLDAP compatibility project into a disposable repository, including `publish`, `attest`, `verify`, `promote` and candidate cleanup, and an arm64 qualification on a host with an enabled handler or native hardware. Record its observed results in the release issue. A locally validated candidate without that drill stays a candidate.
 
 CI configuration should delegate project checks to this command and verify the catalog against the OCI guide at the exact embedded revision. The provider configuration must not redefine formatting, typing, test or distribution-build logic.
 
