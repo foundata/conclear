@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from conclear.assembly import PlatformLayout, assemble_layout
-from conclear.config import RuntimeConfig, load_repository_config
+from conclear.config import load_repository_config
 from conclear.errors import CommandExecutionError
 from conclear.hooks import HookRunner
 from conclear.jsonutil import sha256_bytes
@@ -27,154 +26,14 @@ from conclear.services.qualification import test_platform as run_platform_tests
 from conclear.tools import SUPPORTED_TOOLS, ToolName
 from conclear.values import Platform
 from conclear.workspace import RunWorkspace
-
-pytestmark = pytest.mark.local_integration
-
-_FIXTURE_SOURCE = r"""
-package main
-
-import (
-	"fmt"
-	"os"
-	"os/exec"
-	"os/signal"
-	"syscall"
-	"time"
+from tests.local_integration.fixtures import (
+    FIXTURE_CONTAINERFILE,
+    compile_fixture,
+    manifest_run_id,
+    runtime_config,
 )
 
-func waitForSignal() os.Signal {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-	return <-signals
-}
-
-func main() {
-	mode := "service"
-	if len(os.Args) > 1 {
-		mode = os.Args[1]
-	}
-	switch mode {
-	case "health", "one-shot":
-		return
-	case "keygen":
-		if err := os.WriteFile("/output/key", []byte("private-test-key"), 0600); err != nil {
-			os.Exit(1)
-		}
-		return
-	case "prepare":
-		input, err := os.ReadFile("/input/value")
-		if err != nil || string(input) != "fixture-value" {
-			os.Exit(1)
-		}
-		key, err := os.ReadFile("/key/key")
-		if err != nil || string(key) != "private-test-key" {
-			os.Exit(1)
-		}
-		if err := os.WriteFile("/output/result", []byte("compatible"), 0600); err != nil {
-			os.Exit(1)
-		}
-		return
-	case "health-input":
-		result, err := os.ReadFile("/input/result")
-		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
-			os.Exit(1)
-		}
-		if _, err := os.Stat("/tmp/conclear-service-ready"); err != nil {
-			fmt.Fprintln(os.Stderr, "service is initializing")
-			os.Exit(1)
-		}
-		fmt.Println("service is ready")
-		return
-	case "one-shot-input":
-		result, err := os.ReadFile("/input/result")
-		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
-			os.Exit(1)
-		}
-		return
-	case "service-input":
-		result, err := os.ReadFile("/input/result")
-		if err != nil || string(result) != "compatible" || os.Getenv("SERVICE_SELECTOR") != "test" {
-			os.Exit(1)
-		}
-		time.Sleep(750 * time.Millisecond)
-		if err := os.WriteFile("/tmp/conclear-service-ready", []byte("ok"), 0600); err != nil {
-			os.Exit(1)
-		}
-		waitForSignal()
-		return
-	case "supervisor-health":
-		if _, err := os.Stat("/tmp/conclear-supervisor-ready"); err != nil {
-			os.Exit(1)
-		}
-		return
-	case "write-immutable":
-		if err := os.WriteFile("/app/mutation", []byte("unexpected"), 0600); err == nil {
-			os.Exit(1)
-		}
-		return
-	case "write-temporary":
-		if err := os.WriteFile("/tmp/conclear-fixture", []byte("ok"), 0600); err != nil {
-			os.Exit(1)
-		}
-		if err := os.Remove("/tmp/conclear-fixture"); err != nil {
-			os.Exit(1)
-		}
-		return
-	case "child":
-		waitForSignal()
-		return
-	case "supervisor":
-		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-		defer signal.Stop(signals)
-		child := exec.Command("/app/conclear-fixture", "child")
-		child.Stdout = os.Stdout
-		child.Stderr = os.Stderr
-		if err := child.Start(); err != nil {
-			os.Exit(1)
-		}
-		if err := os.WriteFile("/tmp/conclear-supervisor-ready", []byte("ok"), 0600); err != nil {
-			_ = child.Process.Kill()
-			os.Exit(1)
-		}
-		received := <-signals
-		_ = os.Remove("/tmp/conclear-supervisor-ready")
-		if err := child.Process.Signal(received); err != nil {
-			os.Exit(1)
-		}
-		if err := child.Wait(); err != nil {
-			if status, ok := err.(*exec.ExitError); ok {
-				os.Exit(status.ExitCode())
-			}
-			os.Exit(1)
-		}
-		return
-	case "service":
-		waitForSignal()
-		return
-	default:
-		os.Exit(64)
-	}
-}
-"""
-
-_FIXTURE_CONTAINERFILE = """\
-FROM scratch AS runtime
-ARG IMAGE_CREATED
-ARG IMAGE_REVISION
-ARG IMAGE_SOURCE
-ARG IMAGE_VERSION
-COPY conclear-fixture /app/conclear-fixture
-LABEL org.opencontainers.image.created=$IMAGE_CREATED
-LABEL org.opencontainers.image.revision=$IMAGE_REVISION
-LABEL org.opencontainers.image.source=$IMAGE_SOURCE
-LABEL org.opencontainers.image.version=$IMAGE_VERSION
-HEALTHCHECK CMD [\"/app/conclear-fixture\", \"health\"]
-USER 65532:65532
-ENTRYPOINT [\"/app/conclear-fixture\"]
-CMD [\"service\"]
-"""
+pytestmark = pytest.mark.local_integration
 
 
 def test_supported_real_tool_matrix_and_read_only_interfaces(tmp_path: Path) -> None:
@@ -241,7 +100,7 @@ def test_supported_real_tool_matrix_and_read_only_interfaces(tmp_path: Path) -> 
 def test_real_rootless_storage_and_local_analysis_are_run_owned(
     tmp_path: Path,
 ) -> None:
-    run_id = _run_id()
+    run_id = manifest_run_id()
     root = contained_path(tmp_path, run_id, must_exist=False)
     runtime = ApplicationRuntime.create(
         root / "environment",
@@ -291,7 +150,7 @@ def test_real_rootless_storage_and_local_analysis_are_run_owned(
 def test_real_scratch_runtime_modes_and_multi_platform_assembly(
     tmp_path: Path,
 ) -> None:
-    run_id = _run_id()
+    run_id = manifest_run_id()
     resource_id = run_id.lower()
     root = contained_path(tmp_path, run_id, must_exist=False)
     runtime = ApplicationRuntime.create(
@@ -316,7 +175,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
         podman_ready = True
         observations = {}
         for architecture in ("amd64", "arm64"):
-            context = _compile_fixture(
+            context = compile_fixture(
                 runtime,
                 root=root,
                 architecture=architecture,
@@ -386,7 +245,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
             image_name=image_name,
             expected_digest=native.graph.digest,
         )
-        service_runtime = _runtime_config(profile="service")
+        service_runtime = runtime_config(profile="service")
         service = runtime.podman().create_container(
             root=podman_root,
             runroot=podman_runroot,
@@ -449,7 +308,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
             runroot=podman_runroot,
             name=containers[1],
             image_name=image_name,
-            runtime=_runtime_config(profile="one-shot"),
+            runtime=runtime_config(profile="one-shot"),
             platform=Platform.parse("linux/amd64"),
             arguments=("one-shot",),
         )
@@ -521,14 +380,14 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
 def test_real_exact_image_preparation_and_launch_inputs(
     tmp_path: Path, profile: str, launch_argument: str
 ) -> None:
-    external_run_id = _run_id()
+    external_run_id = manifest_run_id()
     root = contained_path(
         tmp_path, f"{external_run_id}-test-inputs-{profile}", must_exist=False
     )
     runtime = ApplicationRuntime.create(
         root / "environment", names=(ToolName.BUILDAH, ToolName.PODMAN)
     )
-    context = _compile_fixture(runtime, root=root, architecture="amd64")
+    context = compile_fixture(runtime, root=root, architecture="amd64")
     _write_test_input_configuration(
         context, profile=profile, launch_argument=launch_argument
     )
@@ -628,7 +487,7 @@ def test_real_exact_image_preparation_and_launch_inputs(
 def test_manual_cosign_no_service_blob_signing(
     tmp_path: Path, request: pytest.FixtureRequest
 ) -> None:
-    run_id = _run_id()
+    run_id = manifest_run_id()
     root = contained_path(tmp_path, run_id, must_exist=False)
     runtime = ApplicationRuntime.create(
         root / "environment",
@@ -724,13 +583,6 @@ def test_manual_cosign_no_service_blob_signing(
     assert "Verified OK" in result.stderr
 
 
-def _run_id() -> str:
-    value = os.environ.get("CONCLEAR_TEST_RUN_ID")
-    if value is None:
-        pytest.skip("local integration tests require a manifest-owned run ID")
-    return value
-
-
 class _IntegrationIdFactory:
     def __init__(self, value: str) -> None:
         self._value = value
@@ -751,7 +603,7 @@ def _write_test_input_configuration(
     context: Path, *, profile: str, launch_argument: str
 ) -> None:
     (context / "Containerfile").write_text(
-        _FIXTURE_CONTAINERFILE.replace("ARG IMAGE_SOURCE\n", "").replace(
+        FIXTURE_CONTAINERFILE.replace("ARG IMAGE_SOURCE\n", "").replace(
             "org.opencontainers.image.source=$IMAGE_SOURCE",
             "org.opencontainers.image.source=https://github.com/example/runtime-inputs",
         ),
@@ -851,70 +703,6 @@ pids = 64
 nofile = 256
 ''',
         encoding="utf-8",
-    )
-
-
-def _compile_fixture(
-    runtime: ApplicationRuntime,
-    *,
-    root: Path,
-    architecture: str,
-) -> Path:
-    go = shutil.which("go")
-    if go is None:
-        pytest.skip("the scratch integration fixture requires Go")
-    context = root / "contexts" / architecture
-    context.mkdir(mode=0o700, parents=True)
-    source = context / "main.go"
-    source.write_text(_FIXTURE_SOURCE, encoding="utf-8")
-    (context / "Containerfile").write_text(
-        _FIXTURE_CONTAINERFILE,
-        encoding="utf-8",
-    )
-    (context / ".containerignore").write_text(
-        "main.go\nContainerfile\n.containerignore\n",
-        encoding="utf-8",
-    )
-    runtime.runner.run(
-        CommandRequest(
-            argv=(
-                str(Path(go).resolve(strict=True)),
-                "build",
-                "-trimpath",
-                "-ldflags=-buildid=",
-                "-o",
-                str(context / "conclear-fixture"),
-                str(source),
-            ),
-            environment={
-                **runtime.environment,
-                "CGO_ENABLED": "0",
-                "GOARCH": architecture,
-                "GOOS": "linux",
-            },
-            timeout_seconds=300,
-            cwd=context,
-            operation=OperationKind.WRITE,
-        )
-    )
-    return context
-
-
-def _runtime_config(*, profile: str) -> RuntimeConfig:
-    return RuntimeConfig(
-        profile=profile,
-        user=65532,
-        read_only=True,
-        writable_mounts=("/tmp",),
-        memory="128MiB",
-        cpus=1.0,
-        pids=64,
-        nofile=256,
-        health_command=("/app/conclear-fixture", "health"),
-        immutable_paths=("/app",),
-        capabilities=(),
-        startup_timeout_seconds=30,
-        shutdown_timeout_seconds=30,
     )
 
 
