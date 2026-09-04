@@ -282,6 +282,10 @@ def test_podman_launch_inputs_remain_argument_arrays_and_redact_secret_mounts(
     assert "SERVICE_MODE=test" in request.argv
     assert "literal;not-shell" in request.argv
     assert "$(false)" in request.argv
+    assert any(
+        value == f"type=bind,src={secret},target=/input,ro,nosuid,nodev,relabel=private"
+        for value in request.argv
+    )
     assert request.secret_paths == (secret,)
 
 

@@ -194,7 +194,8 @@ class PodmanAdapter(ToolAdapter):
         for bind in mounts:
             option = (
                 f"type=bind,src={bind.source},target={bind.target},"
-                f"{('ro' if bind.read_only else 'rw')},nosuid,nodev"
+                f"{('ro' if bind.read_only else 'rw')},nosuid,nodev,"
+                "relabel=private"
             )
             command.extend(("--mount", option))
         for capability in runtime.capabilities:
