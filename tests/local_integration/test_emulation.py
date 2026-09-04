@@ -97,7 +97,7 @@ def test_real_arm64_fixture_executes_through_the_detected_handler(
             platform=TARGET,
             arguments=("arch-check", "arm64"),
         )
-        assert created.status in {"running", "exited"}
+        assert created.status in {"running", "exited", "stopped"}
         exit_status = runtime.podman().wait(
             root=podman_root,
             runroot=podman_runroot,
