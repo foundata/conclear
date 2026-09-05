@@ -689,48 +689,6 @@
       ]
     },
     {
-      "group": false,
-      "help": "Generate and validate platform scans and SPDX inventory.",
-      "name": "evidence",
-      "parameters": [
-        {
-          "declarations": [
-            "run_id"
-          ],
-          "kind": "argument",
-          "multiple": false,
-          "name": "run_id",
-          "required": true,
-          "type": "text"
-        },
-        {
-          "declarations": [
-            "--platform"
-          ],
-          "kind": "option",
-          "multiple": false,
-          "name": "platform_text",
-          "required": true,
-          "type": "text"
-        },
-        {
-          "choices": [
-            "human",
-            "json"
-          ],
-          "declarations": [
-            "--format"
-          ],
-          "default": "human",
-          "kind": "option",
-          "multiple": false,
-          "name": "output_format",
-          "required": false,
-          "type": "choice"
-        }
-      ]
-    },
-    {
       "group": true,
       "help": "Inspect durable external image pin observations.",
       "name": "pins",

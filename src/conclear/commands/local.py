@@ -25,7 +25,6 @@ from conclear.services.local_phases import (
 from conclear.services.qualification import (
     build_platform,
     build_test_dependencies,
-    generate_evidence,
     qualify_platform,
 )
 from conclear.services.qualification_inputs import (
@@ -222,49 +221,6 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
             ),
             findings=result.findings,
             data={"reportDigest": result.test_report_digest},
-        ),
-        output_format,
-    )
-
-
-@click.command("evidence")
-@click.argument("run_id")
-@click.option("platform_text", "--platform", required=True)
-@format_option
-def evidence_command(run_id: str, platform_text: str, output_format: str) -> None:
-    """Generate and validate platform scans and SPDX inventory."""
-    source_run = open_source_run(
-        state_home=state_home(), run_id=run_id, names=(ToolName.TRIVY,)
-    )
-    inputs = _inputs(source_run, platform_text, None)
-    build = load_build_evidence(inputs)
-    database = select_fresh_database(
-        source_run.runtime.trivy(),
-        cache_home() / "conclear" / "trivy",
-        now=datetime.now(UTC),
-    )
-    result = generate_evidence(
-        inputs,
-        build,
-        source_run.runtime.trivy(),
-        database,
-        today=datetime.now(UTC).date(),
-    )
-    accepted = not any(finding.severity == "error" for finding in result.findings)
-    if not accepted:
-        source_run.workspace.transition(RunState.REJECTED)
-    emit(
-        CommandResult(
-            "evidence",
-            ResultStatus.SUCCESS if accepted else ResultStatus.RULE_REJECTION,
-            "Evidence passed policy" if accepted else "Evidence was rejected",
-            findings=result.findings,
-            data={
-                "sbom": str(result.sbom.path),
-                "sbomDigest": result.sbom.digest,
-                "scanDigests": [item.digest for item in result.scans],
-                "databaseDigest": database.digest,
-            },
         ),
         output_format,
     )

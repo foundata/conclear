@@ -12,7 +12,6 @@ from conclear.commands.local import (
     assemble_command,
     build_command,
     check_command,
-    evidence_command,
     qualify_command,
     test_command,
 )
@@ -68,7 +67,6 @@ root.add_command(check_command)
 root.add_command(pins_group)
 root.add_command(build_command)
 root.add_command(test_command)
-root.add_command(evidence_command)
 root.add_command(qualify_command)
 root.add_command(transport_group)
 root.add_command(assemble_command)

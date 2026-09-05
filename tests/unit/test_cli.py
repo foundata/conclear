@@ -19,7 +19,6 @@ DOCUMENTED_COMMANDS = {
     "check",
     "cleanup",
     "doctor",
-    "evidence",
     "pins",
     "promote",
     "provenance",

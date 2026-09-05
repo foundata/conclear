@@ -254,41 +254,6 @@ def test_test_command_distinguishes_pass_rejection_and_incompleteness(
     assert run.workspace.load().state is state
 
 
-@pytest.mark.parametrize(
-    ("findings", "exit_code", "status"),
-    [((), 0, "success"), ((ERROR,), 2, "ruleRejection")],
-)
-def test_evidence_command_reports_sbom_scan_and_database_identity(
-    repository_factory: Callable[..., Path],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
-    findings: tuple[Finding, ...],
-    exit_code: int,
-    status: str,
-) -> None:
-    run = FakeSourceRun(repository_factory(), tmp_path)
-    _local(
-        monkeypatch,
-        run,
-        load_build_evidence=lambda inputs: build_evidence(),
-        select_fresh_database=lambda *args, **kwargs: SimpleNamespace(digest=DIGEST),
-        generate_evidence=lambda *args, **kwargs: SimpleNamespace(
-            findings=findings,
-            sbom=SimpleNamespace(path=Path("/sbom.json"), digest=DIGEST),
-            scans=(SimpleNamespace(digest=DIGEST),),
-        ),
-    )
-
-    code, value, _ = invoke(
-        ["evidence", run.workspace.run_id, "--platform", "linux/amd64"]
-    )
-
-    assert (code, value["status"]) == (exit_code, status)
-    assert value["data"]["scanDigests"] == [DIGEST]
-    assert value["data"]["databaseDigest"] == DIGEST
-
-
 class _PinStore:
     def __init__(self, *, accepted: bool) -> None:
         self.accepted = accepted

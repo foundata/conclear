@@ -85,7 +85,7 @@ A candidate reference is never reused for a second publication attempt. If an am
 
 ### Composable commands<a id="usage-commands"></a>
 
-`release` is the normal interface. The composable commands support diagnosis, distributed platform work and recovery without defining an alternative workflow: `doctor`, `check`, `pins check`, `pins propose`, `pins apply`, `build`, `test`, `evidence`, `qualify`, `transport export`, `assemble`, `provenance`, `publish`, `attest`, `verify`, `promote`, `rescan` and `cleanup`. Run any of them with `--help` for its exact inputs.
+`release` is the normal interface. The composable commands support diagnosis, distributed platform work and recovery without defining an alternative workflow: `doctor`, `check`, `pins check`, `pins propose`, `pins apply`, `build`, `test`, `qualify`, `transport export`, `assemble`, `provenance`, `publish`, `attest`, `verify`, `promote`, `rescan` and `cleanup`. Run any of them with `--help` for its exact inputs.
 
 No command offers an option that disables a gate, skips verification or affects transparency-log behavior.
 
