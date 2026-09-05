@@ -318,12 +318,27 @@ uv run pytest -m local_integration \
 
 Record the primary and preparation container names for both ULIDs before invoking the test. A passing run proves exact sibling-layout import, private output generation and destruction, read-only fixture and generated-output mounts, non-secret launch environment, service health and TERM behavior, one-shot exit behavior, and journal-owned cleanup without using the workstation's existing container storage.
 
+`tests/local_integration/test_transport_cli.py` runs the distributed workflow through the public CLI only: two `qualify` worker runs, two `transport export` invocations and one `assemble` coordinator run, followed by an inspection of the assembled index with plain file reads and `cleanup` of every run. A development checkout cannot emit public records, so the scenario needs `CONCLEAR_TEST_CLI`, the absolute path of the `conclear` entry point of an installed wheel built from the revision under test, plus the populated Trivy cache from `CONCLEAR_TEST_TRIVY_CACHE`. The `local_integration` case uses `linux/amd64` and `linux/amd64/v3` so two real workers and a two-descriptor index can be exercised on an x86-64 host without emulation; the `emulation` case uses `linux/amd64` and `linux/arm64` and skips without an enabled handler.
+
+```sh
+uv venv --python python3.12 <external-run-workspace>/conclear-venv
+uv pip install --python <external-run-workspace>/conclear-venv/bin/python \
+  "${HOME}/.local/share/conclear/distributions/<revision>"/*.whl
+CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
+CONCLEAR_TEST_CLI=<external-run-workspace>/conclear-venv/bin/conclear \
+CONCLEAR_TEST_TRIVY_CACHE=<manifest-owned-cache> \
+uv run pytest -m local_integration tests/local_integration/test_transport_cli.py \
+  --basetemp <external-run-workspace>/tmp/pytest
+```
+
 The complete local tier, including the emulation case, is one invocation with the same manifest-owned identifiers:
 
 ```sh
 CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
 CONCLEAR_TEST_SERVICE_ULID=<manifest-owned-lowercase-ulid> \
 CONCLEAR_TEST_ONE_SHOT_ULID=<manifest-owned-lowercase-ulid> \
+CONCLEAR_TEST_CLI=<identity-bearing-conclear-executable> \
+CONCLEAR_TEST_TRIVY_CACHE=<manifest-owned-cache> \
 uv run pytest -m "local_integration or emulation" \
   --basetemp <external-run-workspace>/tmp/pytest
 ```
@@ -483,7 +498,7 @@ A revision is a locally validated 1.0 release candidate when all of the followin
 
 1. The distribution gate on all supported interpreters, retaining its artifacts under a directory named for the full revision:
    `uv run python -m conclear.release_check --output-directory "${HOME}/.local/share/conclear/distributions/$(git rev-parse HEAD)"`.
-2. The complete local tier from an external run manifest, `uv run pytest -m "local_integration or emulation"` with manifest-owned identifiers as described under [Local integration tests](#local-integration-tests); record any skipped emulation case as a missing platform, not as a pass.
+2. The complete local tier from an external run manifest, `uv run pytest -m "local_integration or emulation"` with manifest-owned identifiers as described under [Local integration tests](#local-integration-tests), including the CLI transport scenario against the retained wheel; record any skipped emulation case as a missing platform, not as a pass.
 3. The retained wheel installed into a fresh environment, with `conclear version --format json` reporting the embedded ConClear and guide revisions and `conclear --help` listing the command hierarchy recorded in the contract inventory.
 4. `conclear check` and `conclear pins check` run from that installed wheel against the current [OpenLDAP compatibility project](https://github.com/foundata/oci-openldap-declarative) checkout for every image it declares, with every `CCnnnn` finding recorded verbatim and no exception added to reach an accepted verdict.
 
