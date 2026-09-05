@@ -8,7 +8,7 @@ import click
 from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.registry_backends import create_registry_control
 from conclear.config import load_repository_config, normalize_observed_source_url
-from conclear.database import select_fresh_database
+from conclear.database import select_fresh_database, trivy_cache_root
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import sha256_bytes
 from conclear.pin_application import ApplicationStatus, apply_pin_proposal
@@ -17,7 +17,7 @@ from conclear.pin_updates import (
     load_proposal,
     propose_pin_updates,
 )
-from conclear.pins import PinStore
+from conclear.pins import PinStore, check_image_pins
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import SourceIdentity
 from conclear.registry_control import RegistryControl
@@ -131,15 +131,8 @@ def pins_check_command(
     auth_file = selected.auth_file if selected else None
     with command_runtime((ToolName.SKOPEO,)) as runtime:
         resolver = AuthenticatedPinResolver(runtime, auth_file)
-        store = PinStore(state_home())
-        observations = tuple(
-            store.check(
-                pin,
-                resolver=resolver,
-                maximum_divergence=image.limits.pin_divergence,
-                now=datetime.now(UTC),
-            )
-            for pin in image.pins
+        observations = check_image_pins(
+            PinStore(state_home()), image, resolver=resolver, now=datetime.now(UTC)
         )
     findings = tuple(
         finding for observation in observations for finding in observation.findings
@@ -462,7 +455,7 @@ def rescan_command(
     )
     database = select_fresh_database(
         runtime.trivy(),
-        cache_home() / "conclear" / "trivy",
+        trivy_cache_root(cache_home()),
         now=datetime.now(UTC),
     )
     signing = (

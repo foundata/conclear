@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
-from conclear.config import PinConfig, PinIntent
+from conclear.config import ImageConfig, PinConfig, PinIntent
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.fileio import locked_file
 from conclear.jsonutil import atomic_write_json, load_json
@@ -200,6 +200,25 @@ class PinStore:
             return observation
         except (InvalidInvocationError, ValueError) as exc:
             raise OperationalError("Durable pin state contains invalid values") from exc
+
+
+def check_image_pins(
+    store: PinStore,
+    image: ImageConfig,
+    *,
+    resolver: PinResolver,
+    now: datetime,
+) -> tuple[PinObservation, ...]:
+    """Run the pin gate for every declared pin of one image at one instant."""
+    return tuple(
+        store.check(
+            pin,
+            resolver=resolver,
+            maximum_divergence=image.limits.pin_divergence,
+            now=now,
+        )
+        for pin in image.pins
+    )
 
 
 def _evaluate_divergence(

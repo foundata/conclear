@@ -16,6 +16,7 @@ from conclear.errors import (
     OperationalError,
     RuleRejectionError,
 )
+from conclear.hooks import HookRunner
 from conclear.jsonutil import sha256_bytes
 from conclear.records import SourceIdentity
 from conclear.runtime import ApplicationRuntime
@@ -39,6 +40,18 @@ class SourceRun:
     source: SourceIdentity
     source_time: datetime
     runtime: ApplicationRuntime
+
+
+def hook_runner(
+    runtime: ApplicationRuntime, repository: RepositoryConfig, workspace: RunWorkspace
+) -> HookRunner:
+    """Bind repository hooks to one run's isolated checkout and tool environment."""
+    return HookRunner(
+        runner=runtime.runner,
+        environment=runtime.environment,
+        source_root=repository.path.parent,
+        log_directory=workspace.root / "logs",
+    )
 
 
 def create_source_run(

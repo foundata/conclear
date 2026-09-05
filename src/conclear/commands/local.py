@@ -10,10 +10,13 @@ from typing import Any
 import click
 
 from conclear.config import load_repository_config
-from conclear.database import select_database_by_digest, select_fresh_database
+from conclear.database import (
+    select_database_by_digest,
+    select_fresh_database,
+    trivy_cache_root,
+)
 from conclear.errors import RuleRejectionError
-from conclear.hooks import HookRunner
-from conclear.pins import PinStore
+from conclear.pins import PinStore, check_image_pins
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.release_profile import ReleaseProfile
 from conclear.services.assembly import assemble_candidate
@@ -35,6 +38,7 @@ from conclear.services.release import AuthenticatedPinResolver, profile_inputs
 from conclear.services.run_context import (
     SourceRun,
     create_source_run,
+    hook_runner,
     open_source_run,
 )
 from conclear.services.runtime_tests import test_platform
@@ -181,12 +185,7 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
         )
         for dependency in inputs.repository.test_dependencies(inputs.image.image_id)
     )
-    hooks = HookRunner(
-        runner=source_run.runtime.runner,
-        environment=source_run.runtime.environment,
-        source_root=source_run.repository.path.parent,
-        log_directory=source_run.workspace.root / "logs",
-    )
+    hooks = hook_runner(source_run.runtime, source_run.repository, source_run.workspace)
     result = test_platform(
         inputs,
         build,
@@ -264,14 +263,8 @@ def qualify_command(
     resolver = AuthenticatedPinResolver(
         source_run.runtime, None if selected is None else selected.auth_file
     )
-    pin_observations = tuple(
-        PinStore(state_home()).check(
-            pin,
-            resolver=resolver,
-            maximum_divergence=image.limits.pin_divergence,
-            now=datetime.now(UTC),
-        )
-        for pin in image.pins
+    pin_observations = check_image_pins(
+        PinStore(state_home()), image, resolver=resolver, now=datetime.now(UTC)
     )
     if not preflight.accepted or any(not item.accepted for item in pin_observations):
         source_run.workspace.transition(RunState.REJECTED)
@@ -289,7 +282,7 @@ def qualify_command(
             output_format,
         )
         return
-    database_cache = cache_home() / "conclear" / "trivy"
+    database_cache = trivy_cache_root(cache_home())
     database = (
         select_fresh_database(
             source_run.runtime.trivy(),
@@ -303,12 +296,7 @@ def qualify_command(
             expected_digest=expected_database,
         )
     )
-    hooks = HookRunner(
-        runner=source_run.runtime.runner,
-        environment=source_run.runtime.environment,
-        source_root=source_run.repository.path.parent,
-        log_directory=source_run.workspace.root / "logs",
-    )
+    hooks = hook_runner(source_run.runtime, source_run.repository, source_run.workspace)
     result = qualify_platform(
         inputs,
         builder=source_run.runtime.buildah(),

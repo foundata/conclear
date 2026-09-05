@@ -27,6 +27,11 @@ class DatabaseAdapter(Protocol):
         ...
 
 
+def trivy_cache_root(cache_home: Path) -> Path:
+    """Return the ConClear-owned Trivy database cache below one cache home."""
+    return cache_home / "conclear" / "trivy"
+
+
 def select_fresh_database(
     adapter: DatabaseAdapter, cache_root: Path, *, now: datetime
 ) -> DatabaseObservation:

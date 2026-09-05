@@ -315,7 +315,7 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
         AuthenticatedPinResolver=lambda runtime, auth_file: object(),
         select_database_by_digest=by_digest,
         select_fresh_database=lambda *args, **kwargs: SimpleNamespace(digest=DIGEST),
-        HookRunner=lambda **kwargs: object(),
+        hook_runner=lambda *args, **kwargs: object(),
         qualify_platform=qualify,
     )
 

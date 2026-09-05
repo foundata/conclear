@@ -480,7 +480,7 @@ def test_qualification_phase_rejects_before_later_state_changes(
     monkeypatch.setattr(release, "check_image", lambda *a, **k: state["preflight"])
     monkeypatch.setattr(release, "PinStore", Store)
     monkeypatch.setattr(release, "select_fresh_database", lambda *a, **k: object())
-    monkeypatch.setattr(release, "HookRunner", lambda **k: object())
+    monkeypatch.setattr(release, "hook_runner", lambda *a, **k: object())
     monkeypatch.setattr(release, "qualify_platform", qualify)
     monkeypatch.setattr(
         release, "qualification_transport", lambda *a: calls.append("transport")

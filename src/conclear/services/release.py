@@ -23,16 +23,15 @@ from conclear.artifacts import (
     qualification_transports,
 )
 from conclear.config import RepositoryConfig
-from conclear.database import select_fresh_database
+from conclear.database import select_fresh_database, trivy_cache_root
 from conclear.errors import (
     ConClearError,
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
 )
-from conclear.hooks import HookRunner
 from conclear.jsonutil import atomic_write_json, sha256_bytes
-from conclear.pins import PinResolver, PinStore
+from conclear.pins import PinResolver, PinStore, check_image_pins
 from conclear.presentation import Finding
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.records import SourceIdentity, Verdict
@@ -51,7 +50,11 @@ from conclear.services.publication import (
 )
 from conclear.services.qualification import qualify_platform
 from conclear.services.qualification_inputs import QualificationInputs
-from conclear.services.run_context import create_source_run, open_source_run
+from conclear.services.run_context import (
+    create_source_run,
+    hook_runner,
+    open_source_run,
+)
 from conclear.tools import ToolName
 from conclear.values import (
     Digest,
@@ -400,16 +403,9 @@ def _qualify_release(
                 item.check_id for item in preflight.findings if item.severity == "error"
             ),
         )
-    pin_store = PinStore(request.state_home)
     pin_resolver = AuthenticatedPinResolver(runtime, request.profile.auth_file)
-    pin_observations = tuple(
-        pin_store.check(
-            pin,
-            resolver=pin_resolver,
-            maximum_divergence=image.limits.pin_divergence,
-            now=now_factory(),
-        )
-        for pin in image.pins
+    pin_observations = check_image_pins(
+        PinStore(request.state_home), image, resolver=pin_resolver, now=now_factory()
     )
     if any(not item.accepted for item in pin_observations):
         rejecting_pin = next(
@@ -424,15 +420,10 @@ def _qualify_release(
         )
     database = select_fresh_database(
         runtime.trivy(),
-        request.cache_home / "conclear" / "trivy",
+        trivy_cache_root(request.cache_home),
         now=now_factory(),
     )
-    hooks = HookRunner(
-        runner=runtime.runner,
-        environment=runtime.environment,
-        source_root=repository.path.parent,
-        log_directory=workspace.root / "logs",
-    )
+    hooks = hook_runner(runtime, repository, workspace)
     ordered_platforms = tuple(
         sorted(
             image.platforms,
