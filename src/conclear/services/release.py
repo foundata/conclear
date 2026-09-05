@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import override
 
 from conclear.adapters.ci import CIContextObservation
+from conclear.adapters.cosign import CosignAdapter
 from conclear.adapters.registry_control import (
     create_registry_control,
     validate_registry_destinations,
@@ -486,16 +487,12 @@ def _generate_release_provenance(
     candidate: CandidateResult,
     *,
     request: ReleaseRequest,
-    repository: object,
+    repository: RepositoryConfig,
     workspace: RunWorkspace,
     source: SourceIdentity,
     started_at: datetime,
     now: datetime,
 ) -> None:
-    from conclear.config import RepositoryConfig
-
-    if not isinstance(repository, RepositoryConfig):
-        raise OperationalError("Release repository has an invalid internal type")
     materials = load_provenance_materials(workspace, repository.image(request.image_id))
     generate_provenance(
         ProvenanceInput(
@@ -530,12 +527,8 @@ def _profile_inputs(profile: ReleaseProfile) -> dict[str, str]:
     }
 
 
-def signer_identity(profile: ReleaseProfile, signer: object) -> tuple[str, str]:
+def signer_identity(profile: ReleaseProfile, signer: CosignAdapter) -> tuple[str, str]:
     """Derive the recorded signer mode and external trust identity."""
-    from conclear.adapters.cosign import CosignAdapter
-
-    if not isinstance(signer, CosignAdapter):
-        raise OperationalError("Release signer has an invalid internal type")
     key = profile.cosign_private_key or ""
     if key.startswith("pkcs11:"):
         return "hsm", key
@@ -546,13 +539,9 @@ def signer_identity(profile: ReleaseProfile, signer: object) -> tuple[str, str]:
 
 def _write_summary(
     workspace: RunWorkspace,
-    subject: object,
+    subject: OCIReference,
     promotion: PromotionResult,
 ) -> ReleaseResult:
-    from conclear.values import OCIReference
-
-    if not isinstance(subject, OCIReference):
-        raise OperationalError("Release subject has an invalid internal type")
     tags = tuple((tag, str(digest)) for tag, digest in promotion.tags)
     atomic_write_json(
         workspace.root / "summary.json",

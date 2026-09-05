@@ -40,7 +40,6 @@ from conclear.jsonutil import sha256_bytes
 from conclear.presentation import Finding
 from conclear.records import SourceIdentity, Verdict
 from conclear.services import release
-from conclear.services.publication import PromotionResult
 from conclear.services.release import ReleaseRequest, ReleaseResult
 from conclear.values import Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
@@ -536,7 +535,7 @@ def test_qualification_phase_rejects_before_later_state_changes(
     assert harness.workspace.load().state is RunState.QUALIFIED
 
 
-def test_internal_type_guards_and_signer_modes(
+def test_signer_modes_timestamps_and_failure_summaries(
     harness: Harness, tmp_path: Path
 ) -> None:
     hsm = replace(harness.profile, cosign_private_key="pkcs11:token=release")
@@ -549,24 +548,6 @@ def test_internal_type_guards_and_signer_modes(
         "kms",
         "awskms:///alias/release",
     )
-    with pytest.raises(OperationalError, match="invalid internal type"):
-        release.signer_identity(harness.profile, object())
-    with pytest.raises(OperationalError, match="invalid internal type"):
-        release._write_summary(
-            harness.workspace,
-            "not a reference",
-            PromotionResult(tags=(), candidate_deleted=True),
-        )
-    with pytest.raises(OperationalError, match="invalid internal type"):
-        release._generate_release_provenance(
-            cast(Any, object()),
-            request=harness.request(),
-            repository=object(),
-            workspace=harness.workspace,
-            source=harness.source_run.source,
-            started_at=NOW,
-            now=NOW,
-        )
     with pytest.raises(InvalidInvocationError, match="malformed"):
         release._parse_timestamp("not a time")
     with pytest.raises(InvalidInvocationError, match="lacks a timezone"):
