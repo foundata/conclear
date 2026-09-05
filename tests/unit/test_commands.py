@@ -17,6 +17,7 @@ import pytest
 import conclear.commands.local as local_commands
 import conclear.commands.maintenance as maintenance_commands
 import conclear.commands.remote as remote_commands
+import conclear.commands.transport as transport_commands
 from conclear.cli import main
 from conclear.config import (
     BuilderConfig,
@@ -26,6 +27,7 @@ from conclear.config import (
     ReleaseProfile,
     load_repository_config,
 )
+from conclear.errors import OperationalError, RuleRejectionError
 from conclear.presentation import Finding
 from conclear.records import SourceIdentity, Verdict
 from conclear.values import Digest
@@ -372,41 +374,249 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
     assert selected_databases == ([DIGEST] if verdict is not None else [])
 
 
-def test_assemble_command_uses_recorded_version_and_rejects_conflicts(
+def test_assemble_command_imports_transports_into_a_new_coordinator_run(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     invoke: Callable[[list[str]], tuple[int, Any, str]],
 ) -> None:
-    run = FakeSourceRun(repository_factory(), tmp_path, state=RunState.QUALIFIED)
+    run = FakeSourceRun(repository_factory(), tmp_path)
+    imports: list[tuple[Path, str]] = []
     versions: list[str | None] = []
+    worker = "01arz3ndektsv4rrffq69g5faw"
 
-    def assemble(*args: Any, version: str | None, **kwargs: Any) -> SimpleNamespace:
+    def import_transport(
+        path: Path, *, expected_digest: str, workspace: Any, image: Any
+    ) -> SimpleNamespace:
+        imports.append((path, expected_digest))
+        return SimpleNamespace(
+            transport=SimpleNamespace(record_path=path),
+            source=path,
+            kind=SimpleNamespace(value="archive"),
+            platform="linux/amd64",
+            worker_run_id=worker,
+            transport_digest=expected_digest,
+            manifest_digest=DIGEST,
+            record_digest=DIGEST,
+        )
+
+    def assemble(
+        transports: tuple[Any, ...], *, version: str | None, **kwargs: Any
+    ) -> SimpleNamespace:
         versions.append(version)
+        assert [item.record_path for item in transports] == [Path("/a.tar")]
         return SimpleNamespace(
             record_path=Path("/candidate.json"),
             record_digest=DIGEST,
-            observation=SimpleNamespace(path=Path("/candidate"), graph=graph()),
+            observation=SimpleNamespace(
+                path=Path("/candidate"),
+                graph=graph(),
+                platform_manifests=(("linux/amd64", Digest(DIGEST)),),
+            ),
             candidate_tag="1.2.3-candidate.01arz3ndektsv4rrffq69g5fav.gbbbbbbbb",
         )
 
     _local(
         monkeypatch,
         run,
-        qualification_transports=lambda workspace, image: (),
+        import_transport=import_transport,
         assemble_candidate=assemble,
     )
 
-    code, value, _ = invoke(["assemble", run.workspace.run_id, "--version", "9.9.9"])
+    code, value, _ = invoke(
+        [
+            "assemble",
+            "--revision",
+            "v1",
+            "--image",
+            "app",
+            "--version",
+            "1.2.3",
+            "--transport",
+            "/a.tar",
+            DIGEST,
+        ]
+    )
+
+    assert code == 0
+    assert value["data"]["runId"] == run.workspace.run_id
+    assert value["data"]["subjectDigest"] == DIGEST
+    assert value["data"]["platformManifests"] == {"linux/amd64": DIGEST}
+    assert value["data"]["transports"] == [
+        {
+            "platform": "linux/amd64",
+            "workerRunId": worker,
+            "transport": "/a.tar",
+            "kind": "archive",
+            "transportDigest": DIGEST,
+            "manifestDigest": DIGEST,
+            "recordDigest": DIGEST,
+        }
+    ]
+    assert imports == [(Path("/a.tar"), DIGEST)]
+    assert versions == ["1.2.3"]
+    assert run.workspace.load().state is RunState.QUALIFIED
+
+
+@pytest.mark.parametrize(
+    ("failure", "exit_code", "status", "state"),
+    [
+        (
+            RuleRejectionError("Transport digest mismatch", code="CC0306"),
+            2,
+            "ruleRejection",
+            RunState.REJECTED,
+        ),
+        (
+            OperationalError("Unable to copy transport member"),
+            1,
+            "operationalFailure",
+            RunState.INCOMPLETE,
+        ),
+    ],
+)
+def test_assemble_command_records_a_failed_import_on_the_coordinator_run(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    failure: Exception,
+    exit_code: int,
+    status: str,
+    state: RunState,
+) -> None:
+    run = FakeSourceRun(repository_factory(), tmp_path)
+
+    def import_transport(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        raise failure
+
+    _local(
+        monkeypatch,
+        run,
+        import_transport=import_transport,
+        assemble_candidate=lambda *args, **kwargs: pytest.fail("assembled"),
+    )
+
+    code, value, _ = invoke(
+        [
+            "assemble",
+            "--revision",
+            "v1",
+            "--image",
+            "app",
+            "--transport",
+            "/a.tar",
+            DIGEST,
+        ]
+    )
+
+    assert (code, value["status"]) == (exit_code, status)
+    assert run.workspace.load().state is state
+
+
+def test_assemble_command_requires_at_least_one_transport(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+) -> None:
+    run = FakeSourceRun(repository_factory(), tmp_path)
+    _local(monkeypatch, run)
+
+    code, value, _ = invoke(["assemble", "--revision", "v1", "--image", "app"])
+
     assert code == 64
     assert value["status"] == "invalidInvocation"
-    assert versions == []
+    assert "--transport" in value["message"]
 
-    code, value, _ = invoke(["assemble", run.workspace.run_id, "--version", "1.2.3"])
+
+def test_transport_export_reports_every_digest_a_worker_must_publish(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+) -> None:
+    run = FakeSourceRun(repository_factory(), tmp_path, state=RunState.QUALIFIED)
+    calls: list[dict[str, Any]] = []
+
+    def export_transport(
+        workspace: Any,
+        image: Any,
+        platform: Any,
+        *,
+        destination: Path,
+        kind: Any,
+        now: Any,
+    ) -> SimpleNamespace:
+        calls.append(
+            {"platform": str(platform), "destination": destination, "kind": kind}
+        )
+        return SimpleNamespace(
+            path=destination,
+            kind=kind,
+            worker_run_id=run.workspace.run_id,
+            transport_digest=DIGEST,
+            manifest_digest="sha256:" + "1" * 64,
+            record_digest="sha256:" + "2" * 64,
+            layout_digest="sha256:" + "3" * 64,
+            platform_manifest_digest="sha256:" + "3" * 64,
+            payload_digests=("sha256:" + "4" * 64,),
+            members=(object(),) * 9,
+            total_bytes=1234,
+        )
+
+    monkeypatch.setattr(
+        transport_commands, "state_home", lambda: run.workspace.root.parents[2]
+    )
+    monkeypatch.setattr(transport_commands, "open_source_run", lambda **_kwargs: run)
+    monkeypatch.setattr(transport_commands, "export_transport", export_transport)
+
+    code, value, _ = invoke(
+        [
+            "transport",
+            "export",
+            run.workspace.run_id,
+            "--platform",
+            "linux/amd64",
+            "--output",
+            str(tmp_path / "app-linux-amd64.tar"),
+        ]
+    )
+
     assert code == 0
-    assert value["data"]["subjectDigest"] == DIGEST
-    assert value["data"]["candidateTag"].startswith("1.2.3-candidate.")
-    assert versions == ["1.2.3"]
+    assert value["command"] == "transport export"
+    assert value["data"] == {
+        "runId": run.workspace.run_id,
+        "platform": "linux/amd64",
+        "transport": str(tmp_path / "app-linux-amd64.tar"),
+        "kind": "archive",
+        "transportDigest": DIGEST,
+        "manifestDigest": "sha256:" + "1" * 64,
+        "recordDigest": "sha256:" + "2" * 64,
+        "layoutDigest": "sha256:" + "3" * 64,
+        "platformManifestDigest": "sha256:" + "3" * 64,
+        "payloadDigests": ["sha256:" + "4" * 64],
+        "members": 9,
+        "totalBytes": 1234,
+    }
+    assert calls[0]["kind"].value == "archive"
+
+    code, value, _ = invoke(
+        [
+            "transport",
+            "export",
+            run.workspace.run_id,
+            "--platform",
+            "linux/arm64",
+            "--output",
+            str(tmp_path / "other"),
+            "--kind",
+            "directory",
+        ]
+    )
+    assert code == 64
+    assert "not configured" in value["message"]
+    assert len(calls) == 1
 
 
 def _remote(

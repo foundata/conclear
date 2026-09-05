@@ -30,6 +30,7 @@ from conclear.commands.remote import (
     release_command,
     verify_command,
 )
+from conclear.commands.transport import transport_group
 from conclear.commands.version import version_command, write_version
 from conclear.errors import ConClearError, ExitStatus
 from conclear.presentation import CommandResult, Finding, ResultStatus
@@ -69,6 +70,7 @@ root.add_command(build_command)
 root.add_command(test_command)
 root.add_command(evidence_command)
 root.add_command(qualify_command)
+root.add_command(transport_group)
 root.add_command(assemble_command)
 root.add_command(provenance_command)
 root.add_command(publish_command)

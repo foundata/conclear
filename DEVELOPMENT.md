@@ -108,6 +108,7 @@ conclear/
 │   ├── oci.py                    # Layout, descriptor and graph validation
 │   ├── registry_control.py       # Provider-neutral registry controls
 │   ├── release_check.py          # Clean-checkout release gate
+│   ├── transport.py              # Qualification transport export and verified import
 │   ├── adapters/                 # Typed tool and registry boundaries
 │   │   ├── buildah.py            # Build and layout export
 │   │   ├── podman.py             # Import and runtime tests
@@ -118,7 +119,7 @@ conclear/
 │   │   ├── registry_control.py   # Compiled backend selection
 │   │   ├── quay.py               # Quay tag API
 │   │   └── git.py                # Source selection and worktrees
-│   ├── commands/                 # CLI surface, grouped by scope
+│   ├── commands/                 # CLI surface, grouped by scope (transport.py: worker exports)
 │   ├── services/                 # Workflow decisions (qualification,
 │   │                             # assembly, publication, rescan, cleanup)
 │   ├── schemas/                  # Shipped JSON Schemas
@@ -190,6 +191,7 @@ Commit messages follow the [foundata guideline (`guidelines/git-commits.md`)](ht
 | `qualification` | Source isolation, build-context checks, image builds, runtime tests and per-platform evidence |
 | `pins` | Pin declarations, durable pin observations, pin-update proposals and their verified application |
 | `assembly` | Verified multi-platform OCI assembly |
+| `transport` | Qualification transport export, caller-verified import and coordinator assembly inputs |
 | `scanner` | Scan policy, immutable database snapshots and scanner behavior shared by qualification and rescans |
 | `release` | Release-run orchestration, resume behavior and terminal summaries |
 | `publication` | Candidate publication, registry observation, attestations, signing, verification and promotion |

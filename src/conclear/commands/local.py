@@ -9,7 +9,6 @@ from typing import Any
 
 import click
 
-from conclear.artifacts import qualification_transports
 from conclear.config import ReleaseProfile, load_repository_config
 from conclear.database import select_database_by_digest, select_fresh_database
 from conclear.hooks import HookRunner
@@ -37,6 +36,7 @@ from conclear.services.run_context import (
     open_source_run,
 )
 from conclear.tools import ToolName
+from conclear.transport import ImportedTransport, import_transport
 from conclear.values import Digest, Platform
 from conclear.workspace import RunState
 
@@ -393,41 +393,119 @@ def qualify_command(
 
 
 @click.command("assemble")
-@click.argument("run_id")
-@click.option("version", "--version")
+@_source_options
+@click.option("profile_name", "--profile")
+@click.option(
+    "transports",
+    "--transport",
+    type=(click.Path(path_type=Path), str),
+    multiple=True,
+    required=True,
+    metavar="PATH DIGEST",
+    help=(
+        "One exported qualification transport and the transport digest obtained "
+        "independently from its worker; repeat once per required platform."
+    ),
+)
 @_format_option
-def assemble_command(run_id: str, version: str | None, output_format: str) -> None:
-    """Verify exact platform coverage and assemble a release candidate."""
-    source_run = open_source_run(state_home=state_home(), run_id=run_id, names=())
-    snapshot = source_run.workspace.load()
-    recorded_version = snapshot.immutable_inputs.get("version") or None
-    if version is not None and version != recorded_version:
-        raise click.UsageError("--version differs from the recorded run input")
-    image_id = snapshot.immutable_inputs["image"]
-    image = source_run.repository.image(image_id)
-    result = assemble_candidate(
-        qualification_transports(source_run.workspace, image),
-        repository=source_run.repository,
-        image=image,
-        workspace=source_run.workspace,
-        version=recorded_version,
-        tools=source_run.runtime.identities,
-        now=datetime.now(UTC),
+def assemble_command(
+    source_root: Path,
+    selector: str,
+    image_id: str,
+    version: str | None,
+    profile_name: str | None,
+    transports: tuple[tuple[Path, str], ...],
+    output_format: str,
+) -> None:
+    """Verify exported qualification transports and assemble a release candidate.
+
+    Creates a new coordinator run from the reviewed source revision, imports
+    every transport only after its caller-supplied digest matches, verifies
+    each record, layout and evidence payload, requires exactly one accepted
+    qualification per required platform and assembles the exact manifest or
+    image index under a candidate reference named for the coordinator run.
+    """
+    selected = profile(profile_name) if profile_name else None
+    source_run = create_source_run(
+        source_root=source_root,
+        selector=selector,
+        image_id=image_id,
+        version=version,
+        state_home=state_home(),
+        names=(),
+        profile_name="none" if selected is None else selected.name,
+        additional_inputs=None if selected is None else profile_inputs(selected),
     )
+    workspace = source_run.workspace
+    image = source_run.repository.image(image_id)
+    try:
+        imported = tuple(
+            import_transport(
+                path,
+                expected_digest=digest,
+                workspace=workspace,
+                image=image,
+            )
+            for path, digest in transports
+        )
+        workspace.transition(RunState.QUALIFIED)
+        result = assemble_candidate(
+            tuple(item.transport for item in imported),
+            repository=source_run.repository,
+            image=image,
+            workspace=workspace,
+            version=version,
+            tools=source_run.runtime.identities,
+            now=datetime.now(UTC),
+        )
+    except BaseException as exc:
+        _finish_coordinator_failure(workspace, exc)
+        raise
     emit(
         CommandResult(
             "assemble",
             ResultStatus.SUCCESS,
             "Release candidate assembled",
             data={
+                "runId": workspace.run_id,
                 "record": str(result.record_path),
                 "recordDigest": result.record_digest,
                 "layout": str(result.observation.path),
                 "subjectDigest": str(result.observation.graph.digest),
+                "platformManifests": {
+                    str(platform): str(digest)
+                    for platform, digest in result.observation.platform_manifests
+                },
                 "candidateTag": result.candidate_tag,
+                "transports": [_transport_entry(item) for item in imported],
             },
         ),
         output_format,
+    )
+
+
+def _transport_entry(item: ImportedTransport) -> dict[str, object]:
+    return {
+        "platform": str(item.platform),
+        "workerRunId": item.worker_run_id,
+        "transport": str(item.source),
+        "kind": item.kind.value,
+        "transportDigest": item.transport_digest,
+        "manifestDigest": item.manifest_digest,
+        "recordDigest": item.record_digest,
+    }
+
+
+def _finish_coordinator_failure(workspace: Any, failure: BaseException) -> None:
+    from conclear.errors import RuleRejectionError
+
+    state = workspace.load().state
+    if state in {RunState.REJECTED, RunState.INCOMPLETE}:
+        return
+    workspace.transition(
+        RunState.REJECTED
+        if isinstance(failure, RuleRejectionError)
+        else RunState.INCOMPLETE
     )
 
 

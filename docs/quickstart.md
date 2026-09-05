@@ -245,6 +245,19 @@ conclear qualify \
 
 ConClear writes run state below `$XDG_STATE_HOME/conclear/` and keeps Trivy database snapshots below `$XDG_CACHE_HOME/conclear/`. Preserve the protected pin history and distribute the exact selected Trivy database snapshot when qualification runs on more than one worker.
 
+Each `qualify` is one worker run. To turn accepted qualifications into a release candidate, export each one as a transport and assemble them in a new coordinator run, on the same workstation or after moving the archives between hosts:
+
+```sh
+conclear transport export <worker-run-id> --platform linux/amd64 \
+  --output ../transports/app-linux-amd64.tar --format json
+
+conclear assemble --source . --revision HEAD --image app --version 1.2.3 \
+  --transport ../transports/app-linux-amd64.tar sha256:<transport-digest> \
+  --format json
+```
+
+`transport export` prints the transport digest and the qualification-record digest. Hand the transport digest to the coordinator separately from the archive; `assemble` refuses a transport whose digest differs, verifies every member and record, and requires exactly one accepted qualification per platform declared in `conclear.toml`. A multi-platform image repeats `qualify` and `transport export` per platform and passes one `--transport` pair per platform. Do not copy run workspaces or records by hand.
+
 When a base image publishes a new digest, let ConClear propose and apply the pin update instead of editing digests by hand. This workflow runs entirely on the maintainer workstation and requires no Renovate runner, branch, pull request or hosted writer. `pins propose` resolves each declared tag once and writes a proposal covering every `conclear.toml` declaration and Containerfile occurrence; `pins apply` verifies that proposal against the current worktree and replaces only the recorded byte spans, all-or-nothing:
 
 ```sh
@@ -315,7 +328,7 @@ Quay is currently the only registry backend for the complete publication workflo
 
 ## 10. Use the same commands in CI
 
-ConClear has no separate CI execution mode. A CI job invokes the same CLI and supplies the protected profile, credentials, cache and state through its normal secret and artifact mechanisms.
+ConClear has no separate CI execution mode. A CI job invokes the same CLI and supplies the protected profile, credentials, cache and state through its normal secret and artifact mechanisms. Platform workers publish their `transport export` archives as job artifacts and their transport digests as job outputs; the coordinator job passes each digest to `assemble` from the job output, not from a file inside the artifact.
 
 Do not pass source identity, builder identity, signer identity, release verdicts or artifact digests through repository configuration or ordinary environment variables. ConClear derives source facts from the isolated checkout and treats recognized CI variables only as optional correlation data.
 

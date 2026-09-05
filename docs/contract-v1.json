@@ -344,16 +344,37 @@
   "commands": [
     {
       "group": false,
-      "help": "Verify exact platform coverage and assemble a release candidate.",
+      "help": "Verify exported qualification transports and assemble a release candidate.",
       "name": "assemble",
       "parameters": [
         {
           "declarations": [
-            "run_id"
+            "--source"
           ],
-          "kind": "argument",
+          "default": ".",
+          "kind": "option",
           "multiple": false,
-          "name": "run_id",
+          "name": "source_root",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--revision"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "selector",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
           "required": true,
           "type": "text"
         },
@@ -366,6 +387,26 @@
           "name": "version",
           "required": false,
           "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--transport"
+          ],
+          "kind": "option",
+          "multiple": true,
+          "name": "transports",
+          "required": true,
+          "type": "<path text>"
         },
         {
           "choices": [
@@ -1294,6 +1335,79 @@
           "name": "platform_text",
           "required": true,
           "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "group": true,
+      "help": "Export accepted platform qualifications for a coordinator to assemble.",
+      "name": "transport",
+      "parameters": []
+    },
+    {
+      "group": false,
+      "help": "Export one accepted qualification, its layout and evidence as a transport.",
+      "name": "transport export",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--platform"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "platform_text",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--output"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "output_path",
+          "required": true,
+          "type": "path"
+        },
+        {
+          "choices": [
+            "archive",
+            "directory"
+          ],
+          "declarations": [
+            "--kind"
+          ],
+          "default": "archive",
+          "kind": "option",
+          "multiple": false,
+          "name": "kind",
+          "required": false,
+          "type": "choice"
         },
         {
           "choices": [
