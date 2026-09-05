@@ -13,6 +13,7 @@ from conclear.jsonutil import (
     canonical_json_bytes,
     sha256_bytes,
 )
+from conclear.parsing import Narrower
 from conclear.schema import validate_external
 from conclear.values import validate_run_id, validate_source_revision
 
@@ -100,6 +101,30 @@ class ToolIdentity:
     version: str
     executable_digest: str | None = None
     image_digest: str | None = None
+
+    @classmethod
+    def from_dict(
+        cls, value: object, *, error: type[ConClearError] = OperationalError
+    ) -> "ToolIdentity":
+        """Rebuild one tool identity from its public record object."""
+        narrow = Narrower(error)
+        item = narrow.object_value(value, "tool identity")
+        executable = item.get("executableDigest")
+        image = item.get("imageDigest")
+        return cls(
+            narrow.string_value(item.get("name"), "tool name"),
+            narrow.string_value(item.get("version"), "tool version"),
+            executable_digest=(
+                narrow.string_value(executable, "tool executable digest")
+                if executable is not None
+                else None
+            ),
+            image_digest=(
+                narrow.string_value(image, "tool image digest")
+                if image is not None
+                else None
+            ),
+        )
 
     def to_dict(self) -> dict[str, object]:
         """Return a public tool identity object."""

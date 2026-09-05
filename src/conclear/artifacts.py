@@ -276,7 +276,10 @@ def load_release_evidence(
     tools_value = candidate_record.get("tools")
     if not isinstance(tools_value, list):
         raise InvalidInvocationError("Candidate tool identities are malformed")
-    tools = tuple(_tool_identity(item) for item in tools_value)
+    tools = tuple(
+        ToolIdentity.from_dict(item, error=InvalidInvocationError)
+        for item in tools_value
+    )
     sboms: list[tuple[Platform, Path, str]] = []
     scan_digests: list[str] = []
     bound_runs = _bound_runs(candidate, image)
@@ -548,26 +551,6 @@ def _qualification_payload_paths(
             raise InvalidInvocationError("Qualification scan path is unsafe")
         paths.append(report_root / name)
     return tuple(paths)
-
-
-def _tool_identity(value: object) -> ToolIdentity:
-    item = _narrow.object_value(value, "tool identity")
-    executable = item.get("executableDigest")
-    image = item.get("imageDigest")
-    return ToolIdentity(
-        _narrow.string_value(item.get("name"), "tool name"),
-        _narrow.string_value(item.get("version"), "tool version"),
-        executable_digest=(
-            _narrow.string_value(executable, "tool executable digest")
-            if executable is not None
-            else None
-        ),
-        image_digest=(
-            _narrow.string_value(image, "tool image digest")
-            if image is not None
-            else None
-        ),
-    )
 
 
 def _bound_runs(candidate: CandidateResult, image: ImageConfig) -> dict[Platform, str]:

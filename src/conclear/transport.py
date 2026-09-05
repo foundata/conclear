@@ -147,7 +147,10 @@ def export_transport(
     tools_value = record.get("tools")
     if not isinstance(tools_value, list):
         raise InvalidInvocationError("Qualification tools are malformed")
-    tools = tuple(_tool_identity(item) for item in tools_value)
+    tools = tuple(
+        ToolIdentity.from_dict(item, error=InvalidInvocationError)
+        for item in tools_value
+    )
     payload = _narrow.object_value(record.get("payload"), "qualification payload")
     graph = validate_layout(owned.layout_path, reference=owned.layout_reference)
     key = platform.key
@@ -904,23 +907,3 @@ def _regular_size(path: Path) -> int:
 def _regular_digest(path: Path) -> str:
     _regular_size(path)
     return sha256_file(path)
-
-
-def _tool_identity(value: object) -> ToolIdentity:
-    item = _narrow.object_value(value, "tool identity")
-    executable = item.get("executableDigest")
-    image = item.get("imageDigest")
-    return ToolIdentity(
-        _narrow.string_value(item.get("name"), "tool name"),
-        _narrow.string_value(item.get("version"), "tool version"),
-        executable_digest=(
-            _narrow.string_value(executable, "tool executable digest")
-            if executable is not None
-            else None
-        ),
-        image_digest=(
-            _narrow.string_value(image, "tool image digest")
-            if image is not None
-            else None
-        ),
-    )
