@@ -178,7 +178,6 @@ def test_release_does_not_promote_until_verification_transitions_state(
             runtime=cast(Any, runtime),
             source=cast(Any, object()),
             source_time=datetime(2026, 1, 1, tzinfo=UTC),
-            started_at=datetime(2026, 1, 1, tzinfo=UTC),
             now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
         )
 
@@ -239,7 +238,6 @@ def test_full_release_rejects_unsupported_registry_before_qualification(
             runtime=cast(Any, object()),
             source=cast(Any, object()),
             source_time=datetime(2026, 1, 1, tzinfo=UTC),
-            started_at=datetime(2026, 1, 1, tzinfo=UTC),
             now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
         )
 

@@ -356,7 +356,6 @@ def test_continuation_requires_a_signing_key_after_loading_evidence(
             runtime=cast(Any, harness.runtime),
             source=harness.source_run.source,
             source_time=NOW,
-            started_at=NOW,
             now_factory=lambda: NOW,
         )
 

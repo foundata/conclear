@@ -9,16 +9,13 @@ import click
 from conclear.adapters.registry_backends import create_registry_control
 from conclear.artifacts import (
     load_candidate,
-    load_provenance_materials,
     load_published,
     load_release_evidence,
     load_verification,
 )
 from conclear.config import ImageConfig
 from conclear.errors import InvalidInvocationError
-from conclear.jsonutil import sha256_bytes
 from conclear.presentation import CommandResult, ResultStatus
-from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.release_profile import ReleaseProfile
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.publication import (
@@ -30,13 +27,13 @@ from conclear.services.publication import (
 from conclear.services.release import (
     ReleaseRequest,
     execute_release,
+    generate_release_provenance,
     profile_inputs,
     resume_release,
     signer_identity,
 )
 from conclear.services.run_context import SourceRun, open_source_run
 from conclear.tools import ToolName
-from conclear.values import Digest
 from conclear.workspace import RunState
 
 from .common import (
@@ -61,37 +58,17 @@ def provenance_command(run_id: str, output_format: str) -> None:
     if source_run.workspace.load().state is not RunState.ASSEMBLED:
         raise InvalidInvocationError("Provenance requires assembled state")
     snapshot = source_run.workspace.load()
-    builder_id = snapshot.immutable_inputs.get("builderId")
-    if builder_id is None:
-        raise InvalidInvocationError(
-            "Provenance requires a run initialized with a release profile"
-        )
     image = source_run.repository.image(snapshot.immutable_inputs["image"])
-    candidate = load_candidate(source_run.workspace, image)
-    materials = load_provenance_materials(source_run.workspace, image)
     path = source_run.workspace.root / "records" / "provenance.json"
     if path.is_file():
         digest = load_release_evidence(source_run.workspace, image).provenance_digest
     else:
-        digest = generate_provenance(
-            ProvenanceInput(
-                subject_name=image.repository.repository_name,
-                subject_digest=candidate.observation.graph.digest,
-                platform_manifests=candidate.observation.platform_manifests,
-                source_repository=source_run.source.repository,
-                source_revision=source_run.source.revision,
-                configuration_digest=Digest(
-                    sha256_bytes(source_run.repository.raw_bytes)
-                ),
-                builder_id=builder_id,
-                image_id=image.image_id,
-                version=snapshot.immutable_inputs.get("version") or None,
-                run_id=source_run.workspace.run_id,
-                started_at=_timestamp(snapshot.created_at),
-                finished_at=datetime.now(UTC),
-                materials=materials,
-            ),
-            path,
+        digest = generate_release_provenance(
+            source_run.workspace,
+            source_run.repository,
+            image,
+            source=source_run.source,
+            now=datetime.now(UTC),
         )
     emit(
         CommandResult(
@@ -416,13 +393,3 @@ def _private_key(selected: ReleaseProfile) -> str:
     if key is None:
         raise InvalidInvocationError("Release profile has no Cosign signing key")
     return key
-
-
-def _timestamp(value: str) -> datetime:
-    try:
-        result = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError("Run creation timestamp is malformed") from exc
-    if result.tzinfo is None or result.utcoffset() is None:
-        raise InvalidInvocationError("Run creation timestamp lacks a timezone")
-    return result

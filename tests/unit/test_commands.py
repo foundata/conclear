@@ -659,9 +659,10 @@ def test_provenance_command_requires_assembled_state_and_a_profile_bound_run(
     )
     generated: list[Path] = []
 
-    def generate(inputs: Any, path: Path) -> str:
-        assert inputs.builder_id == BUILDER_ID
-        assert inputs.version == "1.2.3"
+    def generate(workspace: Any, repository: Any, image: Any, **kwargs: Any) -> str:
+        assert workspace.load().immutable_inputs["builderId"] == BUILDER_ID
+        assert image.image_id == "app"
+        path = workspace.root / "records" / "provenance.json"
         generated.append(path)
         path.write_text("{}\n", encoding="utf-8")
         return DIGEST
@@ -670,12 +671,10 @@ def test_provenance_command_requires_assembled_state_and_a_profile_bound_run(
         monkeypatch,
         run,
         profile,
-        load_candidate=lambda workspace, image: _candidate(),
-        load_provenance_materials=lambda workspace, image: (),
         load_release_evidence=lambda workspace, image: SimpleNamespace(
             provenance_digest="sha256:" + "e" * 64
         ),
-        generate_provenance=generate,
+        generate_release_provenance=generate,
     )
     code, value, _ = invoke(["provenance", run.workspace.run_id])
     assert code == 0

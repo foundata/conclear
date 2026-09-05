@@ -22,7 +22,7 @@ from conclear.artifacts import (
     qualification_transport,
     qualification_transports,
 )
-from conclear.config import RepositoryConfig
+from conclear.config import ImageConfig, RepositoryConfig
 from conclear.database import select_fresh_database, trivy_cache_root
 from conclear.errors import (
     ConClearError,
@@ -37,7 +37,7 @@ from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.records import SourceIdentity, Verdict
 from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
-from conclear.services.assembly import CandidateResult, assemble_candidate
+from conclear.services.assembly import assemble_candidate
 from conclear.services.checking import check_image
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.cleanup import cleanup_run
@@ -121,7 +121,6 @@ def execute_release(
     """Run the complete release state machine from detached checkout to promotion."""
     if request.version is not None:
         validate_release_version(request.version)
-    started_at = now_factory()
     source_run = create_source_run(
         source_root=request.repository,
         selector=request.revision,
@@ -132,7 +131,7 @@ def execute_release(
         profile_name=request.profile.name,
         additional_inputs=_profile_inputs(request.profile),
         id_factory=id_factory or UlidFactory(),
-        now=started_at,
+        now=now_factory(),
     )
     workspace = source_run.workspace
     try:
@@ -143,7 +142,6 @@ def execute_release(
             runtime=source_run.runtime,
             source=source_run.source,
             source_time=source_run.source_time,
-            started_at=started_at,
             now_factory=now_factory,
         )
     except BaseException as exc:
@@ -223,7 +221,6 @@ def resume_release(
         finally:
             registry_control.close()
         workspace.resume(expected, now=now_factory())
-    started_at = _parse_timestamp(workspace.load().created_at)
     request = ReleaseRequest(
         repository=source_root,
         revision=revision,
@@ -243,7 +240,6 @@ def resume_release(
             runtime=source_run.runtime,
             source=source_run.source,
             source_time=source_run.source_time,
-            started_at=started_at,
             now_factory=now_factory,
         )
     except BaseException as exc:
@@ -259,7 +255,6 @@ def _continue_release(
     runtime: ApplicationRuntime,
     source: SourceIdentity,
     source_time: datetime,
-    started_at: datetime,
     now_factory: Callable[[], datetime],
 ) -> ReleaseResult:
     image = repository.image(request.image_id)
@@ -294,15 +289,8 @@ def _continue_release(
         workspace.load().state is RunState.ASSEMBLED
         and not (workspace.root / "records" / "provenance.json").is_file()
     ):
-        candidate_for_provenance = load_candidate(workspace, image)
-        _generate_release_provenance(
-            candidate_for_provenance,
-            request=request,
-            repository=repository,
-            workspace=workspace,
-            source=source,
-            started_at=started_at,
-            now=now_factory(),
+        generate_release_provenance(
+            workspace, repository, image, source=source, now=now_factory()
         )
     candidate = load_candidate(workspace, image)
     evidence = load_release_evidence(workspace, image)
@@ -473,30 +461,45 @@ def _qualify_release(
     workspace.transition(RunState.QUALIFIED, now=now_factory())
 
 
-def _generate_release_provenance(
-    candidate: CandidateResult,
-    *,
-    request: ReleaseRequest,
-    repository: RepositoryConfig,
+def generate_release_provenance(
     workspace: RunWorkspace,
+    repository: RepositoryConfig,
+    image: ImageConfig,
+    *,
     source: SourceIdentity,
-    started_at: datetime,
     now: datetime,
-) -> None:
-    materials = load_provenance_materials(workspace, repository.image(request.image_id))
-    generate_provenance(
+) -> str:
+    """Write the SLSA provenance for the run's accepted candidate and return its digest.
+
+    The builder identity, version and start time come from the run's recorded
+    immutable inputs, never from the caller, so the `provenance` command and
+    the release workflow produce identical statements.
+
+    Raises:
+        InvalidInvocationError: If the run was created without a release
+            profile and therefore has no builder identity.
+    """
+    snapshot = workspace.load()
+    builder_id = snapshot.immutable_inputs.get("builderId")
+    if builder_id is None:
+        raise InvalidInvocationError(
+            "Provenance requires a run initialized with a release profile"
+        )
+    candidate = load_candidate(workspace, image)
+    materials = load_provenance_materials(workspace, image)
+    return generate_provenance(
         ProvenanceInput(
-            subject_name=repository.image(request.image_id).repository.repository_name,
+            subject_name=image.repository.repository_name,
             subject_digest=candidate.observation.graph.digest,
             platform_manifests=candidate.observation.platform_manifests,
             source_repository=source.repository,
             source_revision=source.revision,
             configuration_digest=Digest(sha256_bytes(repository.raw_bytes)),
-            builder_id=request.profile.builder.id,
-            image_id=request.image_id,
-            version=request.version,
+            builder_id=builder_id,
+            image_id=image.image_id,
+            version=snapshot.immutable_inputs.get("version") or None,
             run_id=workspace.run_id,
-            started_at=started_at,
+            started_at=_parse_timestamp(snapshot.created_at),
             finished_at=now,
             materials=materials,
         ),
