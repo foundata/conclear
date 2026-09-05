@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from conclear.config import normalize_builder_id
 from conclear.errors import OperationalError
 from conclear.identity import IDENTITY
 from conclear.jsonutil import atomic_write_json, sha256_file
+from conclear.release_profile import normalize_builder_id
 from conclear.schema import validate_external
 from conclear.values import (
     Digest,

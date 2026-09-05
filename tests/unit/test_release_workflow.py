@@ -21,15 +21,7 @@ from conclear.artifacts import (
     load_verification,
     qualification_transport,
 )
-from conclear.config import (
-    BuilderConfig,
-    CIContextPolicy,
-    QuayRegistryConfig,
-    RegistryProvider,
-    ReleaseProfile,
-    RepositoryConfig,
-    load_repository_config,
-)
+from conclear.config import RepositoryConfig, load_repository_config
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -39,6 +31,13 @@ from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import sha256_bytes
 from conclear.presentation import Finding
 from conclear.records import SourceIdentity, Verdict
+from conclear.release_profile import (
+    BuilderConfig,
+    CIContextPolicy,
+    QuayRegistryConfig,
+    RegistryProvider,
+    ReleaseProfile,
+)
 from conclear.services import release
 from conclear.services.release import ReleaseRequest, ReleaseResult
 from conclear.values import Platform

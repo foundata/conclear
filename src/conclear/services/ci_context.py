@@ -9,10 +9,11 @@ from conclear.adapters.ci import (
     CIContextObservation,
     ObservedCIContext,
 )
-from conclear.config import CIContextPolicy, normalize_source_url
+from conclear.config import normalize_source_url
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json
 from conclear.records import SourceIdentity
+from conclear.release_profile import CIContextPolicy
 
 
 @dataclass(frozen=True, slots=True)

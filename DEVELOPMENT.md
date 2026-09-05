@@ -93,7 +93,8 @@ conclear/
 ├── src/conclear/          # Main package
 │   ├── cli.py                    # Click entry point and error-to-exit mapping
 │   ├── identity.py               # Embedded tool and guide identity
-│   ├── config.py                 # conclear.toml and release profiles
+│   ├── config.py                 # Repository-owned conclear.toml
+│   ├── release_profile.py        # Maintainer-controlled release profiles
 │   ├── catalog.py                # CCnnnn check catalog loader
 │   ├── checks.py                 # Static Containerfile and context checks
 │   ├── conformance.py            # docs/conformance.md generator

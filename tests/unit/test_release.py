@@ -11,14 +11,7 @@ import conclear.provenance as provenance_module
 import conclear.records as records_module
 import conclear.services.assembly as assembly_module
 import conclear.services.publication as publication_module
-from conclear.config import (
-    BuilderConfig,
-    CIContextPolicy,
-    QuayRegistryConfig,
-    RegistryProvider,
-    ReleaseProfile,
-    load_repository_config,
-)
+from conclear.config import load_repository_config
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -27,6 +20,13 @@ from conclear.errors import (
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import sha256_bytes
 from conclear.records import SourceIdentity
+from conclear.release_profile import (
+    BuilderConfig,
+    CIContextPolicy,
+    QuayRegistryConfig,
+    RegistryProvider,
+    ReleaseProfile,
+)
 from conclear.services import release
 from conclear.services.release import ReleaseRequest
 from conclear.values import OCIReference

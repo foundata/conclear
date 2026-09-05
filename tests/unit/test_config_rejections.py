@@ -6,13 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from conclear.config import (
-    load_release_profile,
-    load_repository_config,
-    normalize_builder_id,
-    normalize_observed_source_url,
-)
+from conclear.config import load_repository_config, normalize_observed_source_url
 from conclear.errors import InvalidInvocationError
+from conclear.release_profile import load_release_profile, normalize_builder_id
 
 DIGEST = "sha256:" + "a" * 64
 SECOND_IMAGE = """

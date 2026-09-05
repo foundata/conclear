@@ -20,7 +20,7 @@ from conclear.attestations import (
     statement_matches,
     write_statement,
 )
-from conclear.config import CIContextPolicy, ImageConfig, ReleaseProfile
+from conclear.config import ImageConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -40,6 +40,7 @@ from conclear.records import (
     validate_record,
 )
 from conclear.registry_control import RegistryControl
+from conclear.release_profile import CIContextPolicy, ReleaseProfile
 from conclear.schema import validate_external
 from conclear.services.assembly import CandidateResult
 from conclear.services.ci_context import PublicCIContext

@@ -4,10 +4,11 @@ import platform as host_platform
 from dataclasses import dataclass
 from typing import Protocol
 
-from conclear.config import ReleaseProfile, RepositoryConfig
+from conclear.config import RepositoryConfig
 from conclear.emulation import binfmt_handler, normalize_architecture
 from conclear.errors import OperationalError
 from conclear.registry_control import TagObservation
+from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
 from conclear.values import OCIReference
 

@@ -22,14 +22,7 @@ from conclear.attestations import (
     SPDX_DOCUMENT_TYPE,
     STATEMENT_TYPE,
 )
-from conclear.config import (
-    BuilderConfig,
-    CIContextPolicy,
-    QuayRegistryConfig,
-    RegistryProvider,
-    ReleaseProfile,
-    load_repository_config,
-)
+from conclear.config import load_repository_config
 from conclear.errors import InvalidInvocationError, OperationalError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
@@ -43,6 +36,13 @@ from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.registry_control import TagObservation
+from conclear.release_profile import (
+    BuilderConfig,
+    CIContextPolicy,
+    QuayRegistryConfig,
+    RegistryProvider,
+    ReleaseProfile,
+)
 from conclear.services.assembly import CandidateResult
 from conclear.services.ci_context import PublicCIContext
 from conclear.services.publication import (

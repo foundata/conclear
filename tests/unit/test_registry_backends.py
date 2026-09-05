@@ -6,14 +6,14 @@ from conclear.adapters.registry_backends import (
     create_registry_control,
     supported_registry_backends,
 )
-from conclear.config import (
+from conclear.errors import InvalidInvocationError
+from conclear.release_profile import (
     BuilderConfig,
     CIContextPolicy,
     QuayRegistryConfig,
     RegistryProvider,
     ReleaseProfile,
 )
-from conclear.errors import InvalidInvocationError
 from conclear.values import OCIReference
 
 

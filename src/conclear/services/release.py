@@ -22,7 +22,7 @@ from conclear.artifacts import (
     qualification_transport,
     qualification_transports,
 )
-from conclear.config import ReleaseProfile, RepositoryConfig
+from conclear.config import RepositoryConfig
 from conclear.database import select_fresh_database
 from conclear.errors import (
     ConClearError,
@@ -36,6 +36,7 @@ from conclear.pins import PinResolver, PinStore
 from conclear.presentation import Finding
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.records import SourceIdentity, Verdict
+from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
 from conclear.services.assembly import CandidateResult, assemble_candidate
 from conclear.services.checking import check_image

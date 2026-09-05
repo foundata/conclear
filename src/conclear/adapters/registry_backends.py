@@ -4,14 +4,14 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from conclear.adapters.quay import QuayAdapter
-from conclear.config import (
+from conclear.errors import InvalidInvocationError
+from conclear.registry_control import RegistryControl
+from conclear.release_profile import (
     QuayRegistryConfig,
     RegistryConfig,
     RegistryProvider,
     ReleaseProfile,
 )
-from conclear.errors import InvalidInvocationError
-from conclear.registry_control import RegistryControl
 from conclear.secrets import token_provider
 from conclear.values import OCIReference
 

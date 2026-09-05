@@ -19,17 +19,17 @@ import conclear.commands.maintenance as maintenance_commands
 import conclear.commands.remote as remote_commands
 import conclear.commands.transport as transport_commands
 from conclear.cli import main
-from conclear.config import (
+from conclear.config import load_repository_config
+from conclear.errors import OperationalError, RuleRejectionError
+from conclear.presentation import Finding
+from conclear.records import SourceIdentity, Verdict
+from conclear.release_profile import (
     BuilderConfig,
     CIContextPolicy,
     QuayRegistryConfig,
     RegistryProvider,
     ReleaseProfile,
-    load_repository_config,
 )
-from conclear.errors import OperationalError, RuleRejectionError
-from conclear.presentation import Finding
-from conclear.records import SourceIdentity, Verdict
 from conclear.values import Digest
 from conclear.workspace import RunState, RunWorkspace
 

@@ -1,4 +1,11 @@
-"""Validated repository and maintainer release configuration."""
+"""Validated repository-owned configuration from `conclear.toml`.
+
+Everything here is untrusted repository input: it is schema-validated, then
+narrowed into typed values with the bounds and path confinement the guide
+requires. The maintainer-controlled release profile lives in
+`conclear.release_profile`, which reuses the TOML narrowing helpers and URL
+identity patterns defined here.
+"""
 
 import os
 import re
@@ -12,10 +19,8 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from conclear.errors import InvalidInvocationError
-from conclear.jsonutil import sha256_bytes
 from conclear.path_safety import contained_path
 from conclear.schema import validate_external
-from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
 from conclear.values import OCIReference, Platform
 
 MAX_PIN_FRESHNESS = timedelta(hours=24)
@@ -24,11 +29,11 @@ MAX_CANDIDATE_LIFETIME = timedelta(days=7)
 MAX_REMEDIATION = timedelta(days=30)
 MAX_CONFIG_BYTES = 4 * 1024 * 1024
 _DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[hHdDwW])$")
-_HOST_PATTERN = re.compile(
+HOST_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
 )
-_URL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
+URL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
 _SCP_GIT_REMOTE_PATTERN = re.compile(r"^git@(?P<host>[^/:@]+):(?P<path>[^?#]+)$")
 _TEST_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _ENVIRONMENT_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
@@ -42,20 +47,6 @@ class PinIntent(StrEnum):
 
     IMMUTABLE_VERSION = "immutable-version"
     MOVING_RELEASE_LINE = "moving-release-line"
-
-
-class CIContextPolicy(StrEnum):
-    """Protected policy for optional CI correlation observations."""
-
-    OMIT = "omit"
-    OBSERVE = "observe"
-    REQUIRE = "require"
-
-
-class RegistryProvider(StrEnum):
-    """Compiled release-registry control backends."""
-
-    QUAY = "quay"
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,42 +254,6 @@ class RepositoryConfig:
         return tuple(ordered)
 
 
-@dataclass(frozen=True, slots=True)
-class BuilderConfig:
-    """Protected SLSA build-platform trust-domain identity."""
-
-    id: str
-
-
-@dataclass(frozen=True, slots=True)
-class QuayRegistryConfig:
-    """Protected Quay control-plane configuration."""
-
-    provider: RegistryProvider
-    host: str
-    api_url: str
-    token_file: Path | None
-
-
-type RegistryConfig = QuayRegistryConfig
-
-
-@dataclass(frozen=True, slots=True)
-class ReleaseProfile:
-    """Maintainer-controlled trust and credential locations."""
-
-    name: str
-    ci_context: CIContextPolicy
-    builder: BuilderConfig
-    auth_file: Path | None
-    registry: RegistryConfig
-    cosign_private_key: str | None
-    cosign_public_key: Path
-    passphrase_file: Path | None
-    configuration_digest: str
-    public_key_digest: str
-
-
 def parse_duration(value: str, *, maximum: timedelta, field_name: str) -> timedelta:
     """Parse a bounded whole-hour, day or week duration."""
     match = _DURATION_PATTERN.fullmatch(value)
@@ -334,11 +289,11 @@ def load_repository_config(path: Path) -> RepositoryConfig:
     if not isinstance(value, dict):
         raise InvalidInvocationError("conclear.toml must contain a table")
     source_root = path.parent.resolve(strict=True)
-    project_value = _object(value["project"])
+    project_value = toml_table(value["project"])
     images_value = value["images"]
     if not isinstance(images_value, list):
         raise InvalidInvocationError("images must be an array of tables")
-    images = tuple(_parse_image(_object(item), source_root) for item in images_value)
+    images = tuple(_parse_image(toml_table(item), source_root) for item in images_value)
     identifiers = [image.image_id for image in images]
     if len(identifiers) != len(set(identifiers)):
         raise InvalidInvocationError("Image identifiers must be unique")
@@ -346,8 +301,8 @@ def load_repository_config(path: Path) -> RepositoryConfig:
     return RepositoryConfig(
         schema_version=_integer(value["schema_version"]),
         project=ProjectConfig(
-            name=_string(project_value["name"]),
-            source=normalize_source_url(_string(project_value["source"])),
+            name=toml_string(project_value["name"]),
+            source=normalize_source_url(toml_string(project_value["source"])),
         ),
         images=images,
         path=path.resolve(strict=True),
@@ -370,14 +325,14 @@ def normalize_source_url(value: str) -> str:
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
-        or _HOST_PATTERN.fullmatch(hostname.lower()) is None
+        or HOST_PATTERN.fullmatch(hostname.lower()) is None
     ):
         raise InvalidInvocationError(
             "Project source must be a credential-free HTTPS URL"
         )
     components = parsed.path.removesuffix("/").removesuffix(".git").split("/")[1:]
     if len(components) < 2 or any(
-        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
+        URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
         for item in components
     ):
         raise InvalidInvocationError("Project source must name a repository")
@@ -417,68 +372,19 @@ def normalize_observed_source_url(value: str) -> str:
 
 def _normalize_ssh_repository(hostname: str, path: str) -> str:
     """Normalize one unambiguous Git SSH host and repository path."""
-    if _HOST_PATTERN.fullmatch(hostname.lower()) is None or path.startswith("/"):
+    if HOST_PATTERN.fullmatch(hostname.lower()) is None or path.startswith("/"):
         raise InvalidInvocationError("Observed Git SSH remote is malformed")
     components = path.removesuffix("/").removesuffix(".git").split("/")
     if len(components) < 2 or any(
-        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
+        URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
         for item in components
     ):
         raise InvalidInvocationError("Observed Git SSH remote must name a repository")
     return urlunsplit(("https", hostname.lower(), "/" + "/".join(components), "", ""))
 
 
-def load_release_profile(
-    name: str, *, config_home: Path | None = None
-) -> ReleaseProfile:
-    """Load and validate a named maintainer-controlled release profile."""
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", name):
-        raise InvalidInvocationError(f"Invalid release profile name: {name}")
-    base = config_home or Path(
-        os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
-    )
-    path = base / "conclear" / f"{name}.toml"
-    try:
-        profile_bytes = read_protected_file(path, maximum_bytes=MAX_PROFILE_BYTES)
-        value: Any = tomllib.loads(profile_bytes.decode("utf-8"))
-    except (UnicodeError, tomllib.TOMLDecodeError, RecursionError) as exc:
-        raise InvalidInvocationError(f"Unable to read release profile {path}") from exc
-    validate_external(value, "profile.schema.json", label="release profile")
-    profile = _object(value)
-    auth_file = _optional_private_path(profile.get("auth_file"))
-    builder = BuilderConfig(
-        normalize_builder_id(_string(_object(profile["builder"])["id"]))
-    )
-    registry = _parse_registry_profile(_object(profile["registry"]))
-    public_key = _private_path(profile["cosign_public_key"], allow_group_read=True)
-    public_key_bytes = read_protected_file(
-        public_key,
-        maximum_bytes=MAX_PROFILE_BYTES,
-        allow_group_read=True,
-    )
-    passphrase_file = _optional_private_path(profile.get("passphrase_file"))
-    private_key_value = profile.get("cosign_private_key")
-    private_key = (
-        _signing_key(_string(private_key_value))
-        if private_key_value is not None
-        else None
-    )
-    return ReleaseProfile(
-        name=name,
-        ci_context=CIContextPolicy(_string(profile["ci_context"])),
-        builder=builder,
-        auth_file=auth_file,
-        registry=registry,
-        cosign_private_key=private_key,
-        cosign_public_key=public_key,
-        passphrase_file=passphrase_file,
-        configuration_digest=sha256_bytes(profile_bytes),
-        public_key_digest=sha256_bytes(public_key_bytes),
-    )
-
-
 def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
-    image_id = _string(value["id"])
+    image_id = toml_string(value["id"])
     platforms = tuple(Platform.parse(item) for item in _string_list(value["platforms"]))
     if any(
         left.semantically_matches(right)
@@ -503,7 +409,9 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         )
     omission_reason_value = value.get("arm64_omission_reason")
     omission_reason = (
-        _string(omission_reason_value) if omission_reason_value is not None else None
+        toml_string(omission_reason_value)
+        if omission_reason_value is not None
+        else None
     )
     if (
         not any(platform.semantically_matches(arm64) for platform in platforms)
@@ -513,40 +421,40 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
             "An image omitting linux/arm64 must provide arm64_omission_reason"
         )
 
-    release_value = _object(value["release"])
+    release_value = toml_table(value["release"])
     release = _parse_release_tags(release_value)
-    runtime_value = _object(value["runtime"])
-    limits_value = _object(value.get("limits", {}))
+    runtime_value = toml_table(value["runtime"])
+    limits_value = toml_table(value.get("limits", {}))
     limits = EffectiveLimits(
         pin_freshness=parse_duration(
-            _string(limits_value.get("pin_freshness", "24h")),
+            toml_string(limits_value.get("pin_freshness", "24h")),
             maximum=MAX_PIN_FRESHNESS,
             field_name="pin_freshness",
         ),
         pin_divergence=parse_duration(
-            _string(limits_value.get("pin_divergence", "7d")),
+            toml_string(limits_value.get("pin_divergence", "7d")),
             maximum=MAX_PIN_DIVERGENCE,
             field_name="pin_divergence",
         ),
         candidate_lifetime=parse_duration(
-            _string(limits_value.get("candidate_lifetime", "7d")),
+            toml_string(limits_value.get("candidate_lifetime", "7d")),
             maximum=MAX_CANDIDATE_LIFETIME,
             field_name="candidate_lifetime",
         ),
         remediation=parse_duration(
-            _string(limits_value.get("remediation", "30d")),
+            toml_string(limits_value.get("remediation", "30d")),
             maximum=MAX_REMEDIATION,
             field_name="remediation",
         ),
     )
     repository = OCIReference.parse(
-        _string(value["repository"]),
+        toml_string(value["repository"]),
         allow_localhost=False,
     )
     if repository.tag or repository.digest:
         raise InvalidInvocationError("Release repositories must be untagged names")
     exceptions = tuple(
-        _parse_exception(_object(item), image_id)
+        _parse_exception(toml_table(item), image_id)
         for item in _list(value.get("vulnerability_exceptions", []))
     )
     exception_keys = [(item.component, item.advisory) for item in exceptions]
@@ -557,22 +465,24 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     return ImageConfig(
         image_id=image_id,
         containerfile=contained_path(
-            source_root, _string(value.get("containerfile", "Containerfile"))
+            source_root, toml_string(value.get("containerfile", "Containerfile"))
         ),
-        context=contained_path(source_root, _string(value.get("context", "."))),
+        context=contained_path(source_root, toml_string(value.get("context", "."))),
         repository=repository,
         platforms=platforms,
         native_test_platforms=native_platforms,
         arm64_omission_reason=omission_reason,
-        scanner=_string(value.get("scanner", "trivy")),
-        rescan_scope=_string(value.get("rescan_scope", "sbom-vulnerabilities")),
+        scanner=toml_string(value.get("scanner", "trivy")),
+        rescan_scope=toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
         release=release,
         runtime=_parse_runtime(runtime_value),
-        test=_parse_test(_object(value.get("test", {})), source_root),
+        test=_parse_test(toml_table(value.get("test", {})), source_root),
         hooks=tuple(
-            _parse_hook(_object(item)) for item in _list(value.get("hooks", []))
+            _parse_hook(toml_table(item)) for item in _list(value.get("hooks", []))
         ),
-        pins=tuple(_parse_pin(_object(item)) for item in _list(value.get("pins", []))),
+        pins=tuple(
+            _parse_pin(toml_table(item)) for item in _list(value.get("pins", []))
+        ),
         vulnerability_exceptions=exceptions,
         limits=limits,
     )
@@ -581,19 +491,19 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
 def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
     fixtures = tuple(
         TestFixtureConfig(
-            name=_test_name(_string(item_value["name"]), "fixture"),
-            path=_test_fixture_path(source_root, _string(item_value["path"])),
+            name=_test_name(toml_string(item_value["name"]), "fixture"),
+            path=_test_fixture_path(source_root, toml_string(item_value["path"])),
         )
         for item in _list(value.get("fixtures", []))
-        for item_value in (_object(item),)
+        for item_value in (toml_table(item),)
     )
     outputs = tuple(
         TestOutputConfig(
-            name=_test_name(_string(item_value["name"]), "output"),
+            name=_test_name(toml_string(item_value["name"]), "output"),
             secret=_boolean(item_value.get("secret", False)),
         )
         for item in _list(value.get("outputs", []))
-        for item_value in (_object(item),)
+        for item_value in (toml_table(item),)
     )
     _require_unique_names(fixtures, "test fixtures")
     _require_unique_names(outputs, "test outputs")
@@ -604,11 +514,11 @@ def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
         **{item.name: TestMountSource.OUTPUT for item in outputs},
     }
     preparations = tuple(
-        _parse_test_preparation(_object(item), handles)
+        _parse_test_preparation(toml_table(item), handles)
         for item in _list(value.get("preparations", []))
     )
     _require_unique_names(preparations, "test preparations")
-    launch = _parse_test_launch(_object(value.get("launch", {})), handles)
+    launch = _parse_test_launch(toml_table(value.get("launch", {})), handles)
     test = TestConfig(
         dependencies=tuple(_string_list(value.get("dependencies", []))),
         fixtures=fixtures,
@@ -624,12 +534,12 @@ def _parse_test_preparation(
     value: dict[str, Any], handles: dict[str, TestMountSource]
 ) -> TestPreparationConfig:
     return TestPreparationConfig(
-        name=_test_name(_string(value["name"]), "preparation"),
-        image=_test_name(_string(value["image"]), "preparation image"),
+        name=_test_name(toml_string(value["name"]), "preparation"),
+        image=_test_name(toml_string(value["image"]), "preparation image"),
         command=_command(value["command"], "preparation command"),
         environment=_test_environment(value.get("environment", {})),
         mounts=tuple(
-            _parse_test_mount(_object(item), handles)
+            _parse_test_mount(toml_table(item), handles)
             for item in _list(value.get("mounts", []))
         ),
         timeout_seconds=_integer(value.get("timeout_seconds", 300)),
@@ -644,7 +554,7 @@ def _parse_test_launch(
         arguments=_command(value.get("arguments", []), "launch arguments", empty=True),
         environment=_test_environment(value.get("environment", {})),
         mounts=tuple(
-            _parse_test_mount(_object(item), handles)
+            _parse_test_mount(toml_table(item), handles)
             for item in _list(value.get("mounts", []))
         ),
         expected_exit_status=_integer(value.get("expected_exit_status", 0)),
@@ -654,7 +564,7 @@ def _parse_test_launch(
 def _parse_test_mount(
     value: dict[str, Any], handles: dict[str, TestMountSource]
 ) -> TestMountConfig:
-    name = _test_name(_string(value["name"]), "mount source")
+    name = _test_name(toml_string(value["name"]), "mount source")
     source = handles.get(name)
     if source is None:
         raise InvalidInvocationError(
@@ -683,7 +593,7 @@ def _parse_test_mount(
 
 
 def _test_environment(value: object) -> tuple[tuple[str, str], ...]:
-    environment = _object(value)
+    environment = toml_table(value)
     result: list[tuple[str, str]] = []
     for name, item in environment.items():
         if _ENVIRONMENT_NAME_PATTERN.fullmatch(name) is None:
@@ -692,7 +602,7 @@ def _test_environment(value: object) -> tuple[tuple[str, str], ...]:
             raise InvalidInvocationError(
                 f"Test secrets must use declared private files, not environment {name}"
             )
-        text = _string(item)
+        text = toml_string(item)
         if "\x00" in text:
             raise InvalidInvocationError(f"Test environment {name} contains NUL")
         result.append((name, text))
@@ -894,11 +804,11 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
         value.get("immutable_paths", []), field_name="immutable_paths", allow_root=True
     )
     return RuntimeConfig(
-        profile=_string(value["profile"]),
+        profile=toml_string(value["profile"]),
         user=_integer(value["user"]),
         read_only=True,
         writable_mounts=writable_mounts,
-        memory=_string(value["memory"]),
+        memory=toml_string(value["memory"]),
         cpus=_number(value["cpus"]),
         pids=_integer(value["pids"]),
         nofile=_integer(value["nofile"]),
@@ -914,7 +824,7 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
 
 def _parse_hook(value: dict[str, Any]) -> HookConfig:
     return HookConfig(
-        name=_string(value["name"]),
+        name=toml_string(value["name"]),
         command=_command(value["command"], "hook command"),
         timeout_seconds=_integer(value.get("timeout_seconds", 300)),
         required=_boolean(value.get("required", True)),
@@ -924,17 +834,17 @@ def _parse_hook(value: dict[str, Any]) -> HookConfig:
 def _parse_pin(value: dict[str, Any]) -> PinConfig:
     return PinConfig(
         reference=OCIReference.parse(
-            _string(value["reference"]),
+            toml_string(value["reference"]),
             require_tag=True,
             require_digest=True,
             allow_localhost=False,
         ),
-        tag_intent=PinIntent(_string(value["tag_intent"])),
+        tag_intent=PinIntent(toml_string(value["tag_intent"])),
     )
 
 
 def _parse_exception(value: dict[str, Any], image_id: str) -> VulnerabilityException:
-    expires = _string(value["expires"])
+    expires = toml_string(value["expires"])
     try:
         date.fromisoformat(expires)
     except ValueError as exc:
@@ -943,15 +853,15 @@ def _parse_exception(value: dict[str, Any], image_id: str) -> VulnerabilityExcep
         ) from exc
     return VulnerabilityException(
         image=image_id,
-        component=_string(value["component"]),
-        advisory=_string(value["advisory"]),
-        rationale=_string(value["rationale"]),
-        reachability=_string(value["reachability"]),
-        exposure=_string(value["exposure"]),
-        compensating_controls=_string(value["compensating_controls"]),
-        owner=_string(value["owner"]),
+        component=toml_string(value["component"]),
+        advisory=toml_string(value["advisory"]),
+        rationale=toml_string(value["rationale"]),
+        reachability=toml_string(value["reachability"]),
+        exposure=toml_string(value["exposure"]),
+        compensating_controls=toml_string(value["compensating_controls"]),
+        owner=toml_string(value["owner"]),
         expires=expires,
-        review_trigger=_string(value["review_trigger"]),
+        review_trigger=toml_string(value["review_trigger"]),
     )
 
 
@@ -983,81 +893,6 @@ def _command(value: object, field_name: str, *, empty: bool = False) -> tuple[st
     if any("\x00" in item for item in command):
         raise InvalidInvocationError(f"{field_name} contains NUL")
     return command
-
-
-def _parse_registry_profile(value: dict[str, Any]) -> RegistryConfig:
-    provider = RegistryProvider(_string(value["provider"]))
-    if provider is RegistryProvider.QUAY:
-        return QuayRegistryConfig(
-            provider=provider,
-            host=_string(value["host"]),
-            api_url=_registry_api_url(
-                _string(value.get("api_url", "https://quay.io/api/v1"))
-            ),
-            token_file=_optional_private_path(value.get("token_file")),
-        )
-    raise InvalidInvocationError(f"Unsupported registry provider: {provider.value}")
-
-
-def normalize_builder_id(value: str) -> str:
-    """Validate and normalize a public SLSA builder documentation URI."""
-    try:
-        parsed = urlsplit(value)
-        port = parsed.port
-    except ValueError as exc:
-        raise InvalidInvocationError("Builder identity URI is malformed") from exc
-    hostname = parsed.hostname
-    if (
-        parsed.scheme != "https"
-        or hostname is None
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-        or _HOST_PATTERN.fullmatch(hostname.lower()) is None
-    ):
-        raise InvalidInvocationError(
-            "Builder identity must be a credential-free HTTPS URI without a query or fragment"
-        )
-    components = parsed.path.rstrip("/").split("/")[1:]
-    if not components or any(
-        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
-        for item in components
-    ):
-        raise InvalidInvocationError(
-            "Builder identity must name a public documentation path"
-        )
-    authority = hostname.lower() + ("" if port is None else f":{port}")
-    return urlunsplit(("https", authority, parsed.path, "", ""))
-
-
-def _registry_api_url(value: str) -> str:
-    try:
-        parsed = urlsplit(value)
-        port = parsed.port
-    except ValueError as exc:
-        raise InvalidInvocationError("Registry API URL is malformed") from exc
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname is None
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-        or _HOST_PATTERN.fullmatch(parsed.hostname.lower()) is None
-    ):
-        raise InvalidInvocationError(
-            "Registry API URL must be credential-free HTTPS without a query or fragment"
-        )
-    authority = parsed.hostname.lower() + ("" if port is None else f":{port}")
-    components = parsed.path.rstrip("/").split("/")[1:]
-    if not components or any(
-        _URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
-        for item in components
-    ):
-        raise InvalidInvocationError("Registry API URL must contain a canonical path")
-    path = "/" + "/".join(components)
-    return urlunsplit(("https", authority, path, "", ""))
 
 
 def _read_repository_file(path: Path) -> bytes:
@@ -1097,70 +932,8 @@ def _read_repository_file(path: Path) -> bytes:
         os.close(descriptor)
 
 
-def _require_private_file(path: Path, *, allow_group_read: bool = False) -> None:
-    try:
-        file_stat = path.stat(follow_symlinks=False)
-    except OSError as exc:
-        raise InvalidInvocationError(
-            f"Credential or profile file is unavailable: {path}"
-        ) from exc
-    if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
-        raise InvalidInvocationError(
-            f"Credential or profile path is not a regular file: {path}"
-        )
-    if file_stat.st_uid != os.getuid():
-        raise InvalidInvocationError(
-            f"Credential or profile file is not owned by this user: {path}"
-        )
-    allowed = 0o640 if allow_group_read else 0o600
-    if stat.S_IMODE(file_stat.st_mode) & ~allowed:
-        raise InvalidInvocationError(
-            f"Credential or profile file permissions are unsafe: {path}"
-        )
-
-
-def _private_path(value: object, *, allow_group_read: bool = False) -> Path:
-    path = Path(_string(value)).expanduser()
-    _require_private_file(path, allow_group_read=allow_group_read)
-    return path.resolve(strict=True)
-
-
-def _optional_private_path(value: object) -> Path | None:
-    return None if value is None else _private_path(value)
-
-
-def _signing_key(value: str) -> str:
-    """Validate a protected file path or credential-free KMS/HSM handle."""
-    if value.startswith("pkcs11:") or "://" in value:
-        lowered = value.lower()
-        parsed = urlsplit(value)
-        if (
-            not value
-            or any(character.isspace() or ord(character) < 0x20 for character in value)
-            or any(
-                marker in lowered
-                for marker in (
-                    "pin-value=",
-                    "pin-source=",
-                    "password=",
-                    "passphrase=",
-                    "secret=",
-                    "token=",
-                )
-            )
-            or parsed.username is not None
-            or parsed.password is not None
-        ):
-            raise InvalidInvocationError(
-                "Cosign KMS or HSM handle must not contain credentials"
-            )
-        return value
-    path = Path(value).expanduser()
-    _require_private_file(path)
-    return str(path.resolve(strict=True))
-
-
-def _object(value: object) -> dict[str, Any]:
+def toml_table(value: object) -> dict[str, Any]:
+    """Narrow one schema-validated TOML value to a string-keyed table."""
     if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
         raise InvalidInvocationError("Expected a table with string keys")
     return value
@@ -1172,7 +945,8 @@ def _list(value: object) -> list[Any]:
     return value
 
 
-def _string(value: object) -> str:
+def toml_string(value: object) -> str:
+    """Narrow one schema-validated TOML value to a string."""
     if not isinstance(value, str):
         raise InvalidInvocationError("Expected a string")
     return value

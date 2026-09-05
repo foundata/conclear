@@ -9,16 +9,16 @@ from conclear.adapters.ci import (
     observe_ci_context,
 )
 from conclear.commands import common as common_commands
-from conclear.config import (
+from conclear.errors import OperationalError
+from conclear.jsonutil import load_json
+from conclear.records import SourceIdentity
+from conclear.release_profile import (
     BuilderConfig,
     CIContextPolicy,
     QuayRegistryConfig,
     RegistryProvider,
     ReleaseProfile,
 )
-from conclear.errors import OperationalError
-from conclear.jsonutil import load_json
-from conclear.records import SourceIdentity
 from conclear.services.ci_context import resolve_ci_context
 
 REVISION = "a" * 40

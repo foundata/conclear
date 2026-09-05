@@ -9,12 +9,13 @@ from typing import Any
 
 import click
 
-from conclear.config import ReleaseProfile, load_repository_config
+from conclear.config import load_repository_config
 from conclear.database import select_database_by_digest, select_fresh_database
 from conclear.errors import RuleRejectionError
 from conclear.hooks import HookRunner
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
+from conclear.release_profile import ReleaseProfile
 from conclear.services.assembly import assemble_candidate
 from conclear.services.checking import check_image
 from conclear.services.local_phases import (

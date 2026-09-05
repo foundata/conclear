@@ -14,8 +14,12 @@ from conclear.adapters.ci import (
     CIContextObservation,
     observe_ci_context,
 )
-from conclear.config import CIContextPolicy, ReleaseProfile, load_release_profile
 from conclear.presentation import CommandResult, present_human, present_json
+from conclear.release_profile import (
+    CIContextPolicy,
+    ReleaseProfile,
+    load_release_profile,
+)
 from conclear.runtime import ApplicationRuntime
 from conclear.secrets import read_passphrase
 from conclear.tools import ToolName

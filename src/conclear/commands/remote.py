@@ -16,11 +16,12 @@ from conclear.artifacts import (
     load_release_evidence,
     load_verification,
 )
-from conclear.config import ImageConfig, ReleaseProfile
+from conclear.config import ImageConfig
 from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import sha256_bytes
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.provenance import ProvenanceInput, generate_provenance
+from conclear.release_profile import ReleaseProfile
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.publication import (
     attest_candidate,
