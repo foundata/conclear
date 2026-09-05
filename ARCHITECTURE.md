@@ -271,7 +271,7 @@ Commands support `--format json`. JSON mode writes one documented result object 
 
 ## Records and workspaces<a id="records-and-workspaces"></a>
 
-Every record is UTF-8 JSON validated against a versioned schema. It includes `schemaVersion`, `recordType`, `createdAt`, `runId`, ConClear and guide identity, canonical source repository and revision, SHA-256 of the exact `conclear.toml` bytes, relevant tool identities and a verdict. Timestamps use UTC RFC 3339 form. A record digest is the SHA-256 of its exact stored bytes.
+Every record is UTF-8 JSON validated against a versioned schema. It includes `schemaVersion`, `recordType`, `createdAt`, `runId`, ConClear and guide identity, canonical source repository and revision, SHA-256 of the exact `conclear.toml` bytes, relevant tool identities and a verdict. Timestamps use UTC RFC 3339 form with whole-second precision and a `Z` suffix. ConClear truncates a sub-second observation when it reads its clock and never rounds, so a recorded time never post-dates the observation and identical inputs serialize to identical bytes. A record digest is the SHA-256 of its exact stored bytes.
 
 `platform-qualification.json` additionally binds the target platform; OCI descriptor and manifest digest; Containerfile, context and effective build arguments; external image digests; build and test host, target and execution architectures; emulation or cross-build mechanism; runtime constraints; non-secret test-input and preparation identities; exact test-image dependency descriptors and manifest digests; test result digests; SBOM digest and SPDX version; scan-result and vulnerability-database identities; applied exceptions; and the platform verdict.
 
