@@ -28,7 +28,7 @@
         "decision": {"enum": ["affected", "not-applicable", "remediation-planned", "remediated"]},
         "rationale": {"type": "string", "minLength": 1},
         "owner": {"type": "string", "minLength": 1},
-        "decidedAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
+        "decidedAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
         "remediatingDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
       },
       "allOf": [
