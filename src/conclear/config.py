@@ -236,22 +236,9 @@ class RepositoryConfig:
 
     def test_dependencies(self, image_id: str) -> tuple[ImageConfig, ...]:
         """Return transitive test dependencies in stable dependency-first order."""
-        selected = self.image(image_id)
-        images = {image.image_id: image for image in self.images}
-        ordered: list[ImageConfig] = []
-        visited: set[str] = set()
-
-        def visit(current: ImageConfig) -> None:
-            for dependency_id in current.test.dependencies:
-                if dependency_id in visited:
-                    continue
-                dependency = images[dependency_id]
-                visit(dependency)
-                visited.add(dependency_id)
-                ordered.append(dependency)
-
-        visit(selected)
-        return tuple(ordered)
+        return _dependency_order(
+            self.image(image_id), {image.image_id: image for image in self.images}
+        )
 
 
 def parse_duration(value: str, *, maximum: timedelta, field_name: str) -> timedelta:
