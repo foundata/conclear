@@ -9,7 +9,7 @@ from typing import override
 
 from conclear.adapters.ci import CIContextObservation
 from conclear.adapters.cosign import CosignAdapter
-from conclear.adapters.registry_control import (
+from conclear.adapters.registry_backends import (
     create_registry_control,
     validate_registry_destinations,
 )

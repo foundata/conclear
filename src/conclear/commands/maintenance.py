@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 
 from conclear.adapters.ci import ObservedCIContext
-from conclear.adapters.registry_control import create_registry_control
+from conclear.adapters.registry_backends import create_registry_control
 from conclear.config import load_repository_config, normalize_observed_source_url
 from conclear.database import select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError

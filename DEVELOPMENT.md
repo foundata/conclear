@@ -117,7 +117,7 @@ conclear/
 │   │   ├── hadolint.py           # Containerfile linting
 │   │   ├── trivy.py              # Scanning, SBOMs, database snapshots
 │   │   ├── cosign.py             # Signing, attestations, verification
-│   │   ├── registry_control.py   # Compiled backend selection
+│   │   ├── registry_backends.py  # Compiled backend selection
 │   │   ├── quay.py               # Quay tag API
 │   │   └── git.py                # Source selection and worktrees
 │   ├── commands/                 # CLI surface, grouped by scope (transport.py: worker exports)

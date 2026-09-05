@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from conclear.adapters.registry_control import (
+from conclear.adapters.registry_backends import (
     create_registry_control,
     supported_registry_backends,
 )

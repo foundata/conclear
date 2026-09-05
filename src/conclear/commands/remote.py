@@ -8,7 +8,7 @@ from typing import Any
 
 import click
 
-from conclear.adapters.registry_control import create_registry_control
+from conclear.adapters.registry_backends import create_registry_control
 from conclear.artifacts import (
     load_candidate,
     load_provenance_materials,
