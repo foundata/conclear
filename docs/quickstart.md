@@ -1,8 +1,10 @@
 # ConClear quick start
 
-ConClear takes a reviewed Git commit through local qualification, publication, signing, verification and tag promotion. A container project adopts it by adding a repository configuration, making each Containerfile comply with the guide and defining any runtime inputs that its tests need. Release credentials and trust policy stay outside the project repository.
+ConClear takes a reviewed Git commit through local qualification, publication, signing, verification and tag promotion.
 
-This quick start covers the basic adoption path. See the [architecture](../ARCHITECTURE.md) for the complete behavioral contract and the [conformance catalog](./conformance.md) for the checks that ConClear applies.
+A container project adopts it by adding a repository configuration, making each Containerfile comply with the guide and declaring any runtime inputs its tests need. Release credentials and trust policy stay outside the project repository.
+
+This quick start is the shortest path from installation to a first release. The [README](../README.md) is the project overview, the [architecture](../ARCHITECTURE.md) is the complete behavioral contract, and the [conformance catalog](./conformance.md) lists the checks ConClear applies.
 
 
 ## Contents
@@ -14,44 +16,30 @@ This quick start covers the basic adoption path. See the [architecture](../ARCHI
 - [5. Add `conclear.toml`](#5-add-concleartoml)
 - [6. Describe application test inputs when needed](#6-describe-application-test-inputs-when-needed)
 - [7. Run the local checks](#7-run-the-local-checks)
-- [8. Create a release profile](#8-create-a-release-profile)
-- [9. Check and run the release environment](#9-check-and-run-the-release-environment)
-- [10. Use the same commands in CI](#10-use-the-same-commands-in-ci)
+- [8. Assemble a release candidate](#8-assemble-a-release-candidate)
+- [9. Update pinned references](#9-update-pinned-references)
+- [10. Create a release profile](#10-create-a-release-profile)
+- [11. Check and run the release environment](#11-check-and-run-the-release-environment)
+- [12. Use the same commands in CI](#12-use-the-same-commands-in-ci)
 
 
 ## 1. Install ConClear and its tools
 
-ConClear requires Python 3.12 or newer. Use an identity-bearing wheel for qualification or release work. A development checkout identifies itself as `development-source-tree` and cannot emit release evidence.
-
-Install a retained wheel in a dedicated environment:
+ConClear requires Python 3.12 or newer. Install the published package as a tool and confirm its identity:
 
 ```sh
-uv venv ~/.local/share/conclear/venv
-uv pip install \
-  --python ~/.local/share/conclear/venv/bin/python \
-  /secure/path/conclear-0.1.0-py3-none-any.whl
-
-~/.local/share/conclear/venv/bin/conclear version --format json
+uv tool install conclear
+conclear version --format json
 ```
 
-ConClear currently accepts these exact tool versions:
+`pipx install conclear`, or `pip install conclear` inside a virtual environment, works as well. Use the published package for qualification and release work: a development checkout identifies itself as `development-source-tree` and cannot emit release evidence.
 
-|   Tool   | Version |
-| -------- | ------- |
-| Git      | 2.55.0  |
-| Buildah  | 1.43.2  |
-| Podman   | 5.8.4   |
-| Skopeo   | 1.22.2  |
-| Hadolint | 2.14.0  |
-| Trivy    | 0.69.3  |
-| Cosign   | 3.1.3   |
-
-Use rootless Buildah and Podman. ConClear creates isolated storage for each run and does not use the workstation's existing containers or images.
+Qualification and release also need the rootless container toolchain. ConClear accepts only the exact tool versions listed under [Supported tools](../README.md#supported-tools) in the README. Use rootless Buildah and Podman; ConClear creates isolated storage for each run and does not use the workstation's existing containers or images.
 
 
 ## 2. Prepare the repository
 
-ConClear reads a committed Git revision through an isolated checkout. Configure the credential-free canonical HTTPS repository identity. The checkout's observed remote may use that HTTPS URL or the equivalent `git@host:owner/repository.git` or `ssh://git@host/owner/repository.git` form; ConClear canonicalizes supported SSH transports before comparison and records only HTTPS in evidence. Uncommitted and untracked files do not enter a release build.
+ConClear reads a committed Git revision through an isolated checkout. Configure the credential-free canonical HTTPS repository identity. The checkout's observed remote may use that HTTPS URL or the equivalent `git@host:owner/repository.git` or `ssh://git@host/owner/repository.git` form; ConClear canonicalizes supported SSH transports before comparison and records only HTTPS in evidence. The ordinary checkout may be dirty: uncommitted and untracked files do not enter a release build.
 
 Add these files to the container project:
 
@@ -115,6 +103,8 @@ Keep later negations narrow. A rule that re-includes `.git`, `.env`, a private-k
 
 ## 5. Add `conclear.toml`
 
+`conclear.toml` is reviewed at the selected source revision and holds project facts and the exceptions the guide permits, never credentials. Unknown keys are errors, so a misspelled security setting cannot be silently ignored.
+
 This example declares one `linux/amd64` service image:
 
 ```toml
@@ -161,14 +151,16 @@ An image that starts without extra input needs no `[images.test]` table. For an 
 
 The test model supports:
 
-- Reviewed repository fixtures, always mounted read-only.
-- Run-owned generated outputs at declared writable destinations.
-- Secret outputs whose paths and content digests never enter public evidence.
-- Ordered preparation commands executed inside the primary image or an exact sibling image.
-- Launch arguments and non-secret environment values that preserve the image's original entrypoint.
-- Sibling image dependencies built from the same source revision, timestamp, platform, version input and Buildah toolchain.
+- Reviewed repository fixtures, always mounted read-only. Fixtures must be ordinary source-tree files or directories with no symbolic links or unsafe permissions.
+- Run-owned generated outputs. They exist only below the run workspace and only at destinations already declared by the selected image's runtime contract.
+- Secret outputs. An output marked `secret = true` has no path, value or content digest in public evidence, is unavailable to repository hooks and is destroyed before a hook runs.
+- Ordered preparation commands executed inside the primary image or an exact sibling image. A preparation command replaces only that exact image's entrypoint.
+- Launch arguments and non-secret environment values that keep the primary image's original entrypoint.
+- Sibling image dependencies built from the same isolated source revision, timestamp, platform, version input and Buildah toolchain. ConClear imports each validated layout by digest before preparation starts.
 
-For example, a runtime image can depend on a generator image declared in the same file:
+Commands are arrays and are never interpreted by a shell.
+
+For example, a runtime image can depend on a generator image declared in the same file. The generator creates a private key and a generated test artifact, and the primary image is launched with only the non-secret artifact:
 
 ```toml
 [images.test]
@@ -210,9 +202,9 @@ expected_exit_status = 0
 mounts = [{ name = "generated", target = "/run/generated" }]
 ```
 
-A mount names a declared fixture or output and is read-only unless it sets `read_only = false`. Every output must have a writable producer before it is consumed. In this example, the `generator` image must declare `/output` in its own `images.runtime.writable_mounts`.
+A mount names a declared fixture or output and is read-only unless it sets `read_only = false`. Every output must have a writable producer before it is consumed. The `generator` image must be another `[[images]]` entry in the same file, cover every tested platform and declare `/output` in its own `images.runtime.writable_mounts`.
 
-ConClear still owns layout validation, digest-preserving import, container hardening, startup, health, signal and exit observation, journaling and cleanup. Hooks can add application assertions, but they cannot replace or mark those checks as passed.
+ConClear still owns layout validation, digest-preserving import, runtime controls and container hardening, startup, health, signal and exit observation, expected exit status, journaling and cleanup. A reviewed repository hook receives `CC_TEST_INPUT_MANIFEST`, which contains exact layout paths and digests plus non-secret fixture and output handles. Hooks can add assertions but cannot replace a built-in check or mark it as passed. ConClear records their command and result but does not sandbox a reviewed hook from invoking other host executables.
 
 
 ## 7. Run the local checks
@@ -245,6 +237,9 @@ conclear qualify \
 
 ConClear writes run state below `$XDG_STATE_HOME/conclear/` and keeps Trivy database snapshots below `$XDG_CACHE_HOME/conclear/`. Preserve the protected pin history and distribute the exact selected Trivy database snapshot when qualification runs on more than one worker.
 
+
+## 8. Assemble a release candidate
+
 Each `qualify` is one worker run. To turn accepted qualifications into a release candidate, export each one as a transport and assemble them in a new coordinator run, on the same workstation or after moving the archives between hosts:
 
 ```sh
@@ -258,7 +253,16 @@ conclear assemble --source . --revision HEAD --image app --version 1.2.3 \
 
 `transport export` prints the transport digest and the qualification-record digest. Hand the transport digest to the coordinator separately from the archive; `assemble` refuses a transport whose digest differs, verifies every member and record, and requires exactly one accepted qualification per platform declared in `conclear.toml`. A multi-platform image repeats `qualify` and `transport export` per platform and passes one `--transport` pair per platform. Do not copy run workspaces or records by hand.
 
-When a base image publishes a new digest, let ConClear propose and apply the pin update instead of editing digests by hand. This workflow runs entirely on the maintainer workstation and requires no Renovate runner, branch, pull request or hosted writer. `pins propose` resolves each declared tag once and writes a proposal covering every `conclear.toml` declaration and Containerfile occurrence; `pins apply` verifies that proposal against the current worktree and replaces only the recorded byte spans, all-or-nothing:
+The README describes the identifiers involved and the verification that `assemble` performs under [Distributed qualification](../README.md#usage-distributed), including how to pin every worker to the same vulnerability database.
+
+
+## 9. Update pinned references
+
+When a base image publishes a new digest, let ConClear propose and apply the pin update instead of editing digests by hand. This runs entirely on the maintainer workstation and requires no Renovate runner, other updater, CI, branch, pull request or hosted writer. Qualification and release do not require an external updater either.
+
+`pins propose` resolves every declared readable tag exactly once, binds that digest to each `[[images.pins]]` declaration and each `FROM`, `COPY --from` and `RUN --mount=from` input that names the same reference, and writes one schema-validated proposal without touching the repository. The proposal records the ConClear and guide identity, the canonical repository and its current commit, the configuration digest, one lookup per pinned reference with old and new digest and resolution time, and every file with its digest and the exact byte spans that would change. Only the digest of a reference changes; registry, repository and tag spelling stay as written. A change under an `immutable-version` tag is marked as requiring supply-chain review and reported as `CC0205`; ConClear never accepts it automatically and offers no way to skip that review. An already-current repository yields a successful proposal that changes nothing.
+
+`pins apply` reads the proposal, verifies the repository, commit, configuration digest, every target file digest, the reparsed dependency set and every old byte sequence, and only then replaces the proposed spans through same-directory temporary files. It never resolves a tag again and never commits, builds, publishes or signs. If anything fails, every target keeps its original bytes.
 
 ```sh
 conclear pins propose --output ../pins-proposal.json
@@ -269,14 +273,14 @@ git diff --check
 git diff
 ```
 
-`pins apply` prints one follow-up `pins check` command for every affected image. Run each command and the corresponding `conclear check` before accepting the update. Neither proposal nor application commits, builds or publishes. Review the complete diff, run the project's checks, commit through the normal repository process, and qualify the committed revision. A digest change under an `immutable-version` tag is a supply-chain event that ConClear reports and never accepts automatically.
+`pins apply` prints one follow-up `pins check` command for every affected image. Run all of them, and run each image's repository checks including `conclear check`, before accepting the update. `pins check` remains the freshness and divergence gate and the only command that updates durable pin observations. Review the complete diff, run the project's checks, commit through the repository's normal process, and qualify the committed revision.
 
-A pinned, self-hosted updater such as Renovate may optionally schedule the same ConClear workflow and deliver its resulting diff through an updater-owned branch or pull request. It is not required for pin updates, qualification or release and is not a second implementation of pin resolution or application.
+A pinned, self-hosted updater such as Renovate may schedule this workflow and deliver the resulting reviewed diff through an updater-owned branch or pull request. That is an optional delivery layer around ConClear's proposal and application operations, not a second pin resolver, a required writer or a release prerequisite.
 
 
-## 8. Create a release profile
+## 10. Create a release profile
 
-The complete release needs a maintainer-controlled profile outside the application repository. For example, create `$XDG_CONFIG_HOME/conclear/foundata.toml`:
+The complete release needs a maintainer-controlled profile outside the application repository. It holds trust roots, signing keys and registry credentials. For example, create `$XDG_CONFIG_HOME/conclear/foundata.toml`:
 
 ```toml
 ci_context = "observe"
@@ -295,14 +299,16 @@ api_url = "https://quay.io/api/v1"
 token_file = "/home/example/.config/conclear/quay.token"
 ```
 
-The profile and secret files must belong to the invoking user and have private permissions. `cosign_private_key` may instead name a supported KMS or HSM handle. Automation can provide the passphrase through `--passphrase-fd` rather than a file.
+The profile and every secret file must be owned by the invoking user and carry private permissions. `cosign_private_key` may instead name a supported KMS or HSM handle. CI may supply the signing passphrase through `--passphrase-fd` instead of a file. Secret values are never accepted through project configuration, command-line literals or inherited environment variables.
 
-`builder.id` identifies the documented build environment, not ConClear itself. Use a different builder URI for a materially different workstation or CI trust boundary.
+`builder.id` names the complete build-platform trust domain and must be a public, credential-free HTTPS documentation URI. It identifies the documented build environment, not ConClear itself. The simple v1 identity covers foundata's operator-controlled workstation workflow and claims SLSA Build L1 only; a materially different workstation policy or CI trust boundary needs a different builder identity. ConClear records its own version and source revision separately and verifies the configured signer and builder identities before promotion.
 
-`ci_context = "observe"` adds provider correlation data when ConClear recognizes complete CI metadata that agrees with the isolated checkout. Use `omit` to ignore CI variables or `require` when the release must have recognized matching CI context. CI metadata never determines source, builder, signer, digest or verdict.
+`ci_context` controls optional CI correlation metadata. `omit` does not inspect CI variables, `observe` records complete matching context when available, and `require` stops when recognized context is absent, malformed or inconsistent with the isolated checkout. ConClear recognizes GitHub Actions, GitLab CI, Gitea Actions, Forgejo Actions and Woodpecker CI. The normalized public record contains the provider, repository, full revision and provider run identifier. Provider environment variables are not authentication and never control the release verdict, source identity, signer identity or artifact digest.
+
+Repository configuration may name any fully qualified OCI registry for local checks, qualification, assembly and provenance. The complete `publish` through `promote` workflow requires an explicitly selected registry control backend. A supported backend must provide exact tag observation, digest-preserving graph handling, Cosign referrers, an independently enforced candidate lifetime, selective tag protection, exact tag assignment, deletion and ambiguous-write recovery. Quay.io provides these controls and `quay` is currently the only implemented backend. A release profile that selects `quay` rejects a destination on another registry before qualification or remote mutation.
 
 
-## 9. Check and run the release environment
+## 11. Check and run the release environment
 
 `doctor` checks the project configuration, supported tools, target execution, registry access, signing configuration and public Sigstore services without publishing or signing:
 
@@ -321,24 +327,17 @@ conclear release \
   --profile foundata
 ```
 
-The workflow is `qualify`, `assemble`, `provenance`, `publish`, `attest`, `verify` and `promote`. A rejection or operational failure stops promotion.
+`release` resolves the Git selector, creates a detached checkout, qualifies `linux/amd64` before any additional platform, assembles the accepted layouts, publishes one registry-controlled candidate, signs and verifies every digest and attestation, and promotes only the verified digest. The stages are `qualify`, `assemble`, `provenance`, `publish`, `attest`, `verify` and `promote`. A rejection or operational failure stops promotion. An interrupted run can be resumed as described in the README under [Resuming an interrupted run](../README.md#usage-resume).
 
 Quay is currently the only registry backend for the complete publication workflow. Projects targeting another registry can use local qualification, assembly and provenance, but cannot use ConClear's `publish` through `promote` stages there yet.
 
 
-## 10. Use the same commands in CI
+## 12. Use the same commands in CI
 
 ConClear has no separate CI execution mode. A CI job invokes the same CLI and supplies the protected profile, credentials, cache and state through its normal secret and artifact mechanisms. Platform workers publish their `transport export` archives as job artifacts and their transport digests as job outputs; the coordinator job passes each digest to `assemble` from the job output, not from a file inside the artifact.
 
 Do not pass source identity, builder identity, signer identity, release verdicts or artifact digests through repository configuration or ordinary environment variables. ConClear derives source facts from the isolated checkout and treats recognized CI variables only as optional correlation data.
 
-JSON mode writes one result object to standard output and diagnostics to standard error. Its exit statuses are:
-
-| Exit | Meaning |
-| ---: | ------- |
-|  `0` | Success |
-|  `1` | Operational failure because ConClear could not establish fact |
-|  `2` | Rule rejection |
-| `64` | Invalid invocation or configuration |
+Every command that produces a result supports `--format json`, which writes one result object to standard output and diagnostics to standard error. The exit statuses are listed in the README under [JSON output and exit codes](../README.md#usage-json-exit-codes).
 
 Persist the evidence artifacts and authoritative signed attestations required by your release process. Do not treat logs or a mutable registry tag as release evidence.
