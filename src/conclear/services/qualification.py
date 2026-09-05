@@ -367,7 +367,7 @@ def build_platform(inputs: QualificationInputs, builder: Builder) -> BuildEviden
             auth_file=inputs.auth_file,
         )
     except Exception:
-        _mark_failed(workspace, storage_id, layout_id)
+        workspace.journal.mark_failed(storage_id, layout_id)
         raise
     workspace.journal.update(storage_id, ResourceStatus.CREATED)
     workspace.journal.update(layout_id, ResourceStatus.CREATED)
@@ -603,7 +603,7 @@ def test_platform(
             {**value, "testResultDigest": report_digest} for value in dependency_values
         )
     except BaseException:
-        _mark_failed(inputs.workspace, resource_id)
+        inputs.workspace.journal.mark_failed(resource_id)
         _cleanup_test_session(
             inputs,
             runtime,
@@ -762,7 +762,7 @@ def _run_preparations(
                 timeout_seconds=preparation.timeout_seconds,
             )
         except BaseException:
-            _mark_failed(inputs.workspace, resource_id)
+            inputs.workspace.journal.mark_failed(resource_id)
             _remove_preparation(
                 inputs,
                 runtime,
@@ -968,7 +968,7 @@ def _remove_preparation(
             force=True,
         )
     except BaseException:
-        _mark_failed(inputs.workspace, resource_id)
+        inputs.workspace.journal.mark_failed(resource_id)
         if preserve_failure:
             LOGGER.debug(
                 "Failed to remove preparation container %s",
@@ -1020,7 +1020,7 @@ def _cleanup_test_session(
             run_id=inputs.workspace.run_id,
         )
     except BaseException as exc:
-        _mark_failed(inputs.workspace, test_inputs_id)
+        inputs.workspace.journal.mark_failed(test_inputs_id)
         errors.append(exc)
     else:
         _mark_planned_resource_failed(inputs.workspace, test_inputs_id)
@@ -1372,7 +1372,7 @@ def _remove_test_container(
         )
         runtime.remove_storage(root=storage_root, runroot=runroot)
     except BaseException:
-        _mark_failed(inputs.workspace, resource_id)
+        inputs.workspace.journal.mark_failed(resource_id)
         if not preserve_failure:
             raise
     else:
@@ -1780,16 +1780,3 @@ def _timestamp(value: datetime) -> str:
     return (
         value.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     )
-
-
-def _mark_failed(workspace: RunWorkspace, *resource_ids: str) -> None:
-    """Best-effort journal failure state without replacing the original exception."""
-    for resource_id in resource_ids:
-        try:
-            workspace.journal.update(resource_id, ResourceStatus.FAILED)
-        except BaseException:
-            LOGGER.debug(
-                "Failed to record resource failure for %s",
-                resource_id,
-                exc_info=True,
-            )

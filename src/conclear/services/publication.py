@@ -296,7 +296,7 @@ def publish_candidate(
         except UnsupportedOperationError:
             immutable_enabled = False
     except Exception:
-        _mark_failed(workspace, "candidate")
+        workspace.journal.mark_failed("candidate")
         raise
     workspace.journal.update(
         "candidate",
@@ -475,7 +475,7 @@ def attest_candidate(
                 passphrase_path=passphrase_path,
             )
         except Exception:
-            _mark_failed(workspace, resource)
+            workspace.journal.mark_failed(resource)
             raise
         workspace.journal.update(resource, ResourceStatus.CREATED)
     if sha256_file(evidence.provenance_path) != evidence.provenance_digest:
@@ -537,7 +537,7 @@ def attest_candidate(
             )
             workspace.journal.update("provenance", ResourceStatus.CREATED)
         except Exception:
-            _mark_failed(workspace, "provenance")
+            workspace.journal.mark_failed("provenance")
             raise
     subjects = {
         published.graph.digest,
@@ -579,7 +579,7 @@ def attest_candidate(
             )
             workspace.journal.update(resource, ResourceStatus.CREATED)
         except Exception:
-            _mark_failed(workspace, resource)
+            workspace.journal.mark_failed(resource)
             raise
     workspace.transition(RunState.ATTESTED, now=now)
 
@@ -835,7 +835,7 @@ def verify_candidate(
             expected=statement,
         )
     except Exception:
-        _mark_failed(workspace, "release-verification")
+        workspace.journal.mark_failed("release-verification")
         raise
     workspace.journal.update("release-verification", ResourceStatus.CREATED)
     workspace.transition(RunState.VERIFIED, now=now)
@@ -1054,7 +1054,7 @@ def _write_release_tag(
                     f"Immutable release tag was not protected: {tag}"
                 )
     except Exception:
-        _mark_failed(workspace, resource_id)
+        workspace.journal.mark_failed(resource_id)
         raise
     workspace.journal.update(resource_id, ResourceStatus.CREATED)
 
@@ -1306,15 +1306,6 @@ def _verify_image_signature(
             f"Image signature coverage could not be verified for {subject}",
             code="CC0702",
         ) from exc
-
-
-def _mark_failed(workspace: RunWorkspace, resource_id: str) -> None:
-    try:
-        workspace.journal.update(resource_id, ResourceStatus.FAILED)
-    except Exception:
-        LOGGER.debug(
-            "Failed to record resource failure for %s", resource_id, exc_info=True
-        )
 
 
 def _object(value: object, label: str) -> dict[str, object]:

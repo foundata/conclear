@@ -1,5 +1,6 @@
 """Release-run workspaces, state transitions and ownership journals."""
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,6 +15,7 @@ from conclear.fileio import locked_file
 from conclear.jsonutil import atomic_write_json, canonical_json_bytes, load_json
 from conclear.values import validate_run_id
 
+LOGGER = logging.getLogger(__name__)
 _TIMESTAMP_PATTERN = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$"
 )
@@ -395,6 +397,23 @@ class ResourceJournal:
             entries.append(entry)
             self._write(entries)
         return entry
+
+    def mark_failed(self, *resource_ids: str) -> None:
+        """Record failure for each resource without masking the caller's exception.
+
+        A journal write that fails while an operation is already unwinding is
+        logged at debug level and otherwise ignored, so the original error
+        stays the one the caller reports.
+        """
+        for resource_id in resource_ids:
+            try:
+                self.update(resource_id, ResourceStatus.FAILED)
+            except Exception:
+                LOGGER.debug(
+                    "Failed to record resource failure for %s",
+                    resource_id,
+                    exc_info=True,
+                )
 
     def update(
         self,

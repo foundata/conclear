@@ -1,6 +1,7 @@
 """Workspace state and ownership-journal failure paths."""
 
 import json
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.workspace import (
+    ResourceJournal,
     ResourceKind,
     ResourceStatus,
     RunState,
@@ -257,3 +259,34 @@ def test_state_lock_failure_is_an_operational_failure(tmp_path: Path) -> None:
     finally:
         workspace.root.chmod(0o700)
     assert workspace.load().state is RunState.CREATED
+
+
+def test_journal_mark_failed_only_logs_a_failed_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    workspace = create(tmp_path)
+    workspace.journal.plan(
+        resource_id="layout",
+        kind=ResourceKind.LOCAL_PATH,
+        identifier=str(tmp_path / "layout"),
+        ephemeral=True,
+    )
+
+    workspace.journal.mark_failed("layout")
+    (entry,) = workspace.journal.entries()
+    assert entry.status is ResourceStatus.FAILED
+
+    def fail_update(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise OSError("injected journal failure")
+
+    monkeypatch.setattr(ResourceJournal, "update", fail_update)
+    caplog.set_level(logging.DEBUG, logger="conclear.workspace")
+
+    workspace.journal.mark_failed("layout", "missing")
+
+    assert "Failed to record resource failure for layout" in caplog.text
+    assert "Failed to record resource failure for missing" in caplog.text
+    assert "injected journal failure" in caplog.text
