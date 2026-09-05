@@ -16,13 +16,15 @@ from conclear.errors import (
 )
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
-from conclear.pin_updates import (
-    MAX_PROPOSAL_BYTES,
+from conclear.pin_application import (
     ApplicationOutcome,
     ApplicationStatus,
-    PinUpdateProposal,
     WritePhase,
     apply_pin_proposal,
+)
+from conclear.pin_updates import (
+    MAX_PROPOSAL_BYTES,
+    PinUpdateProposal,
     load_proposal,
     parse_proposal,
     propose_pin_updates,

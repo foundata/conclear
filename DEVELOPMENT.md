@@ -101,7 +101,8 @@ conclear/
 │   ├── emulation.py              # binfmt handler detection and execution-mode facts
 │   ├── records.py                # Record envelopes and digests
 │   ├── pins.py                   # Durable pin observations and divergence policy
-│   ├── pin_updates.py            # Pin proposals and verified application
+│   ├── pin_updates.py            # Pin proposals and occurrence discovery
+│   ├── pin_application.py        # Verified all-or-nothing proposal application
 │   ├── toml_spans.py             # Structural TOML string spans
 │   ├── workspace.py              # Run state machine and ownership journal
 │   ├── process.py                # Supervised execution and redaction

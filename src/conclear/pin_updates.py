@@ -1,25 +1,23 @@
-"""Non-mutating pin-update proposals and verified all-or-nothing application.
+"""Non-mutating pin-update proposals and their occurrence discovery.
 
 `propose_pin_updates` resolves each declared readable tag once and binds the
 observed digest to every `[[images.pins]]` declaration and every Containerfile
 image input that names the same tagged and digest-pinned reference. It returns
 a schema-validated proposal and never edits a project file.
 
-`apply_pin_proposal` consumes such a proposal without resolving anything. It
-completes a read-only preflight against the current worktree, then replaces
-only the proposed byte spans through same-directory temporary files. Any
-detected failure restores every target to its exact original bytes.
+`discover_occurrences` is the shared read-only view of the worktree: it locates
+every exact byte span that a proposal may replace. `conclear.pin_application`
+reuses it to prove that the worktree still matches a proposal before and after
+applying it.
 """
 
 import json
 import os
 import re
 import stat
-import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from enum import StrEnum
+from datetime import UTC, datetime
 from pathlib import Path
 
 from conclear.checks import (
@@ -33,7 +31,6 @@ from conclear.config import (
     ImageConfig,
     PinIntent,
     RepositoryConfig,
-    load_repository_config,
 )
 from conclear.errors import (
     InvalidInvocationError,
@@ -60,27 +57,6 @@ PROPOSAL_RECORD_TYPE = "pinUpdateProposal"
 MAX_PROPOSAL_BYTES = 16 * 1024 * 1024
 CONFIGURATION_NAME = "conclear.toml"
 _REFERENCE_CHARACTERS = "A-Za-z0-9._:/@-"
-
-
-class ApplicationStatus(StrEnum):
-    """Outcomes of a verified proposal application."""
-
-    APPLIED = "applied"
-    ALREADY_APPLIED = "already-applied"
-    NO_CHANGE = "no-change"
-
-
-class WritePhase(StrEnum):
-    """Phases at which an injected filesystem fault may be raised."""
-
-    PREPARE = "prepare"
-    WRITE = "write"
-    FLUSH = "flush"
-    REPLACE = "replace"
-    VERIFY = "verify"
-
-
-FaultHook = Callable[[WritePhase, Path], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +87,7 @@ class PinLookup:
             raise InvalidInvocationError(
                 "Pin lookup image IDs must be sorted and unique"
             )
-        _require_aware(self.resolved_at, "resolution time")
+        require_aware(self.resolved_at, "resolution time")
 
     @property
     def old_digest(self) -> Digest:
@@ -241,7 +217,7 @@ class PinUpdateProposal:
 
     def __post_init__(self) -> None:
         """Validate cross-object invariants once at construction."""
-        _require_aware(self.created_at, "creation time")
+        require_aware(self.created_at, "creation time")
         if list(self.image_ids) != sorted(set(self.image_ids)) or not self.image_ids:
             raise InvalidInvocationError("Proposal image IDs must be sorted and unique")
         originals = [str(item.original_reference) for item in self.lookups]
@@ -369,16 +345,9 @@ class PinUpdateProposal:
 
 
 @dataclass(frozen=True, slots=True)
-class ApplicationOutcome:
-    """The result of one verified proposal application."""
+class Occurrence:
+    """One exact byte span naming a pinned reference in one repository file."""
 
-    status: ApplicationStatus
-    changed_paths: tuple[str, ...]
-    proposal: PinUpdateProposal
-
-
-@dataclass(frozen=True, slots=True)
-class _Occurrence:
     path: str
     start: int
     end: int
@@ -388,10 +357,17 @@ class _Occurrence:
 
 
 @dataclass(frozen=True, slots=True)
-class _Snapshot:
+class Snapshot:
+    """Read-only view of every pin occurrence in the selected images.
+
+    `contents` holds the exact bytes of each inspected repository-relative
+    path, `intents` maps each original reference to its declared tag intent
+    and `image_ids` is the sorted closed image selection.
+    """
+
     root: Path
     contents: dict[str, bytes]
-    occurrences: tuple[_Occurrence, ...]
+    occurrences: tuple[Occurrence, ...]
     intents: dict[str, PinIntent]
     image_ids: tuple[str, ...]
 
@@ -407,7 +383,7 @@ def propose_pin_updates(
 ) -> PinUpdateProposal:
     """Resolve each readable tag once and bind it to every declared occurrence."""
     created_at = now()
-    snapshot = _discover(repository, image_ids)
+    snapshot = discover_occurrences(repository, image_ids)
     resolutions: dict[str, tuple[Digest, datetime]] = {}
     lookups: list[PinLookup] = []
     grouped = _group_by_reference(snapshot.occurrences)
@@ -448,89 +424,6 @@ def propose_pin_updates(
         image_ids=snapshot.image_ids,
         lookups=tuple(lookups),
         files=files,
-    )
-
-
-def apply_pin_proposal(
-    proposal: PinUpdateProposal,
-    *,
-    repository_root: Path,
-    source: SourceIdentity,
-    now: datetime,
-    fault_hook: FaultHook | None = None,
-) -> ApplicationOutcome:
-    """Verify a proposal against the current worktree and apply it all-or-nothing."""
-    _require_aware(now, "application time")
-    try:
-        root = repository_root.resolve(strict=True)
-    except OSError as exc:
-        raise InvalidInvocationError(
-            f"Repository root is unavailable: {repository_root}"
-        ) from exc
-    if proposal.source.repository != source.repository:
-        raise InvalidInvocationError(
-            "Proposal repository does not match the current repository",
-            code="CC0207",
-        )
-    if proposal.source.revision != source.revision:
-        raise InvalidInvocationError(
-            "Proposal Git revision does not match the current revision",
-            code="CC0207",
-        )
-    targets = _read_targets(root, proposal)
-    configuration = read_regular_file(
-        root / CONFIGURATION_NAME,
-        maximum_bytes=MAX_CONFIG_BYTES,
-        label="repository configuration",
-    )
-    if proposal.files and all(
-        sha256_bytes(targets[item.path]) == item.result_sha256
-        for item in proposal.files
-    ):
-        return ApplicationOutcome(ApplicationStatus.ALREADY_APPLIED, (), proposal)
-    if sha256_bytes(configuration) != proposal.configuration_digest:
-        raise InvalidInvocationError(
-            "Proposal configuration digest does not match the current configuration",
-            code="CC0207",
-        )
-    if not proposal.files:
-        return ApplicationOutcome(ApplicationStatus.NO_CHANGE, (), proposal)
-    results: dict[str, bytes] = {}
-    for item in proposal.files:
-        current = targets[item.path]
-        if sha256_bytes(current) != item.sha256:
-            raise InvalidInvocationError(
-                f"Target file digest changed since the proposal: {item.path}",
-                code="CC0207",
-            )
-        result = item.apply_to(current)
-        if sha256_bytes(result) != item.result_sha256:
-            raise InvalidInvocationError(
-                f"Proposed result digest does not match the computed result: {item.path}",
-                code="CC0207",
-            )
-        _prove_only_spans_change(current, result, item)
-        results[item.path] = result
-    repository = load_repository_config(root / CONFIGURATION_NAME)
-    _reject_stale(proposal, repository, now)
-    snapshot = _discover(repository, proposal.image_ids)
-    _compare_snapshot(snapshot, proposal, expect_applied=False)
-    modes = {path: _target_mode(root, path) for path in results}
-    _replace_all(root, results, modes, fault_hook)
-    try:
-        _verify_result(root, proposal, results, fault_hook)
-    except (
-        OSError,
-        OperationalError,
-        InvalidInvocationError,
-        RuleRejectionError,
-    ) as exc:
-        _restore(root, {path: targets[path] for path in results}, modes, exc)
-        raise OperationalError(
-            f"Applied files failed verification and were restored: {exc}"
-        ) from exc
-    return ApplicationOutcome(
-        ApplicationStatus.APPLIED, tuple(sorted(results)), proposal
     )
 
 
@@ -635,13 +528,21 @@ def load_proposal(path: Path) -> PinUpdateProposal:
     return parse_proposal(value)
 
 
-def _discover(
+def discover_occurrences(
     repository: RepositoryConfig, image_ids: tuple[str, ...] | None
-) -> _Snapshot:
+) -> Snapshot:
+    """Locate every declared and Containerfile pin occurrence exactly once.
+
+    Raises:
+        InvalidInvocationError: If an occurrence is undeclared, ambiguous,
+            duplicated or cannot be located exactly (`CC0206`).
+        RuleRejectionError: If declared pins and Containerfile inputs differ
+            (`CC0203`).
+    """
     root = repository.path.parent
     selected = _select_images(repository, image_ids)
     contents: dict[str, bytes] = {}
-    occurrences: list[_Occurrence] = []
+    occurrences: list[Occurrence] = []
     for image in selected:
         occurrences.extend(_containerfile_occurrences(root, image, contents))
     occurrences.extend(_declaration_occurrences(repository, selected, contents))
@@ -654,7 +555,7 @@ def _discover(
             )
     _reject_ambiguous_spans(occurrences)
     _reject_extra_occurrences(contents, occurrences, intents)
-    return _Snapshot(
+    return Snapshot(
         root=root,
         contents=contents,
         occurrences=tuple(
@@ -699,7 +600,7 @@ def _containerfile_occurrences(
     root: Path,
     image: ImageConfig,
     contents: dict[str, bytes],
-) -> list[_Occurrence]:
+) -> list[Occurrence]:
     path = _relative(root, image.containerfile)
     content = _load_target(root, path, contents, MAX_CONTAINERFILE_BYTES)
     analysis = analyze_containerfile(image.containerfile)
@@ -717,13 +618,13 @@ def _containerfile_occurrences(
     grouped: dict[ReferenceOccurrence, int] = {}
     for occurrence in external_reference_occurrences(image.containerfile):
         grouped[occurrence] = grouped.get(occurrence, 0) + 1
-    result: list[_Occurrence] = []
+    result: list[Occurrence] = []
     for occurrence, count in grouped.items():
         reference = OCIReference.parse(
             occurrence.reference, require_tag=True, require_digest=True
         )
         result.extend(
-            _Occurrence(
+            Occurrence(
                 path=path,
                 start=start,
                 end=start + len(occurrence.reference.encode("utf-8")),
@@ -764,7 +665,7 @@ def _declaration_occurrences(
     repository: RepositoryConfig,
     selected: tuple[ImageConfig, ...],
     contents: dict[str, bytes],
-) -> list[_Occurrence]:
+) -> list[Occurrence]:
     root = repository.path.parent
     content = _load_target(root, CONFIGURATION_NAME, contents, MAX_CONFIG_BYTES)
     located = locate_string_values(content)
@@ -785,7 +686,7 @@ def _declaration_occurrences(
             and isinstance(path[3], int)
         ):
             found[(path[1], path[3])] = (item.start, item.end, item.value)
-    result: list[_Occurrence] = []
+    result: list[Occurrence] = []
     for image_index, image in enumerate(positions):
         if image.image_id not in selected_ids:
             continue
@@ -798,7 +699,7 @@ def _declaration_occurrences(
                 )
             start, end, _ = declaration
             result.append(
-                _Occurrence(
+                Occurrence(
                     path=CONFIGURATION_NAME,
                     start=start,
                     end=end,
@@ -810,7 +711,7 @@ def _declaration_occurrences(
     return result
 
 
-def _consistent_intents(occurrences: Iterable[_Occurrence]) -> dict[str, PinIntent]:
+def _consistent_intents(occurrences: Iterable[Occurrence]) -> dict[str, PinIntent]:
     by_tag: dict[str, PinIntent] = {}
     intents: dict[str, PinIntent] = {}
     for occurrence in occurrences:
@@ -827,8 +728,8 @@ def _consistent_intents(occurrences: Iterable[_Occurrence]) -> dict[str, PinInte
     return intents
 
 
-def _reject_ambiguous_spans(occurrences: list[_Occurrence]) -> None:
-    by_path: dict[str, list[_Occurrence]] = {}
+def _reject_ambiguous_spans(occurrences: list[Occurrence]) -> None:
+    by_path: dict[str, list[Occurrence]] = {}
     for occurrence in occurrences:
         by_path.setdefault(occurrence.path, []).append(occurrence)
     for path, items in by_path.items():
@@ -845,7 +746,7 @@ def _reject_ambiguous_spans(occurrences: list[_Occurrence]) -> None:
 
 def _reject_extra_occurrences(
     contents: dict[str, bytes],
-    occurrences: list[_Occurrence],
+    occurrences: list[Occurrence],
     intents: dict[str, PinIntent],
 ) -> None:
     structural: dict[tuple[str, str], int] = {}
@@ -863,7 +764,7 @@ def _reject_extra_occurrences(
 
 
 def _proposed_files(
-    snapshot: _Snapshot, lookups: list[PinLookup]
+    snapshot: Snapshot, lookups: list[PinLookup]
 ) -> tuple[ProposedFile, ...]:
     replacements = {
         str(item.original_reference): str(item.resolved_reference)
@@ -909,22 +810,8 @@ def _proposed_files(
     return tuple(files)
 
 
-def _read_targets(root: Path, proposal: PinUpdateProposal) -> dict[str, bytes]:
-    targets: dict[str, bytes] = {}
-    for item in proposal.files:
-        resolved = _confined_target(root, item.path)
-        limit = (
-            MAX_CONFIG_BYTES
-            if item.path == CONFIGURATION_NAME
-            else MAX_CONTAINERFILE_BYTES
-        )
-        targets[item.path] = read_regular_file(
-            resolved, maximum_bytes=limit, label=f"proposal target {item.path}"
-        )
-    return targets
-
-
-def _confined_target(root: Path, relative: str) -> Path:
+def confined_target(root: Path, relative: str) -> Path:
+    """Resolve one repository-relative regular file without crossing a symlink."""
     resolved = contained_path(root, relative)
     current = root
     for part in Path(relative).parts:
@@ -952,216 +839,6 @@ def _confined_target(root: Path, relative: str) -> Path:
     return resolved
 
 
-def _target_mode(root: Path, relative: str) -> int:
-    try:
-        return stat.S_IMODE(os.lstat(root / relative).st_mode)
-    except OSError as exc:
-        raise OperationalError(f"Unable to inspect {relative}") from exc
-
-
-def _prove_only_spans_change(current: bytes, result: bytes, item: ProposedFile) -> None:
-    cursor_old = 0
-    cursor_new = 0
-    for edit in item.edits:
-        if (
-            current[cursor_old : edit.start]
-            != result[cursor_new : cursor_new + edit.start - cursor_old]
-        ):
-            raise InvalidInvocationError(
-                f"Proposed result changes bytes outside the proposed spans: {item.path}",
-                code="CC0207",
-            )
-        cursor_new += edit.start - cursor_old + len(edit.new_text.encode("utf-8"))
-        cursor_old = edit.end
-    if current[cursor_old:] != result[cursor_new:]:
-        raise InvalidInvocationError(
-            f"Proposed result changes bytes outside the proposed spans: {item.path}",
-            code="CC0207",
-        )
-
-
-def _reject_stale(
-    proposal: PinUpdateProposal, repository: RepositoryConfig, now: datetime
-) -> None:
-    known = {image.image_id: image for image in repository.images}
-    missing = sorted(set(proposal.image_ids) - known.keys())
-    if missing:
-        raise InvalidInvocationError(
-            "Proposal names images that no longer exist: " + ", ".join(missing),
-            code="CC0207",
-        )
-    limit = min(known[image_id].limits.pin_freshness for image_id in proposal.image_ids)
-    for lookup in proposal.lookups:
-        age = now.astimezone(UTC) - lookup.resolved_at.astimezone(UTC)
-        if age < timedelta(0):
-            raise OperationalError("Proposal resolution time is in the future")
-        if age > limit:
-            raise OperationalError(
-                f"Proposal resolution is stale for {lookup.original_reference}: "
-                f"resolved {age} ago, limit {limit}"
-            )
-
-
-def _compare_snapshot(
-    snapshot: _Snapshot, proposal: PinUpdateProposal, *, expect_applied: bool
-) -> None:
-    """Prove that the current occurrences and dependency set equal the proposal.
-
-    Old and new references differ only in their equally long digest, so every
-    span keeps its byte offsets after application.
-    """
-    if snapshot.image_ids != proposal.image_ids:
-        raise InvalidInvocationError(
-            "Proposal image set does not match the current configuration",
-            code="CC0207",
-        )
-    replacements = {
-        str(item.original_reference): str(item.resolved_reference)
-        for item in proposal.lookups
-        if item.changed
-    }
-    current_names = set(replacements.values() if expect_applied else replacements)
-    expected = {
-        (
-            item.path,
-            edit.start,
-            edit.end,
-            edit.new_text if expect_applied else edit.old_text,
-        )
-        for item in proposal.files
-        for edit in item.edits
-    }
-    observed = {
-        (item.path, item.start, item.end, str(item.reference))
-        for item in snapshot.occurrences
-        if str(item.reference) in current_names
-    }
-    if observed != expected:
-        raise InvalidInvocationError(
-            "Proposal occurrences do not match the current repository state",
-            code="CC0207",
-        )
-    originals = {resolved: original for original, resolved in replacements.items()}
-    current: dict[str, tuple[set[str], PinIntent]] = {}
-    for occurrence in snapshot.occurrences:
-        reference = str(occurrence.reference)
-        key = originals.get(reference, reference) if expect_applied else reference
-        image_ids, _ = current.setdefault(key, (set(), snapshot.intents[reference]))
-        image_ids.add(occurrence.image_id)
-    if {
-        key: (tuple(sorted(ids)), intent) for key, (ids, intent) in current.items()
-    } != {
-        str(item.original_reference): (item.image_ids, item.tag_intent)
-        for item in proposal.lookups
-    }:
-        raise InvalidInvocationError(
-            "Proposal dependency set does not match the current configuration",
-            code="CC0207",
-        )
-
-
-def _replace_all(
-    root: Path,
-    results: dict[str, bytes],
-    modes: dict[str, int],
-    fault_hook: FaultHook | None,
-) -> None:
-    originals: dict[str, bytes] = {}
-    replaced: list[str] = []
-    temporary_files: list[Path] = []
-    try:
-        for path in sorted(results):
-            target = root / path
-            originals[path] = target.read_bytes()
-            _hook(fault_hook, WritePhase.PREPARE, target)
-            descriptor, temporary_name = tempfile.mkstemp(
-                dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
-            )
-            temporary = Path(temporary_name)
-            temporary_files.append(temporary)
-            os.fchmod(descriptor, modes[path])
-            with os.fdopen(descriptor, "wb") as stream:
-                _hook(fault_hook, WritePhase.WRITE, target)
-                stream.write(results[path])
-                stream.flush()
-                _hook(fault_hook, WritePhase.FLUSH, target)
-                os.fsync(stream.fileno())
-            _hook(fault_hook, WritePhase.REPLACE, target)
-            temporary.replace(target)
-            temporary_files.remove(temporary)
-            replaced.append(path)
-            _fsync_directory(target.parent)
-    except OSError as exc:
-        for temporary in temporary_files:
-            temporary.unlink(missing_ok=True)
-        _restore(root, {path: originals[path] for path in replaced}, modes, exc)
-        raise OperationalError(
-            f"Unable to apply the pin update proposal; every target was restored: {exc}"
-        ) from exc
-
-
-def _verify_result(
-    root: Path,
-    proposal: PinUpdateProposal,
-    results: dict[str, bytes],
-    fault_hook: FaultHook | None,
-) -> None:
-    for item in proposal.files:
-        target = root / item.path
-        _hook(fault_hook, WritePhase.VERIFY, target)
-        content = read_regular_file(
-            target,
-            maximum_bytes=max(MAX_CONFIG_BYTES, MAX_CONTAINERFILE_BYTES),
-            label=item.path,
-        )
-        if content != results[item.path] or sha256_bytes(content) != item.result_sha256:
-            raise OperationalError(
-                f"Applied file does not match the proposal: {item.path}"
-            )
-    repository = load_repository_config(root / CONFIGURATION_NAME)
-    snapshot = _discover(repository, proposal.image_ids)
-    _compare_snapshot(snapshot, proposal, expect_applied=True)
-
-
-def _restore(
-    root: Path, originals: dict[str, bytes], modes: dict[str, int], cause: Exception
-) -> None:
-    failed: list[str] = []
-    for path, content in originals.items():
-        target = root / path
-        try:
-            descriptor, temporary_name = tempfile.mkstemp(
-                dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
-            )
-            os.fchmod(descriptor, modes[path])
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-            Path(temporary_name).replace(target)
-            _fsync_directory(target.parent)
-        except OSError:
-            failed.append(path)
-    if failed:
-        raise OperationalError(
-            "Pin update application failed and these targets could not be restored: "
-            + ", ".join(sorted(failed))
-        ) from cause
-
-
-def _hook(fault_hook: FaultHook | None, phase: WritePhase, path: Path) -> None:
-    if fault_hook is not None:
-        fault_hook(phase, path)
-
-
-def _fsync_directory(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
 def _load_target(
     root: Path,
     relative: str,
@@ -1170,7 +847,7 @@ def _load_target(
 ) -> bytes:
     if relative in contents:
         return contents[relative]
-    resolved = _confined_target(root, relative)
+    resolved = confined_target(root, relative)
     contents[relative] = read_regular_file(
         resolved, maximum_bytes=maximum_bytes, label=relative
     )
@@ -1189,9 +866,9 @@ def _relative(root: Path, path: Path) -> str:
 
 
 def _group_by_reference(
-    occurrences: Iterable[_Occurrence],
-) -> dict[str, list[_Occurrence]]:
-    grouped: dict[str, list[_Occurrence]] = {}
+    occurrences: Iterable[Occurrence],
+) -> dict[str, list[Occurrence]]:
+    grouped: dict[str, list[Occurrence]] = {}
     for occurrence in occurrences:
         grouped.setdefault(str(occurrence.reference), []).append(occurrence)
     return grouped
@@ -1233,7 +910,8 @@ def _parse_timestamp(text: str) -> datetime:
     return parsed
 
 
-def _require_aware(value: datetime, label: str) -> None:
+def require_aware(value: datetime, label: str) -> None:
+    """Reject a naive proposal timestamp."""
     if value.tzinfo is None or value.utcoffset() is None:
         raise InvalidInvocationError(f"Proposal {label} must be timezone-aware")
 

@@ -13,10 +13,9 @@ from conclear.config import load_repository_config, normalize_observed_source_ur
 from conclear.database import select_fresh_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import sha256_bytes
+from conclear.pin_application import ApplicationStatus, apply_pin_proposal
 from conclear.pin_updates import (
-    ApplicationStatus,
     PinUpdateProposal,
-    apply_pin_proposal,
     load_proposal,
     propose_pin_updates,
 )
