@@ -1,19 +1,16 @@
 """Release-run workspaces, state transitions and ownership journals."""
 
-import fcntl
-import os
 import re
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import IO, Protocol
+from typing import Protocol
 
 from ulid import ULID
 
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.fileio import locked_file
 from conclear.jsonutil import atomic_write_json, canonical_json_bytes, load_json
 from conclear.values import validate_run_id
 
@@ -246,7 +243,7 @@ class RunWorkspace:
             not key or not value for key, value in additions.items()
         ):
             raise InvalidInvocationError("Immutable input additions cannot be empty")
-        with _locked_file(self.root / ".run.lock"):
+        with locked_file(self.root / ".run.lock", label="run state"):
             snapshot = self.load()
             if snapshot.state is not RunState.CREATED:
                 raise InvalidInvocationError(
@@ -279,7 +276,7 @@ class RunWorkspace:
         now: datetime | None = None,
     ) -> RunSnapshot:
         """Validate immutable inputs and restore an interrupted stable state."""
-        with _locked_file(self.root / ".run.lock"):
+        with locked_file(self.root / ".run.lock", label="run state"):
             snapshot = self.validate_resume(expected_inputs)
             if snapshot.state is not RunState.INCOMPLETE:
                 return snapshot
@@ -301,7 +298,7 @@ class RunWorkspace:
         self, state: RunState, *, now: datetime | None = None
     ) -> RunSnapshot:
         """Atomically apply one permitted monotonic state transition."""
-        with _locked_file(self.root / ".run.lock"):
+        with locked_file(self.root / ".run.lock", label="run state"):
             snapshot = self.load()
             if state == snapshot.state:
                 if state in {RunState.REJECTED, RunState.PROMOTED}:
@@ -378,7 +375,7 @@ class ResourceJournal:
             status=ResourceStatus.PLANNED,
             metadata=resource_metadata,
         )
-        with _locked_file(self._lock_path):
+        with locked_file(self._lock_path, label="resource journal"):
             entries = list(self.entries())
             matches = [item for item in entries if item.resource_id == resource_id]
             if matches:
@@ -407,7 +404,7 @@ class ResourceJournal:
         metadata: dict[str, object] | None = None,
     ) -> ResourceEntry:
         """Record the observed result after a resource mutation."""
-        with _locked_file(self._lock_path):
+        with locked_file(self._lock_path, label="resource journal"):
             entries = list(self.entries())
             matches = [entry for entry in entries if entry.resource_id == resource_id]
             if len(matches) != 1:
@@ -471,22 +468,6 @@ class ResourceJournal:
                 "resources": [entry.to_dict() for entry in entries],
             },
         )
-
-
-@contextmanager
-def _locked_file(path: Path) -> Iterator[IO[bytes]]:
-    try:
-        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
-        stream = os.fdopen(descriptor, "r+b")
-    except OSError as exc:
-        raise OperationalError(f"Unable to open state lock {path}") from exc
-    try:
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-        yield stream
-    except OSError as exc:
-        raise OperationalError(f"Unable to lock state file {path}") from exc
-    finally:
-        stream.close()
 
 
 def _parse_snapshot(value: object) -> RunSnapshot:

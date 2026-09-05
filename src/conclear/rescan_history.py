@@ -1,18 +1,14 @@
 """Durable authoritative rescan clocks outside application repositories."""
 
-import fcntl
 import hashlib
-import os
 import stat
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
 from pathlib import Path
-from typing import IO
 
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.fileio import locked_file
 from conclear.jsonutil import (
     atomic_write_json,
     canonical_json_bytes,
@@ -95,7 +91,7 @@ class RescanHistoryStore:
         """Reconcile a cache prefix with verified attestations and require its tip."""
         path = self._path(subject)
         self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with _locked_file(path.with_suffix(".lock")):
+        with locked_file(path.with_suffix(".lock"), label="rescan history"):
             cached = self._load(subject)
             if (
                 len(cached) > len(authoritative)
@@ -118,7 +114,7 @@ class RescanHistoryStore:
         """Append one successfully verified result under an exact prior link."""
         path = self._path(subject)
         self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with _locked_file(path.with_suffix(".lock")):
+        with locked_file(path.with_suffix(".lock"), label="rescan history"):
             entries = list(self._load(subject))
             current = entries[-1].record_digest if entries else None
             if current != expected_previous:
@@ -336,25 +332,3 @@ def _parse_timestamp(value: str) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise OperationalError("Rescan history timestamp lacks a timezone")
     return parsed.astimezone(UTC)
-
-
-@contextmanager
-def _locked_file(path: Path) -> Iterator[IO[bytes]]:
-    flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    descriptor: int | None = None
-    try:
-        descriptor = os.open(path, flags, 0o600)
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            raise OperationalError("Rescan history lock is not a regular file")
-        stream = os.fdopen(descriptor, "r+b")
-        descriptor = None
-        with stream:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-            yield stream
-    except OSError as exc:
-        raise OperationalError(f"Unable to lock rescan history {path}") from exc
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)

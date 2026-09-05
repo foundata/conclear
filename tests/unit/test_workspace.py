@@ -214,3 +214,34 @@ def test_atomic_write_closes_descriptor_when_fchmod_fails(
     with pytest.raises(OSError):
         os.fstat(descriptors[0])
     assert list(tmp_path.glob(".state.json.*.tmp")) == []
+
+
+def test_workspace_locks_refuse_symbolic_links(tmp_path: Path) -> None:
+    workspace = create_workspace(tmp_path)
+    outside = tmp_path / "outside.lock"
+    outside.write_text("protected", encoding="utf-8")
+    for lock_path, label, operation in (
+        (
+            workspace.root / ".run.lock",
+            "run state",
+            lambda: workspace.transition(RunState.QUALIFIED),
+        ),
+        (
+            workspace.root / "resources.lock",
+            "resource journal",
+            lambda: workspace.journal.plan(
+                resource_id="layout",
+                kind=ResourceKind.LOCAL_PATH,
+                identifier=str(tmp_path / "layout"),
+                ephemeral=True,
+            ),
+        ),
+    ):
+        lock_path.unlink(missing_ok=True)
+        lock_path.symlink_to(outside)
+        with pytest.raises(OperationalError, match=f"Unable to lock {label}"):
+            operation()
+        assert outside.read_text(encoding="utf-8") == "protected"
+        lock_path.unlink()
+    assert workspace.load().state is RunState.CREATED
+    assert workspace.journal.entries() == ()

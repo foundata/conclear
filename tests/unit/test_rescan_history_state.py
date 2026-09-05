@@ -125,3 +125,22 @@ def test_signed_chain_reconstruction_rejects_malformed_or_foreign_records() -> N
 
     second = _record(chain[0].record_digest, START + timedelta(days=1))
     assert len(history_from_records((second, record), SUBJECT)) == 2
+
+
+def test_durable_history_lock_refuses_symbolic_links(tmp_path: Path) -> None:
+    path = stored_path(tmp_path)
+    store = RescanHistoryStore(tmp_path)
+    original = path.read_bytes()
+    outside = tmp_path / "outside.lock"
+    outside.write_text("protected", encoding="utf-8")
+    lock_path = path.with_suffix(".lock")
+    lock_path.unlink()
+    lock_path.symlink_to(outside)
+
+    with pytest.raises(OperationalError, match="Unable to lock rescan history"):
+        store.synchronize(SUBJECT, (), None)
+    with pytest.raises(OperationalError, match="Unable to lock rescan history"):
+        store.record(SUBJECT, _entry("b", START), expected_previous=None)
+
+    assert outside.read_text(encoding="utf-8") == "protected"
+    assert path.read_bytes() == original

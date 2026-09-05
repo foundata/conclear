@@ -252,7 +252,7 @@ def test_state_lock_failure_is_an_operational_failure(tmp_path: Path) -> None:
         pytest.skip("root can always create lock files")
     workspace.root.chmod(0o500)
     try:
-        with pytest.raises(OperationalError, match="state lock"):
+        with pytest.raises(OperationalError, match="Unable to lock run state"):
             workspace.transition(RunState.QUALIFIED)
     finally:
         workspace.root.chmod(0o700)

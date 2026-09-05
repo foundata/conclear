@@ -178,3 +178,24 @@ def test_observation_invariants_reject_inconsistent_values() -> None:
     )
     assert observation.accepted
     assert observation.to_dict()["divergenceSince"] == "2026-01-01T00:00:00Z"
+
+
+def test_durable_pin_lock_refuses_symbolic_links(tmp_path: Path) -> None:
+    store, path = stored(tmp_path)
+    original = path.read_bytes()
+    outside = tmp_path / "outside.lock"
+    outside.write_text("protected", encoding="utf-8")
+    lock_path = path.with_suffix(".lock")
+    lock_path.unlink()
+    lock_path.symlink_to(outside)
+
+    with pytest.raises(OperationalError, match="Unable to lock durable pin state"):
+        store.check(
+            pin(),
+            resolver=Resolver("sha256:" + "b" * 64),
+            maximum_divergence=timedelta(days=7),
+            now=NOW + timedelta(hours=1),
+        )
+
+    assert outside.read_text(encoding="utf-8") == "protected"
+    assert path.read_bytes() == original

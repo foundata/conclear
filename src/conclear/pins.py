@@ -1,17 +1,14 @@
 """Durable external image pin observations and divergence policy."""
 
-import fcntl
 import hashlib
-import os
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import IO, Protocol
+from typing import Protocol
 
 from conclear.config import PinConfig, PinIntent
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.fileio import locked_file
 from conclear.jsonutil import atomic_write_json, load_json
 from conclear.presentation import Finding
 from conclear.values import Digest, OCIReference
@@ -107,7 +104,7 @@ class PinStore:
         observed = resolver.resolve_digest(readable)
         path = self._path(reference)
         self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with _locked_file(path.with_suffix(".lock")):
+        with locked_file(path.with_suffix(".lock"), label="durable pin state"):
             previous = self._load_optional(path, reference)
             if previous is not None and previous.checked_at > now.astimezone(UTC):
                 raise OperationalError("Pin observation time is in the future")
@@ -281,17 +278,3 @@ def _boolean(value: object) -> bool:
     if not isinstance(value, bool):
         raise OperationalError("Durable pin boolean field is malformed")
     return value
-
-
-@contextmanager
-def _locked_file(path: Path) -> Iterator[IO[bytes]]:
-    try:
-        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
-        stream = os.fdopen(descriptor, "r+b")
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-        yield stream
-    except OSError as exc:
-        raise OperationalError(f"Unable to lock durable pin state {path}") from exc
-    finally:
-        if "stream" in locals():
-            stream.close()
