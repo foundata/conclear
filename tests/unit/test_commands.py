@@ -798,7 +798,7 @@ def test_publish_attest_verify_and_promote_report_their_observations(
     code, value, _ = invoke(["publish", run_id, "--profile", "production"])
     assert code == 0
     assert value["data"]["immutabilityEnabled"] is True
-    assert value["data"]["expiration"] == "2026-01-08T00:00:00+00:00"
+    assert value["data"]["expiration"] == "2026-01-08T00:00:00Z"
 
     code, value, _ = invoke(["attest", run_id, "--profile", "production"])
     assert code == 0
@@ -1035,7 +1035,15 @@ def test_pins_check_reports_observations_and_rejections(
             return SimpleNamespace(
                 accepted=Store.outcome,
                 findings=() if Store.outcome else (Finding("CC0204", "error", "old"),),
-                to_dict=lambda: {"reference": str(pin.reference)},
+                to_dict=lambda: {
+                    "reference": str(pin.reference),
+                    "pinnedDigest": DIGEST,
+                    "observedDigest": DIGEST,
+                    "checkedAt": "2026-01-01T00:00:00Z",
+                    "divergenceSince": None,
+                    "historyInitialized": True,
+                    "findings": [],
+                },
             )
 
         outcome = True

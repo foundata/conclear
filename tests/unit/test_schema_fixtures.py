@@ -173,13 +173,22 @@ def test_configuration_profile_result_and_triage_fixtures(
     assert _errors("profile.schema.json", {**profile, "ci_context": "trust"})
 
     result = CommandResult(
-        "check",
+        "build",
         ResultStatus.RULE_REJECTION,
         "rejected",
         findings=(Finding("CC0107", "error", "remote ADD", "Containerfile:3"),),
         data={"runId": "01arz3ndektsv4rrffq69g5fav"},
     ).to_dict()
     assert _errors("result.schema.json", result) == []
+    assert _errors("result.schema.json", {**result, "status": "success"})
+    assert _errors(
+        "result.schema.json",
+        {
+            **result,
+            "data": {"runId": "01arz3ndektsv4rrffq69g5fav", "undocumented": True},
+        },
+    )
+    assert _errors("result.schema.json", {**result, "data": {"runId": "not a ulid"}})
     assert _errors("result.schema.json", {**result, "status": "maybe"})
     assert _errors(
         "result.schema.json",

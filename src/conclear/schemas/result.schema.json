@@ -4,26 +4,2038 @@
   "title": "ConClear command result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "command", "status", "message", "findings", "data"],
+  "required": [
+    "schemaVersion",
+    "command",
+    "status",
+    "message",
+    "findings",
+    "data"
+  ],
   "properties": {
-    "schemaVersion": {"const": 1},
-    "command": {"type": "string", "minLength": 1},
-    "status": {"enum": ["success", "ruleRejection", "operationalFailure", "invalidInvocation"]},
-    "message": {"type": "string"},
+    "schemaVersion": {
+      "const": 1
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "success",
+        "ruleRejection",
+        "operationalFailure",
+        "invalidInvocation"
+      ]
+    },
+    "message": {
+      "type": "string"
+    },
     "findings": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["checkId", "severity", "message"],
         "properties": {
-          "checkId": {"pattern": "^CC[0-9]{4}$"},
-          "severity": {"enum": ["error", "warning", "info"]},
-          "message": {"type": "string", "minLength": 1},
-          "location": {"type": "string"}
+          "checkId": {
+            "pattern": "^CC[0-9]{4}$"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "location": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkId",
+          "severity",
+          "message"
+        ]
+      }
+    },
+    "data": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "check"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/check-data"
+          }
         }
       }
     },
-    "data": {"type": "object"}
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "check"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "build"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/build-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "build"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
+              "layout": {
+                "$ref": "#/$defs/path"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "buildEvidence": {
+                "$ref": "#/$defs/path"
+              },
+              "testDependencyEvidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/path"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "test"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/test-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "test"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "reportDigest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "qualify"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/qualify-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "qualify"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
+              "record": {
+                "$ref": "#/$defs/path"
+              },
+              "recordDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "layout": {
+                "$ref": "#/$defs/path"
+              },
+              "databaseDigest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "assemble"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/assemble-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "assemble"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
+              "record": {
+                "$ref": "#/$defs/path"
+              },
+              "recordDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "layout": {
+                "$ref": "#/$defs/path"
+              },
+              "subjectDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "platformManifests": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/digest"
+                }
+              },
+              "candidateTag": {
+                "$ref": "#/$defs/text"
+              },
+              "transports": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "platform": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "workerRunId": {
+                      "$ref": "#/$defs/runId"
+                    },
+                    "transport": {
+                      "$ref": "#/$defs/path"
+                    },
+                    "kind": {
+                      "enum": [
+                        "archive",
+                        "directory"
+                      ]
+                    },
+                    "transportDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "manifestDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "recordDigest": {
+                      "$ref": "#/$defs/digest"
+                    }
+                  },
+                  "required": [
+                    "platform",
+                    "workerRunId",
+                    "transport",
+                    "kind",
+                    "transportDigest",
+                    "manifestDigest",
+                    "recordDigest"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "doctor"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/doctor-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "doctor"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "nativeArchitecture": {
+                "$ref": "#/$defs/text"
+              },
+              "emulatedArchitectures": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "registryProvider": {
+                "$ref": "#/$defs/text"
+              },
+              "registryAccess": {
+                "type": "boolean"
+              },
+              "sigstoreAccess": {
+                "type": "boolean"
+              },
+              "ciContextPolicy": {
+                "enum": [
+                  "omit",
+                  "observe",
+                  "require"
+                ]
+              },
+              "ciContextObserved": {
+                "type": "boolean"
+              },
+              "ciProvider": {
+                "$ref": "#/$defs/text"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "pins check"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/pins-check-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "pins check"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "observations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "reference": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "pinnedDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "observedDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "checkedAt": {
+                      "$ref": "#/$defs/timestamp"
+                    },
+                    "divergenceSince": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/timestamp"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "historyInitialized": {
+                      "type": "boolean"
+                    },
+                    "findings": {
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "reference",
+                    "pinnedDigest",
+                    "observedDigest",
+                    "checkedAt",
+                    "divergenceSince",
+                    "historyInitialized",
+                    "findings"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "pins propose"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/pins-propose-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "pins propose"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "proposal": {
+                "$ref": "#/$defs/path"
+              },
+              "proposalDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "changed": {
+                "type": "boolean"
+              },
+              "reviewRequired": {
+                "type": "boolean"
+              },
+              "lookups": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "imageIds": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/text"
+                      }
+                    },
+                    "tagIntent": {
+                      "enum": [
+                        "immutable-version",
+                        "moving-release-line"
+                      ]
+                    },
+                    "originalReference": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "resolvedReference": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "oldDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "newDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "resolvedAt": {
+                      "$ref": "#/$defs/timestamp"
+                    },
+                    "reviewRequired": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "imageIds",
+                    "tagIntent",
+                    "originalReference",
+                    "resolvedReference",
+                    "oldDigest",
+                    "newDigest",
+                    "resolvedAt",
+                    "reviewRequired"
+                  ]
+                }
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "pins apply"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/pins-apply-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "pins apply"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": [
+                  "applied",
+                  "already-applied",
+                  "no-change"
+                ]
+              },
+              "proposalDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "changedPaths": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "reviewRequired": {
+                "type": "boolean"
+              },
+              "lookups": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "imageIds": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/text"
+                      }
+                    },
+                    "tagIntent": {
+                      "enum": [
+                        "immutable-version",
+                        "moving-release-line"
+                      ]
+                    },
+                    "originalReference": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "resolvedReference": {
+                      "$ref": "#/$defs/text"
+                    },
+                    "oldDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "newDigest": {
+                      "$ref": "#/$defs/digest"
+                    },
+                    "resolvedAt": {
+                      "$ref": "#/$defs/timestamp"
+                    },
+                    "reviewRequired": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "imageIds",
+                    "tagIntent",
+                    "originalReference",
+                    "resolvedReference",
+                    "oldDigest",
+                    "newDigest",
+                    "resolvedAt",
+                    "reviewRequired"
+                  ]
+                }
+              },
+              "followUp": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "cleanup"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/cleanup-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "cleanup"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "removed": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "retained": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "rescan"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/rescan-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "rescan"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
+              "record": {
+                "$ref": "#/$defs/path"
+              },
+              "recordDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "authoritative": {
+                "type": "boolean"
+              },
+              "verifiedAt": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "provenance"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/provenance-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "provenance"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/path"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "publish"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/publish-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "publish"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/text"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              },
+              "expiration": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "immutabilityEnabled": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "attest"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/attest-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "attest"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/text"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "verify"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/verify-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "verify"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "record": {
+                "$ref": "#/$defs/path"
+              },
+              "digest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "promote"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/promote-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "promote"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tags": {
+                "$ref": "#/$defs/tagAssignments"
+              },
+              "candidateDeleted": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "release"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/release-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "release"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
+              "workspace": {
+                "$ref": "#/$defs/path"
+              },
+              "subject": {
+                "$ref": "#/$defs/text"
+              },
+              "tags": {
+                "$ref": "#/$defs/tagAssignments"
+              },
+              "candidateDeleted": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "transport export"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/transport-export-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "transport export"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
+              "platform": {
+                "$ref": "#/$defs/text"
+              },
+              "transport": {
+                "$ref": "#/$defs/path"
+              },
+              "kind": {
+                "enum": [
+                  "archive",
+                  "directory"
+                ]
+              },
+              "transportDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "manifestDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "recordDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "layoutDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "platformManifestDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "payloadDigests": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/digest"
+                }
+              },
+              "members": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "totalBytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "tagAssignments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "tag": {
+            "$ref": "#/$defs/text"
+          },
+          "digest": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "required": [
+          "tag",
+          "digest"
+        ]
+      }
+    },
+    "check-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "build-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/runId"
+        },
+        "layout": {
+          "$ref": "#/$defs/path"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "buildEvidence": {
+          "$ref": "#/$defs/path"
+        },
+        "testDependencyEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/path"
+          }
+        }
+      },
+      "required": [
+        "buildEvidence",
+        "digest",
+        "layout",
+        "runId",
+        "testDependencyEvidence"
+      ]
+    },
+    "test-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reportDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "reportDigest"
+      ]
+    },
+    "qualify-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/runId"
+        },
+        "record": {
+          "$ref": "#/$defs/path"
+        },
+        "recordDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "layout": {
+          "$ref": "#/$defs/path"
+        },
+        "databaseDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "databaseDigest",
+        "layout",
+        "record",
+        "recordDigest",
+        "runId"
+      ]
+    },
+    "assemble-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/runId"
+        },
+        "record": {
+          "$ref": "#/$defs/path"
+        },
+        "recordDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "layout": {
+          "$ref": "#/$defs/path"
+        },
+        "subjectDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "platformManifests": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "candidateTag": {
+          "$ref": "#/$defs/text"
+        },
+        "transports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "platform": {
+                "$ref": "#/$defs/text"
+              },
+              "workerRunId": {
+                "$ref": "#/$defs/runId"
+              },
+              "transport": {
+                "$ref": "#/$defs/path"
+              },
+              "kind": {
+                "enum": [
+                  "archive",
+                  "directory"
+                ]
+              },
+              "transportDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "manifestDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "recordDigest": {
+                "$ref": "#/$defs/digest"
+              }
+            },
+            "required": [
+              "platform",
+              "workerRunId",
+              "transport",
+              "kind",
+              "transportDigest",
+              "manifestDigest",
+              "recordDigest"
+            ]
+          }
+        }
+      },
+      "required": [
+        "candidateTag",
+        "layout",
+        "platformManifests",
+        "record",
+        "recordDigest",
+        "runId",
+        "subjectDigest",
+        "transports"
+      ]
+    },
+    "doctor-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "nativeArchitecture": {
+          "$ref": "#/$defs/text"
+        },
+        "emulatedArchitectures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "registryProvider": {
+          "$ref": "#/$defs/text"
+        },
+        "registryAccess": {
+          "type": "boolean"
+        },
+        "sigstoreAccess": {
+          "type": "boolean"
+        },
+        "ciContextPolicy": {
+          "enum": [
+            "omit",
+            "observe",
+            "require"
+          ]
+        },
+        "ciContextObserved": {
+          "type": "boolean"
+        },
+        "ciProvider": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "ciContextObserved",
+        "ciContextPolicy",
+        "emulatedArchitectures",
+        "nativeArchitecture",
+        "registryAccess",
+        "registryProvider",
+        "sigstoreAccess",
+        "tools"
+      ]
+    },
+    "pins-check-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/text"
+              },
+              "pinnedDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "observedDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "checkedAt": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "divergenceSince": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "historyInitialized": {
+                "type": "boolean"
+              },
+              "findings": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "reference",
+              "pinnedDigest",
+              "observedDigest",
+              "checkedAt",
+              "divergenceSince",
+              "historyInitialized",
+              "findings"
+            ]
+          }
+        }
+      },
+      "required": [
+        "observations"
+      ]
+    },
+    "pins-propose-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "proposal": {
+          "$ref": "#/$defs/path"
+        },
+        "proposalDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "reviewRequired": {
+          "type": "boolean"
+        },
+        "lookups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "imageIds": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "tagIntent": {
+                "enum": [
+                  "immutable-version",
+                  "moving-release-line"
+                ]
+              },
+              "originalReference": {
+                "$ref": "#/$defs/text"
+              },
+              "resolvedReference": {
+                "$ref": "#/$defs/text"
+              },
+              "oldDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "newDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "resolvedAt": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "reviewRequired": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "imageIds",
+              "tagIntent",
+              "originalReference",
+              "resolvedReference",
+              "oldDigest",
+              "newDigest",
+              "resolvedAt",
+              "reviewRequired"
+            ]
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      },
+      "required": [
+        "changed",
+        "files",
+        "lookups",
+        "proposal",
+        "proposalDigest",
+        "reviewRequired"
+      ]
+    },
+    "pins-apply-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "applied",
+            "already-applied",
+            "no-change"
+          ]
+        },
+        "proposalDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "changedPaths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "reviewRequired": {
+          "type": "boolean"
+        },
+        "lookups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "imageIds": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "tagIntent": {
+                "enum": [
+                  "immutable-version",
+                  "moving-release-line"
+                ]
+              },
+              "originalReference": {
+                "$ref": "#/$defs/text"
+              },
+              "resolvedReference": {
+                "$ref": "#/$defs/text"
+              },
+              "oldDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "newDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "resolvedAt": {
+                "$ref": "#/$defs/timestamp"
+              },
+              "reviewRequired": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "imageIds",
+              "tagIntent",
+              "originalReference",
+              "resolvedReference",
+              "oldDigest",
+              "newDigest",
+              "resolvedAt",
+              "reviewRequired"
+            ]
+          }
+        },
+        "followUp": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      },
+      "required": [
+        "changedPaths",
+        "followUp",
+        "lookups",
+        "proposalDigest",
+        "reviewRequired",
+        "status"
+      ]
+    },
+    "cleanup-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "removed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "retained": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      },
+      "required": [
+        "removed",
+        "retained"
+      ]
+    },
+    "rescan-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/runId"
+        },
+        "record": {
+          "$ref": "#/$defs/path"
+        },
+        "recordDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "authoritative": {
+          "type": "boolean"
+        },
+        "verifiedAt": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "authoritative",
+        "record",
+        "recordDigest",
+        "runId",
+        "verifiedAt"
+      ]
+    },
+    "provenance-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "digest",
+        "path"
+      ]
+    },
+    "publish-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/text"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "expiration": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "immutabilityEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "digest",
+        "expiration",
+        "immutabilityEnabled",
+        "reference"
+      ]
+    },
+    "attest-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/text"
+        }
+      },
+      "required": [
+        "subject"
+      ]
+    },
+    "verify-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "record": {
+          "$ref": "#/$defs/path"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "digest",
+        "record"
+      ]
+    },
+    "promote-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tags": {
+          "$ref": "#/$defs/tagAssignments"
+        },
+        "candidateDeleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidateDeleted",
+        "tags"
+      ]
+    },
+    "release-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/runId"
+        },
+        "workspace": {
+          "$ref": "#/$defs/path"
+        },
+        "subject": {
+          "$ref": "#/$defs/text"
+        },
+        "tags": {
+          "$ref": "#/$defs/tagAssignments"
+        },
+        "candidateDeleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidateDeleted",
+        "runId",
+        "subject",
+        "tags",
+        "workspace"
+      ]
+    },
+    "transport-export-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/runId"
+        },
+        "platform": {
+          "$ref": "#/$defs/text"
+        },
+        "transport": {
+          "$ref": "#/$defs/path"
+        },
+        "kind": {
+          "enum": [
+            "archive",
+            "directory"
+          ]
+        },
+        "transportDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "manifestDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "recordDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "layoutDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "platformManifestDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "payloadDigests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "members": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "kind",
+        "layoutDigest",
+        "manifestDigest",
+        "members",
+        "payloadDigests",
+        "platform",
+        "platformManifestDigest",
+        "recordDigest",
+        "runId",
+        "totalBytes",
+        "transport",
+        "transportDigest"
+      ]
+    }
   }
 }

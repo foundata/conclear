@@ -15,7 +15,7 @@ from conclear.artifacts import (
 from conclear.config import ImageConfig
 from conclear.errors import InvalidInvocationError
 from conclear.presentation import CommandResult, ResultStatus
-from conclear.records import utc_now
+from conclear.records import format_timestamp, utc_now
 from conclear.release_profile import ReleaseProfile
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.publication import (
@@ -114,7 +114,7 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
             data={
                 "reference": str(result.reference),
                 "digest": str(result.graph.digest),
-                "expiration": result.expiration.isoformat(),
+                "expiration": format_timestamp(result.expiration),
                 "immutabilityEnabled": result.immutability_enabled,
             },
         ),
