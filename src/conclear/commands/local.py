@@ -11,6 +11,7 @@ import click
 
 from conclear.config import ReleaseProfile, load_repository_config
 from conclear.database import select_database_by_digest, select_fresh_database
+from conclear.errors import RuleRejectionError
 from conclear.hooks import HookRunner
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
@@ -38,7 +39,7 @@ from conclear.services.run_context import (
 from conclear.tools import ToolName
 from conclear.transport import ImportedTransport, import_transport
 from conclear.values import Digest, Platform
-from conclear.workspace import RunState
+from conclear.workspace import RunState, RunWorkspace
 
 from .common import cache_home, command_runtime, emit, profile, state_home
 
@@ -496,9 +497,9 @@ def _transport_entry(item: ImportedTransport) -> dict[str, object]:
     }
 
 
-def _finish_coordinator_failure(workspace: Any, failure: BaseException) -> None:
-    from conclear.errors import RuleRejectionError
-
+def _finish_coordinator_failure(
+    workspace: RunWorkspace, failure: BaseException
+) -> None:
     state = workspace.load().state
     if state in {RunState.REJECTED, RunState.INCOMPLETE}:
         return
