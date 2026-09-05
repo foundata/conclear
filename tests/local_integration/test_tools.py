@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from conclear.assembly import PlatformLayout, assemble_layout
 from conclear.config import load_repository_config
 from conclear.errors import CommandExecutionError
 from conclear.hooks import HookRunner
 from conclear.jsonutil import sha256_bytes
+from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.oci import validate_layout
 from conclear.path_safety import contained_path
 from conclear.process import CommandRequest, OperationKind

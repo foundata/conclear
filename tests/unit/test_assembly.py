@@ -8,11 +8,11 @@ import pytest
 import conclear.records as records_module
 import conclear.services.assembly as assembly_service_module
 from conclear.artifacts import load_candidate
-from conclear.assembly import PlatformLayout, assemble_layout
 from conclear.config import load_repository_config
 from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes, sha256_file
+from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.oci import OCI_CONFIG, OCI_INDEX, OCI_MANIFEST, validate_layout
 from conclear.records import (
     RecordEnvelope,

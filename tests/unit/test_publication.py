@@ -18,7 +18,6 @@ from conclear.adapters.cosign import (
 )
 from conclear.adapters.skopeo import RegistryCopyObservation
 from conclear.artifacts import load_published, load_verification
-from conclear.assembly import PlatformLayout, assemble_layout
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
     SPDX_DOCUMENT_TYPE,
@@ -41,6 +40,7 @@ from conclear.jsonutil import (
     sha256_bytes,
     sha256_file,
 )
+from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.registry_control import TagObservation

@@ -3,11 +3,11 @@
 from datetime import datetime
 from pathlib import Path
 
-from conclear.assembly import AssemblyObservation
 from conclear.attestations import RELEASE_VERIFICATION_TYPE
 from conclear.config import ImageConfig
 from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.jsonutil import load_json, sha256_file
+from conclear.layout_assembly import AssemblyObservation
 from conclear.oci import validate_layout
 from conclear.provenance import ProvenanceMaterial
 from conclear.records import SourceIdentity, ToolIdentity, validate_record

@@ -7,10 +7,10 @@ from typing import Any
 
 import pytest
 
-from conclear.assembly import PlatformLayout, assemble_layout
 from conclear.config import load_repository_config
 from conclear.errors import InvalidInvocationError, OperationalError, RuleRejectionError
 from conclear.jsonutil import atomic_write_json
+from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.registry_control import TagObservation
 from conclear.services.assembly import CandidateResult
 from conclear.services.publication import publish_candidate

@@ -5,16 +5,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from conclear.assembly import (
-    AssemblyObservation,
-    PlatformLayout,
-    assemble_layout,
-)
 from conclear.config import ImageConfig, RepositoryConfig
 from conclear.emulation import validate_execution_observation
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import IDENTITY
 from conclear.jsonutil import load_json, sha256_bytes, sha256_file
+from conclear.layout_assembly import (
+    AssemblyObservation,
+    PlatformLayout,
+    assemble_layout,
+)
 from conclear.oci import validate_layout
 from conclear.records import (
     RecordEnvelope,

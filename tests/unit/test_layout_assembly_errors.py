@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-import conclear.assembly as assembly_module
-from conclear.assembly import PlatformLayout, assemble_layout
+import conclear.layout_assembly as assembly_module
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.oci import Descriptor, validate_layout
 from conclear.values import Digest, Platform
 from tests.unit.test_publication import platform_layout
