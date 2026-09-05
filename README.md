@@ -120,7 +120,7 @@ conclear assemble --source . --revision v1.2.3 --image app --version 1.2.3 \
 |---|---|
 | worker run ID | The lowercase ULID of the `qualify` run that produced the qualification. It stays in the record and in the candidate. |
 | coordinator run ID | The new lowercase ULID that `assemble` generates. It names the candidate reference and owns the assembled layout. |
-| qualification-record digest | SHA-256 of the exact `platform-qualification.json` bytes (`recordDigest`). |
+| qualification-record digest | SHA-256 of the exact `platform-qualification-<platform>.json` bytes (`recordDigest`). |
 | transport digest | SHA-256 of the archive file, or of `transport.json` for a directory transport (`transportDigest`). `assemble` requires it as its second `--transport` value. |
 | platform manifest digest | Digest of the platform's OCI image manifest (`platformManifestDigest`), which becomes one index entry. |
 | assembled index digest | Digest of the assembled image index, or of the single manifest for a one-platform image (`subjectDigest`). |

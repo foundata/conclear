@@ -236,12 +236,6 @@
         "severity": "error"
       },
       {
-        "anchor": "vulnerability-and-configuration-scanning",
-        "behavior": "not implemented",
-        "id": "CC0506",
-        "severity": "info"
-      },
-      {
         "anchor": "registries-and-image-names",
         "behavior": "automated",
         "id": "CC0601",
