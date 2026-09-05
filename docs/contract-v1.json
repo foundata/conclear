@@ -1172,9 +1172,9 @@
       "parameters": [
         {
           "declarations": [
-            "subject_text"
+            "--subject"
           ],
-          "kind": "argument",
+          "kind": "option",
           "multiple": false,
           "name": "subject_text",
           "required": true,
@@ -1193,7 +1193,7 @@
         },
         {
           "declarations": [
-            "--image-id"
+            "--image"
           ],
           "kind": "option",
           "multiple": false,

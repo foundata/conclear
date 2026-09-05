@@ -358,9 +358,9 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
 
 
 @click.command("rescan")
-@click.argument("subject_text")
+@click.option("subject_text", "--subject", required=True)
 @config_option
-@click.option("image_id", "--image-id", required=True)
+@click.option("image_id", "--image", required=True)
 @required_profile_option
 @click.option("authoritative", "--authoritative", is_flag=True)
 @passphrase_option

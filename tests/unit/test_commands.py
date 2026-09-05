@@ -1071,10 +1071,11 @@ def test_rescan_command_validates_subject_profile_and_configuration(
     code, value, _ = invoke(
         [
             "rescan",
+            "--subject",
             "quay.io/example/app:1@" + DIGEST,
             "--config",
             config,
-            "--image-id",
+            "--image",
             "app",
             "--profile",
             "production",
@@ -1086,10 +1087,11 @@ def test_rescan_command_validates_subject_profile_and_configuration(
     code, value, _ = invoke(
         [
             "rescan",
+            "--subject",
             "quay.io/example/other@" + DIGEST,
             "--config",
             config,
-            "--image-id",
+            "--image",
             "app",
             "--profile",
             "production",
@@ -1101,10 +1103,11 @@ def test_rescan_command_validates_subject_profile_and_configuration(
     code, value, _ = invoke(
         [
             "rescan",
+            "--subject",
             subject,
             "--config",
             config,
-            "--image-id",
+            "--image",
             "app",
             "--profile",
             "production",
