@@ -410,7 +410,7 @@ After those checks pass, ConClear creates `release-verification.json`, wraps it 
 
 ## Rescans<a id="rescans"></a>
 
-`conclear rescan <repository>@<digest>` accepts an immutable released subject. It retrieves and verifies the signed release-verification attestation, including transparency-log inclusion, and rejects a missing or conflicting result. It takes the required repository-configuration digest from that predicate, then enumerates every platform manifest, retrieves each signed SBOM, verifies the attestation, signer and log inclusion against the external trust root, and evaluates the current vulnerability data for the complete platform set.
+`conclear rescan --subject <repository>@<digest> --image <image>` accepts an immutable released subject. It retrieves and verifies the signed release-verification attestation, including transparency-log inclusion, and rejects a missing or conflicting result. It takes the required repository-configuration digest from that predicate, then enumerates every platform manifest, retrieves each signed SBOM, verifies the attestation, signer and log inclusion against the external trust root, and evaluates the current vulnerability data for the complete platform set.
 
 An SBOM rescan is explicitly recorded as vulnerability matching against retained inventory only. A rescan that requires secret or configuration analysis retrieves the immutable image content and repeats those scans. Partial platform coverage cannot produce an accepted result.
 
