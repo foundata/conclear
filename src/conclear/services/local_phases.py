@@ -8,7 +8,7 @@ from conclear.context import hash_build_context
 from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import atomic_write_json, load_json, sha256_file
 from conclear.oci import validate_layout
-from conclear.services.qualification import BuildEvidence, QualificationInputs
+from conclear.services.qualification_inputs import BuildEvidence, QualificationInputs
 
 
 def write_build_evidence(inputs: QualificationInputs, build: BuildEvidence) -> Path:

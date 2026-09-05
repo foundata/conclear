@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 import conclear.records as records_module
-import conclear.services.qualification as qualification_module
+import conclear.services.runtime_tests as runtime_tests_module
 from conclear.adapters.buildah import BuildObservation
 from conclear.adapters.podman import (
     ContainerObservation,
@@ -37,12 +37,12 @@ from conclear.records import (
     validate_record,
 )
 from conclear.services.qualification import (
-    QualificationInputs,
     build_platform,
     build_test_dependencies,
     qualify_platform,
 )
-from conclear.services.qualification import test_platform as run_platform_tests
+from conclear.services.qualification_inputs import QualificationInputs
+from conclear.services.runtime_tests import test_platform as run_platform_tests
 from conclear.values import Digest, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
 
@@ -293,7 +293,7 @@ class FakeReadinessTiming:
     def __init__(self, *, interval_seconds: float = 0.25) -> None:
         self.now = 0.0
         self.sleeps: list[float] = []
-        self.value = qualification_module._ReadinessTiming(
+        self.value = runtime_tests_module._ReadinessTiming(
             monotonic=self.monotonic,
             sleep=self.sleep,
             interval_seconds=interval_seconds,

@@ -48,10 +48,8 @@ from conclear.services.publication import (
     publish_candidate,
     verify_candidate,
 )
-from conclear.services.qualification import (
-    QualificationInputs,
-    qualify_platform,
-)
+from conclear.services.qualification import qualify_platform
+from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.run_context import create_source_run, open_source_run
 from conclear.tools import ToolName
 from conclear.values import (

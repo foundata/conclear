@@ -18,11 +18,11 @@ from conclear.records import SourceIdentity
 from conclear.runtime import ApplicationRuntime
 from conclear.services.cleanup import cleanup_run
 from conclear.services.qualification import (
-    QualificationInputs,
     build_platform,
     build_test_dependencies,
 )
-from conclear.services.qualification import test_platform as run_platform_tests
+from conclear.services.qualification_inputs import QualificationInputs
+from conclear.services.runtime_tests import test_platform as run_platform_tests
 from conclear.tools import SUPPORTED_TOOLS, ToolName
 from conclear.values import Platform
 from conclear.workspace import RunWorkspace

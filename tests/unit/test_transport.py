@@ -38,7 +38,8 @@ from conclear.oci import validate_layout
 from conclear.records import SourceIdentity, ToolIdentity, Verdict
 from conclear.services.assembly import assemble_candidate
 from conclear.services.cleanup import cleanup_run
-from conclear.services.qualification import QualificationInputs, qualify_platform
+from conclear.services.qualification import qualify_platform
+from conclear.services.qualification_inputs import QualificationInputs
 from conclear.transport import (
     MANIFEST_NAME,
     TransportKind,

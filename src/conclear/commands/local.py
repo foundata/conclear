@@ -22,13 +22,14 @@ from conclear.services.local_phases import (
     write_build_evidence,
 )
 from conclear.services.qualification import (
-    QualificationInputs,
-    TestDependencyBuild,
     build_platform,
     build_test_dependencies,
     generate_evidence,
     qualify_platform,
-    test_platform,
+)
+from conclear.services.qualification_inputs import (
+    QualificationInputs,
+    TestDependencyBuild,
 )
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
 from conclear.services.run_context import (
@@ -36,6 +37,7 @@ from conclear.services.run_context import (
     create_source_run,
     open_source_run,
 )
+from conclear.services.runtime_tests import test_platform
 from conclear.tools import ToolName
 from conclear.transport import ImportedTransport, import_transport
 from conclear.values import Digest, Platform
