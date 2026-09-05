@@ -1,9 +1,7 @@
 """Read-only diagnostics, rescans and ownership cleanup commands."""
 
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import click
 
@@ -43,20 +41,11 @@ from .common import (
     ci_context,
     command_runtime,
     emit,
+    format_option,
     profile,
     signing_passphrase,
     state_home,
 )
-
-
-def _format_option[FC: Callable[..., Any]](function: FC) -> FC:
-    return click.option(
-        "output_format",
-        "--format",
-        type=click.Choice(["human", "json"], case_sensitive=True),
-        default="human",
-        show_default=True,
-    )(function)
 
 
 @click.command("doctor")
@@ -68,7 +57,7 @@ def _format_option[FC: Callable[..., Any]](function: FC) -> FC:
     show_default=True,
 )
 @click.option("profile_name", "--profile", required=True)
-@_format_option
+@format_option
 def doctor_command(config_path: Path, profile_name: str, output_format: str) -> None:
     """Validate the release environment without publishing or signing."""
     repository = load_repository_config(config_path)
@@ -128,7 +117,7 @@ def pins_group() -> None:
 )
 @click.option("image_id", "--image", required=True)
 @click.option("profile_name", "--profile")
-@_format_option
+@format_option
 def pins_check_command(
     config_path: Path,
     image_id: str,
@@ -191,7 +180,7 @@ def pins_check_command(
     help="New file that receives the proposal. An existing file is never overwritten.",
 )
 @click.option("profile_name", "--profile")
-@_format_option
+@format_option
 def pins_propose_command(
     config_path: Path,
     image_ids: tuple[str, ...],
@@ -262,7 +251,7 @@ def pins_propose_command(
     default=Path("conclear.toml"),
     show_default=True,
 )
-@_format_option
+@format_option
 def pins_apply_command(
     proposal_path: Path, config_path: Path, output_format: str
 ) -> None:
@@ -354,7 +343,7 @@ def _lookup_details(proposal: PinUpdateProposal) -> tuple[str, ...]:
 @click.command("cleanup")
 @click.argument("run_id")
 @click.option("profile_name", "--profile")
-@_format_option
+@format_option
 def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -> None:
     """Remove only ephemeral resources owned by one release run."""
     workspace = RunWorkspace.open(state_home=state_home(), run_id=run_id)
@@ -410,7 +399,7 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
 @click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))
 @click.option("previous_result", "--previous-result")
 @click.option("triage_path", "--triage-file", type=click.Path(path_type=Path))
-@_format_option
+@format_option
 def rescan_command(
     subject_text: str,
     config_path: Path,

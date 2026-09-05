@@ -41,17 +41,14 @@ from conclear.transport import ImportedTransport, import_transport
 from conclear.values import Digest, Platform
 from conclear.workspace import RunState, RunWorkspace
 
-from .common import cache_home, command_runtime, emit, profile, state_home
-
-
-def _format_option[FC: Callable[..., Any]](function: FC) -> FC:
-    return click.option(
-        "output_format",
-        "--format",
-        type=click.Choice(["human", "json"], case_sensitive=True),
-        default="human",
-        show_default=True,
-    )(function)
+from .common import (
+    cache_home,
+    command_runtime,
+    emit,
+    format_option,
+    profile,
+    state_home,
+)
 
 
 def _source_options[FC: Callable[..., Any]](function: FC) -> FC:
@@ -81,7 +78,7 @@ def _source_options[FC: Callable[..., Any]](function: FC) -> FC:
     show_default=True,
 )
 @click.option("image_id", "--image", required=True)
-@_format_option
+@format_option
 def check_command(config_path: Path, image_id: str, output_format: str) -> None:
     """Run static Containerfile, context, metadata and pin-declaration checks."""
     repository = load_repository_config(config_path)
@@ -102,7 +99,7 @@ def check_command(config_path: Path, image_id: str, output_format: str) -> None:
 @_source_options
 @click.option("platform_text", "--platform", required=True)
 @click.option("profile_name", "--profile")
-@_format_option
+@format_option
 def build_command(
     source_root: Path,
     selector: str,
@@ -163,7 +160,7 @@ def build_command(
 @click.command("test")
 @click.argument("run_id")
 @click.option("platform_text", "--platform", required=True)
-@_format_option
+@format_option
 def test_command(run_id: str, platform_text: str, output_format: str) -> None:
     """Import one exact layout and run declared constrained tests."""
     source_run = open_source_run(
@@ -230,7 +227,7 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
 @click.command("evidence")
 @click.argument("run_id")
 @click.option("platform_text", "--platform", required=True)
-@_format_option
+@format_option
 def evidence_command(run_id: str, platform_text: str, output_format: str) -> None:
     """Generate and validate platform scans and SPDX inventory."""
     source_run = open_source_run(
@@ -275,7 +272,7 @@ def evidence_command(run_id: str, platform_text: str, output_format: str) -> Non
 @click.option("platform_text", "--platform", required=True)
 @click.option("profile_name", "--profile")
 @click.option("database_digest", "--database-digest")
-@_format_option
+@format_option
 def qualify_command(
     source_root: Path,
     selector: str,
@@ -408,7 +405,7 @@ def qualify_command(
         "independently from its worker; repeat once per required platform."
     ),
 )
-@_format_option
+@format_option
 def assemble_command(
     source_root: Path,
     selector: str,

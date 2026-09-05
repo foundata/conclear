@@ -44,20 +44,11 @@ from .common import (
     cache_home,
     ci_context,
     emit,
+    format_option,
     profile,
     signing_passphrase,
     state_home,
 )
-
-
-def _format_option[FC: Callable[..., Any]](function: FC) -> FC:
-    return click.option(
-        "output_format",
-        "--format",
-        type=click.Choice(["human", "json"], case_sensitive=True),
-        default="human",
-        show_default=True,
-    )(function)
 
 
 def _profile_options[FC: Callable[..., Any]](function: FC) -> FC:
@@ -69,7 +60,7 @@ def _profile_options[FC: Callable[..., Any]](function: FC) -> FC:
 
 @click.command("provenance")
 @click.argument("run_id")
-@_format_option
+@format_option
 def provenance_command(run_id: str, output_format: str) -> None:
     """Generate SLSA Provenance v1 for one accepted candidate."""
     source_run = open_source_run(state_home=state_home(), run_id=run_id, names=())
@@ -122,7 +113,7 @@ def provenance_command(run_id: str, output_format: str) -> None:
 @click.command("publish")
 @click.argument("run_id")
 @click.option("profile_name", "--profile", required=True)
-@_format_option
+@format_option
 def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
     """Publish one accepted candidate and verify its complete remote graph."""
     source_run, selected = _remote_run(run_id, profile_name)
@@ -163,7 +154,7 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
 @click.command("attest")
 @click.argument("run_id")
 @_profile_options
-@_format_option
+@format_option
 def attest_command(
     run_id: str,
     profile_name: str,
@@ -206,7 +197,7 @@ def attest_command(
 @click.command("verify")
 @click.argument("run_id")
 @_profile_options
-@_format_option
+@format_option
 def verify_command(
     run_id: str,
     profile_name: str,
@@ -262,7 +253,7 @@ def verify_command(
 @click.argument("run_id")
 @click.option("release_version", "--version")
 @click.option("profile_name", "--profile", required=True)
-@_format_option
+@format_option
 def promote_command(
     run_id: str,
     release_version: str | None,
@@ -336,7 +327,7 @@ def promote_command(
 @click.option("profile_name", "--profile", required=True)
 @click.option("resume_id", "--resume")
 @click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))
-@_format_option
+@format_option
 def release_command(
     source_root: Path,
     selector: str | None,

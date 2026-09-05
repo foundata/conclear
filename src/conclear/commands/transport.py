@@ -1,9 +1,7 @@
 """Commands that move accepted platform qualifications between runs."""
 
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import click
 
@@ -12,17 +10,7 @@ from conclear.services.run_context import open_source_run
 from conclear.transport import TransportKind, export_transport
 from conclear.values import Platform
 
-from .common import emit, state_home
-
-
-def _format_option[FC: Callable[..., Any]](function: FC) -> FC:
-    return click.option(
-        "output_format",
-        "--format",
-        type=click.Choice(["human", "json"], case_sensitive=True),
-        default="human",
-        show_default=True,
-    )(function)
+from .common import emit, format_option, state_home
 
 
 @click.group("transport")
@@ -48,7 +36,7 @@ def transport_group() -> None:
     show_default=True,
     help="Write one tar archive or a directory of the same members.",
 )
-@_format_option
+@format_option
 def export_command(
     run_id: str,
     platform_text: str,

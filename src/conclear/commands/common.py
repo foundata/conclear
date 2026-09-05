@@ -3,9 +3,10 @@
 import os
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -54,6 +55,17 @@ def signing_passphrase(
             raise click.UsageError("--passphrase-fd is not used by this operation")
         return None
     return read_passphrase(file=selected.passphrase_file, descriptor=descriptor)
+
+
+def format_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Add the shared `--format` choice between human and JSON output."""
+    return click.option(
+        "output_format",
+        "--format",
+        type=click.Choice(["human", "json"], case_sensitive=True),
+        default="human",
+        show_default=True,
+    )(function)
 
 
 def emit(result: CommandResult, output_format: str) -> None:
