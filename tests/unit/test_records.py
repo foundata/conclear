@@ -76,6 +76,7 @@ def test_each_public_record_type_has_an_independent_initial_version() -> None:
         "platformQualification": 1,
         "releaseCandidate": 1,
         "releaseVerification": 1,
+        "qualificationTransport": 1,
         "rescanResult": 1,
     }
 

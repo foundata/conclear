@@ -69,7 +69,7 @@ class Scenario:
             "manifestDigest": str(self.graph.manifests[0].descriptor.digest),
             "containerfileDigest": DIGEST,
             "contextDigest": DIGEST,
-            "buildArguments": {},
+            "buildArguments": {"IMAGE_VERSION": "1.2.3"},
             "externalImages": [str(pin)],
             "pinObservations": [
                 {

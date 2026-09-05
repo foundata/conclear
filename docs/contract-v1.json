@@ -176,6 +176,12 @@
         "severity": "error"
       },
       {
+        "anchor": "multi-platform-images",
+        "behavior": "automated",
+        "id": "CC0306",
+        "severity": "error"
+      },
+      {
         "anchor": "users-and-runtime-filesystem",
         "behavior": "automated",
         "id": "CC0401",
@@ -1407,6 +1413,7 @@
   "recordTypes": {
     "pinUpdateProposal": 1,
     "platformQualification": 1,
+    "qualificationTransport": 1,
     "releaseCandidate": 1,
     "releaseVerification": 1,
     "rescanResult": 1

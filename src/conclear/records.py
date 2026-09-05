@@ -17,6 +17,7 @@ from conclear.values import validate_run_id, validate_source_revision
 
 RECORD_SCHEMA_VERSIONS: dict[str, int] = {
     "platformQualification": 1,
+    "qualificationTransport": 1,
     "releaseCandidate": 1,
     "releaseVerification": 1,
     "rescanResult": 1,

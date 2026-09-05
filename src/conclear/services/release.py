@@ -184,7 +184,10 @@ def resume_release(
         raise InvalidInvocationError("Run immutable source inputs are incomplete")
     if snapshot.state is RunState.INCOMPLETE:
         image = source_run.repository.image(image_id)
-        protected_resources = {"source-worktree"}
+        protected_resources = {
+            "source-worktree",
+            f"candidate-layout-{image.image_id}",
+        }
         for platform in image.platforms:
             record_path = (
                 workspace.root

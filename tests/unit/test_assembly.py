@@ -214,7 +214,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             "manifestDigest": str(graph.manifests[0].descriptor.digest),
             "containerfileDigest": digest,
             "contextDigest": digest,
-            "buildArguments": {},
+            "buildArguments": {"IMAGE_VERSION": "1.2.3"},
             "externalImages": [str(repository.image("app").pins[0].reference)],
             "pinObservations": [
                 {

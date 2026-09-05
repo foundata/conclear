@@ -7,7 +7,7 @@
   "required": ["schemaVersion", "recordType", "createdAt", "runId", "ruleset", "source", "repositoryConfiguration", "tools", "verdict", "payload"],
   "properties": {
     "schemaVersion": {"type": "integer", "minimum": 1},
-    "recordType": {"enum": ["platformQualification", "releaseCandidate", "releaseVerification", "rescanResult"]},
+    "recordType": {"enum": ["platformQualification", "qualificationTransport", "releaseCandidate", "releaseVerification", "rescanResult"]},
     "createdAt": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"},
     "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
     "ruleset": {"$ref": "#/$defs/ruleset"},
@@ -19,6 +19,7 @@
   },
   "allOf": [
     {"if": {"properties": {"recordType": {"const": "platformQualification"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/platformQualification"}}}},
+    {"if": {"properties": {"recordType": {"const": "qualificationTransport"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/qualificationTransport"}}}},
     {"if": {"properties": {"recordType": {"const": "releaseCandidate"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/releaseCandidate"}}}},
     {"if": {"properties": {"recordType": {"const": "releaseVerification"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/releaseVerification"}}}},
     {"if": {"properties": {"recordType": {"const": "rescanResult"}}}, "then": {"properties": {"schemaVersion": {"const": 1}, "payload": {"$ref": "#/$defs/rescanResult"}}}}
@@ -436,6 +437,30 @@
         "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
       }
     },
+    "transportMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "digest", "size"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^(?:records|layouts|reports|exports)/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 0}
+      }
+    },
+    "qualificationTransport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["imageId", "platform", "qualificationRecordDigest", "layoutDescriptor", "manifestDigest", "members", "totalBytes"],
+      "properties": {
+        "imageId": {"type": "string"},
+        "platform": {"$ref": "#/$defs/platform"},
+        "qualificationRecordDigest": {"$ref": "#/$defs/digest"},
+        "layoutDescriptor": {"$ref": "#/$defs/descriptor"},
+        "manifestDigest": {"$ref": "#/$defs/digest"},
+        "members": {"type": "array", "minItems": 1, "maxItems": 4096, "items": {"$ref": "#/$defs/transportMember"}},
+        "totalBytes": {"type": "integer", "minimum": 0}
+      }
+    },
     "releaseCandidate": {
       "type": "object",
       "additionalProperties": false,
@@ -445,7 +470,7 @@
         "repository": {"type": "string"},
         "requiredPlatforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
         "acceptedPlatforms": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/platform"}},
-        "qualifications": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "recordDigest", "payloadDigests"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "recordDigest": {"$ref": "#/$defs/digest"}, "payloadDigests": {"$ref": "#/$defs/digestArray"}}}},
+        "qualifications": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "runId", "recordDigest", "payloadDigests"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"}, "recordDigest": {"$ref": "#/$defs/digest"}, "transportDigest": {"$ref": "#/$defs/digest"}, "payloadDigests": {"$ref": "#/$defs/digestArray"}}}},
         "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
         "subjectDescriptor": {"$ref": "#/$defs/descriptor"},
         "candidateTag": {"type": "string", "pattern": "candidate\\.[0-9a-hjkmnp-tv-z]{26}"},

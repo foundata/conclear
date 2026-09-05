@@ -93,6 +93,7 @@ def test_contract_records_exit_statuses_schemas_and_identifiers() -> None:
     )
     assert value["recordTypes"] == {
         "platformQualification": 1,
+        "qualificationTransport": 1,
         "releaseCandidate": 1,
         "releaseVerification": 1,
         "rescanResult": 1,

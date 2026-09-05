@@ -30,17 +30,28 @@ from conclear.values import (
     candidate_tag,
     validate_source_revision,
 )
-from conclear.workspace import RunState, RunWorkspace
+from conclear.workspace import (
+    ResourceKind,
+    ResourceStatus,
+    RunState,
+    RunWorkspace,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class QualificationTransport:
-    """One transported qualification, layout and exact payload files."""
+    """One qualification, layout and exact payload files ready for assembly.
+
+    A transport owned by the assembling run carries no transport digest and
+    must name that run. An imported transport carries the caller-verified
+    transport digest and retains its worker run identity.
+    """
 
     record_path: Path
     layout_path: Path
     layout_reference: str
     payload_paths: tuple[Path, ...]
+    transport_digest: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +64,7 @@ class CandidateResult:
     candidate_tag: str
     qualification_digests: tuple[str, ...]
     payload_digests: tuple[str, ...]
+    qualification_runs: tuple[tuple[Platform, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +80,9 @@ class _Qualification:
     tools: tuple[tuple[str, str], ...]
     database_digest: str
     pin_references: tuple[str, ...]
+    pin_resolutions: tuple[tuple[str, str], ...]
     effective_limits: tuple[tuple[str, int], ...]
+    image_version: str | None
     manifest_digest: Digest
     transport: QualificationTransport
 
@@ -105,10 +119,17 @@ def assemble_candidate(
             "Assembly received duplicate platform qualifications"
         )
     first = qualifications[0]
-    if any(item.run_id != workspace.run_id for item in qualifications):
+    if any(
+        item.transport.transport_digest is None and item.run_id != workspace.run_id
+        for item in qualifications
+    ):
         raise InvalidInvocationError("Qualifications belong to another release run")
     if any(item.image_id != image.image_id for item in qualifications):
         raise InvalidInvocationError("Qualifications do not match the selected image")
+    if any(item.image_version != version for item in qualifications):
+        raise InvalidInvocationError(
+            "Qualifications were built for another release version"
+        )
     expected_pins = tuple(sorted(str(item.reference) for item in image.pins))
     if any(item.pin_references != expected_pins for item in qualifications):
         raise InvalidInvocationError(
@@ -158,23 +179,40 @@ def assemble_candidate(
                 "Qualifications use different vulnerability database snapshots",
                 code="CC0505",
             )
+        if item.pin_resolutions != first.pin_resolutions:
+            raise InvalidInvocationError(
+                "Qualifications observed different external image digests"
+            )
     tag = candidate_tag(
         version=version,
         run_id=workspace.run_id,
         source_revision=first.source.revision,
     )
-    observation = assemble_layout(
-        tuple(
-            PlatformLayout(
-                item.platform,
-                item.transport.layout_path,
-                item.transport.layout_reference,
-            )
-            for item in qualifications
-        ),
-        output_path=workspace.root / "layouts" / image.image_id / "candidate",
-        output_reference=tag,
+    output_path = workspace.root / "layouts" / image.image_id / "candidate"
+    layout_id = f"candidate-layout-{image.image_id}"
+    workspace.journal.plan(
+        resource_id=layout_id,
+        kind=ResourceKind.LOCAL_PATH,
+        identifier=str(output_path),
+        ephemeral=True,
     )
+    try:
+        observation = assemble_layout(
+            tuple(
+                PlatformLayout(
+                    item.platform,
+                    item.transport.layout_path,
+                    item.transport.layout_reference,
+                )
+                for item in qualifications
+            ),
+            output_path=output_path,
+            output_reference=tag,
+        )
+    except BaseException:
+        workspace.journal.update(layout_id, ResourceStatus.FAILED)
+        raise
+    workspace.journal.update(layout_id, ResourceStatus.CREATED)
     qualification_digests = tuple(
         item.record_digest
         for item in sorted(qualifications, key=lambda value: value.platform)
@@ -188,11 +226,7 @@ def assemble_candidate(
         "requiredPlatforms": [str(item) for item in sorted(image.platforms)],
         "acceptedPlatforms": [str(item) for item in sorted(accepted_platforms)],
         "qualifications": [
-            {
-                "platform": str(item.platform),
-                "recordDigest": item.record_digest,
-                "payloadDigests": list(item.payload_digests),
-            }
+            _qualification_entry(item)
             for item in sorted(qualifications, key=lambda value: value.platform)
         ],
         "platformManifests": {
@@ -228,7 +262,23 @@ def assemble_candidate(
         tag,
         qualification_digests,
         payload_digests,
+        tuple(
+            (item.platform, item.run_id)
+            for item in sorted(qualifications, key=lambda value: value.platform)
+        ),
     )
+
+
+def _qualification_entry(item: _Qualification) -> dict[str, object]:
+    entry: dict[str, object] = {
+        "platform": str(item.platform),
+        "runId": item.run_id,
+        "recordDigest": item.record_digest,
+        "payloadDigests": list(item.payload_digests),
+    }
+    if item.transport.transport_digest is not None:
+        entry["transportDigest"] = item.transport.transport_digest
+    return entry
 
 
 def _read_qualification(transport: QualificationTransport) -> _Qualification:
@@ -247,10 +297,8 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
     payload_digests = tuple(sorted(payload_values))
     if len(payload_digests) != len(set(payload_digests)):
         raise InvalidInvocationError("Qualification contains duplicate payload digests")
-    actual_payloads = tuple(
-        sorted(_hash_transport_path(path) for path in transport.payload_paths)
-    )
-    if actual_payloads != payload_digests:
+    actual_payloads = {_hash_transport_path(path) for path in transport.payload_paths}
+    if actual_payloads != set(payload_digests):
         raise InvalidInvocationError(
             f"Transported payload digests do not match qualification for {platform}"
         )
@@ -326,6 +374,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
     if not isinstance(raw_observations, list):
         raise InvalidInvocationError("Qualification pin observations are malformed")
     observation_references: set[str] = set()
+    pin_resolutions: list[tuple[str, str]] = []
     for raw_observation in raw_observations:
         observation = _object(raw_observation, "pin observation")
         reference_text = _string(
@@ -351,6 +400,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         observed_digest = Digest(
             _string(observation.get("observedDigest"), "observed pin digest")
         )
+        pin_resolutions.append((reference_text, str(observed_digest)))
         checked_at = _timestamp(observation.get("checkedAt"), "pin observation time")
         age = record_created_at - checked_at
         if age < timedelta(0) or age > timedelta(
@@ -401,6 +451,10 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         )
     configuration_digest = _string(configuration.get("sha256"), "configuration digest")
     Digest(configuration_digest)
+    build_arguments = _object(payload.get("buildArguments"), "build arguments")
+    image_version = build_arguments.get("IMAGE_VERSION")
+    if image_version is not None and not isinstance(image_version, str):
+        raise InvalidInvocationError("Qualification image version is malformed")
     return _Qualification(
         run_id=_string(record.get("runId"), "qualification run id"),
         image_id=_string(payload.get("imageId"), "image id"),
@@ -418,7 +472,9 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         tools=tuple(sorted(normalized_tools)),
         database_digest=database_digest,
         pin_references=pin_references,
+        pin_resolutions=tuple(sorted(pin_resolutions)),
         effective_limits=tuple(sorted(effective_limits)),
+        image_version=image_version,
         manifest_digest=manifest_digest,
         transport=transport,
     )

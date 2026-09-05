@@ -38,6 +38,7 @@
     {"id": "CC0303", "summary": "Match OCI descriptor platforms to image configuration", "severity": "error", "behavior": "automated", "anchor": "multi-platform-images"},
     {"id": "CC0304", "summary": "Require exact accepted platform coverage during assembly", "severity": "error", "behavior": "automated", "anchor": "multi-platform-images"},
     {"id": "CC0305", "summary": "Re-verify imported runtime content against the layout digest", "severity": "error", "behavior": "automated", "anchor": "linting-and-testing"},
+    {"id": "CC0306", "summary": "Verify transported qualifications against caller-supplied digests before assembly", "severity": "error", "behavior": "automated", "anchor": "multi-platform-images"},
     {"id": "CC0401", "summary": "Test the declared user and read-only hardening controls", "severity": "error", "behavior": "automated", "anchor": "users-and-runtime-filesystem"},
     {"id": "CC0402", "summary": "Apply and observe memory, CPU, PID and nofile limits", "severity": "error", "behavior": "automated", "anchor": "users-and-runtime-filesystem"},
     {"id": "CC0403", "summary": "Test startup, health, signal forwarding, shutdown and exit status", "severity": "error", "behavior": "automated", "anchor": "entrypoint-command-and-signal-handling"},

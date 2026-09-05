@@ -18,7 +18,13 @@ from conclear.services.publication import (
     VerificationResult,
     validate_release_provenance,
 )
-from conclear.values import Digest, OCIReference, Platform, candidate_tag
+from conclear.values import (
+    Digest,
+    OCIReference,
+    Platform,
+    candidate_tag,
+    validate_run_id,
+)
 from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
 
 
@@ -100,6 +106,7 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
     if not isinstance(qualifications, list):
         raise InvalidInvocationError("Candidate qualifications are malformed")
     qualification_digests: list[str] = []
+    qualification_runs: list[tuple[Platform, str]] = []
     payload_digests: set[str] = set()
     qualification_platforms: set[Platform] = set()
     for item in qualifications:
@@ -110,6 +117,17 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
         if qualification_platform in qualification_platforms:
             raise InvalidInvocationError("Candidate repeats a qualification platform")
         qualification_platforms.add(qualification_platform)
+        worker_run_id = validate_run_id(
+            _string(qualification.get("runId"), "qualification run id")
+        )
+        transport_digest = qualification.get("transportDigest")
+        if transport_digest is not None:
+            Digest(_string(transport_digest, "qualification transport digest"))
+        elif worker_run_id != workspace.run_id:
+            raise InvalidInvocationError(
+                "Candidate binds a foreign qualification without a transport digest"
+            )
+        qualification_runs.append((qualification_platform, worker_run_id))
         record_digest = _string(
             qualification.get("recordDigest"), "qualification record digest"
         )
@@ -147,6 +165,7 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
         candidate_tag=candidate_tag_value,
         qualification_digests=tuple(qualification_digests),
         payload_digests=tuple(sorted(payload_digests)),
+        qualification_runs=tuple(sorted(qualification_runs)),
     )
 
 
@@ -239,13 +258,14 @@ def load_release_evidence(
     tools = tuple(_tool_identity(item) for item in tools_value)
     sboms: list[tuple[Platform, Path, str]] = []
     scan_digests: list[str] = []
+    bound_runs = _bound_runs(candidate, image)
     for platform in image.platforms:
         record_path = (
             workspace.root / "records" / f"platform-qualification-{platform.key}.json"
         )
         record = _object(load_json(record_path), "qualification record")
         validate_record(record)
-        _validate_workspace_record(record, workspace)
+        _validate_bound_record(record, workspace, run_id=bound_runs[platform])
         if sha256_file(record_path) not in candidate.qualification_digests:
             raise RuleRejectionError(
                 "Candidate does not bind a qualification record", code="CC0304"
@@ -321,6 +341,7 @@ def load_provenance_materials(
         materials[uri] = digest
 
     observed_payloads: set[str] = set()
+    bound_runs = _bound_runs(candidate, image)
     for platform in image.platforms:
         record_path = (
             workspace.root / "records" / f"platform-qualification-{platform.key}.json"
@@ -332,6 +353,7 @@ def load_provenance_materials(
             )
         record = _object(load_json(record_path), "qualification record")
         validate_record(record)
+        _validate_bound_record(record, workspace, run_id=bound_runs[platform])
         payload = _object(record.get("payload"), "qualification payload")
         add(f"conclear:qualification/{platform}", record_digest)
         add(
@@ -515,16 +537,56 @@ def _tool_identity(value: object) -> ToolIdentity:
     )
 
 
+def _bound_runs(candidate: CandidateResult, image: ImageConfig) -> dict[Platform, str]:
+    """Map each required platform to the worker run the candidate binds."""
+    runs = dict(candidate.qualification_runs)
+    bound: dict[Platform, str] = {}
+    for platform in image.platforms:
+        matches = [
+            run_id
+            for recorded, run_id in runs.items()
+            if recorded.semantically_matches(platform)
+        ]
+        if len(matches) != 1:
+            raise RuleRejectionError(
+                f"Candidate does not bind exactly one qualification for {platform}",
+                code="CC0304",
+            )
+        bound[platform] = matches[0]
+    return bound
+
+
 def _validate_workspace_record(
     record: dict[str, object], workspace: RunWorkspace
 ) -> None:
+    """Validate a record that the current run produced and owns."""
+    if record.get("runId") != workspace.run_id:
+        raise InvalidInvocationError("Record belongs to another run")
+    _validate_record_inputs(record, workspace)
+
+
+def _validate_bound_record(
+    record: dict[str, object], workspace: RunWorkspace, *, run_id: str
+) -> None:
+    """Validate an immutable qualification bound to the run's accepted candidate.
+
+    A transported qualification keeps its worker run identity; the accepted
+    candidate record names that identity and the record digest, so the record
+    is validated against the binding instead of against the coordinator run.
+    """
+    if record.get("runId") != run_id:
+        raise InvalidInvocationError(
+            "Qualification record does not belong to the run the candidate binds"
+        )
+    _validate_record_inputs(record, workspace)
+
+
+def _validate_record_inputs(record: dict[str, object], workspace: RunWorkspace) -> None:
     snapshot = workspace.load()
     source = _object(record.get("source"), "record source")
     configuration = _object(
         record.get("repositoryConfiguration"), "record configuration"
     )
-    if record.get("runId") != workspace.run_id:
-        raise InvalidInvocationError("Record belongs to another run")
     if source.get("revision") != snapshot.immutable_inputs.get("sourceRevision"):
         raise InvalidInvocationError("Record source revision differs from the run")
     recorded_repository = snapshot.immutable_inputs.get("sourceRepository")
