@@ -157,12 +157,16 @@ def test_resume_rejects_malformed_or_expired_ownership_records(
     scenario.workspace.journal.update("candidate", ResourceStatus.REMOVED)
 
     scenario.journal_attempt(expiration=None)
-    with pytest.raises(InvalidInvocationError, match="expiration journal is malformed"):
+    with pytest.raises(
+        InvalidInvocationError, match="expiration journal must be a UTC RFC 3339"
+    ):
         scenario.publish()
     scenario.workspace.journal.update("candidate", ResourceStatus.REMOVED)
 
     scenario.journal_attempt(expiration="not a time")
-    with pytest.raises(InvalidInvocationError, match="expiration journal is malformed"):
+    with pytest.raises(
+        InvalidInvocationError, match="expiration journal must be a UTC RFC 3339"
+    ):
         scenario.publish()
     scenario.workspace.journal.update("candidate", ResourceStatus.REMOVED)
 

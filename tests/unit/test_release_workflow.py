@@ -546,11 +546,6 @@ def test_signer_modes_timestamps_and_failure_summaries(
         "kms",
         "awskms:///alias/release",
     )
-    with pytest.raises(InvalidInvocationError, match="malformed"):
-        release._parse_timestamp("not a time")
-    with pytest.raises(InvalidInvocationError, match="lacks a timezone"):
-        release._parse_timestamp("2026-01-01T00:00:00")
-    assert release._parse_timestamp("2026-01-01T00:00:00Z") == NOW
     release._finish_failure(harness.workspace, OperationalError("late"), NOW)
     assert harness.workspace.load().state is RunState.INCOMPLETE
     release._finish_failure(harness.workspace, KeyboardInterrupt(), NOW)

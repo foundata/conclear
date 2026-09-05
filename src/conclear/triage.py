@@ -1,11 +1,11 @@
 """Validated external vulnerability-triage decisions for rescan evidence."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import load_json
+from conclear.records import format_timestamp, parse_timestamp
 from conclear.schema import validate_external
 from conclear.values import Digest, OCIReference, Platform
 
@@ -93,7 +93,7 @@ def _decision(value: object, *, subject: OCIReference) -> TriageDecision:
         decision=_string(value["decision"]),
         rationale=_string(value["rationale"]),
         owner=_string(value["owner"]),
-        decided_at=_utc_timestamp(_string(value["decidedAt"])),
+        decided_at=_utc_timestamp(value["decidedAt"]),
         remediating_digest=remediation,
     )
 
@@ -104,13 +104,7 @@ def _string(value: object) -> str:
     return value
 
 
-def _utc_timestamp(value: str) -> str:
-    try:
-        parsed = datetime.fromisoformat(value.removesuffix("Z") + "+00:00")
-    except ValueError as exc:
-        raise InvalidInvocationError(
-            f"Rescan triage timestamp is not valid: {value}"
-        ) from exc
-    if parsed.utcoffset() != UTC.utcoffset(parsed):
-        raise InvalidInvocationError("Rescan triage timestamps must use UTC")
-    return value
+def _utc_timestamp(value: object) -> str:
+    return format_timestamp(
+        parse_timestamp(value, "Rescan triage timestamp", error=InvalidInvocationError)
+    )

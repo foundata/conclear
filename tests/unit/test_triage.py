@@ -97,7 +97,7 @@ def test_load_triage_rejects_impossible_timestamp(tmp_path: Path) -> None:
     path = tmp_path / "triage.json"
     _write(path, value)
 
-    with pytest.raises(InvalidInvocationError, match="timestamp is not valid"):
+    with pytest.raises(InvalidInvocationError, match="UTC RFC 3339"):
         load_triage(path, subject=SUBJECT)
 
 

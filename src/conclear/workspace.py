@@ -1,9 +1,8 @@
 """Release-run workspaces, state transitions and ownership journals."""
 
 import logging
-import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
@@ -13,12 +12,10 @@ from ulid import ULID
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.fileio import locked_file
 from conclear.jsonutil import atomic_write_json, canonical_json_bytes, load_json
+from conclear.records import format_timestamp, parse_timestamp, utc_now
 from conclear.values import validate_run_id
 
 LOGGER = logging.getLogger(__name__)
-_TIMESTAMP_PATTERN = re.compile(
-    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$"
-)
 
 
 class IdFactory(Protocol):
@@ -180,7 +177,7 @@ class RunWorkspace:
                 (root / relative).mkdir(mode=0o700, parents=True, exist_ok=False)
         except OSError as exc:
             raise OperationalError(f"Unable to create run workspace {root}") from exc
-        timestamp = _timestamp(now or datetime.now(UTC))
+        timestamp = format_timestamp(now or utc_now())
         snapshot = RunSnapshot(
             run_id=run_id,
             state=RunState.CREATED,
@@ -265,7 +262,7 @@ class RunWorkspace:
                 run_id=snapshot.run_id,
                 state=snapshot.state,
                 created_at=snapshot.created_at,
-                updated_at=_timestamp(now or datetime.now(UTC)),
+                updated_at=format_timestamp(now or utc_now()),
                 immutable_inputs={**snapshot.immutable_inputs, **additions},
             )
             atomic_write_json(self.root / "run.json", updated.to_dict())
@@ -290,7 +287,7 @@ class RunWorkspace:
                 run_id=snapshot.run_id,
                 state=snapshot.resume_state,
                 created_at=snapshot.created_at,
-                updated_at=_timestamp(now or datetime.now(UTC)),
+                updated_at=format_timestamp(now or utc_now()),
                 immutable_inputs=snapshot.immutable_inputs,
             )
             atomic_write_json(self.root / "run.json", resumed.to_dict())
@@ -316,7 +313,7 @@ class RunWorkspace:
                 run_id=snapshot.run_id,
                 state=state,
                 created_at=snapshot.created_at,
-                updated_at=_timestamp(now or datetime.now(UTC)),
+                updated_at=format_timestamp(now or utc_now()),
                 immutable_inputs=snapshot.immutable_inputs,
                 resume_state=(snapshot.state if state is RunState.INCOMPLETE else None),
             )
@@ -513,8 +510,12 @@ def _parse_snapshot(value: object) -> RunSnapshot:
         return RunSnapshot(
             run_id=validate_run_id(_string(value.get("runId"), "runId")),
             state=state,
-            created_at=_state_timestamp(value.get("createdAt"), "createdAt"),
-            updated_at=_state_timestamp(value.get("updatedAt"), "updatedAt"),
+            created_at=format_timestamp(
+                parse_timestamp(value.get("createdAt"), "State field createdAt")
+            ),
+            updated_at=format_timestamp(
+                parse_timestamp(value.get("updatedAt"), "State field updatedAt")
+            ),
             immutable_inputs=inputs,
             resume_state=resume_state,
         )
@@ -543,23 +544,6 @@ def _parse_resource(value: object) -> ResourceEntry:
         raise OperationalError(
             "Resource journal contains an unknown enum value"
         ) from exc
-
-
-def _timestamp(value: datetime) -> str:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise OperationalError("Workspace timestamps must be timezone-aware")
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _state_timestamp(value: object, name: str) -> str:
-    timestamp = _string(value, name)
-    if _TIMESTAMP_PATTERN.fullmatch(timestamp) is None:
-        raise OperationalError(f"State field {name} must be a UTC RFC 3339 timestamp")
-    try:
-        datetime.fromisoformat(timestamp.removesuffix("Z") + "+00:00")
-    except ValueError as exc:
-        raise OperationalError(f"State field {name} timestamp is malformed") from exc
-    return timestamp
 
 
 def _string(value: object, name: str) -> str:

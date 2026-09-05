@@ -1,11 +1,12 @@
 """Versioned deterministic public release records."""
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.errors import ConClearError, InvalidInvocationError, OperationalError
 from conclear.identity import IDENTITY
 from conclear.jsonutil import (
     atomic_write_json,
@@ -15,6 +16,10 @@ from conclear.jsonutil import (
 from conclear.schema import validate_external
 from conclear.values import validate_run_id, validate_source_revision
 
+_TIMESTAMP_PATTERN = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$"
+)
+
 RECORD_SCHEMA_VERSIONS: dict[str, int] = {
     "platformQualification": 1,
     "qualificationTransport": 1,
@@ -22,6 +27,49 @@ RECORD_SCHEMA_VERSIONS: dict[str, int] = {
     "releaseVerification": 1,
     "rescanResult": 1,
 }
+
+
+def utc_now() -> datetime:
+    """Read the clock as an aware UTC value at whole-second precision."""
+    return datetime.now(UTC).replace(microsecond=0)
+
+
+def format_timestamp(value: datetime) -> str:
+    """Serialize one whole-second aware timestamp as UTC RFC 3339 with a `Z` suffix.
+
+    Raises:
+        OperationalError: If the value is naive or carries sub-second precision,
+            which means it did not come from `utc_now` or `parse_timestamp`.
+    """
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise OperationalError("Timestamps must be timezone-aware")
+    if value.microsecond:
+        raise OperationalError("Timestamps must have whole-second precision")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def parse_timestamp(
+    value: object, label: str, *, error: type[ConClearError] = OperationalError
+) -> datetime:
+    """Parse one RFC 3339 timestamp into aware UTC at whole-second precision.
+
+    Only the canonical `Z`-suffixed form ConClear writes is accepted. A
+    fractional second is truncated so values read back from older records
+    compare equal to the whole-second values ConClear now writes.
+
+    Raises:
+        error: If the value is not a non-empty string, cannot be parsed or
+            lacks a UTC offset.
+    """
+    if not isinstance(value, str) or _TIMESTAMP_PATTERN.fullmatch(value) is None:
+        raise error(f"{label} must be a UTC RFC 3339 timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.removesuffix("Z") + "+00:00")
+    except ValueError as exc:
+        raise error(f"{label} must be a UTC RFC 3339 timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise error(f"{label} must be a UTC RFC 3339 timestamp")
+    return parsed.astimezone(UTC).replace(microsecond=0)
 
 
 class Verdict(StrEnum):
@@ -90,7 +138,7 @@ class RecordEnvelope:
             raise OperationalError(
                 "Public records require a staged build with embedded source identity"
             ) from exc
-        created_at = self.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        created_at = format_timestamp(self.created_at)
         try:
             schema_version = RECORD_SCHEMA_VERSIONS[self.record_type]
         except KeyError as exc:

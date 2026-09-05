@@ -1,6 +1,5 @@
 """Validated rehydration of release workflow artifacts from one workspace."""
 
-from datetime import datetime
 from pathlib import Path
 
 from conclear.attestations import RELEASE_VERIFICATION_TYPE
@@ -11,7 +10,12 @@ from conclear.layout_assembly import AssemblyObservation
 from conclear.oci import validate_layout
 from conclear.parsing import Narrower
 from conclear.provenance import ProvenanceMaterial
-from conclear.records import SourceIdentity, ToolIdentity, validate_record
+from conclear.records import (
+    SourceIdentity,
+    ToolIdentity,
+    parse_timestamp,
+    validate_record,
+)
 from conclear.services.assembly import CandidateResult, QualificationTransport
 from conclear.services.publication import (
     PublishedCandidate,
@@ -435,7 +439,11 @@ def load_published(
         raise RuleRejectionError(
             "Published digest differs from candidate", code="CC0602"
         )
-    expiration = _datetime(entry.metadata.get("expiration"), "candidate expiration")
+    expiration = parse_timestamp(
+        entry.metadata.get("expiration"),
+        "candidate expiration",
+        error=InvalidInvocationError,
+    )
     immutable = entry.metadata.get("immutabilityEnabled")
     if not isinstance(immutable, bool):
         raise InvalidInvocationError("Candidate immutability observation is malformed")
@@ -626,17 +634,6 @@ def _validate_record_inputs(record: dict[str, object], workspace: RunWorkspace) 
         raise InvalidInvocationError(
             "Record repository configuration differs from the run"
         )
-
-
-def _datetime(value: object, label: str) -> datetime:
-    text = _narrow.string_value(value, label)
-    try:
-        result = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError(f"{label} is malformed") from exc
-    if result.tzinfo is None or result.utcoffset() is None:
-        raise InvalidInvocationError(f"{label} must be timezone-aware")
-    return result
 
 
 def _platforms(value: object, label: str) -> tuple[Platform, ...]:

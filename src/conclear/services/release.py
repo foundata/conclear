@@ -3,7 +3,7 @@
 import platform as host_platform
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import override
 
@@ -34,7 +34,7 @@ from conclear.jsonutil import atomic_write_json, sha256_bytes
 from conclear.pins import PinResolver, PinStore, check_image_pins
 from conclear.presentation import Finding
 from conclear.provenance import ProvenanceInput, generate_provenance
-from conclear.records import SourceIdentity, Verdict
+from conclear.records import SourceIdentity, Verdict, parse_timestamp, utc_now
 from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
 from conclear.services.assembly import assemble_candidate
@@ -116,7 +116,7 @@ def execute_release(
     request: ReleaseRequest,
     *,
     id_factory: IdFactory | None = None,
-    now_factory: Callable[[], datetime] = lambda: datetime.now(UTC),
+    now_factory: Callable[[], datetime] = utc_now,
 ) -> ReleaseResult:
     """Run the complete release state machine from detached checkout to promotion."""
     if request.version is not None:
@@ -159,7 +159,7 @@ def resume_release(
     cache_home: Path,
     passphrase: str | None,
     ci_context: CIContextObservation | None,
-    now_factory: Callable[[], datetime] = lambda: datetime.now(UTC),
+    now_factory: Callable[[], datetime] = utc_now,
 ) -> ReleaseResult:
     """Resume a non-terminal release after revalidating every immutable input."""
     source_run = open_source_run(
@@ -499,7 +499,9 @@ def generate_release_provenance(
             image_id=image.image_id,
             version=snapshot.immutable_inputs.get("version") or None,
             run_id=workspace.run_id,
-            started_at=_parse_timestamp(snapshot.created_at),
+            started_at=parse_timestamp(
+                snapshot.created_at, "Run creation time", error=InvalidInvocationError
+            ),
             finished_at=now,
             materials=materials,
         ),
@@ -599,13 +601,3 @@ def _finish_failure(
         },
         mode=0o644,
     )
-
-
-def _parse_timestamp(value: str) -> datetime:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError("Run creation time is malformed") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise InvalidInvocationError("Run creation time lacks a timezone")
-    return parsed

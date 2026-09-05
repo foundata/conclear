@@ -1,10 +1,10 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 import conclear.records as records_module
-from conclear.errors import InvalidInvocationError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import ApplicationIdentity
 from conclear.records import (
     RECORD_SCHEMA_VERSIONS,
@@ -12,6 +12,9 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
+    format_timestamp,
+    parse_timestamp,
+    utc_now,
     validate_record,
 )
 
@@ -102,3 +105,44 @@ def test_record_write_is_atomic_and_digest_bound(tmp_path: Path) -> None:
     digest = record.write(path)
     assert path.read_bytes() == record.content_bytes()
     assert digest == record.digest()
+
+
+def test_utc_now_is_aware_and_whole_seconds() -> None:
+    value = utc_now()
+    assert value.tzinfo is UTC
+    assert value.microsecond == 0
+
+
+def test_format_timestamp_requires_aware_whole_second_values() -> None:
+    assert format_timestamp(datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)) == (
+        "2026-01-02T03:04:05Z"
+    )
+    assert (
+        format_timestamp(
+            datetime(2026, 1, 2, 4, 4, 5, tzinfo=timezone(timedelta(hours=1)))
+        )
+        == "2026-01-02T03:04:05Z"
+    )
+    with pytest.raises(OperationalError, match="timezone-aware"):
+        format_timestamp(datetime(2026, 1, 2, 3, 4, 5))  # noqa: DTZ001
+    with pytest.raises(OperationalError, match="whole-second"):
+        format_timestamp(datetime(2026, 1, 2, 3, 4, 5, 6, tzinfo=UTC))
+
+
+def test_parse_timestamp_truncates_fractions_and_rejects_other_shapes() -> None:
+    expected = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    assert parse_timestamp("2026-01-02T03:04:05Z", "created") == expected
+    assert parse_timestamp("2026-01-02T03:04:05.987654Z", "created") == expected
+    for value in (
+        "",
+        None,
+        5,
+        "not a time",
+        "2026-01-02T03:04:05",
+        "2026-01-02T04:04:05+01:00",
+        "2026-01-02T03:04:05+00:00",
+    ):
+        with pytest.raises(OperationalError, match="created must be a UTC RFC 3339"):
+            parse_timestamp(value, "created")
+    with pytest.raises(InvalidInvocationError, match="UTC RFC 3339"):
+        parse_timestamp("soon", "created", error=InvalidInvocationError)

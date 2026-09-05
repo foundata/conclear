@@ -2,7 +2,7 @@
 
 import stat
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from conclear.config import ImageConfig, RepositoryConfig
@@ -22,6 +22,7 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
+    parse_timestamp,
     validate_record,
 )
 from conclear.values import (
@@ -358,7 +359,9 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         payload.get("databaseDigest"), "database digest"
     )
     Digest(database_digest)
-    record_created_at = _timestamp(record.get("createdAt"), "record creation time")
+    record_created_at = parse_timestamp(
+        record.get("createdAt"), "record creation time", error=InvalidInvocationError
+    )
     pin_references = tuple(
         sorted(
             _narrow.string_array_value(payload.get("externalImages"), "external images")
@@ -418,7 +421,11 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
             )
         )
         pin_resolutions.append((reference_text, str(observed_digest)))
-        checked_at = _timestamp(observation.get("checkedAt"), "pin observation time")
+        checked_at = parse_timestamp(
+            observation.get("checkedAt"),
+            "pin observation time",
+            error=InvalidInvocationError,
+        )
         age = record_created_at - checked_at
         if age < timedelta(0) or age > timedelta(
             seconds=limit_map["pinFreshnessSeconds"]
@@ -433,7 +440,9 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
                     "Matching pin observation has a divergence timestamp"
                 )
         else:
-            divergence_since = _timestamp(divergence_value, "pin divergence time")
+            divergence_since = parse_timestamp(
+                divergence_value, "pin divergence time", error=InvalidInvocationError
+            )
             divergence_age = checked_at - divergence_since
             if divergence_age < timedelta(0) or divergence_age >= timedelta(
                 seconds=limit_map["pinDivergenceSeconds"]
@@ -513,14 +522,3 @@ def _hash_transport_path(path: Path) -> str:
     if not stat.S_ISREG(path_stat.st_mode):
         raise InvalidInvocationError(f"Transported payload is not regular: {path}")
     return sha256_file(path)
-
-
-def _timestamp(value: object, label: str) -> datetime:
-    text = _narrow.string_value(value, label)
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError(f"{label} is malformed") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise InvalidInvocationError(f"{label} lacks a timezone")
-    return parsed.astimezone(UTC)

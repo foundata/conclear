@@ -38,6 +38,8 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
+    format_timestamp,
+    parse_timestamp,
     validate_record,
 )
 from conclear.registry_control import RegistryControl
@@ -246,9 +248,7 @@ def publish_candidate(
         )
     if registry.resolve_optional(tagged, auth_file=auth_file) is not None:
         raise OperationalError(f"Generated candidate tag is already in use: {tagged}")
-    expiration = (
-        now.astimezone(UTC).replace(microsecond=0) + image.limits.candidate_lifetime
-    )
+    expiration = now.astimezone(UTC) + image.limits.candidate_lifetime
     workspace.journal.plan(
         resource_id="candidate",
         kind=ResourceKind.CANDIDATE_REFERENCE,
@@ -256,7 +256,7 @@ def publish_candidate(
         ephemeral=True,
         metadata={
             "digest": str(candidate.observation.graph.digest),
-            "expiration": _timestamp(expiration),
+            "expiration": format_timestamp(expiration),
         },
     )
     try:
@@ -305,7 +305,7 @@ def publish_candidate(
         ResourceStatus.CREATED,
         metadata={
             "digest": str(remote_digest),
-            "expiration": _timestamp(expiration),
+            "expiration": format_timestamp(expiration),
             "immutabilityEnabled": immutable_enabled,
         },
     )
@@ -335,16 +335,12 @@ def _resume_published_candidate(
         raise InvalidInvocationError(
             "Attempted candidate cannot be reused; start a new release run"
         )
-    expiration_value = entry.metadata.get("expiration")
-    if not isinstance(expiration_value, str):
-        raise InvalidInvocationError("Candidate expiration journal is malformed")
-    try:
-        expiration = datetime.fromisoformat(expiration_value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError(
-            "Candidate expiration journal is malformed"
-        ) from exc
-    if expiration.tzinfo is None or now.astimezone(UTC) >= expiration.astimezone(UTC):
+    expiration = parse_timestamp(
+        entry.metadata.get("expiration"),
+        "Candidate expiration journal",
+        error=InvalidInvocationError,
+    )
+    if now.astimezone(UTC) >= expiration:
         raise RuleRejectionError("Candidate expired before resume", code="CC0603")
     tag_observation = registry_control.observe_tag(
         image.repository, candidate.candidate_tag
@@ -375,7 +371,7 @@ def _resume_published_candidate(
         ResourceStatus.CREATED,
         metadata={
             "digest": str(observed),
-            "expiration": _timestamp(expiration),
+            "expiration": format_timestamp(expiration),
             "immutabilityEnabled": tag_observation.immutable,
         },
     )
@@ -1314,9 +1310,3 @@ def _verify_image_signature(
             f"Image signature coverage could not be verified for {subject}",
             code="CC0702",
         ) from exc
-
-
-def _timestamp(value: datetime) -> str:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise OperationalError("Publication timestamp must be timezone-aware")
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

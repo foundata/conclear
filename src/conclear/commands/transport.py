@@ -1,11 +1,11 @@
 """Commands that move accepted platform qualifications between runs."""
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import click
 
 from conclear.presentation import CommandResult, ResultStatus
+from conclear.records import utc_now
 from conclear.services.run_context import open_source_run
 from conclear.transport import TransportKind, export_transport
 from conclear.values import Platform
@@ -59,7 +59,7 @@ def export_command(
         platform,
         destination=output_path,
         kind=TransportKind(kind),
-        now=datetime.now(UTC),
+        now=utc_now(),
     )
     emit(
         CommandResult(

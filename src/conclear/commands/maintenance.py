@@ -1,6 +1,5 @@
 """Read-only diagnostics, rescans and ownership cleanup commands."""
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -19,7 +18,7 @@ from conclear.pin_updates import (
 )
 from conclear.pins import PinStore, check_image_pins
 from conclear.presentation import CommandResult, ResultStatus
-from conclear.records import SourceIdentity
+from conclear.records import SourceIdentity, parse_timestamp, utc_now
 from conclear.registry_control import RegistryControl
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime
@@ -124,7 +123,7 @@ def pins_check_command(
     with command_runtime((ToolName.SKOPEO,)) as runtime:
         resolver = AuthenticatedPinResolver(runtime, auth_file)
         observations = check_image_pins(
-            PinStore(state_home()), image, resolver=resolver, now=datetime.now(UTC)
+            PinStore(state_home()), image, resolver=resolver, now=utc_now()
         )
     findings = tuple(
         finding for observation in observations for finding in observation.findings
@@ -181,7 +180,7 @@ def pins_propose_command(
             source=source,
             resolver=AuthenticatedPinResolver(runtime, auth_file),
             tools=(runtime.tools[ToolName.SKOPEO].record_identity(),),
-            now=lambda: datetime.now(UTC),
+            now=utc_now,
             image_ids=tuple(image_ids) or None,
         )
     digest = proposal.write(output_path)
@@ -243,7 +242,7 @@ def pins_apply_command(
         proposal,
         repository_root=root,
         source=source,
-        now=datetime.now(UTC),
+        now=utc_now(),
     )
     messages = {
         ApplicationStatus.APPLIED: (
@@ -430,7 +429,7 @@ def rescan_command(
     database = select_fresh_database(
         runtime.trivy(),
         trivy_cache_root(cache_home()),
-        now=datetime.now(UTC),
+        now=utc_now(),
     )
     signing = (
         RescanSigning(
@@ -461,8 +460,8 @@ def rescan_command(
         remediation_limit=image.limits.remediation,
         remediation_history=remediation_history,
         signing=signing,
-        now=datetime.now(UTC),
-        record_clock=lambda: datetime.now(UTC),
+        now=utc_now(),
+        record_clock=utc_now,
     )
     if result.authoritative:
         if result.verified_at is None:
@@ -471,7 +470,11 @@ def rescan_command(
             subject,
             RescanHistoryEntry(
                 record_digest=result.record_digest,
-                verified_at=_timestamp(result.verified_at),
+                verified_at=parse_timestamp(
+                    result.verified_at,
+                    "Rescan verification time",
+                    error=InvalidInvocationError,
+                ),
                 active_findings=result.active_findings,
             ),
             expected_previous=previous_result,
@@ -495,13 +498,3 @@ def rescan_command(
         ),
         output_format,
     )
-
-
-def _timestamp(value: str) -> datetime:
-    try:
-        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError("Rescan verification time is malformed") from exc
-    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-        raise InvalidInvocationError("Rescan verification time lacks a timezone")
-    return timestamp.astimezone(UTC)

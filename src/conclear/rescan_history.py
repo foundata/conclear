@@ -3,7 +3,7 @@
 import hashlib
 import stat
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from conclear.jsonutil import (
     sha256_bytes,
 )
 from conclear.parsing import object_value
-from conclear.records import validate_record
+from conclear.records import format_timestamp, parse_timestamp, validate_record
 from conclear.values import Digest, OCIReference, Platform
 
 MAX_RESCAN_HISTORY_BYTES = 4 * 1024 * 1024
@@ -59,7 +59,7 @@ class RescanHistoryEntry:
         """Return the durable representation."""
         return {
             "recordDigest": self.record_digest,
-            "verifiedAt": _timestamp(self.verified_at),
+            "verifiedAt": format_timestamp(self.verified_at),
             "activeFindings": [item.to_dict() for item in self.active_findings],
         }
 
@@ -221,7 +221,9 @@ def history_from_records(
         try:
             entry = RescanHistoryEntry(
                 record_digest=record_digest,
-                verified_at=_parse_timestamp(_string(record.get("createdAt"))),
+                verified_at=parse_timestamp(
+                    record.get("createdAt"), "Rescan history timestamp"
+                ),
                 active_findings=findings,
             )
         except ValueError as exc:
@@ -290,7 +292,9 @@ def _entry(value: object) -> RescanHistoryEntry:
     try:
         return RescanHistoryEntry(
             record_digest=_string(value.get("recordDigest")),
-            verified_at=_parse_timestamp(_string(value.get("verifiedAt"))),
+            verified_at=parse_timestamp(
+                value.get("verifiedAt"), "Rescan history timestamp"
+            ),
             active_findings=tuple(sorted(findings)),
         )
     except (InvalidInvocationError, ValueError) as exc:
@@ -313,17 +317,3 @@ def _string(value: object) -> str:
     if not isinstance(value, str) or not value:
         raise OperationalError("Rescan history string is malformed")
     return value
-
-
-def _timestamp(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _parse_timestamp(value: str) -> datetime:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise OperationalError("Rescan history timestamp is malformed") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise OperationalError("Rescan history timestamp lacks a timezone")
-    return parsed.astimezone(UTC)

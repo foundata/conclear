@@ -66,10 +66,10 @@ def test_durable_pin_state_corruption_is_an_operational_failure(tmp_path: Path) 
         ),
         "location is malformed",
     )
-    expect(lambda value: value.update(checkedAt="soon"), "timestamp is malformed")
+    expect(lambda value: value.update(checkedAt="soon"), "UTC RFC 3339")
     expect(
         lambda value: value.update(checkedAt="2026-01-01T00:00:00"),
-        "not timezone-aware",
+        "UTC RFC 3339",
     )
     expect(lambda value: value.update(historyInitialized="yes"), "boolean field")
     expect(lambda value: value.update(pinnedDigest=""), "string field")

@@ -1,12 +1,13 @@
 """SLSA Provenance v1 generation from accepted release observations."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from conclear.errors import OperationalError
 from conclear.identity import IDENTITY
 from conclear.jsonutil import atomic_write_json, sha256_file
+from conclear.records import format_timestamp
 from conclear.release_profile import normalize_builder_id
 from conclear.schema import validate_external
 from conclear.values import (
@@ -116,8 +117,8 @@ def generate_provenance(value: ProvenanceInput, output_path: Path) -> str:
                 },
                 "metadata": {
                     "invocationId": value.run_id,
-                    "startedOn": _timestamp(value.started_at),
-                    "finishedOn": _timestamp(value.finished_at),
+                    "startedOn": format_timestamp(value.started_at),
+                    "finishedOn": format_timestamp(value.finished_at),
                 },
                 "byproducts": [],
             },
@@ -126,9 +127,3 @@ def generate_provenance(value: ProvenanceInput, output_path: Path) -> str:
     validate_external(statement, "provenance.schema.json", label="provenance")
     atomic_write_json(output_path, statement, mode=0o644)
     return sha256_file(output_path)
-
-
-def _timestamp(value: datetime) -> str:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise OperationalError("Provenance timestamp is not timezone-aware")
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

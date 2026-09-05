@@ -11,6 +11,7 @@ from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.fileio import locked_file
 from conclear.jsonutil import atomic_write_json, load_json
 from conclear.presentation import Finding
+from conclear.records import format_timestamp, parse_timestamp
 from conclear.values import Digest, OCIReference
 
 
@@ -63,11 +64,11 @@ class PinObservation:
             "reference": str(self.reference),
             "pinnedDigest": str(self.pinned_digest),
             "observedDigest": str(self.observed_digest),
-            "checkedAt": _timestamp(self.checked_at),
+            "checkedAt": format_timestamp(self.checked_at),
             "divergenceSince": (
                 None
                 if self.divergence_since is None
-                else _timestamp(self.divergence_since)
+                else format_timestamp(self.divergence_since)
             ),
             "historyInitialized": self.history_initialized,
             "findings": [finding.to_dict() for finding in self.findings],
@@ -183,9 +184,11 @@ class PinStore:
                 reference=stored_reference,
                 pinned_digest=Digest(_string(value.get("pinnedDigest"))),
                 observed_digest=Digest(_string(value.get("observedDigest"))),
-                checked_at=_parse_timestamp(value.get("checkedAt")),
+                checked_at=parse_timestamp(
+                    value.get("checkedAt"), "Durable pin timestamp"
+                ),
                 divergence_since=(
-                    _parse_timestamp(divergence_value)
+                    parse_timestamp(divergence_value, "Durable pin timestamp")
                     if divergence_value is not None
                     else None
                 ),
@@ -270,21 +273,6 @@ def _parse_finding(value: object) -> Finding:
         message=_string(value.get("message")),
         location=location,
     )
-
-
-def _timestamp(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _parse_timestamp(value: object) -> datetime:
-    text = _string(value)
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise OperationalError("Durable pin timestamp is malformed") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise OperationalError("Durable pin timestamp is not timezone-aware")
-    return parsed
 
 
 def _string(value: object) -> str:

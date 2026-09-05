@@ -28,6 +28,7 @@ from conclear.presentation import Finding
 from conclear.records import (
     RecordEnvelope,
     Verdict,
+    format_timestamp,
 )
 from conclear.scan_policy import AppliedException, evaluate_trivy_report
 from conclear.services.qualification_inputs import (
@@ -138,7 +139,7 @@ def build_platform(inputs: QualificationInputs, builder: Builder) -> BuildEviden
     )
     context = hash_build_context(inputs.image.context)
     containerfile_digest = sha256_file(inputs.image.containerfile)
-    created = _timestamp(inputs.source_time)
+    created = format_timestamp(inputs.source_time)
     build_arguments = {
         "IMAGE_REVISION": inputs.source.revision,
         "IMAGE_CREATED": created,
@@ -464,11 +465,3 @@ def _runtime_constraints(image: ImageConfig) -> dict[str, object]:
         "nofile": runtime.nofile,
         "capabilities": list(runtime.capabilities),
     }
-
-
-def _timestamp(value: datetime) -> str:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise OperationalError("Source timestamp must be timezone-aware")
-    return (
-        value.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    )

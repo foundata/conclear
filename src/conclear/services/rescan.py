@@ -27,6 +27,8 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
+    format_timestamp,
+    parse_timestamp,
     validate_record,
 )
 from conclear.rescan_history import (
@@ -286,7 +288,9 @@ def rescan_release(
             + ", ".join(unknown_triage_platforms)
         )
     for decision in triage:
-        decided_at = _parse_timestamp(decision.decided_at, "triage decision time")
+        decided_at = parse_timestamp(
+            decision.decided_at, "triage decision time", error=InvalidInvocationError
+        )
         if decided_at > now.astimezone(UTC):
             raise InvalidInvocationError(
                 "Rescan triage decisions cannot be dated in the future"
@@ -397,8 +401,10 @@ def rescan_release(
         remediation_findings.append(
             {
                 **finding.to_dict(),
-                "startedAt": (None if started_at is None else _timestamp(started_at)),
-                "deadline": None if deadline is None else _timestamp(deadline),
+                "startedAt": (
+                    None if started_at is None else format_timestamp(started_at)
+                ),
+                "deadline": None if deadline is None else format_timestamp(deadline),
                 "overdue": overdue,
             }
         )
@@ -509,7 +515,7 @@ def rescan_release(
     except Exception:
         workspace.journal.update("rescan-result", ResourceStatus.FAILED)
         raise
-    verified_at = _timestamp(recorded_at)
+    verified_at = format_timestamp(recorded_at)
     workspace.journal.update(
         "rescan-result",
         ResourceStatus.CREATED,
@@ -546,22 +552,6 @@ def _scanner_identity(tools: tuple[ToolIdentity, ...]) -> str:
             "Rescan evidence requires exactly one Trivy tool identity"
         )
     return f"trivy {matches[0].version}"
-
-
-def _timestamp(value: datetime) -> str:
-    if value.tzinfo is None or value.utcoffset() is None:
-        raise OperationalError("Rescan verification clock returned a naive timestamp")
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _parse_timestamp(value: str, label: str) -> datetime:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError(f"{label} is malformed") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise InvalidInvocationError(f"{label} lacks a timezone")
-    return parsed.astimezone(UTC)
 
 
 def _one_statement(

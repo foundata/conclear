@@ -1,7 +1,6 @@
 """Provenance, registry publication and complete release commands."""
 
 import platform as host_platform
-from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -16,6 +15,7 @@ from conclear.artifacts import (
 from conclear.config import ImageConfig
 from conclear.errors import InvalidInvocationError
 from conclear.presentation import CommandResult, ResultStatus
+from conclear.records import utc_now
 from conclear.release_profile import ReleaseProfile
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.publication import (
@@ -68,7 +68,7 @@ def provenance_command(run_id: str, output_format: str) -> None:
             source_run.repository,
             image,
             source=source_run.source,
-            now=datetime.now(UTC),
+            now=utc_now(),
         )
     emit(
         CommandResult(
@@ -102,7 +102,7 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
             registry=source_run.runtime.skopeo(),
             registry_control=registry_control,
             auth_file=selected.auth_file,
-            now=datetime.now(UTC),
+            now=utc_now(),
         )
     finally:
         registry_control.close()
@@ -153,7 +153,7 @@ def attest_command(
         passphrase_path=selected.passphrase_file,
         registry=source_run.runtime.skopeo(),
         auth_file=selected.auth_file,
-        now=datetime.now(UTC),
+        now=utc_now(),
     )
     emit(
         CommandResult(
@@ -209,7 +209,7 @@ def verify_command(
         signer_key_id=key_id,
         host_architecture=host_platform.machine(),
         ci_context=public_ci_context,
-        now=datetime.now(UTC),
+        now=utc_now(),
     )
     emit(
         CommandResult(
@@ -261,7 +261,7 @@ def promote_command(
             signer=source_run.runtime.cosign(),
             public_key=selected.cosign_public_key,
             auth_file=selected.auth_file,
-            now=datetime.now(UTC),
+            now=utc_now(),
         )
     finally:
         registry_control.close()

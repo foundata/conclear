@@ -3,7 +3,6 @@
 import platform as host_platform
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,7 @@ from conclear.database import (
 from conclear.errors import RuleRejectionError
 from conclear.pins import PinStore, check_image_pins
 from conclear.presentation import CommandResult, ResultStatus
+from conclear.records import utc_now
 from conclear.release_profile import ReleaseProfile
 from conclear.services.assembly import assemble_candidate
 from conclear.services.checking import check_image
@@ -261,7 +261,7 @@ def qualify_command(
         source_run.runtime, None if selected is None else selected.auth_file
     )
     pin_observations = check_image_pins(
-        PinStore(state_home()), image, resolver=resolver, now=datetime.now(UTC)
+        PinStore(state_home()), image, resolver=resolver, now=utc_now()
     )
     if not preflight.accepted or any(not item.accepted for item in pin_observations):
         source_run.workspace.transition(RunState.REJECTED)
@@ -284,7 +284,7 @@ def qualify_command(
         select_fresh_database(
             source_run.runtime.trivy(),
             database_cache,
-            now=datetime.now(UTC),
+            now=utc_now(),
         )
         if expected_database is None
         else select_database_by_digest(
@@ -303,7 +303,7 @@ def qualify_command(
         database=database,
         pin_observations=pin_observations,
         preflight_findings=preflight.findings,
-        now=datetime.now(UTC),
+        now=utc_now(),
     )
     target = {
         "accepted": RunState.QUALIFIED,
@@ -398,7 +398,7 @@ def assemble_command(
             workspace=workspace,
             version=version,
             tools=source_run.runtime.identities,
-            now=datetime.now(UTC),
+            now=utc_now(),
         )
     except BaseException as exc:
         _finish_coordinator_failure(workspace, exc)

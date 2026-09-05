@@ -17,7 +17,7 @@ import re
 import stat
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from conclear.checks import (
@@ -47,7 +47,12 @@ from conclear.jsonutil import (
 from conclear.path_safety import contained_path
 from conclear.pins import PinResolver
 from conclear.presentation import Finding
-from conclear.records import SourceIdentity, ToolIdentity
+from conclear.records import (
+    SourceIdentity,
+    ToolIdentity,
+    format_timestamp,
+    parse_timestamp,
+)
 from conclear.schema import validate_external
 from conclear.toml_spans import locate_string_values
 from conclear.values import Digest, OCIReference, validate_source_revision
@@ -122,7 +127,7 @@ class PinLookup:
             "resolvedReference": str(self.resolved_reference),
             "oldDigest": str(self.old_digest),
             "newDigest": str(self.new_digest),
-            "resolvedAt": _timestamp(self.resolved_at),
+            "resolvedAt": format_timestamp(self.resolved_at),
             "reviewRequired": self.review_required,
         }
 
@@ -283,7 +288,7 @@ class PinUpdateProposal:
         value: dict[str, object] = {
             "schemaVersion": PROPOSAL_SCHEMA_VERSION,
             "recordType": PROPOSAL_RECORD_TYPE,
-            "createdAt": _timestamp(self.created_at),
+            "createdAt": format_timestamp(self.created_at),
             "ruleset": {
                 "conclearVersion": IDENTITY.version,
                 "conclearRevision": IDENTITY.source_revision,
@@ -460,7 +465,11 @@ def parse_proposal(value: object) -> PinUpdateProposal:
                     require_tag=True,
                     require_digest=True,
                 ),
-                resolved_at=_parse_timestamp(str(lookup["resolvedAt"])),
+                resolved_at=parse_timestamp(
+                    str(lookup["resolvedAt"]),
+                    "Proposal timestamp",
+                    error=InvalidInvocationError,
+                ),
             )
             for lookup in value["lookups"]
         )
@@ -493,7 +502,11 @@ def parse_proposal(value: object) -> PinUpdateProposal:
             for item in value["files"]
         )
         proposal = PinUpdateProposal(
-            created_at=_parse_timestamp(str(value["createdAt"])),
+            created_at=parse_timestamp(
+                str(value["createdAt"]),
+                "Proposal timestamp",
+                error=InvalidInvocationError,
+            ),
             source=source,
             configuration_digest=str(value["repositoryConfiguration"]["sha256"]),
             tools=tools,
@@ -894,20 +907,6 @@ def _token_pattern(reference: str) -> re.Pattern[bytes]:
     return re.compile(
         rb"(?<!" + boundary + rb")" + escaped + rb"(?!" + boundary + rb")"
     )
-
-
-def _timestamp(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _parse_timestamp(text: str) -> datetime:
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidInvocationError("Proposal timestamp is malformed") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise InvalidInvocationError("Proposal timestamp is not timezone-aware")
-    return parsed
 
 
 def require_aware(value: datetime, label: str) -> None:

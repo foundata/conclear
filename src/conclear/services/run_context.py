@@ -3,7 +3,7 @@
 import stat
 import tempfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from conclear.config import (
@@ -18,7 +18,7 @@ from conclear.errors import (
 )
 from conclear.hooks import HookRunner
 from conclear.jsonutil import sha256_bytes
-from conclear.records import SourceIdentity
+from conclear.records import SourceIdentity, utc_now
 from conclear.runtime import ApplicationRuntime
 from conclear.tools import ToolName
 from conclear.workspace import (
@@ -68,7 +68,7 @@ def create_source_run(
     now: datetime | None = None,
 ) -> SourceRun:
     """Resolve a commit and create a detached, immutable-input-bound run."""
-    created_at = now or datetime.now(UTC)
+    created_at = now or utc_now()
     source_repository = source_root.resolve(strict=True)
     state_home.mkdir(mode=0o700, parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
