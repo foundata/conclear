@@ -1225,6 +1225,42 @@ def test_trivy_database_metadata_validation(
         adapter.select_database_by_digest(cache_root, Digest("sha256:" + "b" * 64))
 
 
+def test_trivy_database_metadata_is_recorded_at_whole_seconds(tmp_path: Path) -> None:
+    fractional = json.dumps(
+        {
+            "Version": 2,
+            "UpdatedAt": "2026-01-01T00:00:00.123456Z",
+            "NextUpdate": "2026-01-02T01:00:00+01:00",
+            "DownloadedAt": "2026-01-01T00:01:00.999999Z",
+        }
+    )
+
+    def create_database(request: CommandRequest) -> ProcessResult:
+        cache = Path(request.argv[request.argv.index("--cache-dir") + 1])
+        if "--download-db-only" in request.argv:
+            (cache / "db").mkdir(parents=True)
+            (cache / "db" / "trivy.db").write_bytes(b"database")
+            (cache / "db" / "metadata.json").write_text(fractional, encoding="utf-8")
+        else:
+            (cache / "java-db").mkdir(parents=True)
+            (cache / "java-db" / "trivy-java.db").write_bytes(b"java-database")
+            (cache / "java-db" / "metadata.json").write_text(
+                trivy_metadata(1), encoding="utf-8"
+            )
+        return result()
+
+    runner = FakeRunner(create_database, create_database)
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, runner).create(TrivyAdapter)
+
+    observation = adapter.refresh_database(tmp_path / "cache")
+
+    vulnerability = observation.metadata["vulnerability"]
+    assert isinstance(vulnerability, dict)
+    assert vulnerability["updatedAt"] == "2026-01-01T00:00:00Z"
+    assert vulnerability["nextUpdate"] == "2026-01-02T00:00:00Z"
+    assert vulnerability["downloadedAt"] == "2026-01-01T00:01:00Z"
+
+
 def test_trivy_database_refresh_reports_installation_failures(tmp_path: Path) -> None:
     def create_database(request: CommandRequest) -> ProcessResult:
         cache = Path(request.argv[request.argv.index("--cache-dir") + 1])

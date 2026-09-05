@@ -20,6 +20,7 @@ from conclear.jsonutil import (
 )
 from conclear.parsing import object_value, string_value
 from conclear.process import OperationKind
+from conclear.records import format_timestamp
 from conclear.spdx import validate_spdx_document
 from conclear.values import Digest
 
@@ -301,4 +302,5 @@ def _metadata_timestamp(value: object, label: str, field: str) -> str:
         raise OperationalError(f"{label} {field} time is malformed") from exc
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise OperationalError(f"{label} {field} time lacks a timezone")
-    return timestamp.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    # Trivy writes sub-second precision; records carry whole seconds only.
+    return format_timestamp(timestamp.astimezone(UTC).replace(microsecond=0))
