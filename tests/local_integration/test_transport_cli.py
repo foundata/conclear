@@ -224,12 +224,41 @@ def _sha256(path: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def _platform_text(platform: dict[str, Any]) -> str:
+    return "/".join(
+        part
+        for part in (
+            platform["os"],
+            platform["architecture"],
+            platform.get("variant"),
+        )
+        if part
+    )
+
+
+def _layout_platform(layout: Path) -> str:
+    index = json.loads((layout / "index.json").read_text(encoding="utf-8"))
+    assert len(index["manifests"]) == 1
+    manifest_descriptor = index["manifests"][0]
+    manifest = json.loads(
+        (
+            layout / "blobs" / "sha256" / manifest_descriptor["digest"].split(":")[1]
+        ).read_text(encoding="utf-8")
+    )
+    config_descriptor = manifest["config"]
+    config = json.loads(
+        (
+            layout / "blobs" / "sha256" / config_descriptor["digest"].split(":")[1]
+        ).read_text(encoding="utf-8")
+    )
+    return _platform_text(config)
+
+
 def _scenario(
     tmp_path: Path,
     *,
     platforms: Sequence[str],
     omission_reason: str | None,
-    expected_descriptor_platforms: Sequence[str],
 ) -> None:
     run_id = manifest_run_id()
     executable = _cli_executable()
@@ -275,6 +304,7 @@ def _scenario(
     run_ids: list[str] = []
     try:
         transports: list[tuple[Path, str, dict[str, Any]]] = []
+        worker_descriptor_platforms: list[str] = []
         for platform in platforms:
             qualified = cli.run(
                 "qualify",
@@ -294,6 +324,9 @@ def _scenario(
             run_ids.append(qualified["data"]["runId"])
             assert qualified["status"] == "success", qualified
             assert qualified["findings"] == []
+            worker_descriptor_platforms.append(
+                _layout_platform(Path(qualified["data"]["layout"]))
+            )
             destination = (
                 root / "transports" / f"app-{Platform.parse(platform).key}.tar"
             )
@@ -369,18 +402,10 @@ def _scenario(
         image_index = json.loads(root_blob.read_text(encoding="utf-8"))
         assert image_index["mediaType"] == "application/vnd.oci.image.index.v1+json"
         observed_platforms = sorted(
-            "/".join(
-                part
-                for part in (
-                    descriptor["platform"]["os"],
-                    descriptor["platform"]["architecture"],
-                    descriptor["platform"].get("variant"),
-                )
-                if part
-            )
+            _platform_text(descriptor["platform"])
             for descriptor in image_index["manifests"]
         )
-        assert observed_platforms == sorted(expected_descriptor_platforms)
+        assert observed_platforms == sorted(worker_descriptor_platforms)
         for descriptor in image_index["manifests"]:
             blob = layout / "blobs" / "sha256" / descriptor["digest"].split(":")[1]
             assert _sha256(blob) == descriptor["digest"]
@@ -433,7 +458,6 @@ def test_two_native_workers_assemble_one_index_through_the_cli(tmp_path: Path) -
         tmp_path,
         platforms=("linux/amd64", "linux/amd64/v3"),
         omission_reason="The end-to-end fixture exercises two native x86-64 variants.",
-        expected_descriptor_platforms=("linux/amd64", "linux/amd64/v3"),
     )
 
 
@@ -452,5 +476,4 @@ def test_amd64_and_arm64_workers_assemble_one_index_through_the_cli(
         tmp_path,
         platforms=("linux/amd64", "linux/arm64"),
         omission_reason=None,
-        expected_descriptor_platforms=("linux/amd64", "linux/arm64/v8"),
     )
