@@ -40,23 +40,21 @@ from .common import (
     cache_home,
     ci_context,
     command_runtime,
+    config_option,
     emit,
     format_option,
+    passphrase_option,
     profile,
+    profile_option,
+    required_profile_option,
     signing_passphrase,
     state_home,
 )
 
 
 @click.command("doctor")
-@click.option(
-    "config_path",
-    "--config",
-    type=click.Path(path_type=Path),
-    default=Path("conclear.toml"),
-    show_default=True,
-)
-@click.option("profile_name", "--profile", required=True)
+@config_option
+@required_profile_option
 @format_option
 def doctor_command(config_path: Path, profile_name: str, output_format: str) -> None:
     """Validate the release environment without publishing or signing."""
@@ -108,15 +106,9 @@ def pins_group() -> None:
 
 
 @pins_group.command("check")
-@click.option(
-    "config_path",
-    "--config",
-    type=click.Path(path_type=Path),
-    default=Path("conclear.toml"),
-    show_default=True,
-)
+@config_option
 @click.option("image_id", "--image", required=True)
-@click.option("profile_name", "--profile")
+@profile_option
 @format_option
 def pins_check_command(
     config_path: Path,
@@ -151,13 +143,7 @@ def pins_check_command(
 
 
 @pins_group.command("propose")
-@click.option(
-    "config_path",
-    "--config",
-    type=click.Path(path_type=Path),
-    default=Path("conclear.toml"),
-    show_default=True,
-)
+@config_option
 @click.option(
     "image_ids",
     "--image",
@@ -172,7 +158,7 @@ def pins_check_command(
     required=True,
     help="New file that receives the proposal. An existing file is never overwritten.",
 )
-@click.option("profile_name", "--profile")
+@profile_option
 @format_option
 def pins_propose_command(
     config_path: Path,
@@ -237,13 +223,7 @@ def pins_propose_command(
     required=True,
     help="Proposal written by pins propose.",
 )
-@click.option(
-    "config_path",
-    "--config",
-    type=click.Path(path_type=Path),
-    default=Path("conclear.toml"),
-    show_default=True,
-)
+@config_option
 @format_option
 def pins_apply_command(
     proposal_path: Path, config_path: Path, output_format: str
@@ -335,7 +315,7 @@ def _lookup_details(proposal: PinUpdateProposal) -> tuple[str, ...]:
 
 @click.command("cleanup")
 @click.argument("run_id")
-@click.option("profile_name", "--profile")
+@profile_option
 @format_option
 def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -> None:
     """Remove only ephemeral resources owned by one release run."""
@@ -379,17 +359,11 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
 
 @click.command("rescan")
 @click.argument("subject_text")
-@click.option(
-    "config_path",
-    "--config",
-    type=click.Path(path_type=Path),
-    default=Path("conclear.toml"),
-    show_default=True,
-)
+@config_option
 @click.option("image_id", "--image-id", required=True)
-@click.option("profile_name", "--profile", required=True)
+@required_profile_option
 @click.option("authoritative", "--authoritative", is_flag=True)
-@click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))
+@passphrase_option
 @click.option("previous_result", "--previous-result")
 @click.option("triage_path", "--triage-file", type=click.Path(path_type=Path))
 @format_option

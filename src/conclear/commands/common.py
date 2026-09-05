@@ -72,6 +72,39 @@ def format_option[FC: Callable[..., Any]](function: FC) -> FC:
     )(function)
 
 
+def config_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Add the repository configuration path option, defaulting to `conclear.toml`."""
+    return click.option(
+        "config_path",
+        "--config",
+        type=click.Path(path_type=Path),
+        default=Path("conclear.toml"),
+        show_default=True,
+    )(function)
+
+
+def profile_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Add the optional release profile name."""
+    return click.option("profile_name", "--profile")(function)
+
+
+def required_profile_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Add the release profile name for commands that cannot run without one."""
+    return click.option("profile_name", "--profile", required=True)(function)
+
+
+def platform_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Add the required target platform selector."""
+    return click.option("platform_text", "--platform", required=True)(function)
+
+
+def passphrase_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Add the inherited file descriptor that supplies a signing passphrase."""
+    return click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))(
+        function
+    )
+
+
 def emit(result: CommandResult, output_format: str) -> None:
     """Present one result and terminate with its stable public status."""
     if output_format == "json":

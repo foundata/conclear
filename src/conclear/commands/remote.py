@@ -1,10 +1,8 @@
 """Provenance, registry publication and complete release commands."""
 
 import platform as host_platform
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import click
 
@@ -46,17 +44,12 @@ from .common import (
     ci_context,
     emit,
     format_option,
+    passphrase_option,
     profile,
+    required_profile_option,
     signing_passphrase,
     state_home,
 )
-
-
-def _profile_options[FC: Callable[..., Any]](function: FC) -> FC:
-    function = click.option(
-        "passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3)
-    )(function)
-    return click.option("profile_name", "--profile", required=True)(function)
 
 
 @click.command("provenance")
@@ -113,7 +106,7 @@ def provenance_command(run_id: str, output_format: str) -> None:
 
 @click.command("publish")
 @click.argument("run_id")
-@click.option("profile_name", "--profile", required=True)
+@required_profile_option
 @format_option
 def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
     """Publish one accepted candidate and verify its complete remote graph."""
@@ -154,7 +147,8 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
 
 @click.command("attest")
 @click.argument("run_id")
-@_profile_options
+@required_profile_option
+@passphrase_option
 @format_option
 def attest_command(
     run_id: str,
@@ -197,7 +191,8 @@ def attest_command(
 
 @click.command("verify")
 @click.argument("run_id")
-@_profile_options
+@required_profile_option
+@passphrase_option
 @format_option
 def verify_command(
     run_id: str,
@@ -253,7 +248,7 @@ def verify_command(
 @click.command("promote")
 @click.argument("run_id")
 @click.option("release_version", "--version")
-@click.option("profile_name", "--profile", required=True)
+@required_profile_option
 @format_option
 def promote_command(
     run_id: str,
@@ -325,9 +320,9 @@ def promote_command(
 @click.option("selector", "--revision")
 @click.option("image_id", "--image")
 @click.option("release_version", "--version")
-@click.option("profile_name", "--profile", required=True)
+@required_profile_option
 @click.option("resume_id", "--resume")
-@click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))
+@passphrase_option
 @format_option
 def release_command(
     source_root: Path,

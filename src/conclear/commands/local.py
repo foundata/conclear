@@ -50,9 +50,12 @@ from conclear.workspace import RunState, RunWorkspace
 from .common import (
     cache_home,
     command_runtime,
+    config_option,
     emit,
     format_option,
+    platform_option,
     profile,
+    profile_option,
     state_home,
 )
 
@@ -76,13 +79,7 @@ def _source_options[FC: Callable[..., Any]](function: FC) -> FC:
 
 
 @click.command("check")
-@click.option(
-    "config_path",
-    "--config",
-    type=click.Path(path_type=Path),
-    default=Path("conclear.toml"),
-    show_default=True,
-)
+@config_option
 @click.option("image_id", "--image", required=True)
 @format_option
 def check_command(config_path: Path, image_id: str, output_format: str) -> None:
@@ -103,8 +100,8 @@ def check_command(config_path: Path, image_id: str, output_format: str) -> None:
 
 @click.command("build")
 @_source_options
-@click.option("platform_text", "--platform", required=True)
-@click.option("profile_name", "--profile")
+@platform_option
+@profile_option
 @format_option
 def build_command(
     source_root: Path,
@@ -165,7 +162,7 @@ def build_command(
 
 @click.command("test")
 @click.argument("run_id")
-@click.option("platform_text", "--platform", required=True)
+@platform_option
 @format_option
 def test_command(run_id: str, platform_text: str, output_format: str) -> None:
     """Import one exact layout and run declared constrained tests."""
@@ -227,8 +224,8 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
 
 @click.command("qualify")
 @_source_options
-@click.option("platform_text", "--platform", required=True)
-@click.option("profile_name", "--profile")
+@platform_option
+@profile_option
 @click.option("database_digest", "--database-digest")
 @format_option
 def qualify_command(
@@ -339,7 +336,7 @@ def qualify_command(
 
 @click.command("assemble")
 @_source_options
-@click.option("profile_name", "--profile")
+@profile_option
 @click.option(
     "transports",
     "--transport",

@@ -10,7 +10,7 @@ from conclear.services.run_context import open_source_run
 from conclear.transport import TransportKind, export_transport
 from conclear.values import Platform
 
-from .common import emit, format_option, state_home
+from .common import emit, format_option, platform_option, state_home
 
 
 @click.group("transport")
@@ -20,7 +20,7 @@ def transport_group() -> None:
 
 @transport_group.command("export")
 @click.argument("run_id")
-@click.option("platform_text", "--platform", required=True)
+@platform_option
 @click.option(
     "output_path",
     "--output",
