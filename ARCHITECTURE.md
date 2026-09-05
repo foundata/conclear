@@ -249,8 +249,7 @@ conclear release \
 | `pins apply` | Verify one proposal against the current worktree, Git revision and file digests, then replace only the proposed byte spans all-or-nothing without resolving, committing, building or publishing. |
 | `build` | Build one platform into isolated Buildah storage and export an OCI layout plus build metadata. |
 | `test` | Validate and import one layout, compare its imported digest, and run generic and repository-specific tests under the declared runtime constraints. |
-| `evidence` | Generate and validate the platform SBOM, scans and structured test results from the immutable layout. |
-| `qualify` | Run `check`, the pin gate, `build`, `test` and `evidence` for one platform in its own worker run and emit `platform-qualification.json`. |
+| `qualify` | Run `check`, the pin gate, `build`, `test` and evidence generation for one platform in its own worker run and emit `platform-qualification.json`. |
 | `transport export` | Write one accepted qualification, its OCI layout and the evidence payloads it names as a new archive or directory transport with a digest-binding manifest, and report the transport and record digests. |
 | `assemble` | Create a coordinator run from the reviewed source revision, import each transport only against a caller-supplied digest, verify every record, layout, descriptor and payload, require exact platform coverage, create an index when needed and emit `release-candidate.json`. |
 | `provenance` | Generate an in-toto Statement predicate using SLSA Provenance v1 from the accepted candidate and observed release data. |
@@ -397,7 +396,7 @@ Signer identity is the SHA-256 fingerprint that ConClear computes from the appro
 
 The managed-key-pair baseline requires a supported registry backend, the private key, the independently supplied public key and access to Cosign's supported default public Sigstore transparency service. The Cosign adapter uses run-owned configuration directories and an adapter-controlled release configuration so ambient user settings cannot replace or disable that service. It does not expose a release option to disable log upload or ignore log verification. Failure to obtain or verify log inclusion stops the release.
 
-No ConClear command signs before `publish`. In particular, `check`, `build`, `test`, `evidence`, `qualify`, `assemble` and `provenance` produce no signature or transparency-log entry. ConClear provides neither a manual signing-experiment mode nor a no-log release mode; manual signing experiments use disposable test keys outside ConClear as described by the guide.
+No ConClear command signs before `publish`. In particular, `check`, `build`, `test`, `qualify`, `assemble` and `provenance` produce no signature or transparency-log entry. ConClear provides neither a manual signing-experiment mode nor a no-log release mode; manual signing experiments use disposable test keys outside ConClear as described by the guide.
 
 `attest` resolves the remote subject again, attaches one signed SBOM attestation to each platform manifest, attaches provenance covering the index and platforms, and signs the index digest and every platform-manifest digest. Every operation obtains public transparency-log inclusion. A single-platform release signs its manifest once. Partial attachment, signing or log inclusion leaves an unverified candidate and blocks promotion; retry first verifies the unchanged expected subject graph.
 
