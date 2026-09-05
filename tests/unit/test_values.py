@@ -55,6 +55,24 @@ def test_platform_round_trip(
     assert str(Platform.parse(value)) == value
 
 
+def test_platforms_sort_with_and_without_variants() -> None:
+    platforms = [
+        Platform.parse("linux/arm64/v8"),
+        Platform.parse("linux/amd64/v3"),
+        Platform.parse("linux/arm64"),
+        Platform.parse("linux/amd64"),
+    ]
+
+    assert [str(item) for item in sorted(platforms)] == [
+        "linux/amd64",
+        "linux/amd64/v3",
+        "linux/arm64",
+        "linux/arm64/v8",
+    ]
+    assert Platform.parse("linux/amd64") <= Platform.parse("linux/amd64")
+    assert Platform.parse("linux/arm64") > Platform.parse("linux/amd64/v3")
+
+
 def test_arm64_default_variant_matches_explicit_v8_only() -> None:
     implicit = Platform.parse("linux/arm64")
 

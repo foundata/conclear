@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from functools import total_ordering
 from typing import override
 
 from conclear.errors import InvalidInvocationError
@@ -51,13 +52,22 @@ class Digest:
         return self.value
 
 
-@dataclass(frozen=True, slots=True, order=True)
+@total_ordering
+@dataclass(frozen=True, slots=True)
 class Platform:
     """A canonical OCI operating-system and architecture tuple."""
 
     os: str
     architecture: str
     variant: str | None = None
+
+    def __lt__(self, other: "Platform") -> bool:
+        """Order platforms by OS, architecture and then variant, absent first."""
+        return self._sort_key < other._sort_key
+
+    @property
+    def _sort_key(self) -> tuple[str, str, str]:
+        return (self.os, self.architecture, self.variant or "")
 
     def semantically_matches(self, other: "Platform") -> bool:
         """Return whether two OCI platform spellings select the same target."""
