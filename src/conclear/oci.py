@@ -6,11 +6,13 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import structure_depth_is_bounded
+from conclear.parsing import Narrower
 from conclear.values import Digest, Platform
+
+_narrow = Narrower(InvalidInvocationError)
 
 OCI_INDEX = "application/vnd.oci.image.index.v1+json"
 OCI_MANIFEST = "application/vnd.oci.image.manifest.v1+json"
@@ -34,24 +36,26 @@ class Descriptor:
     @classmethod
     def from_untrusted(cls, value: object) -> "Descriptor":
         """Validate an untrusted descriptor object."""
-        item = _object(value, "descriptor")
-        media_type = _string(item.get("mediaType"), "descriptor.mediaType")
-        digest = Digest(_string(item.get("digest"), "descriptor.digest"))
-        size = _integer(item.get("size"), "descriptor.size")
+        item = _narrow.object_value(value, "descriptor")
+        media_type = _narrow.string_value(item.get("mediaType"), "descriptor.mediaType")
+        digest = Digest(_narrow.string_value(item.get("digest"), "descriptor.digest"))
+        size = _narrow.integer_value(item.get("size"), "descriptor.size")
         if size < 0:
             raise InvalidInvocationError("OCI descriptor size cannot be negative")
         platform: Platform | None = None
         platform_value = item.get("platform")
         if platform_value is not None:
-            platform_item = _object(platform_value, "descriptor.platform")
-            operating_system = _string(platform_item.get("os"), "platform.os")
-            architecture = _string(
+            platform_item = _narrow.object_value(platform_value, "descriptor.platform")
+            operating_system = _narrow.string_value(
+                platform_item.get("os"), "platform.os"
+            )
+            architecture = _narrow.string_value(
                 platform_item.get("architecture"),
                 "platform.architecture",
             )
             variant_value = platform_item.get("variant")
             variant = (
-                _string(variant_value, "platform.variant")
+                _narrow.string_value(variant_value, "platform.variant")
                 if variant_value is not None
                 else None
             )
@@ -62,7 +66,9 @@ class Descriptor:
             )
             Platform.parse(str(platform))
         annotations_value = item.get("annotations", {})
-        annotations_item = _object(annotations_value, "descriptor.annotations")
+        annotations_item = _narrow.object_value(
+            annotations_value, "descriptor.annotations"
+        )
         annotations: list[tuple[str, str]] = []
         for key, annotation_value in annotations_item.items():
             if not isinstance(annotation_value, str):
@@ -149,13 +155,18 @@ class LayoutValidator:
             raise InvalidInvocationError(
                 f"Unsupported or malformed OCI layout header in {self._layout_path}"
             )
-        index = _object(
+        index = _narrow.object_value(
             self._read_json_file(self._layout_path / "index.json"),
             "index.json",
         )
-        if _integer(index.get("schemaVersion"), "index.schemaVersion") != 2:
+        if (
+            _narrow.integer_value(index.get("schemaVersion"), "index.schemaVersion")
+            != 2
+        ):
             raise InvalidInvocationError("OCI layout index must use schemaVersion 2")
-        descriptors_value = _array(index.get("manifests"), "index.manifests")
+        descriptors_value = _narrow.array_value(
+            index.get("manifests"), "index.manifests"
+        )
         roots = [Descriptor.from_untrusted(value) for value in descriptors_value]
         if reference is not None:
             roots = [
@@ -215,10 +226,15 @@ class LayoutValidator:
         content = self._read_blob(descriptor, retain=True)
         self._remember_descriptor(descriptor)
         if descriptor.media_type == OCI_INDEX:
-            index = _object(_decode_json(content, descriptor.digest), "image index")
-            if _integer(index.get("schemaVersion"), "index.schemaVersion") != 2:
+            index = _narrow.object_value(
+                _decode_json(content, descriptor.digest), "image index"
+            )
+            if (
+                _narrow.integer_value(index.get("schemaVersion"), "index.schemaVersion")
+                != 2
+            ):
                 raise InvalidInvocationError("OCI image index must use schemaVersion 2")
-            children = _array(index.get("manifests"), "index.manifests")
+            children = _narrow.array_value(index.get("manifests"), "index.manifests")
             if not children:
                 raise InvalidInvocationError("OCI image index cannot be empty")
             for child_value in children:
@@ -242,8 +258,15 @@ class LayoutValidator:
         content: bytes,
         inherited_platform: Platform | None,
     ) -> None:
-        manifest = _object(_decode_json(content, descriptor.digest), "image manifest")
-        if _integer(manifest.get("schemaVersion"), "manifest.schemaVersion") != 2:
+        manifest = _narrow.object_value(
+            _decode_json(content, descriptor.digest), "image manifest"
+        )
+        if (
+            _narrow.integer_value(
+                manifest.get("schemaVersion"), "manifest.schemaVersion"
+            )
+            != 2
+        ):
             raise InvalidInvocationError("OCI image manifest must use schemaVersion 2")
         config = Descriptor.from_untrusted(manifest.get("config"))
         if config.media_type != OCI_CONFIG:
@@ -253,14 +276,16 @@ class LayoutValidator:
         self._check_descriptor(config)
         config_content = self._read_blob(config, retain=True)
         self._remember_descriptor(config)
-        config_value = _object(
+        config_value = _narrow.object_value(
             _decode_json(config_content, config.digest), "image config"
         )
-        operating_system = _string(config_value.get("os"), "config.os")
-        architecture = _string(config_value.get("architecture"), "config.architecture")
+        operating_system = _narrow.string_value(config_value.get("os"), "config.os")
+        architecture = _narrow.string_value(
+            config_value.get("architecture"), "config.architecture"
+        )
         variant_value = config_value.get("variant")
         variant = (
-            _string(variant_value, "config.variant")
+            _narrow.string_value(variant_value, "config.variant")
             if variant_value is not None
             else None
         )
@@ -273,7 +298,7 @@ class LayoutValidator:
             raise InvalidInvocationError(
                 f"OCI descriptor platform {declared_platform} does not match config {platform}"
             )
-        layer_values = _array(manifest.get("layers"), "manifest.layers")
+        layer_values = _narrow.array_value(manifest.get("layers"), "manifest.layers")
         layers = tuple(Descriptor.from_untrusted(value) for value in layer_values)
         for layer in layers:
             existing = self._check_descriptor(layer)
@@ -422,28 +447,4 @@ def _decode_json(content: bytes, digest: Digest) -> object:
         raise InvalidInvocationError(
             f"OCI JSON blob exceeds the nesting limit: {digest}"
         )
-    return value
-
-
-def _object(value: object, label: str) -> dict[str, Any]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise InvalidInvocationError(f"{label} must be a JSON object")
-    return value
-
-
-def _array(value: object, label: str) -> list[Any]:
-    if not isinstance(value, list):
-        raise InvalidInvocationError(f"{label} must be a JSON array")
-    return value
-
-
-def _string(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise InvalidInvocationError(f"{label} must be a non-empty string")
-    return value
-
-
-def _integer(value: object, label: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise InvalidInvocationError(f"{label} must be an integer")
     return value

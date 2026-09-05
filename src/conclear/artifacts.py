@@ -9,6 +9,7 @@ from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.jsonutil import load_json, sha256_file
 from conclear.layout_assembly import AssemblyObservation
 from conclear.oci import validate_layout
+from conclear.parsing import Narrower
 from conclear.provenance import ProvenanceMaterial
 from conclear.records import SourceIdentity, ToolIdentity, validate_record
 from conclear.services.assembly import CandidateResult, QualificationTransport
@@ -27,13 +28,15 @@ from conclear.values import (
 )
 from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
 
+_narrow = Narrower(InvalidInvocationError)
+
 
 def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResult:
     """Load and cross-check one assembled candidate and its public record."""
     record_path = workspace.root / "records" / "release-candidate.json"
     value = load_json(record_path)
     validate_record(value)
-    record = _object(value, "candidate record")
+    record = _narrow.object_value(value, "candidate record")
     _validate_workspace_record(record, workspace)
     if record.get("recordType") != "releaseCandidate":
         raise InvalidInvocationError("Workspace candidate record has the wrong type")
@@ -41,7 +44,7 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
         raise InvalidInvocationError("Workspace candidate was not accepted")
     if record.get("runId") != workspace.run_id:
         raise InvalidInvocationError("Workspace candidate belongs to another run")
-    payload = _object(record.get("payload"), "candidate payload")
+    payload = _narrow.object_value(record.get("payload"), "candidate payload")
     if payload.get("imageId") != image.image_id:
         raise InvalidInvocationError("Workspace candidate belongs to another image")
     if payload.get("repository") != image.repository.repository_name:
@@ -61,10 +64,14 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
         raise RuleRejectionError(
             "Candidate accepted platform set changed", code="CC0304"
         )
-    candidate_tag_value = _string(payload.get("candidateTag"), "candidate tag")
-    source_value = _object(record.get("source"), "candidate source")
-    source_revision = _string(source_value.get("revision"), "source revision")
-    naming = _object(payload.get("candidateNaming"), "candidate naming")
+    candidate_tag_value = _narrow.string_value(
+        payload.get("candidateTag"), "candidate tag"
+    )
+    source_value = _narrow.object_value(record.get("source"), "candidate source")
+    source_revision = _narrow.string_value(
+        source_value.get("revision"), "source revision"
+    )
+    naming = _narrow.object_value(payload.get("candidateNaming"), "candidate naming")
     version_value = naming.get("version")
     if version_value is not None and not isinstance(version_value, str):
         raise InvalidInvocationError("Candidate version is malformed")
@@ -87,12 +94,14 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
         raise RuleRejectionError("Candidate naming inputs changed", code="CC0601")
     layout_path = workspace.root / "layouts" / image.image_id / "candidate"
     graph = validate_layout(layout_path, reference=candidate_tag_value)
-    descriptor = _object(payload.get("subjectDescriptor"), "subject descriptor")
+    descriptor = _narrow.object_value(
+        payload.get("subjectDescriptor"), "subject descriptor"
+    )
     if descriptor != graph.root.to_dict():
         raise RuleRejectionError(
             "Candidate record descriptor differs from layout", code="CC0602"
         )
-    platform_manifests = _object(
+    platform_manifests = _narrow.object_value(
         payload.get("platformManifests"), "platform manifest map"
     )
     observed = {
@@ -110,25 +119,29 @@ def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResu
     payload_digests: set[str] = set()
     qualification_platforms: set[Platform] = set()
     for item in qualifications:
-        qualification = _object(item, "candidate qualification")
+        qualification = _narrow.object_value(item, "candidate qualification")
         qualification_platform = Platform.parse(
-            _string(qualification.get("platform"), "qualification platform")
+            _narrow.string_value(
+                qualification.get("platform"), "qualification platform"
+            )
         )
         if qualification_platform in qualification_platforms:
             raise InvalidInvocationError("Candidate repeats a qualification platform")
         qualification_platforms.add(qualification_platform)
         worker_run_id = validate_run_id(
-            _string(qualification.get("runId"), "qualification run id")
+            _narrow.string_value(qualification.get("runId"), "qualification run id")
         )
         transport_digest = qualification.get("transportDigest")
         if transport_digest is not None:
-            Digest(_string(transport_digest, "qualification transport digest"))
+            Digest(
+                _narrow.string_value(transport_digest, "qualification transport digest")
+            )
         elif worker_run_id != workspace.run_id:
             raise InvalidInvocationError(
                 "Candidate binds a foreign qualification without a transport digest"
             )
         qualification_runs.append((qualification_platform, worker_run_id))
-        record_digest = _string(
+        record_digest = _narrow.string_value(
             qualification.get("recordDigest"), "qualification record digest"
         )
         Digest(record_digest)
@@ -186,7 +199,7 @@ def qualification_transport(
     record_path = (
         workspace.root / "records" / f"platform-qualification-{platform.key}.json"
     )
-    record = _object(load_json(record_path), "qualification record")
+    record = _narrow.object_value(load_json(record_path), "qualification record")
     validate_record(record)
     _validate_workspace_record(record, workspace)
     if record.get("recordType") != "platformQualification":
@@ -195,11 +208,11 @@ def qualification_transport(
         )
     if record.get("verdict") != "accepted":
         raise InvalidInvocationError("Workspace qualification was not accepted")
-    payload = _object(record.get("payload"), "qualification payload")
+    payload = _narrow.object_value(record.get("payload"), "qualification payload")
     if payload.get("imageId") != image.image_id:
         raise InvalidInvocationError("Workspace qualification belongs to another image")
     recorded_platform = Platform.parse(
-        _string(payload.get("platform"), "qualification platform")
+        _narrow.string_value(payload.get("platform"), "qualification platform")
     )
     if recorded_platform != platform:
         raise InvalidInvocationError("Workspace qualification has another platform")
@@ -247,9 +260,13 @@ def load_release_evidence(
 ) -> ReleaseEvidence:
     """Load exact SBOM, scan, provenance and qualification evidence."""
     candidate = load_candidate(workspace, image)
-    candidate_record = _object(load_json(candidate.record_path), "candidate record")
-    source_value = _object(candidate_record.get("source"), "candidate source")
-    configuration = _object(
+    candidate_record = _narrow.object_value(
+        load_json(candidate.record_path), "candidate record"
+    )
+    source_value = _narrow.object_value(
+        candidate_record.get("source"), "candidate source"
+    )
+    configuration = _narrow.object_value(
         candidate_record.get("repositoryConfiguration"), "candidate configuration"
     )
     tools_value = candidate_record.get("tools")
@@ -263,16 +280,16 @@ def load_release_evidence(
         record_path = (
             workspace.root / "records" / f"platform-qualification-{platform.key}.json"
         )
-        record = _object(load_json(record_path), "qualification record")
+        record = _narrow.object_value(load_json(record_path), "qualification record")
         validate_record(record)
         _validate_bound_record(record, workspace, run_id=bound_runs[platform])
         if sha256_file(record_path) not in candidate.qualification_digests:
             raise RuleRejectionError(
                 "Candidate does not bind a qualification record", code="CC0304"
             )
-        payload = _object(record.get("payload"), "qualification payload")
-        sbom_value = _object(payload.get("sbom"), "qualification SBOM")
-        sbom_digest = _string(sbom_value.get("digest"), "SBOM digest")
+        payload = _narrow.object_value(record.get("payload"), "qualification payload")
+        sbom_value = _narrow.object_value(payload.get("sbom"), "qualification SBOM")
+        sbom_digest = _narrow.string_value(sbom_value.get("digest"), "SBOM digest")
         sbom_path = workspace.root / "exports" / "sbom" / f"{platform.key}.spdx.json"
         if sha256_file(sbom_path) != sbom_digest:
             raise RuleRejectionError(f"SBOM changed for {platform}", code="CC0504")
@@ -281,10 +298,10 @@ def load_release_evidence(
         if not isinstance(scans, list):
             raise InvalidInvocationError("Qualification scans are malformed")
         for scan in scans:
-            scan_value = _object(scan, "scan")
-            scan_digest = _string(scan_value.get("digest"), "scan digest")
+            scan_value = _narrow.object_value(scan, "scan")
+            scan_digest = _narrow.string_value(scan_value.get("digest"), "scan digest")
             Digest(scan_digest)
-            scan_name = _string(scan_value.get("path"), "scan path")
+            scan_name = _narrow.string_value(scan_value.get("path"), "scan path")
             if Path(scan_name).name != scan_name:
                 raise InvalidInvocationError("Qualification scan path is unsafe")
             scan_path = (
@@ -298,10 +315,10 @@ def load_release_evidence(
     provenance_path = workspace.root / "records" / "provenance.json"
     evidence = ReleaseEvidence(
         source=SourceIdentity(
-            _string(source_value.get("repository"), "source repository"),
-            _string(source_value.get("revision"), "source revision"),
+            _narrow.string_value(source_value.get("repository"), "source repository"),
+            _narrow.string_value(source_value.get("revision"), "source revision"),
         ),
-        configuration_digest=_string(
+        configuration_digest=_narrow.string_value(
             configuration.get("sha256"), "configuration digest"
         ),
         tools=tools,
@@ -313,7 +330,7 @@ def load_release_evidence(
         candidate_record_digest=candidate.record_digest,
         qualification_digests=candidate.qualification_digests,
     )
-    provenance = _object(load_json(provenance_path), "provenance")
+    provenance = _narrow.object_value(load_json(provenance_path), "provenance")
     validate_release_provenance(
         provenance,
         candidate.observation.graph,
@@ -332,7 +349,7 @@ def load_provenance_materials(
     materials: dict[str, Digest] = {}
 
     def add(uri: str, digest_value: object) -> None:
-        digest = Digest(_string(digest_value, f"digest for {uri}"))
+        digest = Digest(_narrow.string_value(digest_value, f"digest for {uri}"))
         previous = materials.get(uri)
         if previous is not None and previous != digest:
             raise RuleRejectionError(
@@ -351,10 +368,10 @@ def load_provenance_materials(
             raise RuleRejectionError(
                 f"Candidate does not bind qualification for {platform}", code="CC0304"
             )
-        record = _object(load_json(record_path), "qualification record")
+        record = _narrow.object_value(load_json(record_path), "qualification record")
         validate_record(record)
         _validate_bound_record(record, workspace, run_id=bound_runs[platform])
-        payload = _object(record.get("payload"), "qualification payload")
+        payload = _narrow.object_value(record.get("payload"), "qualification payload")
         add(f"conclear:qualification/{platform}", record_digest)
         add(
             f"conclear:containerfile/{image.image_id}/{platform}",
@@ -411,7 +428,9 @@ def load_published(
             "Published candidate reference differs from the accepted candidate",
             code="CC0602",
         )
-    digest = Digest(_string(entry.metadata.get("digest"), "published digest"))
+    digest = Digest(
+        _narrow.string_value(entry.metadata.get("digest"), "published digest")
+    )
     if digest != candidate.observation.graph.digest:
         raise RuleRejectionError(
             "Published digest differs from candidate", code="CC0602"
@@ -437,14 +456,16 @@ def load_verification(
         raise InvalidInvocationError("Release verification subject is not immutable")
     record_path = workspace.root / "records" / "release-verification.json"
     statement_path = workspace.root / "records" / "release-verification-statement.json"
-    record = _object(load_json(record_path), "release verification record")
+    record = _narrow.object_value(load_json(record_path), "release verification record")
     validate_record(record)
     _validate_workspace_record(record, workspace)
     if record.get("recordType") != "releaseVerification":
         raise InvalidInvocationError("Release verification record has the wrong type")
     if record.get("verdict") != "accepted":
         raise InvalidInvocationError("Release verification record was not accepted")
-    payload = _object(record.get("payload"), "release verification payload")
+    payload = _narrow.object_value(
+        record.get("payload"), "release verification payload"
+    )
     if payload.get("subject") != {
         "repository": image.repository.repository_name,
         "digest": str(subject.digest),
@@ -452,7 +473,9 @@ def load_verification(
         raise RuleRejectionError(
             "Release verification record subject differs", code="CC0703"
         )
-    statement = _object(load_json(statement_path), "release verification statement")
+    statement = _narrow.object_value(
+        load_json(statement_path), "release verification statement"
+    )
     if statement.get("predicateType") != RELEASE_VERIFICATION_TYPE:
         raise InvalidInvocationError("Release verification predicate type is incorrect")
     if statement.get("predicate") != record:
@@ -511,8 +534,8 @@ def _qualification_payload_paths(
     if not isinstance(scans, list):
         raise InvalidInvocationError("Qualification scans are malformed")
     for item in scans:
-        scan = _object(item, "qualification scan")
-        name = _string(scan.get("path"), "scan path")
+        scan = _narrow.object_value(item, "qualification scan")
+        name = _narrow.string_value(scan.get("path"), "scan path")
         if Path(name).name != name:
             raise InvalidInvocationError("Qualification scan path is unsafe")
         paths.append(report_root / name)
@@ -520,19 +543,21 @@ def _qualification_payload_paths(
 
 
 def _tool_identity(value: object) -> ToolIdentity:
-    item = _object(value, "tool identity")
+    item = _narrow.object_value(value, "tool identity")
     executable = item.get("executableDigest")
     image = item.get("imageDigest")
     return ToolIdentity(
-        _string(item.get("name"), "tool name"),
-        _string(item.get("version"), "tool version"),
+        _narrow.string_value(item.get("name"), "tool name"),
+        _narrow.string_value(item.get("version"), "tool version"),
         executable_digest=(
-            _string(executable, "tool executable digest")
+            _narrow.string_value(executable, "tool executable digest")
             if executable is not None
             else None
         ),
         image_digest=(
-            _string(image, "tool image digest") if image is not None else None
+            _narrow.string_value(image, "tool image digest")
+            if image is not None
+            else None
         ),
     )
 
@@ -583,8 +608,8 @@ def _validate_bound_record(
 
 def _validate_record_inputs(record: dict[str, object], workspace: RunWorkspace) -> None:
     snapshot = workspace.load()
-    source = _object(record.get("source"), "record source")
-    configuration = _object(
+    source = _narrow.object_value(record.get("source"), "record source")
+    configuration = _narrow.object_value(
         record.get("repositoryConfiguration"), "record configuration"
     )
     if source.get("revision") != snapshot.immutable_inputs.get("sourceRevision"):
@@ -603,20 +628,8 @@ def _validate_record_inputs(record: dict[str, object], workspace: RunWorkspace) 
         )
 
 
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise InvalidInvocationError(f"{label} must be an object")
-    return value
-
-
-def _string(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise InvalidInvocationError(f"{label} must be a non-empty string")
-    return value
-
-
 def _datetime(value: object, label: str) -> datetime:
-    text = _string(value, label)
+    text = _narrow.string_value(value, label)
     try:
         result = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError as exc:

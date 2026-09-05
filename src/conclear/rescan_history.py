@@ -15,6 +15,7 @@ from conclear.jsonutil import (
     load_json,
     sha256_bytes,
 )
+from conclear.parsing import object_value
 from conclear.records import validate_record
 from conclear.values import Digest, OCIReference, Platform
 
@@ -193,7 +194,7 @@ def history_from_records(
             raise OperationalError("Signed rescan record is malformed") from exc
         if record.get("recordType") != "rescanResult":
             raise OperationalError("Signed rescan history has the wrong record type")
-        payload = _object(record.get("payload"), "rescan payload")
+        payload = object_value(record.get("payload"), "rescan payload")
         if payload.get("subject") != str(subject):
             raise OperationalError("Signed rescan history names another subject")
         if payload.get("authoritative") is not True:
@@ -212,7 +213,7 @@ def history_from_records(
                 raise OperationalError(
                     "Signed rescan history link is malformed"
                 ) from exc
-        remediation = _object(payload.get("remediation"), "rescan remediation")
+        remediation = object_value(payload.get("remediation"), "rescan remediation")
         raw_findings = remediation.get("findings")
         if not isinstance(raw_findings, list):
             raise OperationalError("Signed rescan remediation findings are malformed")
@@ -297,7 +298,7 @@ def _entry(value: object) -> RescanHistoryEntry:
 
 
 def _finding(value: object) -> RemediationFindingKey:
-    finding = _object(value, "rescan remediation finding")
+    finding = object_value(value, "rescan remediation finding")
     try:
         return RemediationFindingKey(
             platform=Platform.parse(_string(finding.get("platform"))),
@@ -306,12 +307,6 @@ def _finding(value: object) -> RemediationFindingKey:
         )
     except InvalidInvocationError as exc:
         raise OperationalError("Rescan remediation finding is malformed") from exc
-
-
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise OperationalError(f"{label} must be an object")
-    return value
 
 
 def _string(value: object) -> str:

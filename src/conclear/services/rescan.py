@@ -21,6 +21,7 @@ from conclear.attestations import (
 from conclear.config import MAX_REMEDIATION, VulnerabilityException
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json
+from conclear.parsing import object_value, string_value
 from conclear.records import (
     RecordEnvelope,
     SourceIdentity,
@@ -167,7 +168,8 @@ def verified_rescan_history(
             "Downloaded rescan attestations differ from Cosign verification"
         )
     records = tuple(
-        _object(statement.get("predicate"), "rescan record") for statement in matches
+        object_value(statement.get("predicate"), "rescan record")
+        for statement in matches
     )
     return history_from_records(records, subject)
 
@@ -227,21 +229,21 @@ def rescan_release(
         predicate_type=RELEASE_VERIFICATION_TYPE,
         subject=subject,
     )
-    release_record = _object(release_statement.get("predicate"), "release record")
+    release_record = object_value(release_statement.get("predicate"), "release record")
     validate_record(release_record)
     if release_record.get("recordType") != "releaseVerification":
         raise OperationalError("Verified release predicate has the wrong record type")
-    payload = _object(release_record.get("payload"), "release payload")
-    release_subject = _object(payload.get("subject"), "released subject")
+    payload = object_value(release_record.get("payload"), "release payload")
+    release_subject = object_value(payload.get("subject"), "released subject")
     if release_subject != {
         "repository": subject.repository_name,
         "digest": str(subject.digest),
     }:
         raise OperationalError("Release verification names another subject")
-    repository_configuration = _object(
+    repository_configuration = object_value(
         release_record.get("repositoryConfiguration"), "repository configuration"
     )
-    configuration_digest = _string(
+    configuration_digest = string_value(
         repository_configuration.get("sha256"), "repository configuration digest"
     )
     Digest(configuration_digest)
@@ -249,10 +251,10 @@ def rescan_release(
         raise InvalidInvocationError(
             "Rescan repository configuration differs from release verification"
         )
-    source_value = _object(release_record.get("source"), "release source")
+    source_value = object_value(release_record.get("source"), "release source")
     source = SourceIdentity(
-        _string(source_value.get("repository"), "source repository"),
-        _string(source_value.get("revision"), "source revision"),
+        string_value(source_value.get("repository"), "source repository"),
+        string_value(source_value.get("revision"), "source revision"),
     )
     remote = registry.copy_registry_to_layout(
         source=subject,
@@ -269,7 +271,7 @@ def rescan_release(
         raise OperationalError(
             "Released graph has a manifest without a platform", code="CC0801"
         )
-    recorded_platforms = _object(
+    recorded_platforms = object_value(
         payload.get("platformDigests"), "release platform digests"
     )
     expected_platforms = {
@@ -591,15 +593,3 @@ def _has_subject(statement: dict[str, object], subject: OCIReference) -> bool:
         and item.get("digest") == {"sha256": subject.digest.encoded}
         for item in subjects
     )
-
-
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise OperationalError(f"{label} must be an object")
-    return value
-
-
-def _string(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise OperationalError(f"{label} must be a non-empty string")
-    return value

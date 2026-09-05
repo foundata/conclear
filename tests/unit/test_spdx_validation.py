@@ -52,7 +52,7 @@ def test_complete_document_is_accepted() -> None:
         ({"SPDXID": "SPDXRef-OTHER"}, "invalid document SPDX identifier"),
         ({"name": ""}, "name must be a non-empty string"),
         ({"documentNamespace": "not a uri"}, "not a URI"),
-        ({"creationInfo": []}, "creation info must be an object"),
+        ({"creationInfo": []}, "creation info must be a JSON object"),
         (
             {"creationInfo": {"creators": [], "created": "2026-01-01T00:00:00Z"}},
             "creators",
@@ -80,7 +80,7 @@ def test_complete_document_is_accepted() -> None:
             "creation time is malformed",
         ),
         ({"packages": {}}, "packages must be an array"),
-        ({"packages": [1]}, "packages element must be an object"),
+        ({"packages": [1]}, "packages element must be a JSON object"),
         ({"packages": [{"SPDXID": "bad id", "name": "x"}]}, "identifier is malformed"),
         (
             {"packages": [{"SPDXID": "SPDXRef-DOCUMENT", "name": "x"}]},
@@ -155,5 +155,5 @@ def test_malformed_documents_are_operational_failures(
 
 
 def test_document_must_be_an_object() -> None:
-    with pytest.raises(OperationalError, match="must be an object"):
+    with pytest.raises(OperationalError, match="must be a JSON object"):
         validate_spdx_document([], label="SBOM")

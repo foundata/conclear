@@ -30,6 +30,7 @@ from conclear.errors import (
 from conclear.identity import IDENTITY
 from conclear.jsonutil import load_json, sha256_file
 from conclear.oci import OCIGraph, graph_fingerprint
+from conclear.parsing import object_value
 from conclear.presentation import Finding
 from conclear.provenance import SLSA_PROVENANCE_TYPE, ProvenanceMaterial
 from conclear.records import (
@@ -483,7 +484,7 @@ def attest_candidate(
         raise RuleRejectionError(
             "Provenance digest changed before attestation", code="CC0703"
         )
-    provenance = _object(load_json(evidence.provenance_path), "provenance")
+    provenance = object_value(load_json(evidence.provenance_path), "provenance")
     validate_release_provenance(
         provenance,
         published.graph,
@@ -673,7 +674,7 @@ def verify_candidate(
             predicate_type=SPDX_DOCUMENT_TYPE,
             expected=sbom,
         )
-    provenance = _object(load_json(evidence.provenance_path), "provenance")
+    provenance = object_value(load_json(evidence.provenance_path), "provenance")
     validate_release_provenance(
         provenance,
         published.graph,
@@ -736,7 +737,9 @@ def verify_candidate(
         if entry.resource_id == "release-verification"
     ]
     if matches:
-        stored_record = _object(load_json(record_path), "release verification record")
+        stored_record = object_value(
+            load_json(record_path), "release verification record"
+        )
         validate_record(stored_record)
         if any(
             stored_record.get(key) != value
@@ -747,7 +750,9 @@ def verify_candidate(
                 "Release verification retry inputs changed", code="CC0703"
             )
         record_digest = sha256_file(record_path)
-        statement = _object(load_json(statement_path), "release verification statement")
+        statement = object_value(
+            load_json(statement_path), "release verification statement"
+        )
         if (
             statement.get("_type") != STATEMENT_TYPE
             or statement.get("predicateType") != RELEASE_VERIFICATION_TYPE
@@ -773,7 +778,9 @@ def verify_candidate(
             predicate=current_record,
             path=statement_path,
         )
-        statement = _object(load_json(statement_path), "release verification statement")
+        statement = object_value(
+            load_json(statement_path), "release verification statement"
+        )
     verification_metadata: dict[str, object] = {
         "predicateType": RELEASE_VERIFICATION_TYPE,
         "payloadDigest": record_digest,
@@ -881,7 +888,7 @@ def promote_candidate(
         public_key=public_key,
         predicate_type=verification.predicate_type,
     )
-    expected_statement = _object(
+    expected_statement = object_value(
         load_json(verification.statement_path), "release verification statement"
     )
     _require_downloaded_statement(
@@ -1226,8 +1233,8 @@ def validate_release_provenance(
         raise RuleRejectionError(
             "Provenance subject coverage does not match published graph", code="CC0703"
         )
-    predicate = _object(provenance.get("predicate"), "provenance predicate")
-    definition = _object(
+    predicate = object_value(provenance.get("predicate"), "provenance predicate")
+    definition = object_value(
         predicate.get("buildDefinition"), "provenance build definition"
     )
     snapshot = workspace.load()
@@ -1265,7 +1272,7 @@ def validate_release_provenance(
         raise RuleRejectionError(
             "Provenance resolved dependencies changed", code="CC0703"
         )
-    details = _object(predicate.get("runDetails"), "provenance run details")
+    details = object_value(predicate.get("runDetails"), "provenance run details")
     builder_id = snapshot.immutable_inputs.get("builderId")
     if builder_id is None:
         raise OperationalError("Release run has no trusted builder identity")
@@ -1277,7 +1284,7 @@ def validate_release_provenance(
         },
     }:
         raise RuleRejectionError("Provenance builder identity changed", code="CC0704")
-    metadata = _object(details.get("metadata"), "provenance run metadata")
+    metadata = object_value(details.get("metadata"), "provenance run metadata")
     if metadata.get("invocationId") != workspace.run_id:
         raise RuleRejectionError(
             "Provenance invocation identity changed", code="CC0704"
@@ -1307,12 +1314,6 @@ def _verify_image_signature(
             f"Image signature coverage could not be verified for {subject}",
             code="CC0702",
         ) from exc
-
-
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise OperationalError(f"{label} must be an object")
-    return value
 
 
 def _timestamp(value: datetime) -> str:

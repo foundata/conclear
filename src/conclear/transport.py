@@ -22,7 +22,6 @@ from pathlib import Path, PurePosixPath
 from types import TracebackType
 from typing import BinaryIO
 
-from conclear.adapters.parsing import json_value
 from conclear.artifacts import qualification_transport
 from conclear.config import ImageConfig
 from conclear.errors import (
@@ -39,6 +38,7 @@ from conclear.jsonutil import (
     sha256_file,
 )
 from conclear.oci import validate_layout
+from conclear.parsing import Narrower, json_value
 from conclear.path_safety import MAX_ARCHIVE_CONTENT_BYTES, extract_tar_safely
 from conclear.records import (
     RecordEnvelope,
@@ -50,6 +50,8 @@ from conclear.records import (
 from conclear.services.assembly import QualificationTransport
 from conclear.values import Digest, Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
+
+_narrow = Narrower(InvalidInvocationError)
 
 TRANSPORT_RECORD_TYPE = "qualificationTransport"
 MANIFEST_NAME = "transport.json"
@@ -136,17 +138,17 @@ def export_transport(
         OperationalError: If the transport cannot be written.
     """
     owned = qualification_transport(workspace, image, platform)
-    record = _object(load_json(owned.record_path), "qualification record")
-    run_id = _string(record.get("runId"), "qualification run id")
-    source = _object(record.get("source"), "qualification source")
-    configuration = _object(
+    record = _narrow.object_value(load_json(owned.record_path), "qualification record")
+    run_id = _narrow.string_value(record.get("runId"), "qualification run id")
+    source = _narrow.object_value(record.get("source"), "qualification source")
+    configuration = _narrow.object_value(
         record.get("repositoryConfiguration"), "qualification configuration"
     )
     tools_value = record.get("tools")
     if not isinstance(tools_value, list):
         raise InvalidInvocationError("Qualification tools are malformed")
     tools = tuple(_tool_identity(item) for item in tools_value)
-    payload = _object(record.get("payload"), "qualification payload")
+    payload = _narrow.object_value(record.get("payload"), "qualification payload")
     graph = validate_layout(owned.layout_path, reference=owned.layout_reference)
     key = platform.key
     sources: dict[str, Path] = {
@@ -183,10 +185,10 @@ def export_transport(
         created_at=now,
         run_id=run_id,
         source=SourceIdentity(
-            _string(source.get("repository"), "source repository"),
-            _string(source.get("revision"), "source revision"),
+            _narrow.string_value(source.get("repository"), "source repository"),
+            _narrow.string_value(source.get("revision"), "source revision"),
         ),
-        configuration_digest=_string(
+        configuration_digest=_narrow.string_value(
             configuration.get("sha256"), "configuration digest"
         ),
         tools=tools,
@@ -222,7 +224,11 @@ def export_transport(
         layout_digest=str(graph.root.digest),
         platform_manifest_digest=str(graph.manifests[0].descriptor.digest),
         payload_digests=tuple(
-            sorted(_strings(payload_digests, "qualification payload digests"))
+            sorted(
+                _narrow.string_array_value(
+                    payload_digests, "qualification payload digests"
+                )
+            )
         ),
         members=members,
         total_bytes=total_bytes,
@@ -329,7 +335,9 @@ def _stage_directory(source: Path, digest: Digest, staging: Path) -> bytes:
             f"Transport digest mismatch: {source}", code=TRANSPORT_CHECK
         )
     manifest = _parse_manifest(manifest_bytes)
-    members = _manifest_members(_object(manifest.get("payload"), "transport payload"))
+    members = _manifest_members(
+        _narrow.object_value(manifest.get("payload"), "transport payload")
+    )
     staging.mkdir(mode=0o700, parents=True, exist_ok=False)
     for member in members:
         target = staging.joinpath(*PurePosixPath(member.path).parts)
@@ -343,7 +351,7 @@ def _verify_staging(
     staging: Path, manifest_bytes: bytes, image: ImageConfig
 ) -> _VerifiedStaging:
     manifest = _parse_manifest(manifest_bytes)
-    ruleset = _object(manifest.get("ruleset"), "transport ruleset")
+    ruleset = _narrow.object_value(manifest.get("ruleset"), "transport ruleset")
     if (
         ruleset.get("conclearVersion") != IDENTITY.version
         or ruleset.get("conclearRevision") != IDENTITY.source_revision
@@ -351,11 +359,13 @@ def _verify_staging(
         raise InvalidInvocationError(
             "Transport was not produced by this ConClear build"
         )
-    payload = _object(manifest.get("payload"), "transport payload")
-    worker_run_id = _string(manifest.get("runId"), "transport run id")
+    payload = _narrow.object_value(manifest.get("payload"), "transport payload")
+    worker_run_id = _narrow.string_value(manifest.get("runId"), "transport run id")
     if payload.get("imageId") != image.image_id:
         raise InvalidInvocationError("Transport belongs to another image")
-    platform = Platform.parse(_string(payload.get("platform"), "transport platform"))
+    platform = Platform.parse(
+        _narrow.string_value(payload.get("platform"), "transport platform")
+    )
     if not any(platform.semantically_matches(item) for item in image.platforms):
         raise InvalidInvocationError(
             f"Transport platform is not required by {image.image_id}: {platform}"
@@ -388,7 +398,7 @@ def _verify_staging(
             "Transported qualification record digest differs from the manifest",
             code=TRANSPORT_CHECK,
         )
-    record = _object(load_json(record_path), "transported qualification")
+    record = _narrow.object_value(load_json(record_path), "transported qualification")
     validate_record(record)
     if record.get("recordType") != "platformQualification":
         raise InvalidInvocationError(
@@ -401,9 +411,11 @@ def _verify_staging(
             "Transported qualification belongs to another worker run",
             code=TRANSPORT_CHECK,
         )
-    record_payload = _object(record.get("payload"), "qualification payload")
+    record_payload = _narrow.object_value(
+        record.get("payload"), "qualification payload"
+    )
     if record_payload.get("imageId") != image.image_id or not Platform.parse(
-        _string(record_payload.get("platform"), "qualification platform")
+        _narrow.string_value(record_payload.get("platform"), "qualification platform")
     ).semantically_matches(platform):
         raise RuleRejectionError(
             "Transported qualification identifies another image or platform",
@@ -528,8 +540,8 @@ def _payload_member_names(payload: dict[str, object], key: str) -> tuple[str, ..
     if not isinstance(scans, list):
         raise InvalidInvocationError("Qualification scans are malformed")
     for item in scans:
-        scan = _object(item, "qualification scan")
-        name = _string(scan.get("path"), "scan path")
+        scan = _narrow.object_value(item, "qualification scan")
+        name = _narrow.string_value(scan.get("path"), "scan path")
         if _REPORT_NAME_PATTERN.fullmatch(name) is None:
             raise InvalidInvocationError(f"Qualification scan path is unsafe: {name}")
         names.append(f"reports/{key}/{name}")
@@ -576,13 +588,15 @@ def _manifest_members(payload: dict[str, object]) -> tuple[TransportMember, ...]
     members: list[TransportMember] = []
     total = 0
     for raw in raw_members:
-        item = _object(raw, "transport member")
-        path = _string(item.get("path"), "transport member path")
+        item = _narrow.object_value(raw, "transport member")
+        path = _narrow.string_value(item.get("path"), "transport member path")
         _safe_member_path(path)
         size = item.get("size")
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             raise InvalidInvocationError("Transport member size is malformed")
-        digest = str(Digest(_string(item.get("digest"), "transport member digest")))
+        digest = str(
+            Digest(_narrow.string_value(item.get("digest"), "transport member digest"))
+        )
         total += size
         members.append(TransportMember(path, digest, size))
     if len({member.path for member in members}) != len(members):
@@ -597,7 +611,7 @@ def _parse_manifest(manifest_bytes: bytes) -> dict[str, object]:
         text = manifest_bytes.decode("utf-8")
     except UnicodeError as exc:
         raise InvalidInvocationError("Transport manifest is not UTF-8") from exc
-    manifest = _object(
+    manifest = _narrow.object_value(
         json_value(text, label="Transport manifest"), "transport manifest"
     )
     validate_record(manifest)
@@ -893,36 +907,20 @@ def _regular_digest(path: Path) -> str:
 
 
 def _tool_identity(value: object) -> ToolIdentity:
-    item = _object(value, "tool identity")
+    item = _narrow.object_value(value, "tool identity")
     executable = item.get("executableDigest")
     image = item.get("imageDigest")
     return ToolIdentity(
-        _string(item.get("name"), "tool name"),
-        _string(item.get("version"), "tool version"),
+        _narrow.string_value(item.get("name"), "tool name"),
+        _narrow.string_value(item.get("version"), "tool version"),
         executable_digest=(
-            _string(executable, "tool executable digest")
+            _narrow.string_value(executable, "tool executable digest")
             if executable is not None
             else None
         ),
         image_digest=(
-            _string(image, "tool image digest") if image is not None else None
+            _narrow.string_value(image, "tool image digest")
+            if image is not None
+            else None
         ),
     )
-
-
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise InvalidInvocationError(f"{label} must be an object")
-    return value
-
-
-def _string(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise InvalidInvocationError(f"{label} must be a non-empty string")
-    return value
-
-
-def _strings(value: object, label: str) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise InvalidInvocationError(f"{label} must be an array of strings")
-    return value

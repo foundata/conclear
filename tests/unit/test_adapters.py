@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conclear.adapters import parsing
+from conclear import parsing
 from conclear.adapters.base import ToolAdapter
 from conclear.adapters.buildah import BuildahAdapter
 from conclear.adapters.cosign import CosignAdapter

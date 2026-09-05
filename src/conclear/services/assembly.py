@@ -16,6 +16,7 @@ from conclear.layout_assembly import (
     assemble_layout,
 )
 from conclear.oci import validate_layout
+from conclear.parsing import Narrower
 from conclear.records import (
     RecordEnvelope,
     SourceIdentity,
@@ -36,6 +37,8 @@ from conclear.workspace import (
     RunState,
     RunWorkspace,
 )
+
+_narrow = Narrower(InvalidInvocationError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,16 +287,18 @@ def _qualification_entry(item: _Qualification) -> dict[str, object]:
 def _read_qualification(transport: QualificationTransport) -> _Qualification:
     value = load_json(transport.record_path)
     validate_record(value)
-    record = _object(value, "qualification")
+    record = _narrow.object_value(value, "qualification")
     if record.get("recordType") != "platformQualification":
         raise InvalidInvocationError("Assembly input is not a platform qualification")
     if record.get("verdict") != "accepted":
         raise InvalidInvocationError("Assembly input qualification is not accepted")
-    payload = _object(record.get("payload"), "qualification payload")
+    payload = _narrow.object_value(record.get("payload"), "qualification payload")
     platform = Platform.parse(
-        _string(payload.get("platform"), "qualification platform")
+        _narrow.string_value(payload.get("platform"), "qualification platform")
     )
-    payload_values = _strings(payload.get("payloadDigests"), "payload digests")
+    payload_values = _narrow.string_array_value(
+        payload.get("payloadDigests"), "payload digests"
+    )
     payload_digests = tuple(sorted(payload_values))
     if len(payload_digests) != len(set(payload_digests)):
         raise InvalidInvocationError("Qualification contains duplicate payload digests")
@@ -309,21 +314,25 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         raise InvalidInvocationError(
             f"Transported layout does not match qualification platform {platform}"
         )
-    manifest_digest = Digest(_string(payload.get("manifestDigest"), "manifest digest"))
+    manifest_digest = Digest(
+        _narrow.string_value(payload.get("manifestDigest"), "manifest digest")
+    )
     if graph.manifests[0].descriptor.digest != manifest_digest:
         raise InvalidInvocationError(
             f"Transported layout manifest differs for {platform}"
         )
-    descriptor = _object(payload.get("layoutDescriptor"), "layout descriptor")
+    descriptor = _narrow.object_value(
+        payload.get("layoutDescriptor"), "layout descriptor"
+    )
     if descriptor.get("digest") != str(graph.root.digest):
         raise InvalidInvocationError(f"Transported layout root differs for {platform}")
     for name in ("buildExecution", "testExecution"):
         validate_execution_observation(payload.get(name), platform=platform)
-    source_value = _object(record.get("source"), "qualification source")
-    configuration = _object(
+    source_value = _narrow.object_value(record.get("source"), "qualification source")
+    configuration = _narrow.object_value(
         record.get("repositoryConfiguration"), "qualification configuration"
     )
-    ruleset = _object(record.get("ruleset"), "qualification ruleset")
+    ruleset = _narrow.object_value(record.get("ruleset"), "qualification ruleset")
     if (
         ruleset.get("conclearVersion") != IDENTITY.version
         or ruleset.get("conclearRevision") != IDENTITY.source_revision
@@ -336,20 +345,24 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         raise InvalidInvocationError("Qualification tools are malformed")
     normalized_tools = []
     for raw_tool in tools_value:
-        tool = _object(raw_tool, "qualification tool")
+        tool = _narrow.object_value(raw_tool, "qualification tool")
         normalized_tools.append(
             (
-                _string(tool.get("name"), "tool name"),
-                _string(tool.get("version"), "tool version"),
+                _narrow.string_value(tool.get("name"), "tool name"),
+                _narrow.string_value(tool.get("version"), "tool version"),
             )
         )
     if len(normalized_tools) != len({name for name, _version in normalized_tools}):
         raise InvalidInvocationError("Qualification contains duplicate tool identities")
-    database_digest = _string(payload.get("databaseDigest"), "database digest")
+    database_digest = _narrow.string_value(
+        payload.get("databaseDigest"), "database digest"
+    )
     Digest(database_digest)
     record_created_at = _timestamp(record.get("createdAt"), "record creation time")
     pin_references = tuple(
-        sorted(_strings(payload.get("externalImages"), "external images"))
+        sorted(
+            _narrow.string_array_value(payload.get("externalImages"), "external images")
+        )
     )
     if len(pin_references) != len(set(pin_references)):
         raise InvalidInvocationError("Qualification repeats an external image")
@@ -362,7 +375,9 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         ): reference
         for reference in pin_references
     }
-    limits_value = _object(payload.get("effectiveLimits"), "effective limits")
+    limits_value = _narrow.object_value(
+        payload.get("effectiveLimits"), "effective limits"
+    )
     effective_limits: list[tuple[str, int]] = []
     for name in ("pinFreshnessSeconds", "pinDivergenceSeconds"):
         item = limits_value.get(name)
@@ -376,8 +391,8 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
     observation_references: set[str] = set()
     pin_resolutions: list[tuple[str, str]] = []
     for raw_observation in raw_observations:
-        observation = _object(raw_observation, "pin observation")
-        reference_text = _string(
+        observation = _narrow.object_value(raw_observation, "pin observation")
+        reference_text = _narrow.string_value(
             observation.get("reference"), "pin observation reference"
         )
         reference = OCIReference.parse(
@@ -398,7 +413,9 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         if pinned_digest is None:  # parser invariant
             raise OperationalError("Required pin digest is absent after validation")
         observed_digest = Digest(
-            _string(observation.get("observedDigest"), "observed pin digest")
+            _narrow.string_value(
+                observation.get("observedDigest"), "observed pin digest"
+            )
         )
         pin_resolutions.append((reference_text, str(observed_digest)))
         checked_at = _timestamp(observation.get("checkedAt"), "pin observation time")
@@ -449,22 +466,28 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         raise InvalidInvocationError(
             "Accepted qualification contains a rejecting finding"
         )
-    configuration_digest = _string(configuration.get("sha256"), "configuration digest")
+    configuration_digest = _narrow.string_value(
+        configuration.get("sha256"), "configuration digest"
+    )
     Digest(configuration_digest)
-    build_arguments = _object(payload.get("buildArguments"), "build arguments")
+    build_arguments = _narrow.object_value(
+        payload.get("buildArguments"), "build arguments"
+    )
     image_version = build_arguments.get("IMAGE_VERSION")
     if image_version is not None and not isinstance(image_version, str):
         raise InvalidInvocationError("Qualification image version is malformed")
     return _Qualification(
-        run_id=_string(record.get("runId"), "qualification run id"),
-        image_id=_string(payload.get("imageId"), "image id"),
+        run_id=_narrow.string_value(record.get("runId"), "qualification run id"),
+        image_id=_narrow.string_value(payload.get("imageId"), "image id"),
         platform=platform,
         record_digest=sha256_file(transport.record_path),
         payload_digests=payload_digests,
         source=SourceIdentity(
-            repository=_string(source_value.get("repository"), "source repository"),
+            repository=_narrow.string_value(
+                source_value.get("repository"), "source repository"
+            ),
             revision=validate_source_revision(
-                _string(source_value.get("revision"), "source revision")
+                _narrow.string_value(source_value.get("revision"), "source revision")
             ),
         ),
         configuration_digest=configuration_digest,
@@ -492,26 +515,8 @@ def _hash_transport_path(path: Path) -> str:
     return sha256_file(path)
 
 
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise InvalidInvocationError(f"{label} must be an object")
-    return value
-
-
-def _string(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise InvalidInvocationError(f"{label} must be a non-empty string")
-    return value
-
-
-def _strings(value: object, label: str) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise InvalidInvocationError(f"{label} must be an array of strings")
-    return value
-
-
 def _timestamp(value: object, label: str) -> datetime:
-    text = _string(value, label)
+    text = _narrow.string_value(value, label)
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError as exc:

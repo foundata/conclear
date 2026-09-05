@@ -5,14 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
-from conclear.adapters.parsing import (
+from conclear.errors import CommandExecutionError, InvalidInvocationError
+from conclear.parsing import (
     array_value,
     integer_value,
     json_value,
     object_value,
     string_value,
 )
-from conclear.errors import CommandExecutionError, InvalidInvocationError
 
 _CONFIG_NAMES = (".hadolint.yaml", ".hadolint.yml")
 

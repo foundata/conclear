@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from datetime import date
 
-from conclear.adapters.parsing import array_value, object_value, string_value
 from conclear.config import VulnerabilityException
 from conclear.errors import OperationalError
+from conclear.parsing import array_value, object_value, string_value
 from conclear.presentation import Finding
 
 

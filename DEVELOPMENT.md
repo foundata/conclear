@@ -101,6 +101,7 @@ conclear/
 │   ├── contract.py               # docs/contract-v1.json generator
 │   ├── emulation.py              # binfmt handler detection and execution-mode facts
 │   ├── records.py                # Record envelopes and digests
+│   ├── parsing.py                # Typed narrowing of untrusted JSON and TOML values
 │   ├── pins.py                   # Durable pin observations and divergence policy
 │   ├── pin_updates.py            # Pin proposals and occurrence discovery
 │   ├── pin_application.py        # Verified all-or-nothing proposal application

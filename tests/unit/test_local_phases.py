@@ -101,7 +101,7 @@ def test_build_evidence_rejects_changes_between_phases(
         load_build_evidence(value)
 
     path.write_text("[]", encoding="utf-8")
-    with pytest.raises(InvalidInvocationError, match="must be an object"):
+    with pytest.raises(InvalidInvocationError, match="must be a JSON object"):
         load_build_evidence(value)
 
     path.write_bytes(original)

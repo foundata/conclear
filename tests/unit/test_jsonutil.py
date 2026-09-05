@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from conclear.adapters.parsing import json_value
 from conclear.errors import OperationalError
 from conclear.jsonutil import load_json
+from conclear.parsing import json_value
 
 
 def test_json_file_rejects_excessive_nesting(tmp_path: Path) -> None:

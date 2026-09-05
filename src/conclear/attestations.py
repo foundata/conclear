@@ -7,6 +7,7 @@ from pathlib import Path
 
 from conclear.errors import OperationalError
 from conclear.jsonutil import atomic_write_json, structure_depth_is_bounded
+from conclear.parsing import object_value
 from conclear.values import Digest
 
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
@@ -51,7 +52,7 @@ def decode_dsse_statements(
     """Decode bounded Cosign DSSE envelopes into runtime-validated statements."""
     statements: list[dict[str, object]] = []
     for raw in envelopes:
-        envelope = _object(raw, "DSSE envelope")
+        envelope = object_value(raw, "DSSE envelope")
         payload_type = envelope.get("payloadType")
         if payload_type != "application/vnd.in-toto+json":
             raise OperationalError("Cosign returned an unexpected DSSE payload type")
@@ -70,7 +71,7 @@ def decode_dsse_statements(
             raise OperationalError("Cosign DSSE payload is malformed") from exc
         if not structure_depth_is_bounded(value):
             raise OperationalError("Cosign DSSE payload exceeds the nesting limit")
-        statement = _object(value, "in-toto Statement")
+        statement = object_value(value, "in-toto Statement")
         if statement.get("_type") != STATEMENT_TYPE:
             raise OperationalError("Cosign payload is not an in-toto Statement v1")
         statements.append(statement)
@@ -95,9 +96,3 @@ def statement_matches(
         and statement.get("predicateType") == predicate_type
         and statement.get("predicate") == predicate
     )
-
-
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise OperationalError(f"{label} must be an object")
-    return value

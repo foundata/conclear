@@ -8,7 +8,10 @@ from conclear.context import hash_build_context
 from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import atomic_write_json, load_json, sha256_file
 from conclear.oci import validate_layout
+from conclear.parsing import Narrower
 from conclear.services.qualification_inputs import BuildEvidence, QualificationInputs
+
+_narrow = Narrower(InvalidInvocationError)
 
 
 def write_build_evidence(inputs: QualificationInputs, build: BuildEvidence) -> Path:
@@ -47,10 +50,12 @@ def load_build_evidence(inputs: QualificationInputs) -> BuildEvidence:
         / inputs.platform.key
         / "build.json"
     )
-    value = _object(load_json(path), "build evidence")
+    value = _narrow.object_value(load_json(path), "build evidence")
     if value.get("schemaVersion") != 1 or value.get("platform") != str(inputs.platform):
         raise InvalidInvocationError("Build evidence identity is malformed")
-    layout_reference = _string(value.get("layoutReference"), "layout reference")
+    layout_reference = _narrow.string_value(
+        value.get("layoutReference"), "layout reference"
+    )
     layout_path = (
         inputs.workspace.root / "layouts" / inputs.image.image_id / inputs.platform.key
     )
@@ -63,7 +68,9 @@ def load_build_evidence(inputs: QualificationInputs) -> BuildEvidence:
     containerfile_digest = sha256_file(inputs.image.containerfile)
     if value.get("containerfileDigest") != containerfile_digest:
         raise InvalidInvocationError("Containerfile changed between phases")
-    build_arguments_value = _object(value.get("buildArguments"), "build arguments")
+    build_arguments_value = _narrow.object_value(
+        value.get("buildArguments"), "build arguments"
+    )
     if any(not isinstance(item, str) for item in build_arguments_value.values()):
         raise InvalidInvocationError("Build argument values are malformed")
     build_arguments = {
@@ -95,15 +102,3 @@ def load_build_evidence(inputs: QualificationInputs) -> BuildEvidence:
         build_arguments,
         findings,
     )
-
-
-def _object(value: object, label: str) -> dict[str, object]:
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise InvalidInvocationError(f"{label} must be an object")
-    return value
-
-
-def _string(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise InvalidInvocationError(f"{label} must be a non-empty string")
-    return value

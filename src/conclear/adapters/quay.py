@@ -6,12 +6,12 @@ from urllib.parse import quote
 
 import httpx
 
-from conclear.adapters.parsing import object_value, string_value
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     UnsupportedOperationError,
 )
+from conclear.parsing import object_value, string_value
 from conclear.registry_control import TagObservation
 from conclear.values import Digest, OCIReference
 

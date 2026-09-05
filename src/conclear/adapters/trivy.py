@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
-from conclear.adapters.parsing import object_value, string_value
 from conclear.errors import OperationalError
 from conclear.fileio import locked_file
 from conclear.jsonutil import (
@@ -19,6 +18,7 @@ from conclear.jsonutil import (
     sha256_bytes,
     sha256_file,
 )
+from conclear.parsing import object_value, string_value
 from conclear.process import OperationKind
 from conclear.spdx import validate_spdx_document
 from conclear.values import Digest
