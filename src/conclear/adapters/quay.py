@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
 import httpx
@@ -80,20 +81,12 @@ class QuayAdapter:
         if len(matches) != 1:
             raise OperationalError(f"Quay returned ambiguous state for tag {tag}")
         item = object_value(matches[0], label="Quay tag")
-        expiration_value = item.get("expiration")
-        expiration: datetime | None = None
-        if expiration_value is not None:
-            if not isinstance(expiration_value, int) or isinstance(
-                expiration_value, bool
-            ):
-                raise OperationalError("Quay tag expiration is malformed")
-            expiration = datetime.fromtimestamp(expiration_value, tz=UTC)
         return TagObservation(
             name=tag,
             digest=Digest(
                 string_value(item.get("manifest_digest"), label="Quay digest")
             ),
-            expiration=expiration,
+            expiration=_tag_expiration(item),
             immutable=item.get("immutable") is True,
         )
 
@@ -267,3 +260,33 @@ class QuayAdapter:
     def _tag_path(self, repository: OCIReference, tag: str) -> str:
         namespace, name = self._repository_parts(repository)
         return f"/repository/{namespace}/{name}/tag/{quote(tag, safe='')}"
+
+
+def _tag_expiration(item: dict[str, object]) -> datetime | None:
+    """Read a tag's expiration from the epoch Quay returns as `end_ts`.
+
+    Quay reports the deadline twice: `end_ts` as an integer epoch and
+    `expiration` as an RFC 2822 string. The epoch is authoritative; the string
+    is accepted only when the epoch is absent.
+    """
+    epoch = item.get("end_ts")
+    if epoch is not None:
+        if not isinstance(epoch, int) or isinstance(epoch, bool):
+            raise OperationalError("Quay tag expiration is malformed")
+        return datetime.fromtimestamp(epoch, tz=UTC).replace(microsecond=0)
+    text = item.get("expiration")
+    if text is None:
+        return None
+    if isinstance(text, int) and not isinstance(text, bool):
+        return datetime.fromtimestamp(text, tz=UTC).replace(microsecond=0)
+    if not isinstance(text, str):
+        raise OperationalError("Quay tag expiration is malformed")
+    try:
+        parsed = parsedate_to_datetime(text)
+    except (TypeError, ValueError) as exc:
+        raise OperationalError("Quay tag expiration is malformed") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        # Quay writes "-0000", which RFC 2822 defines as an unknown offset and
+        # Python parses as naive; the value is UTC.
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).replace(microsecond=0)

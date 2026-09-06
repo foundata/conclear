@@ -844,7 +844,9 @@ def test_quay_adapter_sets_and_verifies_expiration_without_leaking_token() -> No
                     {
                         "name": "candidate",
                         "manifest_digest": "sha256:" + "3" * 64,
-                        "expiration": 1767312000,
+                        "start_ts": 1767225600,
+                        "end_ts": 1767312000,
+                        "expiration": "Fri, 02 Jan 2026 00:00:00 -0000",
                         "immutable": False,
                     }
                 ]
@@ -868,6 +870,98 @@ def test_quay_adapter_sets_and_verifies_expiration_without_leaking_token() -> No
     assert all("protected-token" not in str(request.url) for request in requests)
     assert requests[0].headers["Authorization"] == "Bearer protected-token"
     assert requests[0].read() == b'{"expiration":1767312000}'
+    client.close()
+
+
+@pytest.mark.parametrize(
+    ("item", "expected"),
+    [
+        (
+            {"end_ts": 1789258408, "expiration": "Sun, 13 Sep 2026 00:13:28 -0000"},
+            datetime(2026, 9, 13, 0, 13, 28, tzinfo=UTC),
+        ),
+        (
+            {"expiration": "Sun, 13 Sep 2026 00:13:28 -0000"},
+            datetime(2026, 9, 13, 0, 13, 28, tzinfo=UTC),
+        ),
+        ({"expiration": 1789258408}, datetime(2026, 9, 13, 0, 13, 28, tzinfo=UTC)),
+        ({"expiration": None}, None),
+        ({}, None),
+    ],
+    ids=["real-quay", "string-only", "epoch-only", "null", "absent"],
+)
+def test_quay_adapter_reads_tag_expiration_as_quay_reports_it(
+    item: dict[str, object], expected: datetime | None
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "tags": [
+                    {
+                        "name": "candidate",
+                        "manifest_digest": "sha256:" + "3" * 64,
+                        "start_ts": 1788653636,
+                        "is_manifest_list": False,
+                        **item,
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    adapter = QuayAdapter(
+        api_url="https://quay.io/api/v1",
+        registry="quay.io",
+        token_provider=lambda: "token",
+        client=client,
+    )
+
+    observed = adapter.observe_tag(quay_repository(), "candidate")
+
+    assert observed is not None
+    assert observed.expiration == expected
+    assert observed.immutable is False
+    client.close()
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"end_ts": "soon"},
+        {"end_ts": True},
+        {"expiration": "not a date"},
+        {"expiration": 1.5},
+    ],
+    ids=["end-ts-string", "end-ts-bool", "expiration-text", "expiration-float"],
+)
+def test_quay_adapter_rejects_malformed_tag_expiration(
+    item: dict[str, object],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "tags": [
+                    {
+                        "name": "candidate",
+                        "manifest_digest": "sha256:" + "3" * 64,
+                        **item,
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    adapter = QuayAdapter(
+        api_url="https://quay.io/api/v1",
+        registry="quay.io",
+        token_provider=lambda: "token",
+        client=client,
+    )
+
+    with pytest.raises(OperationalError, match="expiration is malformed"):
+        adapter.observe_tag(quay_repository(), "candidate")
     client.close()
 
 
@@ -940,7 +1034,9 @@ def test_quay_adapter_lifts_and_verifies_tag_immutability() -> None:
                     {
                         "name": "candidate",
                         "manifest_digest": "sha256:" + "3" * 64,
-                        "expiration": 1767312000,
+                        "start_ts": 1767225600,
+                        "end_ts": 1767312000,
+                        "expiration": "Fri, 02 Jan 2026 00:00:00 -0000",
                         "immutable": False,
                     }
                 ]
