@@ -121,7 +121,10 @@ class QuayAdapter:
             raise
         observed = self._required_tag(repository, tag)
         if not observed.immutable:
-            raise OperationalError("Quay did not retain tag immutability")
+            raise UnsupportedOperationError(
+                "Quay accepted the immutability request but does not enforce "
+                "tag immutability for this repository"
+            )
         return observed
 
     def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:

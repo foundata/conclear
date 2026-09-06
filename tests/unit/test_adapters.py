@@ -1003,6 +1003,37 @@ def test_quay_adapter_resolves_ambiguous_tag_write_by_digest() -> None:
     client.close()
 
 
+def test_quay_adapter_reports_unenforced_immutability_as_unsupported() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT":
+            return httpx.Response(201, json="Updated")
+        return httpx.Response(
+            200,
+            json={
+                "tags": [
+                    {
+                        "name": "1.0.0",
+                        "manifest_digest": "sha256:" + "3" * 64,
+                        "start_ts": 1788653636,
+                        "is_manifest_list": False,
+                    }
+                ]
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    adapter = QuayAdapter(
+        api_url="https://quay.io/api/v1",
+        registry="quay.io",
+        token_provider=lambda: "token",
+        client=client,
+    )
+
+    with pytest.raises(UnsupportedOperationError, match="does not enforce"):
+        adapter.ensure_tag_immutable(quay_repository(), "1.0.0")
+    client.close()
+
+
 def test_quay_adapter_classifies_unsupported_immutability() -> None:
     client = httpx.Client(
         transport=httpx.MockTransport(lambda _request: httpx.Response(403))

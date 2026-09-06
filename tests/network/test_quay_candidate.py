@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from conclear.adapters.quay import QuayAdapter
+from conclear.errors import UnsupportedOperationError
 from conclear.jsonutil import load_json
 from conclear.secrets import read_secret_file
 from conclear.values import Digest, OCIReference
@@ -31,13 +32,18 @@ def test_real_quay_candidate_can_be_unlocked_and_deleted() -> None:
         assert initial is not None
         assert initial.digest == expected
 
-        immutable = quay.ensure_tag_immutable(repository, tagged.tag)
-        assert immutable.digest == expected
-        assert immutable.immutable
-
-        mutable = quay.ensure_tag_mutable(repository, tagged.tag)
-        assert mutable.digest == expected
-        assert not mutable.immutable
+        try:
+            immutable = quay.ensure_tag_immutable(repository, tagged.tag)
+        except UnsupportedOperationError:
+            # quay.io accepts the flag without enforcing it; ConClear records the
+            # missing control and keeps its own refusal to repoint version tags.
+            assert quay.observe_tag(repository, tagged.tag) == initial
+        else:
+            assert immutable.digest == expected
+            assert immutable.immutable
+            mutable = quay.ensure_tag_mutable(repository, tagged.tag)
+            assert mutable.digest == expected
+            assert not mutable.immutable
 
         quay.remove_tag(repository, tagged.tag)
         assert quay.observe_tag(repository, tagged.tag) is None
