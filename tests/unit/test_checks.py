@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -197,12 +198,19 @@ review_trigger = "Remove when upstream supports an unprivileged mode."
         encoding="utf-8",
     )
 
-    outcome = check_image(
-        load_repository_config(path).image("app"), cast(Any, RootWarningHadolint())
-    )
+    image = load_repository_config(path).image("app")
+    outcome = check_image(image, cast(Any, RootWarningHadolint()))
 
     assert outcome.accepted
     assert outcome.findings == ()
+
+    invalid_non_root_exception = replace(
+        image, runtime=replace(image.runtime, user=10001)
+    )
+    invalid_outcome = check_image(
+        invalid_non_root_exception, cast(Any, RootWarningHadolint())
+    )
+    assert any(finding.check_id == "CC0114" for finding in invalid_outcome.findings)
 
 
 def test_systemd_static_check_requires_matching_baked_stop_signal(
