@@ -97,16 +97,6 @@ def _cli_executable() -> Path:
     return path
 
 
-def _trivy_cache() -> Path:
-    value = os.environ.get("CONCLEAR_TEST_TRIVY_CACHE")
-    if value is None or not (Path(value) / "current.json").is_file():
-        pytest.skip(
-            "the CLI transport scenario requires a populated manifest-owned "
-            "CONCLEAR_TEST_TRIVY_CACHE"
-        )
-    return Path(value)
-
-
 class Cli:
     """Invoke one identity-bearing ConClear executable with a run-owned environment."""
 
@@ -252,10 +242,10 @@ def _scenario(
     tmp_path: Path,
     *,
     platforms: Sequence[str],
+    trivy_cache: Path,
 ) -> None:
     run_id = manifest_run_id()
     executable = _cli_executable()
-    trivy_cache = _trivy_cache()
     root = contained_path(tmp_path, run_id, must_exist=False)
     runtime = ApplicationRuntime.create(root / "environment", names=(ToolName.GIT,))
     identity = json.loads(
@@ -466,19 +456,22 @@ def _assert_every_run_is_settled(state_home: Path, *, expected: set[str]) -> Non
 
 
 @pytest.mark.local_integration
-def test_two_native_workers_assemble_one_index_through_the_cli(tmp_path: Path) -> None:
+def test_two_native_workers_assemble_one_index_through_the_cli(
+    tmp_path: Path, trivy_cache: Path
+) -> None:
     """Two x86-64 variants stand in for two workers on a host without emulation."""
     if host_platform.machine() != "x86_64":
         pytest.skip("the native two-variant scenario requires an x86_64 host")
     _scenario(
         tmp_path,
         platforms=("linux/amd64", "linux/amd64/v3"),
+        trivy_cache=trivy_cache,
     )
 
 
 @pytest.mark.emulation
 def test_amd64_and_arm64_workers_assemble_one_index_through_the_cli(
-    tmp_path: Path,
+    tmp_path: Path, trivy_cache: Path
 ) -> None:
     try:
         mode = detect_execution_mode(
@@ -490,4 +483,5 @@ def test_amd64_and_arm64_workers_assemble_one_index_through_the_cli(
     _scenario(
         tmp_path,
         platforms=("linux/amd64", "linux/arm64"),
+        trivy_cache=trivy_cache,
     )

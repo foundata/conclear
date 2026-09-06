@@ -1,13 +1,13 @@
 """Real Trivy database snapshots, layout scans and SPDX generation.
 
-The database cache is manifest-owned and selected with ``CONCLEAR_TEST_TRIVY_CACHE``.
-A missing cache is refreshed through the production adapter only when
-``CONCLEAR_TEST_TRIVY_DOWNLOAD=1`` is also set, because that download is the one
-local case that needs the network and fetches roughly a gigabyte. Every later run
-is offline and reuses the pinned snapshot.
+The database cache is manifest-owned and selected with ``CONCLEAR_TEST_TRIVY_CACHE``
+through the session-scoped ``trivy_cache`` fixture, which refreshes a missing
+snapshot through the production adapter only when ``CONCLEAR_TEST_TRIVY_DOWNLOAD=1``
+is also set, because that download is the one local step that needs the network
+and fetches roughly a gigabyte. Every later run is offline and reuses the pinned
+snapshot.
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -24,36 +24,16 @@ pytestmark = pytest.mark.local_integration
 AMD64 = Platform.parse("linux/amd64")
 
 
-def _cache_root() -> Path:
-    value = os.environ.get("CONCLEAR_TEST_TRIVY_CACHE")
-    if value is None:
-        pytest.skip(
-            "Trivy database tests require a manifest-owned CONCLEAR_TEST_TRIVY_CACHE"
-        )
-    path = Path(value)
-    if not path.is_absolute():
-        pytest.skip("CONCLEAR_TEST_TRIVY_CACHE must be an absolute path")
-    return path
-
-
-def test_real_trivy_database_snapshot_layout_scan_and_spdx(tmp_path: Path) -> None:
+def test_real_trivy_database_snapshot_layout_scan_and_spdx(
+    tmp_path: Path, trivy_cache: Path
+) -> None:
     run_id = manifest_run_id()
-    cache_root = _cache_root()
+    cache_root = trivy_cache
     root = contained_path(tmp_path, run_id, must_exist=False)
     runtime = ApplicationRuntime.create(
         root / "environment", names=(ToolName.BUILDAH, ToolName.TRIVY)
     )
     trivy = runtime.trivy()
-
-    if not (cache_root / "current.json").is_file():
-        if os.environ.get("CONCLEAR_TEST_TRIVY_DOWNLOAD") != "1":
-            pytest.skip(
-                "no Trivy database snapshot in CONCLEAR_TEST_TRIVY_CACHE and "
-                "CONCLEAR_TEST_TRIVY_DOWNLOAD is not set"
-            )
-        refreshed = trivy.refresh_database(cache_root)
-        assert refreshed.path.parent == cache_root / "snapshots"
-        assert refreshed.digest.startswith("sha256:")
 
     # Selection revalidates the exact stored bytes against the pointer and digest.
     database = trivy.select_database(cache_root)
