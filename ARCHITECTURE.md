@@ -388,7 +388,7 @@ The first documented builder is `https://foundata.com/en/projects/conclear/build
 
 Materials include the canonical source repository and full commit, Containerfile, repository configuration, external image digests and other integrity-checked dependencies known to the build. Parameters exclude credentials and secret values. Verification requires the exact profile-selected builder ID and embedded ConClear version, then binds the accepted builder ID into `release-verification.json`. Consumers accept only explicitly configured signer and builder pairs.
 
-The predicate is generated from the accepted candidate before publication. After publication, ConClear verifies the final registry digest, validates that it equals the predicate subject and only then attaches provenance. For an index, provenance covers the index and each platform manifest.
+The predicate is generated from the accepted candidate before publication. After publication, ConClear verifies the final registry digest, validates that it equals the predicate subject and only then attaches provenance. Cosign wraps every attestation around exactly one subject, so ConClear attaches the provenance predicate to the index digest and, separately, to each platform manifest digest; the local `provenance.json` statement records the complete subject set and every attached copy must carry the identical predicate.
 
 The baseline signer is a foundata-managed Cosign key pair. The encrypted private key and its passphrase are supplied to the authorized release environment through protected secret mechanisms; the approved public key is supplied independently through maintainer-controlled trust configuration. A KMS- or HSM-protected key SHOULD be used when that infrastructure is available. A workstation holding the managed signing authority can produce a valid release.
 
@@ -404,7 +404,7 @@ The signed SPDX attestation is the repository-scoped consumer copy. ConClear ret
 
 `verify` starts from the candidate digest rather than its tag. It recursively compares the registry graph with the candidate, verifies every required image signature and transparency-log inclusion against the external trust root, retrieves and verifies one SBOM per platform, validates the recorded SPDX version, verifies provenance subject coverage, signer identities and log inclusion, and checks that all evidence digests match the qualification records.
 
-After those checks pass, ConClear creates `release-verification.json`, wraps it in an in-toto Statement, signs and attaches it to the release subject with public log inclusion, retrieves it again and verifies its subject, predicate digest, signer and log inclusion. Only that post-attachment success advances the run to `verified`. Promotion immediately repeats verification of this attestation, its log inclusion and the subject digest.
+After those checks pass, ConClear creates `release-verification.json`, records the single-subject in-toto Statement it expects Cosign to produce, has Cosign sign and attach the record as that statement's predicate with public log inclusion, retrieves it again and verifies its subject, predicate digest, signer and log inclusion. Only that post-attachment success advances the run to `verified`. Promotion immediately repeats verification of this attestation, its log inclusion and the subject digest.
 
 
 
