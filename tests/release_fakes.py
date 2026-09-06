@@ -448,13 +448,16 @@ class FakeSigner(CosignAdapter):
     ) -> SignatureObservation:
         del private_key, passphrase, passphrase_path
         value = load_json(statement)
-        if not isinstance(value, dict) or not isinstance(
-            value.get("predicateType"), str
+        if (
+            not isinstance(value, dict)
+            or not isinstance(value.get("predicateType"), str)
+            or not isinstance(value.get("predicate"), dict)
+            or subject.digest is None
         ):
             raise AssertionError("statement is malformed")
-        self.statements.setdefault(
-            (str(subject), str(value["predicateType"])), []
-        ).append({str(key): item for key, item in value.items()})
+        # Cosign 3 ignores the caller's statement envelope and wraps the predicate
+        # around the one subject it signs, using the v0.1 statement type.
+        self._store(subject, str(value["predicateType"]), value["predicate"])
         return SignatureObservation(subject, "attested")
 
     @override

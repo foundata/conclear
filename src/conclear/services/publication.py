@@ -489,54 +489,56 @@ def attest_candidate(
         workspace=workspace,
         image=image,
     )
+    provenance_predicate = object_value(
+        provenance.get("predicate"), "provenance predicate"
+    )
     provenance_metadata: dict[str, object] = {
         "predicateType": SLSA_PROVENANCE_TYPE,
         "payloadDigest": evidence.provenance_digest,
     }
-    existing_provenance = _retry_entry(
-        workspace,
-        resource_id="provenance",
-        kind=ResourceKind.ATTESTATION,
-        identifier=str(published.immutable_reference),
-        metadata=provenance_metadata,
-    )
-    provenance_complete = False
-    if existing_provenance is not None:
-        provenance_complete = _has_downloaded_statement(
-            signer,
-            subject=published.immutable_reference,
-            predicate_type=SLSA_PROVENANCE_TYPE,
-            expected=provenance,
-        )
-        if provenance_complete:
-            signer.verify_attestation(
-                subject=published.immutable_reference,
-                public_key=public_key,
-                predicate_type=SLSA_PROVENANCE_TYPE,
-            )
-            workspace.journal.update("provenance", ResourceStatus.CREATED)
-        elif existing_provenance.status is ResourceStatus.CREATED:
-            raise OperationalError("Recorded provenance attestation is missing")
-    else:
-        workspace.journal.plan(
-            resource_id="provenance",
+    for resource, subject in _provenance_subjects(published):
+        existing_provenance = _retry_entry(
+            workspace,
+            resource_id=resource,
             kind=ResourceKind.ATTESTATION,
-            identifier=str(published.immutable_reference),
-            ephemeral=False,
+            identifier=str(subject),
             metadata=provenance_metadata,
         )
-    if not provenance_complete:
+        if existing_provenance is not None:
+            if _has_downloaded_predicate(
+                signer,
+                subject=subject,
+                predicate_type=SLSA_PROVENANCE_TYPE,
+                expected=provenance_predicate,
+            ):
+                signer.verify_attestation(
+                    subject=subject,
+                    public_key=public_key,
+                    predicate_type=SLSA_PROVENANCE_TYPE,
+                )
+                workspace.journal.update(resource, ResourceStatus.CREATED)
+                continue
+            if existing_provenance.status is ResourceStatus.CREATED:
+                raise OperationalError("Recorded provenance attestation is missing")
+        else:
+            workspace.journal.plan(
+                resource_id=resource,
+                kind=ResourceKind.ATTESTATION,
+                identifier=str(subject),
+                ephemeral=False,
+                metadata=provenance_metadata,
+            )
         try:
             signer.attest_statement(
-                subject=published.immutable_reference,
+                subject=subject,
                 statement=evidence.provenance_path,
                 private_key=private_key,
                 passphrase=passphrase,
                 passphrase_path=passphrase_path,
             )
-            workspace.journal.update("provenance", ResourceStatus.CREATED)
+            workspace.journal.update(resource, ResourceStatus.CREATED)
         except Exception:
-            workspace.journal.mark_failed("provenance")
+            workspace.journal.mark_failed(resource)
             raise
     subjects = {
         published.graph.digest,
@@ -679,17 +681,21 @@ def verify_candidate(
         workspace=workspace,
         image=image,
     )
-    signer.verify_attestation(
-        subject=published.immutable_reference,
-        public_key=profile.cosign_public_key,
-        predicate_type=SLSA_PROVENANCE_TYPE,
+    provenance_predicate = object_value(
+        provenance.get("predicate"), "provenance predicate"
     )
-    _require_downloaded_statement(
-        signer,
-        subject=published.immutable_reference,
-        predicate_type=SLSA_PROVENANCE_TYPE,
-        expected=provenance,
-    )
+    for _resource, provenance_subject in _provenance_subjects(published):
+        signer.verify_attestation(
+            subject=provenance_subject,
+            public_key=profile.cosign_public_key,
+            predicate_type=SLSA_PROVENANCE_TYPE,
+        )
+        _require_downloaded_predicate(
+            signer,
+            subject=provenance_subject,
+            predicate_type=SLSA_PROVENANCE_TYPE,
+            expected=provenance_predicate,
+        )
     payload: dict[str, object] = {
         "subject": {
             "repository": image.repository.repository_name,
@@ -1188,10 +1194,38 @@ def _has_downloaded_statement(
     predicate_type: str,
     expected: dict[str, object],
 ) -> bool:
-    statements = decode_dsse_statements(
-        signer.download_attestations(subject=subject, predicate_type=predicate_type)
+    """Match the statement Cosign wrapped around `expected`'s predicate.
+
+    Cosign owns the statement envelope, including its `_type` version and the
+    single subject it signs, so the comparison covers the subject digest, the
+    predicate type and the complete predicate rather than the whole document.
+    """
+    return _has_downloaded_predicate(
+        signer,
+        subject=subject,
+        predicate_type=predicate_type,
+        expected=expected.get("predicate"),
     )
-    return expected in statements
+
+
+def _provenance_subjects(
+    published: PublishedCandidate,
+) -> tuple[tuple[str, OCIReference], ...]:
+    """Name the index and every distinct platform manifest that carries provenance."""
+    subjects: list[tuple[str, OCIReference]] = [
+        ("provenance", published.immutable_reference)
+    ]
+    for manifest in published.graph.manifests:
+        digest = manifest.descriptor.digest
+        if digest == published.graph.digest:
+            continue
+        key = (
+            manifest.platform.key
+            if manifest.platform is not None
+            else digest.encoded[:12]
+        )
+        subjects.append((f"provenance-{key}", published.reference.with_digest(digest)))
+    return tuple(subjects)
 
 
 def _require_downloaded_predicate(

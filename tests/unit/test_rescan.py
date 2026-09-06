@@ -166,10 +166,26 @@ class FakeSigner:
         del private_key, passphrase, passphrase_path
         value = load_json(statement)
         assert isinstance(value, dict)
+        assert subject.digest is not None
         predicate_type = value.get("predicateType")
         assert isinstance(predicate_type, str)
+        predicate = value.get("predicate")
+        assert isinstance(predicate, dict)
+        # Cosign 3 ignores the caller's statement envelope and wraps the predicate
+        # around the one subject it signs, using the v0.1 statement type.
+        cosign_statement: dict[str, object] = {
+            "_type": "https://in-toto.io/Statement/v0.1",
+            "subject": [
+                {
+                    "name": subject.repository_name,
+                    "digest": {"sha256": subject.digest.encoded},
+                }
+            ],
+            "predicateType": predicate_type,
+            "predicate": predicate,
+        }
         self.statements.setdefault((str(subject), predicate_type), []).append(
-            {str(key): item for key, item in value.items()}
+            cosign_statement
         )
         return SignatureObservation(subject, "attested")
 
