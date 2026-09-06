@@ -265,7 +265,7 @@ conclear release \
 
 `release --resume <run-id>` resumes only after verifying the recorded source, configuration, tools, layouts, evidence and remote digests. It refuses to resume across a changed immutable input. A resumed run reuses its recorded candidate reference only when the registry resolves that reference conclusively to the unchanged expected digest within its recorded lifetime. Otherwise the run cannot continue: a candidate reference is never reused for a second publication attempt, and the release restarts as a new run with a new run identifier and candidate reference.
 
-Commands support `--format json`. JSON mode writes one documented result object to standard output and diagnostics to standard error. The result schema documents the `data` object of every command: a successful result carries exactly the documented keys, and a failed result carries only documented keys or none. Exit statuses are `0` for success, `1` for operational failure, `2` for rule rejection and `64` for invalid invocation or configuration.
+Commands support `--format json`. JSON mode writes one documented result object to standard output and diagnostics to standard error. The result schema documents the `data` object of every command: a successful result carries exactly the documented keys, and a failed result carries only documented keys or none. A command that created a run before failing names that run as `runId` in its failure result and diagnostics and leaves the run in the `rejected` or `incomplete` state, so the journaled resources of every failed run can be found and removed with `cleanup`. Exit statuses are `0` for success, `1` for operational failure, `2` for rule rejection and `64` for invalid invocation or configuration.
 
 
 
