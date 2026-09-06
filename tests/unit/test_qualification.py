@@ -679,6 +679,87 @@ def test_foreign_build_and_test_record_the_same_qemu_execution_mode(
     assert payload["testExecution"] == expected
 
 
+def test_emulated_qualification_is_accepted_without_justification(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'platforms = ["linux/amd64"]', 'platforms = ["linux/amd64", "linux/arm64"]'
+        ),
+        encoding="utf-8",
+    )
+    value = replace(
+        inputs(root, tmp_path),
+        platform=Platform.parse("linux/arm64"),
+        binfmt_root=_register_arm64_handler(tmp_path / "binfmt"),
+    )
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        pin_observations=pin_observations(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert result.verdict is Verdict.ACCEPTED
+    assert result.findings == ()
+    payload = json.loads(result.record_path.read_text(encoding="utf-8"))["payload"]
+    assert payload["buildExecution"]["mechanism"] == "qemu-user"
+    assert payload["testExecution"]["mechanism"] == "qemu-user"
+    assert not any("reason" in key.lower() for key in payload)
+
+
+def test_configured_native_platform_rejects_emulated_runtime_tests(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'platforms = ["linux/amd64"]',
+            'platforms = ["linux/amd64", "linux/arm64"]\n'
+            'native_test_platforms = ["linux/amd64", "linux/arm64"]',
+        ),
+        encoding="utf-8",
+    )
+    value = replace(
+        inputs(root, tmp_path),
+        platform=Platform.parse("linux/arm64"),
+        binfmt_root=_register_arm64_handler(tmp_path / "binfmt"),
+    )
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        pin_observations=pin_observations(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert result.verdict is Verdict.REJECTED
+    assert [
+        (finding.check_id, finding.severity, finding.message)
+        for finding in result.findings
+    ] == [("CC0403", "error", "Platform linux/arm64 requires native runtime testing")]
+
+
 def test_qualification_payload_tampering_is_a_catalogued_rule_rejection(
     repository_factory: Any, tmp_path: Path
 ) -> None:
