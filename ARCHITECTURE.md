@@ -313,13 +313,22 @@ recorded in the platform qualification. A root requirement is rejected for a
 non-zero UID.
 
 The `service`, `one-shot` and `scratch` profiles use the ordinary process
-lifecycle. The separate `systemd` profile requires UID 0, a root requirement and
-a closed `systemd` table containing at least one `required_units` entry and a
-`stop_signal` of `RTMIN+3` or `SIGRTMIN+3`. Its Containerfile must set the same
-`STOPSIGNAL`. The profile adds `/run`, `/run/lock`, `/tmp` and
-`/var/log/journal` to the effective private tmpfs set. Repository configuration
-may declare further writable paths, but an immutable path cannot overlap any
-effective writable path.
+lifecycle and explicitly disable Podman's automatic systemd mode. The separate
+`systemd` profile requires UID 0, a root requirement and a closed `systemd`
+table containing at least one `required_units` entry and a `stop_signal` of
+`RTMIN+3` or `SIGRTMIN+3`. Its Containerfile must set the same `STOPSIGNAL`. The
+profile adds `/run`, `/run/lock`, `/tmp` and `/var/log/journal` to the effective
+private tmpfs set. Repository configuration may declare further writable paths,
+but an immutable path cannot overlap any effective writable path.
+
+The effective writable set is exact. It includes every read-write mount that
+Podman observes, regardless of whether ConClear supplied it or the image created
+an anonymous mount through `VOLUME`. Every image-declared volume destination
+must therefore be present in `writable_mounts` unless the selected profile
+already supplies it. ConClear mounts private tmpfs over each declared path and
+rejects any unexpected or missing writable destination. Static checks reject an
+undeclared `VOLUME` in the final local build stage; inherited volume metadata is
+authoritatively detected by the runtime observation.
 
 Repository test hooks are argument arrays, not shell strings. ConClear supplies
 documented paths and immutable references as individual environment values.
@@ -782,16 +791,18 @@ output before a later step may consume it.
 
 <a id="promise-ip0023"></a>
 Built-in runtime checks cover the configured user, read-only root filesystem,
-writable mounts, private user and cgroup namespaces, absence of privileged mode,
-capabilities, `no-new-privileges`, startup, health command, signal forwarding,
-expected exit-status propagation, shutdown, file ownership and resource
-behavior. Runtime application files expected to remain immutable are checked
+writable mounts, private user and cgroup namespaces, absence of privileged
+mode, capabilities, `no-new-privileges`, startup, health command, signal
+forwarding, expected exit-status propagation, shutdown, file ownership and
+resource behavior. The observed writable destinations must equal the effective
+declared set; this comparison includes anonymous volumes created from image
+metadata. Runtime application files expected to remain immutable are checked
 for root ownership and permission modes that deny group and other writes. They
 cannot overlap a writable runtime mount. For a non-root runtime identity,
-owner-write bits do not grant that identity access and are not rejected. For UID
-0, the read-only root and non-overlap requirements keep those paths immutable.
-Launch arguments and non-secret environment values supplement the image's
-original entrypoint; they cannot replace it or override a built-in gate.
+owner-write bits do not grant that identity access and are not rejected. For
+UID 0, the read-only root and non-overlap requirements keep those paths
+immutable. Launch arguments and non-secret environment values supplement the
+image's original entrypoint; they cannot replace it or override a built-in gate.
 
 Every runtime container uses rootless Podman with an explicit private user
 namespace and private cgroup namespace. Container UID 0 therefore maps through
