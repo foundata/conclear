@@ -6,6 +6,20 @@ ConClear implements the technical parts of [foundata's OCI container image build
 
 A container project adopts it by adding a repository configuration, making each Containerfile comply with the guide and declaring any runtime inputs its tests need.
 
+<!-- rumdl-disable MD033 -->
+<!-- HTML for consistent rendering across limited platform parsers -->
+<div align="center" id="project-readme-header">
+<br>
+<br>
+
+**⭐ Found this useful? Support open-source and star this project:**
+
+[![GitHub repository](https://img.shields.io/github/stars/foundata/conclear.svg)](https://github.com/foundata/conclear)
+
+<br>
+</div>
+<!-- rumdl-enable MD033 -->
+
 
 ## Table of contents<a id="toc"></a>
 
