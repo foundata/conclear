@@ -788,8 +788,9 @@ def test_repository_configuration_rejects_unsafe_container_mount(
         load_repository_config(path)
 
 
+@pytest.mark.parametrize("immutable_path", ("/var/lib/app/config", "/"))
 def test_repository_configuration_rejects_immutable_writable_path_overlap(
-    repository_factory: Callable[..., Path],
+    repository_factory: Callable[..., Path], immutable_path: str
 ) -> None:
     root = repository_factory()
     path = root / "conclear.toml"
@@ -797,7 +798,7 @@ def test_repository_configuration_rejects_immutable_writable_path_overlap(
         path.read_text(encoding="utf-8").replace(
             "user = 10001",
             'user = 10001\nwritable_mounts = ["/var/lib/app"]\n'
-            'immutable_paths = ["/var/lib/app/config"]',
+            f'immutable_paths = ["{immutable_path}"]',
         ),
         encoding="utf-8",
     )

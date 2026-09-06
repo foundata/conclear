@@ -761,7 +761,13 @@ def _test_fixture_path(source_root: Path, value: str) -> Path:
 
 
 def _container_paths_overlap(left: str, right: str) -> bool:
-    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
+    return (
+        left == right
+        or left == "/"
+        or right == "/"
+        or left.startswith(right + "/")
+        or right.startswith(left + "/")
+    )
 
 
 def _require_unique_names(values: tuple[object, ...], label: str) -> None:
