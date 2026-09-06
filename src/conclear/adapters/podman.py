@@ -163,6 +163,9 @@ class PodmanAdapter(ToolAdapter):
     ) -> ContainerObservation:
         """Create and start a container with all declared resource controls."""
         mounted_targets = {mount.target for mount in mounts}
+        image_volumes = self._image_volumes(
+            root=root, runroot=runroot, image_name=image_name
+        )
         command = [
             *self._storage(root, runroot),
             "run",
@@ -204,7 +207,7 @@ class PodmanAdapter(ToolAdapter):
         if runtime.read_only:
             command.append("--read-only")
         for mount in runtime.writable_mounts:
-            if mount not in mounted_targets:
+            if mount not in mounted_targets and mount not in image_volumes:
                 command.extend(("--tmpfs", f"{mount}:rw,nosuid,nodev"))
         for name_value in environment:
             command.extend(("--env", f"{name_value[0]}={name_value[1]}"))
@@ -230,6 +233,29 @@ class PodmanAdapter(ToolAdapter):
             secret_paths=tuple(mount.source for mount in mounts if mount.secret),
         )
         return self.inspect_container(root=root, runroot=runroot, name=name)
+
+    def _image_volumes(
+        self, *, root: Path, runroot: Path, image_name: str
+    ) -> tuple[str, ...]:
+        output = self._run(
+            (
+                *self._storage(root, runroot),
+                "image",
+                "inspect",
+                "--format",
+                "{{json .Config.Volumes}}",
+                image_name,
+            ),
+            timeout_seconds=120,
+        ).stdout
+        value = json_value(output, label="Podman image volumes")
+        if value is None:
+            return ()
+        if not isinstance(value, dict) or any(
+            not isinstance(destination, str) for destination in value
+        ):
+            raise OperationalError("Podman image volume metadata is malformed")
+        return tuple(sorted(value))
 
     def inspect_container(
         self,

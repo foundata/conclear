@@ -243,6 +243,7 @@ def test_podman_launch_inputs_remain_argument_arrays_and_redact_secret_mounts(
     repository_factory: Callable[..., Path],
 ) -> None:
     runner = FakeRunner(
+        result("{}"),
         result(),
         result(
             json.dumps(
@@ -281,7 +282,7 @@ def test_podman_launch_inputs_remain_argument_arrays_and_redact_secret_mounts(
         entrypoint=("/generator", "prepare"),
     )
 
-    request = runner.requests[0]
+    request = runner.requests[1]
     assert request.argv[-5:] == (
         "/generator",
         "localhost/exact@sha256:fixture",
@@ -306,6 +307,17 @@ def test_podman_systemd_launch_uses_explicit_rootless_lifecycle_controls(
     repository_factory: Callable[..., Path],
 ) -> None:
     runner = FakeRunner(
+        result(
+            json.dumps(
+                {
+                    "/run": {},
+                    "/run/lock": {},
+                    "/sys/fs/cgroup/systemd": {},
+                    "/tmp": {},
+                    "/var/lib/journal": {},
+                }
+            )
+        ),
         result(),
         result(
             json.dumps(
@@ -328,6 +340,11 @@ def test_podman_systemd_launch_uses_explicit_rootless_lifecycle_controls(
     path.write_text(
         path.read_text(encoding="utf-8")
         .replace('profile = "service"\nuser = 10001', 'profile = "systemd"\nuser = 0')
+        .replace(
+            'memory = "512MiB"',
+            'writable_mounts = ["/sys/fs/cgroup/systemd", "/var/lib/journal"]\n'
+            'memory = "512MiB"',
+        )
         .replace(
             'health_command = ["/app", "health"]',
             """health_command = ["/app", "health"]
@@ -355,7 +372,14 @@ stop_signal = "RTMIN+3"
         platform=Platform.parse("linux/amd64"),
     )
 
-    argv = runner.requests[0].argv
+    assert runner.requests[0].argv[-5:] == (
+        "image",
+        "inspect",
+        "--format",
+        "{{json .Config.Volumes}}",
+        "localhost/exact@sha256:fixture",
+    )
+    argv = runner.requests[1].argv
     assert argv[argv.index("--user") + 1] == "0"
     assert argv[argv.index("--userns") + 1] == "keep-id:uid=0,gid=0"
     assert argv[argv.index("--systemd") + 1] == "always"
@@ -364,7 +388,7 @@ stop_signal = "RTMIN+3"
         argv[index + 1].split(":", maxsplit=1)[0]
         for index, value in enumerate(argv)
         if value == "--tmpfs"
-    } == {"/run", "/run/lock", "/tmp", "/var/log/journal"}
+    } == {"/var/log/journal"}
 
 
 def test_podman_observes_every_writable_mount_type_as_runtime_write_surface(

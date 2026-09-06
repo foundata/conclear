@@ -193,12 +193,13 @@ contract may set its expected exit status. The root filesystem is always
 read-only, so runtime writable paths must be listed explicitly. The effective
 set is exact: a Containerfile or base-image `VOLUME` creates an anonymous
 writable mount and its destination must also appear in `writable_mounts`.
-ConClear places private tmpfs at every declared destination. The static check
-reports an undeclared `VOLUME` in the final local build stage as `CC0116`; the
-runtime check reports inherited or otherwise unexpected writable mounts as
-`CC0401` and names the differing paths. Repository configuration can narrow
-ConClear's built-in time limits in `[images.limits]` but cannot extend or disable
-them.
+ConClear retains declared anonymous volumes in its isolated run-owned Podman
+storage and places private tmpfs at declared destinations the image does not
+provide. The static check reports an undeclared `VOLUME` in the final local
+build stage as `CC0116`; the runtime check reports inherited or otherwise
+unexpected writable mounts as `CC0401` and names the differing paths.
+Repository configuration can narrow ConClear's built-in time limits in
+`[images.limits]` but cannot extend or disable them.
 
 UID 0 is accepted only with a source-reviewed exception that states why root is
 required, who owns the decision and what change triggers another review:
