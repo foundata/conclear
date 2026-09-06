@@ -14,6 +14,7 @@ from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
     RESCAN_TYPE,
+    SPDX_DOCUMENT_TYPE,
     STATEMENT_TYPE,
 )
 from conclear.config import VulnerabilityException
@@ -100,6 +101,11 @@ class FakeRegistry:
         return RegistryCopyObservation(source, layout_path, self.graph)
 
 
+def _statement_type(predicate_type: str) -> str:
+    """Resolve the alias `cosign verify-attestation --type` accepts to its URI."""
+    return SPDX_DOCUMENT_TYPE if predicate_type == "spdxjson" else predicate_type
+
+
 class FakeSigner:
     def __init__(self) -> None:
         self.statements: dict[tuple[str, str], list[dict[str, object]]] = {}
@@ -113,6 +119,7 @@ class FakeSigner:
         predicate_type: str,
     ) -> VerificationObservation:
         assert public_key.is_file()
+        predicate_type = _statement_type(predicate_type)
         assert (str(subject), predicate_type) in self.statements
         if self.fail_rescan_verification and predicate_type == RESCAN_TYPE:
             raise OperationalError("post-attachment verification failed")
@@ -138,6 +145,9 @@ class FakeSigner:
         predicate_type: str,
         allow_missing: bool = False,
     ) -> tuple[object, ...]:
+        # `cosign download attestation --predicate-type` matches the exact URI
+        # and does not resolve the aliases that `verify-attestation` accepts.
+        assert predicate_type.startswith("https://"), predicate_type
         key = (str(subject), predicate_type)
         statements = self.statements.get(key)
         if statements is None:
@@ -195,6 +205,7 @@ class FakeSigner:
         predicate_type: str,
         predicate: dict[str, object],
     ) -> None:
+        predicate_type = _statement_type(predicate_type)
         assert subject.digest is not None
         self.statements.setdefault((str(subject), predicate_type), []).append(
             {

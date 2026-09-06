@@ -15,6 +15,7 @@ from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
     RESCAN_TYPE,
+    SPDX_DOCUMENT_TYPE,
     decode_dsse_statements,
     write_statement,
 )
@@ -320,9 +321,9 @@ def rescan_release(
         )
         statement = _one_statement(
             signer.download_attestations(
-                subject=manifest_subject, predicate_type="spdxjson"
+                subject=manifest_subject, predicate_type=SPDX_DOCUMENT_TYPE
             ),
-            predicate_type="spdxjson",
+            predicate_type=SPDX_DOCUMENT_TYPE,
             subject=manifest_subject,
         )
         sbom = validate_spdx_document(
