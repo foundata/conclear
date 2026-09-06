@@ -15,6 +15,7 @@ from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
+    bind_failed_run,
 )
 from conclear.hooks import HookRunner
 from conclear.jsonutil import sha256_bytes
@@ -168,13 +169,10 @@ def create_source_run(
             )
         repository.image(image_id)
     except BaseException as exc:
-        target = (
-            RunState.REJECTED
-            if isinstance(exc, RuleRejectionError)
-            else RunState.INCOMPLETE
-        )
-        if workspace.load().state is RunState.CREATED:
-            workspace.transition(target, now=created_at)
+        # The run exists from here on, so the failure names it even though the
+        # caller never receives the workspace.
+        finish_run_failure(workspace, exc, now=created_at)
+        bind_failed_run(exc, workspace.run_id)
         raise
     return SourceRun(
         workspace,

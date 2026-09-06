@@ -145,6 +145,12 @@ def _cleanup_entry(
         expected_source = workspace.load().immutable_inputs.get("sourceRoot")
         if expected_source is None or repository != Path(expected_source):
             raise OperationalError("Journaled worktree repository is not run-owned")
+        try:
+            destination.lstat()
+        except FileNotFoundError:
+            # A worktree whose creation failed never materialized, so Git has
+            # nothing to remove and the failed entry is resolved.
+            return True
         git.remove_worktree(repository, destination)
         return True
     if entry.kind is ResourceKind.BUILDAH_STORAGE:

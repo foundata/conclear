@@ -1,3 +1,4 @@
+import json
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -7,14 +8,18 @@ from typing import Any
 
 import pytest
 
+import conclear.commands.local as local_commands
 import conclear.services.run_context as run_context_module
 from conclear.adapters.git import SourceObservation
+from conclear.cli import main
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
+    failed_run_id,
 )
 from conclear.jsonutil import sha256_bytes
+from conclear.services.cleanup import cleanup_run
 from conclear.services.run_context import create_source_run, open_source_run
 from conclear.tools import ToolName
 from conclear.workspace import ResourceStatus, RunState, RunWorkspace
@@ -65,6 +70,25 @@ class FakeGit:
 
     def remove_worktree(self, repository: Path, destination: Path) -> None:
         shutil.rmtree(destination)
+
+
+class NoStorage:
+    """Cleanup boundary for a run that never created Buildah storage."""
+
+    def remove_storage(self, *, root: Path, runroot: Path) -> None:
+        raise AssertionError("no storage was created")
+
+
+class NoRuntime:
+    """Cleanup boundary for a run that never created a container."""
+
+    def remove(
+        self, *, root: Path, runroot: Path, name: str, force: bool = False
+    ) -> None:
+        raise AssertionError("no container was created")
+
+    def remove_storage(self, *, root: Path, runroot: Path) -> None:
+        raise AssertionError("no storage was created")
 
 
 class FakeRuntime:
@@ -140,9 +164,29 @@ def test_source_run_rejects_reserved_additional_inputs_before_creating_a_run(
 ) -> None:
     root, _, _ = source
 
-    with pytest.raises(InvalidInvocationError, match="conflict"):
+    with pytest.raises(InvalidInvocationError, match="conflict") as caught:
         create(root, tmp_path, additional_inputs={"sourceRevision": "x"})
 
+    assert failed_run_id(caught.value) is None
+    assert not (tmp_path / "state" / "conclear" / "runs").exists()
+
+
+def test_failure_before_workspace_creation_names_no_run(
+    source: tuple[Path, FakeGit, dict[str, str]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, git, _ = source
+
+    def observe(repository: Path, selector: str) -> SourceObservation:
+        raise OperationalError("git is unavailable")
+
+    monkeypatch.setattr(git, "observe", observe)
+
+    with pytest.raises(OperationalError, match="git is unavailable") as caught:
+        create(root, tmp_path)
+
+    assert failed_run_id(caught.value) is None
     assert not (tmp_path / "state" / "conclear" / "runs").exists()
 
 
@@ -152,11 +196,13 @@ def test_checked_out_configuration_must_match_the_git_object(
     root, git, _ = source
     git.config_override = (root / "conclear.toml").read_text(encoding="utf-8") + "\n"
 
-    with pytest.raises(OperationalError, match="differs from Git object"):
+    with pytest.raises(OperationalError, match="differs from Git object") as caught:
         create(root, tmp_path)
 
     workspace = _only_workspace(tmp_path)
     assert workspace.load().state is RunState.INCOMPLETE
+    assert failed_run_id(caught.value) == workspace.run_id
+    _assert_cleanup_resolves_every_resource(workspace, git)
 
 
 def test_observed_origin_must_match_the_configured_project_source(
@@ -169,18 +215,24 @@ def test_observed_origin_must_match_the_configured_project_source(
         create(root, tmp_path)
 
     assert caught.value.code == "CC0001"
-    assert _only_workspace(tmp_path).load().state is RunState.REJECTED
+    workspace = _only_workspace(tmp_path)
+    assert workspace.load().state is RunState.REJECTED
+    assert failed_run_id(caught.value) == workspace.run_id
+    _assert_cleanup_resolves_every_resource(workspace, git)
 
 
 def test_unknown_image_leaves_an_incomplete_run(
     source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
 ) -> None:
-    root, _, _ = source
+    root, git, _ = source
 
-    with pytest.raises(InvalidInvocationError, match="Unknown image"):
+    with pytest.raises(InvalidInvocationError, match="Unknown image") as caught:
         create(root, tmp_path, image_id="missing")
 
-    assert _only_workspace(tmp_path).load().state is RunState.INCOMPLETE
+    workspace = _only_workspace(tmp_path)
+    assert workspace.load().state is RunState.INCOMPLETE
+    assert failed_run_id(caught.value) == workspace.run_id
+    _assert_cleanup_resolves_every_resource(workspace, git)
 
 
 def test_failed_worktree_creation_is_journaled_and_incomplete(
@@ -189,13 +241,81 @@ def test_failed_worktree_creation_is_journaled_and_incomplete(
     root, git, _ = source
     git.fail_worktree = True
 
-    with pytest.raises(OperationalError, match="injected worktree failure"):
+    with pytest.raises(OperationalError, match="injected worktree failure") as caught:
         create(root, tmp_path)
 
     workspace = _only_workspace(tmp_path)
     assert workspace.load().state is RunState.INCOMPLETE
     entry = next(iter(workspace.journal.entries()))
     assert entry.status is ResourceStatus.FAILED
+    assert failed_run_id(caught.value) == workspace.run_id
+    # The worktree never materialized, so cleanup resolves the failed entry
+    # without asking Git to remove a directory that does not exist.
+    _assert_cleanup_resolves_every_resource(workspace, git)
+
+
+def test_tool_resolution_failure_after_workspace_creation_names_the_run(
+    source: tuple[Path, FakeGit, dict[str, str]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, git, settings = source
+
+    class Runtime:
+        @classmethod
+        def create(cls, path: Path, *, names: tuple[ToolName, ...]) -> FakeRuntime:
+            if ToolName.BUILDAH in names:
+                raise OperationalError("buildah is unavailable")
+            return FakeRuntime(git, names, settings["digest"])
+
+    monkeypatch.setattr(run_context_module, "ApplicationRuntime", Runtime)
+
+    with pytest.raises(OperationalError, match="buildah is unavailable") as caught:
+        create(root, tmp_path)
+
+    workspace = _only_workspace(tmp_path)
+    assert workspace.load().state is RunState.INCOMPLETE
+    assert failed_run_id(caught.value) == workspace.run_id
+    assert list(workspace.journal.entries()) == []
+    _assert_cleanup_resolves_every_resource(workspace, git)
+
+
+def test_build_names_the_run_when_source_isolation_fails(
+    source: tuple[Path, FakeGit, dict[str, str]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root, git, _ = source
+    git.fail_worktree = True
+    monkeypatch.setattr(local_commands, "state_home", lambda: tmp_path / "state")
+
+    code = main(
+        [
+            "build",
+            "--source",
+            str(root),
+            "--revision",
+            "v1.2.3",
+            "--image",
+            "app",
+            "--platform",
+            "linux/amd64",
+            "--format",
+            "json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    workspace = _only_workspace(tmp_path)
+    assert code == 1
+    value = json.loads(captured.out)
+    assert (value["status"], value["data"]) == (
+        "operationalFailure",
+        {"runId": workspace.run_id},
+    )
+    assert f"conclear cleanup {workspace.run_id}" in captured.err
+    assert workspace.load().state is RunState.INCOMPLETE
 
 
 def test_reopened_run_revalidates_checkout_configuration_and_tools(
@@ -264,6 +384,26 @@ def test_reopened_run_revalidates_checkout_configuration_and_tools(
         open_source_run(
             state_home=state_home, run_id=created.workspace.run_id, names=()
         )
+
+
+def _assert_cleanup_resolves_every_resource(workspace: Any, git: FakeGit) -> None:
+    cleanup_run(
+        workspace,
+        buildah=NoStorage(),
+        podman=NoRuntime(),
+        registry_control=None,
+        git=git,
+    )
+    assert not [
+        entry
+        for entry in workspace.journal.entries()
+        if entry.status
+        in {
+            ResourceStatus.PLANNED,
+            ResourceStatus.CREATED,
+            ResourceStatus.FAILED,
+        }
+    ]
 
 
 def _only_workspace(tmp_path: Path) -> Any:
