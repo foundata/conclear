@@ -1,6 +1,8 @@
 # ConClear architecture
 
-This document defines the intended architecture and behavioral contracts of ConClear. It is a living document for contributors and reviewers; implementation status belongs in tests, issues and release notes rather than in a roadmap here.
+This document defines the architecture and current behavioral contract implemented by ConClear. It contains no planned or speculative behavior; future changes belong in [GitHub issues](https://github.com/foundata/conclear/issues) until their implementation and tests land with the contract change.
+
+Current implementation promises are marked with stable `IPnnnn` anchors. The generated [implementation matrix](./docs/implementation-1.0.0.md) links every promise to its production code and verification tests for this ConClear version.
 
 The [foundata OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md) is normative. This document explains how ConClear implements that guide's automatable rules. Each ConClear release selects and embeds an exact guide revision; when the documents conflict, that selected guide revision takes precedence and this document must be corrected.
 
@@ -34,8 +36,10 @@ The terms MUST, SHOULD and MAY are used as defined in [RFC 2119](https://datatra
 
 ## Product contract<a id="product-contract"></a>
 
+<a id="promise-ip0001"></a>
 ConClear is a command-line application that checks, builds, tests and qualifies OCI container images; publishes accepted candidates; attaches release evidence; verifies the published subject; and promotes only a verified digest. The complete workflow runs on a maintainer-controlled Linux workstation and can run unchanged in protected CI.
 
+<a id="promise-ip0002"></a>
 ConClear verifies declared container-image dependencies and base-image pins, generates non-mutating pin-update proposals from its own registry resolution, and applies a proposal to the local worktree only after verifying it against the current repository state. Checking, proposing, applying and accepting a pin update are distinct operations; acceptance stays with the repository owner's review of the resulting diff.
 
 ConClear does not deploy workloads, operate registries, schedule recurring jobs, manage the supported-release inventory, perform vulnerability triage, rebuild affected projects, orchestrate running services, build virtual machines, process unrelated artifact types, or invoke Renovate or another external updater. An external updater may deliver a ConClear proposal through a review branch or pull request, but that delivery is optional and never required for an authorized local maintainer workflow. Docker, Windows containers and GitHub container actions are outside the supported and tested surface.
@@ -74,6 +78,7 @@ ConClear does not deploy workloads, operate registries, schedule recurring jobs,
 
 ## Core model<a id="core-model"></a>
 
+<a id="promise-ip0003"></a>
 The canonical pre-publication artifact is an OCI image layout, not a mutable local image name. A release follows this data flow:
 
 ```text
@@ -90,14 +95,17 @@ reviewed source commit
   -> immutable and convenience release tags      promote
 ```
 
+<a id="promise-ip0004"></a>
 `conclear release` owns this ordering and can execute every step in one local process. ConClear deliberately completes and accepts `linux/amd64` qualification before starting additional required platforms. This is stricter than the guide's build-and-test ordering and fails the required platform early. Platform qualification may instead run in separate worker runs, on one host or on several: each worker invokes the same `qualify` command, exports its accepted qualification as a digest-bound transport, and a coordinator run created by `assemble` verifies and assembles those transports through the same assembly path. External automation may move transports, prepare the host, unlock credentials and schedule later rescans; it does not reimplement release decisions.
 
+<a id="promise-ip0005"></a>
 The release state advances monotonically through `created`, `qualified`, `assembled`, `published`, `attested`, `verified` and `promoted`. `rejected` and `incomplete` results never satisfy a later state's prerequisite. Retrying a network operation may resume the same state only when all immutable inputs and expected digests still match.
 
 
 
 ## Invariants<a id="invariants"></a>
 
+<a id="promise-ip0006"></a>
 1. No rebuild occurs between qualification and publication.
 2. Every test, scan, SBOM, signature and attestation identifies an immutable manifest or index digest.
 3. Runtime tests use a digest-reverified import of the exact OCI layout that qualification records.
@@ -115,6 +123,7 @@ The release state advances monotonically through `created`, `qualified`, `assemb
 
 ## Guide identity and conformance<a id="guide-identity-and-conformance"></a>
 
+<a id="promise-ip0007"></a>
 Every ConClear build embeds its version, full source revision, and the title, repository, path and full revision of the guide it implements. `conclear version` and `conclear version --format json` expose those values in the forms required by the guide. They are build inputs and MUST NOT be read from the application repository at runtime.
 
 ConClear owns stable check identifiers in the form `CC` followed by four decimal digits, for example `CC0101`. An identifier is never reused for a different rule; removal leaves a retired entry so historical findings remain understandable. Findings, narrow suppressions and documentation use these identifiers.
@@ -127,6 +136,7 @@ Requirements that need human judgment are listed as manual in the conformance do
 
 ## Configuration and trust inputs<a id="configuration-and-trust-inputs"></a>
 
+<a id="promise-ip0008"></a>
 ConClear has one repository-owned configuration file: `conclear.toml`. Its schema is versioned and validated before any build or network operation. Unknown keys are errors so misspelled security settings cannot be ignored.
 
 The configuration declares image definitions, Containerfile and context paths, a fully qualified release destination, required platforms, native-testing requirements, runtime expectations, resource limits, typed test inputs, test-image dependencies, test hooks, image-pin intent, candidate lifetime reductions and permitted exceptions. Paths resolve below the isolated source root and cannot escape through `..`, symlinks or archive entries. The configured source is always a credential-free canonical HTTPS repository identity. An observed Git remote may use that HTTPS form or an equivalent `git@host:owner/repository.git` or `ssh://git@host/owner/repository.git` transport form. ConClear converts a supported observed remote to the canonical HTTPS identity before comparison and records only that identity in evidence. It rejects arbitrary SSH users, host aliases, local paths and other remote forms whose equivalence cannot be established from their syntax alone; it never requires a maintainer to change an equivalent local SSH remote.
@@ -174,6 +184,7 @@ tag_intent = "moving-release-line"
 
 Repository test hooks are argument arrays, not shell strings. ConClear supplies documented paths and immutable references as individual environment values. Hooks cannot interpolate command text and cannot override release state, evidence fields, registry subjects or signer identity.
 
+<a id="promise-ip0009"></a>
 An image may declare a `test` table containing repository fixture handles, run-owned output handles, ordered preparation steps, launch inputs and dependencies on other image IDs from the same configuration. A fixture names an immutable source-tree path and is always mounted read-only. An output names a newly created run-owned directory and may be mounted writable only at a destination already declared by the selected image's runtime profile. Fixture and output names share one namespace, so a mount identifies its source by name alone and is read-only unless it declares otherwise. An output marked secret is never exposed to repository hooks or included by value or content digest in public evidence.
 
 Each preparation step selects the primary image or one of its declared test-image dependencies, replaces that exact image's entrypoint with an argument array, supplies only declared non-secret environment values and mounts, and declares a bounded timeout and expected exit status. Preparation executes under the selected image's configured user, read-only root, capability, `no-new-privileges`, platform and resource controls. It cannot alter those controls or the main launch verdict. The main launch retains the tested image's original entrypoint and may add an explicit argument array, non-secret environment values and declared mounts; its expected one-shot exit status defaults to zero.
@@ -182,6 +193,7 @@ Test-image dependencies form an acyclic graph of image IDs declared in the same 
 
 Vulnerability exceptions use a dedicated typed table declared inside the image they apply to, which identifies the image as the guide requires; each exception states component, advisory, rationale, reachability, exposure, compensating controls, owner, expiry and review trigger. ConClear verifies structure, expiry and an exact finding match, and records the image identifier with every applied exception. Security-owner review remains a repository merge-control responsibility and is not inferred from a self-declared field.
 
+<a id="promise-ip0010"></a>
 Maintainer-controlled release configuration is separate from the application repository. A named profile under `$XDG_CONFIG_HOME/conclear/` supplies a public HTTPS SLSA builder identity and explicitly selects one compiled registry control backend with its host, API and credential locations. The profile may also identify a containers-auth file, Cosign private-key and public-key paths, a passphrase provider, or a KMS/HSM key handle. It contains trust identities and credential locations, not alternative guide rules or secret values. ConClear rejects release configuration and file-based credentials with unsafe ownership or permissions. Backend selection is never inferred from a repository hostname.
 
 The release profile configures optional CI context handling as `omit`, `observe` or `require`. `omit` does not inspect provider variables. `observe` records complete context that agrees with the isolated checkout and otherwise writes a local diagnostic without changing the release result. `require` treats missing, malformed or inconsistent context as an operational failure. ConClear recognizes GitHub Actions, GitLab CI, Gitea Actions, Forgejo Actions and Woodpecker CI through provider-specific adapters. Gitea and Forgejo markers take precedence over their GitHub-compatible variables.
@@ -194,6 +206,7 @@ On a workstation, the signing passphrase may be read from the controlling termin
 
 ## Built-in limits<a id="built-in-limits"></a>
 
+<a id="promise-ip0011"></a>
 ConClear ships enforceable limits. Repository configuration may shorten these intervals but cannot extend or disable them.
 
 | Limit | Built-in maximum |
@@ -215,16 +228,19 @@ Changing a built-in limit changes release behavior and therefore requires a revi
 
 `pins check` remains the freshness and divergence gate and the only owner of durable pin observations. It never edits project files. `pins propose` and `pins apply` are separate explicit operations that implement the guide's pin-update contract without an external updater.
 
+<a id="promise-ip0012"></a>
 `pins propose` resolves every distinct readable tag exactly once through ConClear's authenticated Skopeo resolution and binds that one observed digest to every occurrence of the tag. It derives the required occurrence set from the parsed repository configuration and the parsed Containerfiles, not from a caller-supplied list or a repository-wide text search: the `reference` value of every `[[images.pins]]` declaration and the exact external image input of every `FROM`, `COPY --from` and `RUN --mount=from` instruction that names the same tagged and digest-pinned reference. A declared pin without a Containerfile occurrence, an undeclared Containerfile input, conflicting tag intents for one readable tag, a reference that appears in a comment, an unrelated value or an undeclared file, an ambiguous or unsupported spelling, and any duplicate or overlapping span are rejected; nothing is rewritten opportunistically. Proposal generation is repository-wide by default. An image selection is accepted only when it omits no other image bound to the same readable tag. `pins propose` does not modify project files, create commits or branches, or update durable pin observations. Its explicitly requested output file is its only persistent write, and it refuses to overwrite an existing file.
 
 The proposal is a schema-validated version-1 record with `recordType` `pinUpdateProposal`. It records the ConClear version, source revision and embedded guide revision; the resolving tool identity; the creation time from an injected UTC clock; the canonical repository identity, current full Git revision, configuration path and SHA-256 digest; the selected image IDs; one lookup per original tagged-digest reference with its affected image IDs, declared tag intent, resolved tagged-digest reference, old and new digest and resolution time; and one entry per affected file with its repository-relative path, original and expected resulting SHA-256 digests and exact non-overlapping byte spans with their exact old and replacement bytes. Only the digest of a reference changes; registry, repository and tag spelling are preserved byte for byte, and a fully qualified reference is never normalized into another name. The proposal contains no credentials, authentication-file paths or registry tokens. Its serialization is canonical JSON, so fixed repository bytes, clock, resolver observations and tool identity produce identical bytes; its identity is the SHA-256 of those exact stored bytes. An already-current repository produces a successful proposal with no file entries. A digest change under an `immutable-version` tag is recorded as review-required and reported with `CC0205`; there is no skip, override or automatic acceptance.
 
+<a id="promise-ip0013"></a>
 `pins apply` consumes one proposal and never resolves a tag again. Before its first project-file write it completes a read-only preflight: it validates the proposal schema and ConClear-supported record identity, confines every path below the repository root without following symbolic links and rejects absolute paths, traversal, symbolic links and non-regular targets, matches the canonical repository identity and current full Git revision, matches the current configuration digest and every target file's complete SHA-256 digest, reparses the current configuration and Containerfiles and proves that their dependency set, paths and occurrence cardinality equal the proposal, validates every span boundary, old byte sequence, replacement reference, digest and non-overlap invariant, and rejects a proposal whose resolution time exceeds the effective pin-resolution freshness limit of the affected images without substituting a newer digest. It constructs every resulting file in memory, proves that only the proposed spans differ, writes each file through a same-directory temporary file created with restrictive permissions, preserves the original mode, flushes and durably replaces the target, then reparses and verifies the complete result against the proposal. A proposal with no file entries touches nothing, and a proposal whose files already carry the expected result is reported as already applied without writes. On any detected preparation, write, flush, replace or verification error, every target is restored to its exact original bytes and the command returns an operational failure; a known partial application is never left behind. `pins apply` never commits, creates a branch, pushes, merges, builds, qualifies, publishes, signs or promotes, and it names the follow-up `pins check` invocation that must confirm the result. A proposal and its application are not release evidence.
 
 
 
 ## Command model<a id="command-model"></a>
 
+<a id="promise-ip0014"></a>
 The public command surface is composable, but `release` is the normal release interface. Individual commands support diagnosis, distributed platform work and recovery without defining an alternative workflow.
 
 A typical local release is selected explicitly:
@@ -261,7 +277,7 @@ conclear release \
 | `rescan` | Re-evaluate a released digest from retained SBOMs or immutable image content and emit a new linked rescan result. |
 | `cleanup` | Resume cleanup of resources recorded as owned by one release run. |
 
-`release` selects an image and a Git revision, resolves that selector to a complete commit ID, creates a detached worktree and derives all source facts from the checkout. A version supplied for naming is an invocation parameter, not evidence of source identity. The command validates it against repository release metadata when the project provides such metadata.
+`release` selects an image and a Git revision, resolves that selector to a complete commit ID, creates a detached worktree and derives all source facts from the checkout. A version supplied for naming is a validated invocation parameter, not evidence of source identity.
 
 `release --resume <run-id>` resumes only after verifying the recorded source, configuration, tools, layouts, evidence and remote digests. It refuses to resume across a changed immutable input. A resumed run reuses its recorded candidate reference only when the registry resolves that reference conclusively to the unchanged expected digest within its recorded lifetime. Otherwise the run cannot continue: a candidate reference is never reused for a second publication attempt, and the release restarts as a new run with a new run identifier and candidate reference.
 
@@ -271,6 +287,7 @@ Commands support `--format json`. JSON mode writes one documented result object 
 
 ## Records and workspaces<a id="records-and-workspaces"></a>
 
+<a id="promise-ip0015"></a>
 Every record is UTF-8 JSON validated against a versioned schema. It includes `schemaVersion`, `recordType`, `createdAt`, `runId`, ConClear and guide identity, canonical source repository and revision, SHA-256 of the exact `conclear.toml` bytes, relevant tool identities and a verdict. Timestamps use UTC RFC 3339 form with whole-second precision and a `Z` suffix. ConClear truncates a sub-second observation when it reads its clock and never rounds, so a recorded time never post-dates the observation and identical inputs serialize to identical bytes. A record digest is the SHA-256 of its exact stored bytes.
 
 `platform-qualification-<platform>.json` additionally binds the target platform; OCI descriptor and manifest digest; Containerfile, context and effective build arguments; external image digests; build and test host, target and execution architectures; emulation or cross-build mechanism; runtime constraints; non-secret test-input and preparation identities; exact test-image dependency descriptors and manifest digests; test result digests; SBOM digest and SPDX version; scan-result and vulnerability-database identities; applied exceptions; and the platform verdict.
@@ -283,6 +300,7 @@ A pin-update proposal uses its own version-1 schema rather than the public recor
 
 `release-verification.json` contains the subject and platform digests; ConClear version and source revision; guide title, repository, path and revision; SHA-256 of `conclear.toml`; host architecture, run identity, protected builder identity and optional observed CI context; signer mode and public-key fingerprint or managed-key identity; and digests of the qualifications, SBOMs, scan results, provenance and candidate record. It is an intermediate predicate, not a source comment or committed project file. Its signed registry attestation is authoritative.
 
+<a id="promise-ip0016"></a>
 A run workspace is stored under `$XDG_STATE_HOME/conclear/runs/<run-id>/`:
 
 ```text
@@ -310,68 +328,82 @@ Rejected runs retain reports with `verdict: rejected`. Interrupted runs are `inc
 
 ## Tool execution<a id="tool-execution"></a>
 
-The required core tools are Git, Buildah, Podman, Skopeo, Hadolint, Trivy and Cosign. ConClear may run a supporting tool as a host executable or a digest-pinned tool image when its adapter supports that mode. External updaters and Testinfra project tests are not hidden ConClear services: an updater such as Renovate stays outside ConClear as optional review delivery, while Testinfra may be invoked through a declared repository hook whose interpreter and dependency lock are recorded.
+<a id="promise-ip0017"></a>
+The required core tools are Git, Buildah, Podman, Skopeo, Hadolint, Trivy and Cosign, executed as host executables. External updaters and Testinfra project tests are not hidden ConClear services: an updater such as Renovate stays outside ConClear as optional review delivery, while Testinfra may be invoked through a declared repository hook whose interpreter and dependency lock are recorded.
 
-Each ConClear release contains a supported-version matrix. At release start, ConClear resolves every executable to an absolute path, records its reported version and executable digest or its tool-image digest, and rejects unsupported combinations. It rechecks those identities before later use so a package upgrade during a run cannot silently change the toolchain. A later release run may use newer supported tools.
+Each ConClear release contains a supported-version matrix. At release start, ConClear resolves every executable to an absolute path, records its reported version and executable digest, and rejects unsupported combinations. It rechecks those identities before later use so a package upgrade during a run cannot silently change the toolchain. A later release run may use newer supported tools.
 
 All external commands use argument arrays, sanitized environments, explicit timeouts, bounded retries and captured logs. ConClear never constructs a shell command from project input. Logs redact credentials, authorization headers, passphrases and secret mount paths before they are persisted or displayed.
 
 Buildah receives a run-specific root and runroot. Podman imports use run-owned names and are resolved back to their immutable manifest digest before testing. No command relies on the user's mutable short-name search configuration.
 
-The Trivy database cache lives under `$XDG_CACHE_HOME/conclear/`. Refresh uses a lock, a same-filesystem temporary directory, validation and atomic rename. At release start, ConClear selects one validated database snapshot and holds its content digest constant across every platform scan in the release. Distributed workers receive or resolve that exact snapshot by digest. A stale or corrupt cache triggers one bounded refresh and never falls back silently to unvalidated data. A guide-permitted alternative vulnerability scanner applies the same snapshot and cache rules to its authoritative database.
+<a id="promise-ip0018"></a>
+The Trivy database cache lives under `$XDG_CACHE_HOME/conclear/`. Refresh uses a lock, a same-filesystem temporary directory, validation and atomic rename. At release start, ConClear selects one validated database snapshot and holds its content digest constant across every platform scan in the release. Distributed workers receive or resolve that exact snapshot by digest. A stale or corrupt cache triggers one bounded refresh and never falls back silently to unvalidated data.
 
 
 
 ## Build and qualification<a id="build-and-qualification"></a>
 
+<a id="promise-ip0019"></a>
 `release` creates its build context from an isolated detached worktree of the selected commit. The ordinary checkout may be dirty, but its uncommitted and untracked files cannot enter the context. ConClear validates `.containerignore`, rejects source paths outside the checkout and records the exact Containerfile and configuration digests. Hadolint runs with the image's context directory as its working directory and, when that directory contains a committed regular `.hadolint.yaml` or `.hadolint.yml`, receives it explicitly, so the reviewed checkout rather than the invoking directory or the operator's home defines lint policy.
 
+<a id="promise-ip0020"></a>
 Buildah produces OCI format in rootless mode and exports an OCI layout. ConClear derives `SOURCE_DATE_EPOCH` from the source commit time where the project build supports it. Timestamp rewriting is a build input and is never applied after testing.
 
 ConClear supplies `IMAGE_REVISION` from the full observed source commit, `IMAGE_VERSION` from the validated release version when present and `IMAGE_CREATED` as an RFC 3339 representation of the controlled source timestamp. It inspects the final image configuration and rejects missing mandatory `org.opencontainers.image.*` labels or source, revision, version and creation values that disagree with those observations.
 
+<a id="promise-ip0021"></a>
 Every release includes `linux/amd64`. `linux/arm64` is optional and required only when declared; omitting it needs no reason and leaves no trace in configuration or evidence. `native_test_platforms` must be a subset of `platforms` and makes native runtime testing mandatory for the listed targets; emulated tests reject qualification there. Every other target qualifies through native or QEMU user-mode emulated build and runtime tests alike, provided build and test records identify the target, host, execution architecture and emulation mechanism; ConClear neither asks for nor records a justification for emulation. KVM is recorded only as acceleration for an executable guest architecture and is never treated as cross-architecture emulation. Before building or testing a platform whose architecture differs from the host, ConClear requires an enabled `binfmt_misc` handler for that architecture; without one the phase fails operationally, names the missing handler and leaves the platform unqualified, and ConClear never installs emulators or registers handlers itself. Assembly rejects a qualification record whose execution observation claims native execution for a foreign architecture or emulated execution for the host architecture.
 
 At configuration-to-layout boundaries, `linux/arm64` and `linux/arm64/v8` select the same target because an omitted OCI arm64 variant denotes the v8 baseline. This equivalence applies to required-platform, native-test, dependency-coverage, qualification-transport and assembly checks. Other variants remain distinct, and assembled descriptors and platform-manifest evidence retain the exact variant observed in the image configuration.
 
+<a id="promise-ip0022"></a>
 For each platform, ConClear validates the primary layout and every declared test-image dependency recursively, imports them through a digest-preserving containers-storage path, resolves every imported manifest and compares it with the corresponding layout digest before starting preparation or tests. A mismatch is an operational failure. Tests address run-owned names created from those verified imports rather than mutable registry references.
 
 Before the primary container starts, ConClear creates declared output directories with private ownership and validates every repository fixture without following symbolic links. It rejects path escape, symbolic links, special files, unsafe ownership or modes, writable repository fixtures, undeclared mount sources, overlapping container targets and writable destinations outside the selected image's declared runtime mounts. Preparation containers run sequentially from exact imported images. After each step ConClear verifies its exit status and the ownership, type and mode of every generated output before a later step may consume it.
 
+<a id="promise-ip0023"></a>
 Built-in runtime checks cover the configured user, read-only root filesystem, writable mounts, capabilities, `no-new-privileges`, startup, health command, signal forwarding, expected exit-status propagation, shutdown, file ownership and resource behavior. Runtime application files expected to remain immutable are checked for root ownership and permission modes that deny group and other writes to the configured non-root runtime identity. Owner-write bits do not grant that identity access and are not rejected. A documented supervisor may be PID 1 when the tests establish forwarding and propagation behavior. Launch arguments and non-secret environment values supplement the image's original entrypoint; they cannot replace it or override a built-in gate.
 
 For a service health command, a nonzero application status means not ready and is retried at a bounded implementation-owned interval until success or the configured startup deadline. The startup timeout is one monotonic readiness budget: every probe is bounded by its remaining time and cannot restart the budget. A service that exits before readiness or remains unhealthy at the deadline produces a `CC0403` rejection. A Podman operation failure, an unavailable or unexecutable health command, or an inability to inspect the service remains an operational failure rather than an application-health result. Readiness evidence records the attempt count, configured timeout, elapsed wait, final command status, final container state and a digest of the final bounded redacted command output; run-owned command logs retain that bounded output for diagnostics.
 
 Smoke tests apply explicit memory, CPU, process and file-descriptor limits from repository configuration and record the effective values. Health checks run the repository-declared command; ConClear does not expect an OCI image to contain Docker-format `HEALTHCHECK` metadata. Test evidence records hashes of the launch declaration, each preparation declaration, the exact image manifest supplying its executable, non-secret fixture and output trees, and every dependency layout and manifest. Secret output facts identify the producing step and use but omit values, paths and content digests.
 
+<a id="promise-ip0024"></a>
 Repository hooks add application-specific assertions but cannot skip built-in gates. A hook receives a run-owned non-secret test-input manifest containing the primary and dependency layout paths, immutable digests and non-secret generated output handles; it receives no mutable image reference or secret output path. Hooks are reviewed source commands run with ConClear's sanitized host environment, but ConClear cannot sandbox them from invoking other host executables. Their recorded executable and output identities make that trust boundary observable; a hook-side rebuild or pull cannot replace ConClear's exact-image built-in results.
 
 ConClear destroys preparation containers, generated outputs and secret material on success and on ordinary failure cleanup. Cleanup failures preserve failed journal entries and identify retained resources; they do not authorize deletion of an unjournaled path. ConClear does not provide a success-retention mode for test secrets.
 
-Trivy is the authoritative scanner for packages, vulnerabilities, secrets and configuration. It scans the build context for secrets, the Containerfile and image configuration for insecure settings, and the final layout for packages, vulnerabilities, secrets and configuration. A fixable `HIGH` or `CRITICAL` vulnerability rejects qualification unless an exact, approved and unexpired repository exception applies. Trivy is the only supported scanner stack, and exactly one vulnerability result gates a release. The guide permits a Syft and Grype combination for SBOM and vulnerability work, but ConClear does not implement it: Trivy would remain required for secret and configuration scanning, so that combination adds two tool identities and a second vulnerability database without removing one. The conformance documentation records this guide option as not implemented. Every rejecting scan runs against local content and the digest-addressed layout before publication. Every failed Trivy configuration check rejects qualification except `DS-0026`, which demands a Containerfile `HEALTHCHECK` that the guide forbids in OCI-format images and `CC0112` rejects; that single check is inapplicable by construction and is not a repository exception.
+<a id="promise-ip0025"></a>
+Trivy is the authoritative scanner for packages, vulnerabilities, secrets and configuration. It scans the build context for secrets, the Containerfile and image configuration for insecure settings, and the final layout for packages, vulnerabilities, secrets and configuration. A fixable `HIGH` or `CRITICAL` vulnerability rejects qualification unless an exact, approved and unexpired repository exception applies. Trivy is the only supported scanner stack, and exactly one vulnerability result gates a release. Every rejecting scan runs against local content and the digest-addressed layout before publication. Every failed Trivy configuration check rejects qualification except `DS-0026`, which demands a Containerfile `HEALTHCHECK` that the guide forbids in OCI-format images and `CC0112` rejects; that single check is inapplicable by construction and is not a repository exception.
 
-Each platform SBOM is SPDX JSON. SPDX 2.3 is the interoperability baseline; a later finalized version is accepted only when the configured toolchain can generate, validate, attach, retrieve, rescan and interpret it without loss. ConClear validates the document, records its exact specification version and exports the raw JSON.
+Each platform SBOM is SPDX 2.3 JSON. ConClear validates the document, records its exact specification version and exports the raw JSON.
 
+<a id="promise-ip0026"></a>
 A qualification is validated in one of two ways and never by rewriting it. A record owned by the assembling run must name that run. A transported record keeps its worker run identity and is accepted only through a transport: the coordinator compares the transport with a digest the caller supplied independently before trusting any member, stages the content below its own workspace through the bounded, link-free archive extractor or a member-by-member copy that follows no symbolic link, and rejects absolute paths, traversal, symbolic and hard links, device nodes, duplicate, missing and undeclared members and size or member-count abuse. It then verifies every member against the manifest, the qualification-record digest, the record schema and verdict, the layout graph, the platform descriptor and image configuration, the platform-manifest digest and the evidence payloads, installs the verified copies at the standard workspace locations under journaled ownership, and only then reads the qualification. Failed imports retain their staging directory under a failed journal entry for cleanup.
 
-Assembly requires matching source repository and revision, repository configuration, guide and ConClear identity and release version across all qualifications and against the coordinator run; a qualification produced by another ConClear revision is rejected without an override. For every external tool used on multiple platform workers, its normalized reported version must match. Platform-specific executable and tool-image manifest digests may differ and remain recorded in each qualification. The authoritative vulnerability-database content digest, the declared pin set, the observed pin digests and the effective limits must match exactly across all platform qualifications. Assembly also compares OCI platform descriptors with image configuration, rejects missing, duplicate and unexpected platforms, and creates one image index for a multi-platform release whose candidate reference is named for the coordinator run. No record with an incomplete or rejected verdict can enter a candidate, and copying workspaces or records outside a transport is not a supported path.
+<a id="promise-ip0027"></a>
+Assembly requires matching source repository and revision, repository configuration, guide and ConClear identity and release version across all qualifications and against the coordinator run; a qualification produced by another ConClear revision is rejected without an override. For every external tool used on multiple platform workers, its normalized reported version must match. Platform-specific executable digests may differ and remain recorded in each qualification. The authoritative vulnerability-database content digest, the declared pin set, the observed pin digests and the effective limits must match exactly across all platform qualifications. Assembly also compares OCI platform descriptors with image configuration, rejects missing, duplicate and unexpected platforms, and creates one image index for a multi-platform release whose candidate reference is named for the coordinator run. No record with an incomplete or rejected verdict can enter a candidate, and copying workspaces or records outside a transport is not a supported path.
 
 
 
 ## Publication and promotion<a id="publication-and-promotion"></a>
 
+<a id="promise-ip0028"></a>
 Public foundata images are published to configured repositories on `quay.io`. Consumed images and prepublication release destinations may use another fully qualified authoritative registry. ConClear rejects short names and does not rewrite an upstream reference to prefer one provider.
 
-ConClear separates OCI transport from provider control. Skopeo copies and resolves OCI content. A compiled registry backend observes and changes provider-specific tag controls. The release profile selects the backend explicitly, and the complete `publish` through `promote` workflow rejects an incompatible destination before qualification or remote mutation. The local `check`, `pins check`, `build`, `test`, `evidence`, `qualify`, `assemble` and `provenance` stages remain available for destinations without a supported backend.
+ConClear separates OCI transport from provider control. Skopeo copies and resolves OCI content. A compiled registry backend observes and changes provider-specific tag controls. The release profile selects the backend explicitly, and the complete `publish` through `promote` workflow rejects an incompatible destination before qualification or remote mutation. The local `check`, `pins check`, `build`, `test`, `qualify`, `assemble` and `provenance` stages remain available for destinations without a supported backend.
 
-A supported registry backend must provide exact tag observation, digest-preserving manifest-list and platform graph handling, OCI referrer support compatible with Cosign, an independently enforced candidate lifetime, exact digest tag assignment, owned-tag deletion and post-write observation that resolves ambiguous writes. It must enable selective immutable-tag protection where the provider enforces it and report the control as unavailable where the provider accepts but does not enforce it; repository-wide immutability does not satisfy the requirement. Local timestamps and best-effort cleanup never satisfy the lifetime requirement. Quay.io provides the required controls, does not currently enforce per-tag immutability, and `quay` is the only implemented backend. Adding another backend extends the compiled backend list and its typed adapter without changing publication or promotion policy.
+A supported registry backend must provide exact tag observation, digest-preserving manifest-list and platform graph handling, OCI referrer support compatible with Cosign, an independently enforced candidate lifetime, exact digest tag assignment, owned-tag deletion and post-write observation that resolves ambiguous writes. It must enable selective immutable-tag protection where the provider enforces it and report the control as unavailable where the provider accepts but does not enforce it; repository-wide immutability does not satisfy the requirement. Local timestamps and best-effort cleanup never satisfy the lifetime requirement. Quay.io provides the required controls, does not currently enforce per-tag immutability, and `quay` is the only implemented backend.
 
+<a id="promise-ip0029"></a>
 The default candidate lives in the final release repository so signatures and OCI referrers remain with the subject. A versioned release uses `<version>-candidate.<run-id>.g<source-revision-short>`. An unversioned release uses `g<source-revision-short>-candidate.<run-id>`. ConClear generates the lowercase ULID, uses the first eight hexadecimal characters of the full source revision for the short form and validates every component before creating the tag.
 
 `publish` checks that the candidate tag is unused, then copies the accepted manifest or index with Skopeo's digest-preserving path, including every platform for an index. It resolves the remote index, platform manifests and referenced content and compares the complete graph with the local candidate. Registries do not provide a portable compare-and-swap operation, so pre-write checks detect ordinary collisions while post-write verification determines success.
 
 Immediately after a successful copy, ConClear asks the selected backend to enforce and verify the candidate lifetime. Failure to establish that independent control stops the release before attestation. ConClear enables candidate tag immutability when the backend supports it and otherwise records that the recommended control was unavailable. A failed or ambiguous publication is recorded for cleanup; resume reuses its tag only after conclusively resolving it to the unchanged expected digest within its lifetime. Candidate content and evidence must be safe for public disclosure; later provider garbage collection is outside the release verdict.
 
+<a id="promise-ip0030"></a>
 Promotion first confirms that the candidate has not expired, then resolves and verifies the signed release-verification attestation. It refuses to replace an immutable version tag that already names another digest, whether or not the registry enforces immutability. It writes only the verified digest to each requested immutable or moving tag, enables registry tag protection where the backend supports it and records when that control was unavailable, resolves every tag afterward and records the observed result separately. A partial multi-tag update is an operational failure and is never hidden by rollback or repointing.
 
 After successful promotion, ConClear deletes the candidate tag and verifies its removal. An abandoned or rejected candidate may be deleted with `cleanup` or left to its recorded expiration. Failure to delete after successful promotion is reported as cleanup failure without changing the release digest's verified status.
@@ -380,6 +412,7 @@ After successful promotion, ConClear deletes the candidate tag and verifies its 
 
 ## Provenance, signing and verification<a id="provenance-signing-and-verification"></a>
 
+<a id="promise-ip0031"></a>
 ConClear generates release provenance as an in-toto Statement with a SLSA Provenance v1 predicate. It derives the subject graph from `release-candidate.json`, source identity from the isolated Git checkout, builder identity from the protected release profile, ConClear implementation identity from embedded data, and the run identity from observed execution. Repository configuration, CI environment metadata, labels and arbitrary command-line values cannot override those identities.
 
 The SLSA builder ID is a stable, credential-free HTTPS documentation URI naming one complete build-platform trust domain. The protected release profile supplies it, and the workspace binds it as an immutable release input. Security-significant environments use different builder IDs. `runDetails.builder.version` records the ConClear version and full source revision, so application upgrades do not change the identity of an otherwise unchanged build platform.
@@ -390,6 +423,7 @@ Materials include the canonical source repository and full commit, Containerfile
 
 The predicate is generated from the accepted candidate before publication. After publication, ConClear verifies the final registry digest, validates that it equals the predicate subject and only then attaches provenance. Cosign wraps every attestation around exactly one subject, so ConClear attaches the provenance predicate to the index digest and, separately, to each platform manifest digest; the local `provenance.json` statement records the complete subject set and every attached copy must carry the identical predicate.
 
+<a id="promise-ip0032"></a>
 The baseline signer is a foundata-managed Cosign key pair. The encrypted private key and its passphrase are supplied to the authorized release environment through protected secret mechanisms; the approved public key is supplied independently through maintainer-controlled trust configuration. A KMS- or HSM-protected key SHOULD be used when that infrastructure is available. A workstation holding the managed signing authority can produce a valid release.
 
 Signer identity is the SHA-256 fingerprint that ConClear computes from the approved public key, or the managed-key identity resolved by the Cosign adapter. It remains distinct from the build-platform identity, ConClear implementation identity and Git source identity. Neither private key material nor its passphrase appears in a project file, command-line literal, ordinary environment configuration, log, provenance statement or evidence record.
@@ -402,6 +436,7 @@ No ConClear command signs before `publish`. In particular, `check`, `build`, `te
 
 The signed SPDX attestation is the repository-scoped consumer copy. ConClear retrieves and validates its predicate through Cosign during verification and rescans; it does not use Cosign's deprecated unsigned raw SBOM attachment command.
 
+<a id="promise-ip0033"></a>
 `verify` starts from the candidate digest rather than its tag. It recursively compares the registry graph with the candidate, verifies every required image signature and transparency-log inclusion against the external trust root, retrieves and verifies one SBOM per platform, validates the recorded SPDX version, verifies provenance subject coverage, signer identities and log inclusion, and checks that all evidence digests match the qualification records.
 
 After those checks pass, ConClear creates `release-verification.json`, records the single-subject in-toto Statement it expects Cosign to produce, has Cosign sign and attach the record as that statement's predicate with public log inclusion, retrieves it again and verifies its subject, predicate digest, signer and log inclusion. Only that post-attachment success advances the run to `verified`. Promotion immediately repeats verification of this attestation, its log inclusion and the subject digest.
@@ -410,6 +445,7 @@ After those checks pass, ConClear creates `release-verification.json`, records t
 
 ## Rescans<a id="rescans"></a>
 
+<a id="promise-ip0034"></a>
 `conclear rescan --subject <repository>@<digest> --image <image>` accepts an immutable released subject. It retrieves and verifies the signed release-verification attestation, including transparency-log inclusion, and rejects a missing or conflicting result. It takes the required repository-configuration digest from that predicate, then enumerates every platform manifest, retrieves each signed SBOM, verifies the attestation, signer and log inclusion against the external trust root, and evaluates the current vulnerability data for the complete platform set.
 
 An SBOM rescan is explicitly recorded as vulnerability matching against retained inventory only. A rescan that requires secret or configuration analysis retrieves the immutable image content and repeats those scans. Partial platform coverage cannot produce an accepted result.
@@ -422,6 +458,7 @@ An authoritative rescan signs and attaches its result to the released digest, af
 
 ## Implementation structure<a id="implementation-structure"></a>
 
+<a id="promise-ip0035"></a>
 ConClear is implemented in Python 3.12 or newer with a `src/` package layout, `uv_build` and a committed `uv.lock`. Click provides the command hierarchy and JSON Schema validates configuration and public records. Internal models are typed dataclasses or narrowly typed value objects; there is no generic artifact framework.
 
 The implementation separates these responsibilities:
@@ -446,6 +483,7 @@ Network operations are bounded and classified by idempotency. Reads may retry. A
 
 ## Testing<a id="testing"></a>
 
+<a id="promise-ip0036"></a>
 Ruff, strict mypy, pytest and coverage run for the Python code. The hermetic unit suite carries an enforced minimum branch-coverage floor that the distribution gate applies; the floor is raised as coverage grows and is never met by excluding code. Tests use explicit markers for unit, local integration, emulation and network access so the default suite never publishes or requires credentials.
 
 Unit tests cover configuration validation, limit narrowing, check identifiers, candidate naming, state transitions, record schemas, digest binding, platform coverage, command redaction, error classification, deterministic pin-proposal generation with an injected resolver and clock, and all-or-nothing proposal application with injected write, flush, replace and verification faults. Property tests cover reference parsing, path containment, archive extraction and OCI descriptor graphs.
@@ -464,8 +502,8 @@ The provider-independent distribution gate may retain its validated source distr
 
 ## Maintaining this document<a id="maintaining-this-document"></a>
 
-This document describes target behavior, including behavior not yet implemented. Contributors update it in the same pull request as an intentional architectural or public-contract change. Work sequencing and release timing belong in issues or project planning, not in this document.
+This document describes only behavior implemented and tested in the current source tree. Planned or speculative behavior belongs in a [GitHub issue](https://github.com/foundata/conclear/issues) until its implementation, tests and contract text land together. Contributors update the matching `IPnnnn` promise in `src/conclear/data/implementation.json` whenever current behavior, its implementation ownership or its verification changes, then regenerate the versioned implementation matrix.
 
 A guide revision update requires reviewing every changed normative rule, updating the embedded guide identity, check catalog, generated conformance document, affected schemas and tests. ConClear must not advertise the new guide revision until its automatable rules are implemented and passing.
 
-Public command behavior and record schemas change deliberately. Each JSON schema has its own integer version; incompatible field or meaning changes increment its major schema version, while readers may accept explicitly documented older versions. Stable check identifiers and published Markdown anchors are never silently repurposed. A generated, committed contract inventory enumerates the command hierarchy with its options and arguments, the schema identifiers and versions, the public record types, the exit statuses and the active and retired check identifiers; tests and the release gate verify that it is current, so every change to a compatibility surface is an explicit, reviewable regeneration.
+Public command behavior and record schemas change deliberately. Each JSON schema has its own integer version; incompatible field or meaning changes increment its major schema version, while readers may accept explicitly documented older versions. Stable check identifiers, implementation-promise identifiers and published Markdown anchors are never silently repurposed. A generated, committed internal inventory enumerates the command hierarchy with its options and arguments, the schema identifiers and versions, the public record types, the exit statuses, the active and retired check identifiers and the current implementation-promise identifiers. Its JSON layout is not a supported external interface. Tests and the release gate verify that the inventory is current, so every change to an inventoried compatibility surface is an explicit, reviewable regeneration.
