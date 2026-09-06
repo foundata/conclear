@@ -325,10 +325,12 @@ The effective writable set is exact. It includes every read-write mount that
 Podman observes, regardless of whether ConClear supplied it or the image created
 an anonymous mount through `VOLUME`. Every image-declared volume destination
 must therefore be present in `writable_mounts` unless the selected profile
-already supplies it. ConClear mounts private tmpfs over each declared path and
-rejects any unexpected or missing writable destination. Static checks reject an
-undeclared `VOLUME` in the final local build stage; inherited volume metadata is
-authoritatively detected by the runtime observation.
+already supplies it. A declared image volume keeps its anonymous backing in the
+run-owned isolated Podman storage; ConClear supplies private tmpfs only for a
+declared path that the image does not provide. It rejects any unexpected or
+missing writable destination. Static checks reject an undeclared `VOLUME` in
+the final local build stage; inherited volume metadata is authoritatively
+detected by the runtime observation.
 
 Repository test hooks are argument arrays, not shell strings. ConClear supplies
 documented paths and immutable references as individual environment values.
