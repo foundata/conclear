@@ -280,6 +280,7 @@ def promote_command(
                     {"tag": tag, "digest": str(digest)} for tag, digest in result.tags
                 ],
                 "candidateDeleted": result.candidate_deleted,
+                "immutabilityEnabled": result.immutability_enabled,
             },
         ),
         output_format,
@@ -362,6 +363,7 @@ def release_command(
                 "subject": result.subject,
                 "tags": [{"tag": tag, "digest": digest} for tag, digest in result.tags],
                 "candidateDeleted": result.candidate_deleted,
+                "immutabilityEnabled": result.immutability_enabled,
             },
         ),
         output_format,

@@ -210,6 +210,7 @@ class PromotionResult:
     tags: tuple[tuple[str, Digest], ...]
     candidate_deleted: bool
     findings: tuple[Finding, ...] = ()
+    immutability_enabled: bool = True
 
 
 def publish_candidate(
@@ -902,6 +903,7 @@ def promote_candidate(
             "Immutable and moving release tags must be disjoint"
         )
     observed: list[tuple[str, Digest]] = []
+    protected = True
     for tag in immutable_tags:
         current = registry_control.observe_tag(image.repository, tag)
         if current is not None and current.digest != published.graph.digest:
@@ -915,26 +917,28 @@ def promote_candidate(
                 entry.resource_id == resource_id
                 for entry in workspace.journal.entries()
             ):
-                _write_release_tag(
-                    tag,
-                    published.graph.digest,
-                    image,
-                    workspace,
-                    registry_control,
-                    registry,
-                    auth_file,
-                    immutable=True,
+                protected = (
+                    _write_release_tag(
+                        tag,
+                        published.graph.digest,
+                        image,
+                        workspace,
+                        registry_control,
+                        registry,
+                        auth_file,
+                        immutable=True,
+                    )
+                    and protected
                 )
                 observed.append((tag, published.graph.digest))
                 continue
             if not current.immutable:
-                immutable_result = registry_control.ensure_tag_immutable(
-                    image.repository, tag
-                )
-                if not immutable_result.immutable:
-                    raise OperationalError(
-                        f"Immutable release tag was not protected: {tag}"
+                protected = (
+                    _protect_release_tag(
+                        registry_control, image, tag, expected_digest=current.digest
                     )
+                    and protected
+                )
             resolved = registry.resolve_digest(
                 image.repository.with_tag(tag), auth_file=auth_file
             )
@@ -944,15 +948,18 @@ def promote_candidate(
                 )
             observed.append((tag, current.digest))
             continue
-        _write_release_tag(
-            tag,
-            published.graph.digest,
-            image,
-            workspace,
-            registry_control,
-            registry,
-            auth_file,
-            immutable=True,
+        protected = (
+            _write_release_tag(
+                tag,
+                published.graph.digest,
+                image,
+                workspace,
+                registry_control,
+                registry,
+                auth_file,
+                immutable=True,
+            )
+            and protected
         )
         observed.append((tag, published.graph.digest))
     for tag in moving_tags:
@@ -990,9 +997,10 @@ def promote_candidate(
                     "Verified digest was promoted but candidate cleanup failed",
                 ),
             ),
+            immutability_enabled=protected,
         )
     else:
-        return PromotionResult(tuple(observed), True)
+        return PromotionResult(tuple(observed), True, immutability_enabled=protected)
 
 
 def _write_release_tag(
@@ -1005,7 +1013,8 @@ def _write_release_tag(
     auth_file: Path | None,
     *,
     immutable: bool,
-) -> None:
+) -> bool:
+    """Write or adopt one release tag and return whether the registry protects it."""
     resource_id = f"tag-{tag}"
     tagged = image.repository.with_tag(tag)
     metadata = {"digest": str(digest), "immutable": immutable}
@@ -1024,14 +1033,13 @@ def _write_release_tag(
                 raise OperationalError(
                     f"Release tag {tag} has conflicting registry observations"
                 )
+            protected = True
             if immutable and not current.immutable:
-                current = registry_control.ensure_tag_immutable(image.repository, tag)
-                if current.digest != digest or not current.immutable:
-                    raise OperationalError(
-                        f"Immutable release tag was not protected: {tag}"
-                    )
+                protected = _protect_release_tag(
+                    registry_control, image, tag, expected_digest=digest
+                )
             workspace.journal.update(resource_id, ResourceStatus.CREATED)
-            return
+            return protected
         if existing.status is ResourceStatus.CREATED:
             raise OperationalError(f"Recorded release tag changed after write: {tag}")
     else:
@@ -1049,18 +1057,38 @@ def _write_release_tag(
             raise OperationalError(
                 f"Release tag {tag} did not resolve to verified digest"
             )
+        protected = True
         if immutable:
-            immutable_result = registry_control.ensure_tag_immutable(
-                image.repository, tag
+            protected = _protect_release_tag(
+                registry_control, image, tag, expected_digest=digest
             )
-            if not immutable_result.immutable:
-                raise OperationalError(
-                    f"Immutable release tag was not protected: {tag}"
-                )
     except Exception:
         workspace.journal.mark_failed(resource_id)
         raise
     workspace.journal.update(resource_id, ResourceStatus.CREATED)
+    return protected
+
+
+def _protect_release_tag(
+    registry_control: RegistryControl,
+    image: ImageConfig,
+    tag: str,
+    *,
+    expected_digest: Digest,
+) -> bool:
+    """Enable registry tag protection where the backend enforces it.
+
+    Returns False when the backend reports the control as unavailable; the
+    verified digest stays in place and ConClear's own refusal to repoint an
+    immutable version tag remains the enforced control.
+    """
+    try:
+        result = registry_control.ensure_tag_immutable(image.repository, tag)
+    except UnsupportedOperationError:
+        return False
+    if result.digest != expected_digest or not result.immutable:
+        raise OperationalError(f"Immutable release tag was not protected: {tag}")
+    return True
 
 
 def _require_remote_graph_unchanged(

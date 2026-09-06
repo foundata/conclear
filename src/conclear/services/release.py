@@ -97,6 +97,7 @@ class ReleaseResult:
     tags: tuple[tuple[str, str], ...]
     candidate_deleted: bool
     findings: tuple[Finding, ...] = ()
+    immutability_enabled: bool = True
 
 
 class AuthenticatedPinResolver(PinResolver):
@@ -546,6 +547,7 @@ def _write_summary(
             "state": workspace.load().state.value,
             "subject": str(subject),
             "tags": [{"tag": tag, "digest": digest} for tag, digest in tags],
+            "immutabilityEnabled": promotion.immutability_enabled,
         },
         mode=0o644,
     )
@@ -556,6 +558,7 @@ def _write_summary(
         tags,
         promotion.candidate_deleted,
         promotion.findings,
+        immutability_enabled=promotion.immutability_enabled,
     )
 
 

@@ -1173,6 +1173,9 @@
               },
               "candidateDeleted": {
                 "type": "boolean"
+              },
+              "immutabilityEnabled": {
+                "type": "boolean"
               }
             }
           }
@@ -1232,6 +1235,9 @@
                 "$ref": "#/$defs/tagAssignments"
               },
               "candidateDeleted": {
+                "type": "boolean"
+              },
+              "immutabilityEnabled": {
                 "type": "boolean"
               }
             }
@@ -1938,10 +1944,14 @@
         },
         "candidateDeleted": {
           "type": "boolean"
+        },
+        "immutabilityEnabled": {
+          "type": "boolean"
         }
       },
       "required": [
         "candidateDeleted",
+        "immutabilityEnabled",
         "tags"
       ]
     },
@@ -1963,10 +1973,14 @@
         },
         "candidateDeleted": {
           "type": "boolean"
+        },
+        "immutabilityEnabled": {
+          "type": "boolean"
         }
       },
       "required": [
         "candidateDeleted",
+        "immutabilityEnabled",
         "runId",
         "subject",
         "tags",

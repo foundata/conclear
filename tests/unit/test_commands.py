@@ -790,6 +790,7 @@ def test_publish_attest_verify_and_promote_report_their_observations(
                 tags=(("1.2.3", Digest(DIGEST)), ("stable", Digest(DIGEST))),
                 candidate_deleted=False,
                 findings=(Finding("CC0605", "warning", "candidate remained"),),
+                immutability_enabled=False,
             ),
         ),
     )
@@ -817,6 +818,7 @@ def test_publish_attest_verify_and_promote_report_their_observations(
     assert code == 0
     assert value["message"].endswith("candidate cleanup failed")
     assert value["data"]["candidateDeleted"] is False
+    assert value["data"]["immutabilityEnabled"] is False
     assert value["findings"][0]["checkId"] == "CC0605"
     assert [tag["tag"] for tag in value["data"]["tags"]] == ["1.2.3", "stable"]
     assert calls == ["publish", "attest", "verify", "promote"]
@@ -858,6 +860,7 @@ def test_release_command_validates_selection_and_reports_promotion(
         tags=(("1.2.3", DIGEST),),
         candidate_deleted=True,
         findings=(),
+        immutability_enabled=True,
     )
     executed: list[Any] = []
     resumed: list[str] = []

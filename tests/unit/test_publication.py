@@ -23,7 +23,12 @@ from conclear.attestations import (
     STATEMENT_TYPE,
 )
 from conclear.config import load_repository_config
-from conclear.errors import InvalidInvocationError, OperationalError, RuleRejectionError
+from conclear.errors import (
+    InvalidInvocationError,
+    OperationalError,
+    RuleRejectionError,
+    UnsupportedOperationError,
+)
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
     atomic_write_json,
@@ -822,6 +827,32 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     )
     assert race_entry.status is ResourceStatus.FAILED
     del registry.resolution_overrides["race"]
+
+    class UnenforcedControl(FakeRegistryControl):
+        @override
+        def ensure_tag_immutable(
+            self, repository: OCIReference, tag: str
+        ) -> TagObservation:
+            raise UnsupportedOperationError("not enforced")
+
+    protected = publication_module._write_release_tag(
+        "unprotected",
+        observation.graph.digest,
+        image,
+        workspace,
+        UnenforcedControl(tags),
+        registry,
+        None,
+        immutable=True,
+    )
+    assert protected is False
+    assert tags["unprotected"] == observation.graph.digest
+    unprotected_entry = next(
+        entry
+        for entry in workspace.journal.entries()
+        if entry.resource_id == "tag-unprotected"
+    )
+    assert unprotected_entry.status is ResourceStatus.CREATED
     image = replace(
         image,
         release=replace(
