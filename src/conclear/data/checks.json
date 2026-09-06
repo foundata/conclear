@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "29f555f33d52e11fbd942c78cb560c08d1307953",
+  "guideRevision": "1082f52c72e26a21b9cf10df3e79cb2f293d77a5",
   "limits": [
     {"name": "Pin resolution freshness", "value": "24 hours"},
     {"name": "Pin divergence", "value": "7 days"},
@@ -62,7 +62,6 @@
     {"id": "CC9001", "summary": "Review whether the selected base image fits the application lifecycle", "severity": "info", "behavior": "manual", "anchor": "choosing-a-base-image"},
     {"id": "CC9002", "summary": "Review an immutable-version tag digest change as a supply-chain event", "severity": "info", "behavior": "manual", "anchor": "updating-pinned-references"},
     {"id": "CC9003", "summary": "Review vulnerability exceptions through repository security ownership", "severity": "info", "behavior": "manual", "anchor": "vulnerability-and-configuration-scanning"},
-    {"id": "CC9004", "summary": "Confirm native target testing when emulation was used for qualification", "severity": "info", "behavior": "manual", "anchor": "multi-platform-images"},
     {"id": "CC9005", "summary": "Maintain release evidence retention and signing-key procedures", "severity": "info", "behavior": "manual", "anchor": "release-evidence-and-retention"}
   ]
 }

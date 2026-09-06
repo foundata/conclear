@@ -320,12 +320,6 @@
         "severity": "info"
       },
       {
-        "anchor": "multi-platform-images",
-        "behavior": "manual",
-        "id": "CC9004",
-        "severity": "info"
-      },
-      {
         "anchor": "release-evidence-and-retention",
         "behavior": "manual",
         "id": "CC9005",
