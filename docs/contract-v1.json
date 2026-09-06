@@ -1495,14 +1495,14 @@
       "dialect": "https://json-schema.org/draft/2020-12/schema",
       "file": "config.schema.json",
       "id": "https://github.com/foundata/conclear/schemas/config-v1.json",
-      "schemaVersion": null,
+      "schemaVersion": 1,
       "title": "ConClear repository configuration"
     },
     {
       "dialect": "https://json-schema.org/draft/2020-12/schema",
       "file": "profile.schema.json",
       "id": "https://github.com/foundata/conclear/schemas/profile-v1.json",
-      "schemaVersion": null,
+      "schemaVersion": 1,
       "title": "ConClear maintainer release profile"
     },
     {

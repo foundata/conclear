@@ -283,6 +283,7 @@ A pinned, self-hosted updater such as Renovate may schedule this workflow and de
 The complete release needs a maintainer-controlled profile outside the application repository. It holds trust roots, signing keys and registry credentials. For example, create `$XDG_CONFIG_HOME/conclear/foundata.toml`:
 
 ```toml
+schema_version = 1
 ci_context = "observe"
 auth_file = "/home/example/.config/containers/auth.json"
 cosign_private_key = "/home/example/.config/conclear/cosign.key"

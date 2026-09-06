@@ -323,7 +323,7 @@ def test_release_profile_names_and_files_are_validated(tmp_path: Path) -> None:
     def write_profile(name: str, key: Path, extra: str = "") -> Path:
         path = config_home / "conclear" / f"{name}.toml"
         path.write_text(
-            f'ci_context = "omit"\ncosign_public_key = "{key}"\n{extra}\n'
+            f'schema_version = 1\nci_context = "omit"\ncosign_public_key = "{key}"\n{extra}\n'
             '[builder]\nid = "https://foundata.com/en/projects/conclear/builder/simple-v1/"\n'
             '[registry]\nprovider = "quay"\nhost = "quay.io"\n',
             encoding="utf-8",
@@ -349,7 +349,7 @@ def test_release_profile_names_and_files_are_validated(tmp_path: Path) -> None:
 
     api = config_home / "conclear" / "api.toml"
     api.write_text(
-        f'ci_context = "omit"\ncosign_public_key = "{public_key}"\n'
+        f'schema_version = 1\nci_context = "omit"\ncosign_public_key = "{public_key}"\n'
         '[builder]\nid = "https://foundata.com/en/projects/conclear/builder/simple-v1/"\n'
         '[registry]\nprovider = "quay"\nhost = "quay.io"\napi_url = "https://quay.io"\n',
         encoding="utf-8",

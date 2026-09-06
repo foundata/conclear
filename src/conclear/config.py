@@ -286,7 +286,7 @@ def load_repository_config(path: Path) -> RepositoryConfig:
         raise InvalidInvocationError("Image identifiers must be unique")
     _validate_test_graph(images)
     return RepositoryConfig(
-        schema_version=_integer(value["schema_version"]),
+        schema_version=toml_integer(value["schema_version"]),
         project=ProjectConfig(
             name=toml_string(project_value["name"]),
             source=normalize_source_url(toml_string(project_value["source"])),
@@ -529,8 +529,8 @@ def _parse_test_preparation(
             _parse_test_mount(toml_table(item), handles)
             for item in _list(value.get("mounts", []))
         ),
-        timeout_seconds=_integer(value.get("timeout_seconds", 300)),
-        expected_exit_status=_integer(value.get("expected_exit_status", 0)),
+        timeout_seconds=toml_integer(value.get("timeout_seconds", 300)),
+        expected_exit_status=toml_integer(value.get("expected_exit_status", 0)),
     )
 
 
@@ -544,7 +544,7 @@ def _parse_test_launch(
             _parse_test_mount(toml_table(item), handles)
             for item in _list(value.get("mounts", []))
         ),
-        expected_exit_status=_integer(value.get("expected_exit_status", 0)),
+        expected_exit_status=toml_integer(value.get("expected_exit_status", 0)),
     )
 
 
@@ -792,20 +792,22 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
     )
     return RuntimeConfig(
         profile=toml_string(value["profile"]),
-        user=_integer(value["user"]),
+        user=toml_integer(value["user"]),
         read_only=True,
         writable_mounts=writable_mounts,
         memory=toml_string(value["memory"]),
         cpus=_number(value["cpus"]),
-        pids=_integer(value["pids"]),
-        nofile=_integer(value["nofile"]),
+        pids=toml_integer(value["pids"]),
+        nofile=toml_integer(value["nofile"]),
         health_command=_command(
             value.get("health_command", []), "health_command", empty=True
         ),
         immutable_paths=immutable_paths,
         capabilities=tuple(_string_list(value.get("capabilities", []))),
-        startup_timeout_seconds=_integer(value.get("startup_timeout_seconds", 60)),
-        shutdown_timeout_seconds=_integer(value.get("shutdown_timeout_seconds", 30)),
+        startup_timeout_seconds=toml_integer(value.get("startup_timeout_seconds", 60)),
+        shutdown_timeout_seconds=toml_integer(
+            value.get("shutdown_timeout_seconds", 30)
+        ),
     )
 
 
@@ -813,7 +815,7 @@ def _parse_hook(value: dict[str, Any]) -> HookConfig:
     return HookConfig(
         name=toml_string(value["name"]),
         command=_command(value["command"], "hook command"),
-        timeout_seconds=_integer(value.get("timeout_seconds", 300)),
+        timeout_seconds=toml_integer(value.get("timeout_seconds", 300)),
         required=_boolean(value.get("required", True)),
     )
 
@@ -946,7 +948,8 @@ def _string_list(value: object) -> list[str]:
     return items
 
 
-def _integer(value: object) -> int:
+def toml_integer(value: object) -> int:
+    """Narrow one schema-validated TOML value to an integer, rejecting booleans."""
     if not isinstance(value, int) or isinstance(value, bool):
         raise InvalidInvocationError("Expected an integer")
     return value

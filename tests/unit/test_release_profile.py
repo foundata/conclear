@@ -14,6 +14,7 @@ from conclear.release_profile import (
 
 
 def _profile_text(*root_lines: str, api_url: str | None = None) -> str:
+    root_lines = ("schema_version = 1", *root_lines)
     registry_lines = [
         "",
         "[builder]",
@@ -228,3 +229,26 @@ def test_release_profile_rejects_ambiguous_registry_api_url(tmp_path: Path) -> N
 
     with pytest.raises(InvalidInvocationError, match="credential-free HTTPS"):
         load_release_profile("release", config_home=config_home)
+
+
+def test_release_profile_requires_its_schema_version(tmp_path: Path) -> None:
+    profile_directory = tmp_path / "conclear"
+    profile_directory.mkdir(mode=0o700)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("key", encoding="utf-8")
+    public_key.chmod(0o600)
+    unversioned = _profile_text(
+        'ci_context = "omit"', f'cosign_public_key = "{public_key}"'
+    ).replace("schema_version = 1\n", "")
+    path = profile_directory / "release.toml"
+    path.write_text(unversioned, encoding="utf-8")
+    path.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError, match="schema_version"):
+        load_release_profile("release", config_home=tmp_path)
+
+    path.write_text(
+        unversioned.replace("[builder]", "schema_version = 1\n[builder]"),
+        encoding="utf-8",
+    )
+    assert load_release_profile("release", config_home=tmp_path).schema_version == 1

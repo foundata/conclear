@@ -88,6 +88,7 @@ def test_public_ci_context_is_provider_neutral_and_omits_server_origins() -> Non
 def test_release_profile_schema_has_a_closed_registry_backend_matrix() -> None:
     validator = Draft202012Validator(load_schema("profile.schema.json"))
     profile = {
+        "schema_version": 1,
         "ci_context": "omit",
         "builder": {
             "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"

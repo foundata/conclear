@@ -157,6 +157,7 @@ def test_configuration_profile_result_and_triage_fixtures(
     assert load_repository_config(root / "conclear.toml").images[0].image_id == "app"
 
     profile = {
+        "schema_version": 1,
         "ci_context": "observe",
         "builder": {
             "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"
@@ -171,6 +172,11 @@ def test_configuration_profile_result_and_triage_fixtures(
         {**profile, "registry": {"provider": "quay", "host": "quay.io", "token": "x"}},
     )
     assert _errors("profile.schema.json", {**profile, "ci_context": "trust"})
+    assert _errors(
+        "profile.schema.json",
+        {k: v for k, v in profile.items() if k != "schema_version"},
+    )
+    assert _errors("profile.schema.json", {**profile, "schema_version": 2})
 
     result = CommandResult(
         "build",

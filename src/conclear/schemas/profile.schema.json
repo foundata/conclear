@@ -4,23 +4,59 @@
   "title": "ConClear maintainer release profile",
   "type": "object",
   "additionalProperties": false,
-  "required": ["ci_context", "builder", "registry", "cosign_public_key"],
+  "required": [
+    "schema_version",
+    "ci_context",
+    "builder",
+    "registry",
+    "cosign_public_key"
+  ],
   "properties": {
-    "ci_context": {"enum": ["omit", "observe", "require"]},
-    "builder": {"$ref": "#/$defs/builder"},
-    "auth_file": {"type": "string", "minLength": 1},
-    "registry": {"$ref": "#/$defs/registry"},
-    "cosign_private_key": {"type": "string", "minLength": 1},
-    "cosign_public_key": {"type": "string", "minLength": 1},
-    "passphrase_file": {"type": "string", "minLength": 1}
+    "schema_version": {
+      "const": 1
+    },
+    "ci_context": {
+      "enum": [
+        "omit",
+        "observe",
+        "require"
+      ]
+    },
+    "builder": {
+      "$ref": "#/$defs/builder"
+    },
+    "auth_file": {
+      "type": "string",
+      "minLength": 1
+    },
+    "registry": {
+      "$ref": "#/$defs/registry"
+    },
+    "cosign_private_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cosign_public_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "passphrase_file": {
+      "type": "string",
+      "minLength": 1
+    }
   },
   "$defs": {
     "builder": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id"],
+      "required": [
+        "id"
+      ],
       "properties": {
-        "id": {"type": "string", "pattern": "^https://[^\\s?#]+$"}
+        "id": {
+          "type": "string",
+          "pattern": "^https://[^\\s?#]+$"
+        }
       }
     },
     "registry": {
@@ -28,12 +64,26 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["provider", "host"],
+          "required": [
+            "provider",
+            "host"
+          ],
           "properties": {
-            "provider": {"const": "quay"},
-            "host": {"const": "quay.io"},
-            "api_url": {"type": "string", "format": "uri", "pattern": "^https://"},
-            "token_file": {"type": "string", "minLength": 1}
+            "provider": {
+              "const": "quay"
+            },
+            "host": {
+              "const": "quay.io"
+            },
+            "api_url": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            },
+            "token_file": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ]

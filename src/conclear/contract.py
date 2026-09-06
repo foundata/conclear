@@ -157,7 +157,7 @@ def _schema(name: str) -> dict[str, object]:
     properties = schema.get("properties")
     version: object = None
     if isinstance(properties, dict):
-        declared = properties.get("schemaVersion")
+        declared = properties.get("schemaVersion", properties.get("schema_version"))
         if isinstance(declared, dict):
             version = declared.get("const", declared.get("minimum"))
     return {

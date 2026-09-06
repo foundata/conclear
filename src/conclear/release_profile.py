@@ -19,6 +19,7 @@ from urllib.parse import urlsplit, urlunsplit
 from conclear.config import (
     HOST_PATTERN,
     URL_PATH_COMPONENT_PATTERN,
+    toml_integer,
     toml_string,
     toml_table,
 )
@@ -76,6 +77,7 @@ class ReleaseProfile:
     passphrase_file: Path | None
     configuration_digest: str
     public_key_digest: str
+    schema_version: int = 1
 
 
 def load_release_profile(
@@ -124,6 +126,7 @@ def load_release_profile(
         passphrase_file=passphrase_file,
         configuration_digest=sha256_bytes(profile_bytes),
         public_key_digest=sha256_bytes(public_key_bytes),
+        schema_version=toml_integer(profile["schema_version"]),
     )
 
 
