@@ -287,6 +287,7 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
             "uv.lock",
             "docs/compatibility-inventory.json",
             "docs/conformance.md",
+            f"docs/guide-options-{VERSION}.md",
             f"docs/implementation-{VERSION}.md",
             "LICENSES/GPL-3.0-or-later.txt",
             "src/conclear/_embedded_identity.py",
@@ -296,6 +297,7 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
         suffixes = {
             "conclear/_embedded_identity.py",
             "conclear/data/checks.json",
+            "conclear/data/guide-options.json",
             "conclear/data/implementation.json",
             "conclear/schemas/config.schema.json",
             "conclear/schemas/profile.schema.json",
@@ -342,6 +344,10 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
         (
             "check generated conformance documentation",
             ("python", "-m", "conclear.conformance", "--check"),
+        ),
+        (
+            "check guide-option support inventory",
+            ("python", "-m", "conclear.guide_options", "--check"),
         ),
         (
             "check internal compatibility inventory",

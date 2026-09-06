@@ -111,6 +111,11 @@ selected source revision, which holds project facts and the exceptions the guide
 permits, never credentials. Images whose tests need fixtures, generated outputs
 or sibling images describe them in `[images.test]`. Trust roots, signing keys
 and registry credentials stay outside the repository in a named release profile.
+The runtime contract defaults to a numeric non-root user. A documented root
+requirement and the separate systemd lifecycle profile are supported without
+leaving rootless Podman or relaxing the read-only, namespace, capability or
+resource controls; the [quick start](./docs/quickstart.md#5-add-concleartoml)
+shows both opt-in forms.
 
 
 ### Running a release<a id="usage-release"></a>
@@ -320,7 +325,10 @@ retained evidence; workspace files are convenience copies.
 The generated [conformance catalog](./docs/conformance.md) maps stable `CCnnnn`
 identifiers to guide requirements, records which requirements need human review
 rather than a mechanical check, and states the built-in limits that repository
-configuration may narrow but never disable.
+configuration may narrow but never disable. The generated
+[guide-option support inventory](./docs/guide-options-1.0.0.md) records
+supported exceptions and deliberately unsupported or out-of-scope guide choices
+with a rationale and reconsideration condition.
 
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) describes the current behavioral contract
 behind those checks. The generated

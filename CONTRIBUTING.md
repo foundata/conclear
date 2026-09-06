@@ -63,8 +63,9 @@ Make sure you read [`DEVELOPMENT.md`](./DEVELOPMENT.md). Make sure:
    cannot accept your contribution.
 2. Your code is working / fix the problem / introduce a sane new feature.
    Formatting, linting, strict typing, the generated conformance catalog,
-   compatibility inventory, implementation matrix and unit suite must pass, and
-   documentation is updated in the same commit as the behavior it describes.
+   guide-option support inventory, compatibility inventory, implementation
+   matrix and unit suite must pass, and documentation is updated in the same
+   commit as the behavior it describes.
 3. Your PR contains a proper commit message with a description of the change and
    reasoning, following the `<scope>: <description>` format. Bonus: reference an
    issue (if any; PRs without a related issue are still welcome).

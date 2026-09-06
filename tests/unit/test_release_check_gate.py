@@ -150,6 +150,7 @@ REQUIRED_SDIST = [
     "conclear-1.0.0/uv.lock",
     "conclear-1.0.0/docs/compatibility-inventory.json",
     "conclear-1.0.0/docs/conformance.md",
+    "conclear-1.0.0/docs/guide-options-1.0.0.md",
     "conclear-1.0.0/docs/implementation-1.0.0.md",
     "conclear-1.0.0/LICENSES/GPL-3.0-or-later.txt",
     "conclear-1.0.0/src/conclear/_embedded_identity.py",
@@ -258,6 +259,18 @@ def test_source_gates_check_the_generated_inventories(
 
     release_check_module._run_source_gates(cast(GateRuntime, recorder), tmp_path)
 
+    assert (
+        "check guide-option support inventory",
+        (
+            str(recorder.uv),
+            "run",
+            "--frozen",
+            "python",
+            "-m",
+            "conclear.guide_options",
+            "--check",
+        ),
+    ) in recorder.calls
     assert (
         "check internal compatibility inventory",
         (

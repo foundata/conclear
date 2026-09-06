@@ -21,6 +21,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Local integration tests](#local-integration-tests)
   - [Network tests](#network-tests)
 - [Generated conformance catalog](#conformance-catalog)
+- [Generated guide-option support inventory](#guide-option-inventory)
 - [Generated compatibility inventory](#compatibility-inventory)
 - [Generated implementation matrix](#implementation-matrix)
 - [CI context observation](#ci-context-observation)
@@ -95,6 +96,7 @@ conclear/
 ├── LICENSES/                     # License texts (SPDX)
 ├── docs/
 │   ├── conformance.md            # Generated check catalog (do not edit by hand)
+│   ├── guide-options-1.0.0.md    # Generated guide-option support inventory
 │   ├── compatibility-inventory.json # Generated internal compatibility inventory
 │   ├── implementation-1.0.0.md   # Generated release-specific promise matrix
 │   └── quickstart.md             # Project adoption quick start
@@ -108,6 +110,7 @@ conclear/
 │   ├── catalog.py                # CCnnnn check catalog loader
 │   ├── checks.py                 # Static Containerfile and context checks
 │   ├── conformance.py            # docs/conformance.md generator
+│   ├── guide_options.py          # Guide-option support inventory generator
 │   ├── compatibility_inventory.py # Internal compatibility inventory generator
 │   ├── implementation.py         # Release-specific implementation matrix generator
 │   ├── emulation.py              # binfmt handler detection and execution-mode facts
@@ -138,6 +141,7 @@ conclear/
 │   │                             # assembly, publication, rescan, cleanup)
 │   ├── schemas/                  # Shipped JSON Schemas
 │   ├── data/checks.json          # Check catalog source of truth
+│   ├── data/guide-options.json   # Guide-option support source of truth
 │   └── data/implementation.json  # Current promise-to-code-and-test mappings
 └── tests/
     ├── conftest.py               # Marker auto-assignment and shared fixtures
@@ -528,6 +532,33 @@ identifiers are unique and well formed, that every claimed guide anchor exists
 at the embedded revision and that the committed document matches the generator.
 
 
+## Generated guide-option support inventory<a id="guide-option-inventory"></a>
+
+`docs/guide-options-1.0.0.md` is generated from
+`src/conclear/data/guide-options.json`. It records guide choices whose support
+cannot be inferred from the check catalog, including supported exceptions and
+deliberately unsupported or out-of-scope behavior. Every entry names its guide
+anchor, rationale, related checks and condition for reconsideration.
+
+```sh
+# Regenerate the inventory
+uv run python -m conclear.guide_options
+
+# Verify the committed inventory is current
+uv run python -m conclear.guide_options --check
+
+# Verify anchors against the exact implemented guide checkout
+uv run python -m conclear.guide_options --check \
+  --guide ../guidelines/oci-container-image-guide.md
+```
+
+Update an entry when implementation changes its status or when a guide revision
+changes the option. The loader rejects stale product or guide versions,
+malformed or duplicate identifiers, unknown check references and unsupported
+status values. The release gate verifies the generated document and its
+distribution contents.
+
+
 ## Generated compatibility inventory<a id="compatibility-inventory"></a>
 
 `docs/compatibility-inventory.json` is a repository-internal inventory generated
@@ -670,10 +701,13 @@ uv run pytest
 # 5. Verify the generated conformance catalog is current
 uv run python -m conclear.conformance --check
 
-# 6. Verify the generated compatibility inventory is current
+# 6. Verify the generated guide-option inventory is current
+uv run python -m conclear.guide_options --check
+
+# 7. Verify the generated compatibility inventory is current
 uv run python -m conclear.compatibility_inventory --check
 
-# 7. Verify the release-specific implementation matrix is current
+# 8. Verify the release-specific implementation matrix is current
 uv run python -m conclear.implementation --check
 ```
 
@@ -688,13 +722,13 @@ uv run python -m conclear.release_check
 ```
 
 The command checks formatting, linting, strict typing, the generated conformance
-documentation, the generated compatibility inventory, the release-specific
-implementation matrix and the unit-test matrix on every supported interpreter,
-enforcing the branch-coverage floor on the first interpreter. It then creates a
-temporary clean source archive, embeds the committed source revision, builds a
-source distribution, builds a wheel from that source distribution, inspects
-artifact contents, installs the wheel into a clean environment and runs import,
-`--version` and `--help` smoke tests.
+documentation, the guide-option support inventory, the generated compatibility
+inventory, the release-specific implementation matrix and the unit-test matrix
+on every supported interpreter, enforcing the branch-coverage floor on the
+first interpreter. It then creates a temporary clean source archive, embeds the
+committed source revision, builds a source distribution, builds a wheel from
+that source distribution, inspects artifact contents, installs the wheel into a
+clean environment and runs import, `--version` and `--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate,
 create a private parent directory and select a new revision-specific output

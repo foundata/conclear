@@ -69,6 +69,7 @@ def test_wheel_hygiene_requires_embedded_identity(tmp_path: Path) -> None:
         for name in (
             "conclear/_embedded_identity.py",
             "conclear/data/checks.json",
+            "conclear/data/guide-options.json",
             "conclear/data/implementation.json",
             "conclear/schemas/config.schema.json",
             "conclear/schemas/profile.schema.json",
