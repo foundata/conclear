@@ -860,6 +860,38 @@ def test_cosign_signing_failure_redacts_private_key_path(tmp_path: Path) -> None
     assert str(private_key) not in json.dumps(log)
 
 
+def test_cosign_attestation_verification_reads_one_envelope_per_line(
+    tmp_path: Path,
+) -> None:
+    lines = "\n".join(
+        json.dumps(
+            {
+                "payloadType": "application/vnd.in-toto+json",
+                "payload": "e30=",
+                "signatures": [{"sig": str(index)}],
+            }
+        )
+        for index in range(2)
+    )
+    runner = FakeRunner(result(lines + "\n"), result("   \n"))
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
+
+    verification = adapter.verify_attestation(
+        subject=subject,
+        public_key=tmp_path / "cosign.pub",
+        predicate_type="spdxjson",
+    )
+    assert len(verification.entries) == 2
+
+    with pytest.raises(OperationalError, match="no verified entries"):
+        adapter.verify_attestation(
+            subject=subject,
+            public_key=tmp_path / "cosign.pub",
+            predicate_type="spdxjson",
+        )
+
+
 def test_cosign_verification_requires_a_verified_entry(tmp_path: Path) -> None:
     runner = FakeRunner(result("[]"))
     adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)

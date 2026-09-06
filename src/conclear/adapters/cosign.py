@@ -353,10 +353,28 @@ class CosignAdapter(ToolAdapter):
 
     @staticmethod
     def _verification(subject: OCIReference, output: str) -> VerificationObservation:
-        entries = array_value(
-            json_value(output, label="Cosign verification"),
-            label="Cosign verification",
-        )
+        """Parse verification output as one JSON array or one JSON object per line.
+
+        `cosign verify` prints a JSON array; `cosign verify-attestation` in
+        Cosign 3 prints one DSSE envelope per line.
+        """
+        stripped = output.strip()
+        if stripped.startswith("["):
+            entries: list[object] = list(
+                array_value(
+                    json_value(stripped, label="Cosign verification"),
+                    label="Cosign verification",
+                )
+            )
+        else:
+            entries = [
+                object_value(
+                    json_value(line, label="Cosign verification"),
+                    label="Cosign verification entry",
+                )
+                for line in stripped.splitlines()
+                if line.strip()
+            ]
         if not entries:
             raise OperationalError(
                 "Cosign verification returned no verified entries", code="CC0701"
