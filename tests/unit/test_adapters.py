@@ -702,7 +702,26 @@ def test_cosign_release_signing_keeps_public_log_policy_enabled(
     predicate = tmp_path / "predicate.json"
     statement = tmp_path / "statement.json"
     predicate.write_text("{}", encoding="utf-8")
-    statement.write_text("{}", encoding="utf-8")
+    statement.write_text(
+        json.dumps(
+            {
+                "_type": "https://in-toto.io/Statement/v1",
+                "subject": [
+                    {
+                        "name": "quay.io/foundata/example",
+                        "digest": {"sha256": "2" * 64},
+                    },
+                    {
+                        "name": "quay.io/foundata/example#linux/amd64",
+                        "digest": {"sha256": "3" * 64},
+                    },
+                ],
+                "predicateType": "https://example.invalid/predicates/custom/v1",
+                "predicate": {"claim": True},
+            }
+        ),
+        encoding="utf-8",
+    )
     adapter.attest(
         subject=subject,
         predicate=predicate,
@@ -723,11 +742,41 @@ def test_cosign_release_signing_keeps_public_log_policy_enabled(
         Path("/secret/cosign.key"),
         Path("/secret/cosign.password"),
     )
-    assert runner.requests[2].secret_paths == (
+    wrapped = runner.requests[2]
+    assert "--statement" not in wrapped.argv
+    predicate_index = wrapped.argv.index("--predicate")
+    predicate_path = Path(wrapped.argv[predicate_index + 1])
+    assert predicate_path.parent.name == "cosign-predicates"
+    assert predicate_path.read_bytes() == b'{"claim":true}\n'
+    assert (predicate_path.stat().st_mode & 0o777) == 0o600
+    assert wrapped.argv[wrapped.argv.index("--type") + 1] == (
+        "https://example.invalid/predicates/custom/v1"
+    )
+    assert wrapped.secret_paths == (
         statement,
+        predicate_path,
         Path("/secret/cosign.key"),
         Path("/secret/cosign.password"),
     )
+    foreign = tmp_path / "foreign.json"
+    foreign.write_text(
+        json.dumps(
+            {
+                "_type": "https://in-toto.io/Statement/v1",
+                "subject": [{"name": "other", "digest": {"sha256": "9" * 64}}],
+                "predicateType": "https://example.invalid/predicates/custom/v1",
+                "predicate": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(OperationalError, match="does not name the attested subject"):
+        adapter.attest_statement(
+            subject=subject,
+            statement=foreign,
+            private_key="/secret/cosign.key",
+            passphrase="pw",
+        )
 
 
 def test_cosign_receives_registry_credentials_through_a_run_owned_docker_config(

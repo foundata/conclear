@@ -6,13 +6,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
+from conclear.attestations import STATEMENT_TYPE
 from conclear.errors import (
     CommandExecutionError,
     InvalidInvocationError,
     OperationalError,
 )
-from conclear.jsonutil import atomic_write_bytes
-from conclear.parsing import array_value, json_value
+from conclear.jsonutil import (
+    atomic_write_bytes,
+    canonical_json_bytes,
+    load_json,
+    sha256_bytes,
+)
+from conclear.parsing import array_value, json_value, object_value, string_value
 from conclear.process import OperationKind
 from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
 from conclear.values import OCIReference
@@ -155,8 +161,43 @@ class CosignAdapter(ToolAdapter):
         passphrase: str | None,
         passphrase_path: Path | None = None,
     ) -> SignatureObservation:
-        """Attach one caller-validated in-toto Statement with public log inclusion."""
+        """Attach one caller-validated in-toto Statement with public log inclusion.
+
+        Cosign 3 ignores its `--statement` option and always wraps a predicate
+        around the single subject it signs, so the statement's predicate and
+        predicate type are handed to Cosign, and the statement must already
+        name the attested digest among its subjects.
+        """
         self._require_digest(subject)
+        if subject.digest is None:  # pragma: no cover - guaranteed above
+            raise OperationalError(
+                "Cosign release subjects must use an immutable digest"
+            )
+        item = object_value(load_json(statement), label="in-toto Statement")
+        if item.get("_type") != STATEMENT_TYPE:
+            raise OperationalError(
+                "Attestation statement is not an in-toto Statement v1"
+            )
+        predicate_type = string_value(
+            item.get("predicateType"), label="Statement predicate type"
+        )
+        predicate = object_value(item.get("predicate"), label="Statement predicate")
+        subjects = item.get("subject")
+        encoded = subject.digest.encoded
+        if not isinstance(subjects, list) or not any(
+            isinstance(entry, dict)
+            and isinstance(entry.get("digest"), dict)
+            and entry["digest"].get("sha256") == encoded
+            for entry in subjects
+        ):
+            raise OperationalError(
+                "Attestation statement does not name the attested subject"
+            )
+        content = canonical_json_bytes(predicate)
+        directory = self._log_directory.parent / "cosign-predicates"
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        predicate_path = directory / f"{sha256_bytes(content)[7:]}.json"
+        atomic_write_bytes(predicate_path, content, mode=0o600)
         result = self._cosign_write(
             (
                 "attest",
@@ -164,13 +205,16 @@ class CosignAdapter(ToolAdapter):
                 "--use-signing-config=true",
                 "--key",
                 private_key,
-                "--statement",
-                str(statement),
+                "--predicate",
+                str(predicate_path),
+                "--type",
+                predicate_type,
                 str(subject),
             ),
             passphrase=passphrase,
             secret_paths=(
                 statement,
+                predicate_path,
                 *_signing_secret_paths(private_key, passphrase_path),
             ),
         )
