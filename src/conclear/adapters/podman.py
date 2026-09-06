@@ -66,6 +66,10 @@ class RuntimeControlObservation:
     bounding_capabilities: tuple[str, ...]
     effective_capabilities: tuple[str, ...]
     security_options: tuple[str, ...]
+    user_namespace: str = "private"
+    cgroup_namespace: str = "private"
+    privileged: bool = False
+    stop_signal: str = "SIGTERM"
 
 
 class PodmanAdapter(ToolAdapter):
@@ -171,6 +175,8 @@ class PodmanAdapter(ToolAdapter):
             str(runtime.user),
             "--userns",
             f"keep-id:uid={runtime.user},gid={runtime.user}",
+            "--cgroupns",
+            "private",
             "--memory",
             runtime.memory,
             "--cpus",
@@ -184,6 +190,17 @@ class PodmanAdapter(ToolAdapter):
             "--security-opt",
             "no-new-privileges",
         ]
+        if runtime.systemd is None:
+            command.extend(("--systemd", "false"))
+        else:
+            command.extend(
+                (
+                    "--systemd",
+                    "always",
+                    "--stop-signal",
+                    runtime.systemd.stop_signal,
+                )
+            )
         if runtime.read_only:
             command.append("--read-only")
         for mount in runtime.writable_mounts:
@@ -270,6 +287,27 @@ class PodmanAdapter(ToolAdapter):
             timeout_seconds=timeout_seconds,
         ).stdout
 
+    def inspect_pid1(
+        self,
+        *,
+        root: Path,
+        runroot: Path,
+        name: str,
+        timeout_seconds: float,
+    ) -> str:
+        """Return the command name Podman observes for container PID 1."""
+        output = self._run(
+            (*self._storage(root, runroot), "top", name, "pid", "comm"),
+            timeout_seconds=timeout_seconds,
+        ).stdout
+        lines = [line.split(maxsplit=1) for line in output.splitlines() if line.strip()]
+        if not lines or [item.upper() for item in lines[0]] != ["PID", "COMMAND"]:
+            raise OperationalError("Podman PID 1 observation has a malformed header")
+        processes = [item for item in lines[1:] if item[0] == "1" and len(item) == 2]
+        if len(processes) != 1:
+            raise OperationalError("Podman did not report exactly one container PID 1")
+        return processes[0][1]
+
     def exec_observe(
         self,
         *,
@@ -350,6 +388,16 @@ class PodmanAdapter(ToolAdapter):
             ),
             security_options=_strings(
                 host.get("SecurityOpt"), "Podman security options"
+            ),
+            user_namespace=string_value(
+                host.get("UsernsMode"), label="Podman user namespace"
+            ),
+            cgroup_namespace=string_value(
+                host.get("CgroupMode"), label="Podman cgroup namespace"
+            ),
+            privileged=_bool(host.get("Privileged"), "Podman privileged mode"),
+            stop_signal=string_value(
+                config.get("StopSignal"), label="Podman stop signal"
             ),
         )
 
@@ -437,7 +485,7 @@ def _writable_mounts(
         raise OperationalError("Podman mount observation is malformed")
     for value in mounts:
         mount = object_value(value, label="Podman mount")
-        if mount.get("Type") != "bind" or mount.get("RW") is not True:
+        if mount.get("RW") is not True:
             continue
         writable.add(
             string_value(mount.get("Destination"), label="Podman mount destination")

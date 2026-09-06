@@ -218,9 +218,11 @@
     },
     {
       "id": "IP0023",
-      "summary": "Test runtime identity, read-only filesystems, capabilities, resources, health, signals and exit behavior",
-      "implementation": ["src/conclear/services/runtime_tests.py", "src/conclear/adapters/podman.py"],
+      "summary": "Test reviewed runtime identity, including conditional root and systemd lifecycles, under read-only, namespace, capability and resource controls",
+      "implementation": ["src/conclear/config.py", "src/conclear/checks.py", "src/conclear/services/runtime_tests.py", "src/conclear/adapters/podman.py"],
       "tests": [
+        {"path": "tests/unit/test_config.py", "tier": "unit"},
+        {"path": "tests/unit/test_checks.py", "tier": "unit"},
         {"path": "tests/unit/test_qualification.py", "tier": "unit"},
         {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
         {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}

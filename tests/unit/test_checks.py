@@ -28,6 +28,22 @@ class DiagnosticHadolint:
         )
 
 
+class RootWarningHadolint:
+    def check(
+        self, _containerfile: Path, *, config_directory: Path
+    ) -> tuple[HadolintFinding, ...]:
+        del config_directory
+        return (
+            HadolintFinding(
+                code="DL3002",
+                level="warning",
+                message="Last USER should not be root",
+                line=3,
+                column=1,
+            ),
+        )
+
+
 def test_static_checks_accept_minimal_compliant_source(
     repository_factory: Callable[..., Path],
 ) -> None:
@@ -108,6 +124,134 @@ def test_non_root_uid_may_use_root_gid_in_the_final_stage(tmp_path: Path) -> Non
     identifiers = {finding.check_id for finding in analyze_containerfile(path).findings}
 
     assert "CC0110" not in identifiers
+
+
+def test_static_checks_accept_configured_reviewed_root_user(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory(containerfile='USER 0\nENTRYPOINT ["/app"]\n')
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace("user = 10001", "user = 0")
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "The application must manage system identities."
+owner = "platform@example.com"
+review_trigger = "Remove when upstream supports an unprivileged mode."
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    identifiers = {
+        finding.check_id
+        for finding in check_image_static(load_repository_config(path).image("app"))
+    }
+
+    assert "CC0110" not in identifiers
+
+
+def test_static_checks_reject_user_that_differs_from_runtime_contract(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory(containerfile='USER 10002\nENTRYPOINT ["/app"]\n')
+    image = load_repository_config(root / "conclear.toml").image("app")
+
+    findings = [
+        finding for finding in check_image_static(image) if finding.check_id == "CC0110"
+    ]
+
+    assert len(findings) == 1
+    assert "configured numeric UID 10001" in findings[0].message
+
+
+def test_reviewed_root_contract_suppresses_only_hadolint_root_warning(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    containerfile = root / "Containerfile"
+    containerfile.write_text(
+        containerfile.read_text(encoding="utf-8").replace("USER 10001:10001", "USER 0"),
+        encoding="utf-8",
+    )
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace("user = 10001", "user = 0")
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "The application must manage system identities."
+owner = "platform@example.com"
+review_trigger = "Remove when upstream supports an unprivileged mode."
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    outcome = check_image(
+        load_repository_config(path).image("app"), cast(Any, RootWarningHadolint())
+    )
+
+    assert outcome.accepted
+    assert outcome.findings == ()
+
+
+def test_systemd_static_check_requires_matching_baked_stop_signal(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    containerfile = root / "Containerfile"
+    containerfile.write_text(
+        containerfile.read_text(encoding="utf-8")
+        .replace("USER 10001:10001", "USER 0")
+        .replace('ENTRYPOINT ["/app"]', 'STOPSIGNAL TERM\nENTRYPOINT ["/sbin/init"]'),
+        encoding="utf-8",
+    )
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace('profile = "service"\nuser = 10001', 'profile = "systemd"\nuser = 0')
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "Systemd is the image lifecycle manager."
+owner = "platform@example.com"
+review_trigger = "Review when the image lifecycle changes."
+
+[images.runtime.systemd]
+required_units = ["multi-user.target"]
+stop_signal = "RTMIN+3"
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    findings = [
+        finding
+        for finding in check_image_static(load_repository_config(path).image("app"))
+        if finding.check_id == "CC0115"
+    ]
+
+    assert len(findings) == 1
+    assert "RTMIN+3" in findings[0].message
+
+    containerfile.write_text(
+        containerfile.read_text(encoding="utf-8").replace(
+            "STOPSIGNAL TERM", "STOPSIGNAL SIGRTMIN+3"
+        ),
+        encoding="utf-8",
+    )
+    accepted = check_image_static(load_repository_config(path).image("app"))
+    assert all(finding.check_id != "CC0115" for finding in accepted)
 
 
 def test_world_writable_numeric_and_symbolic_modes_are_rejected(

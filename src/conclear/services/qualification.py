@@ -454,7 +454,7 @@ def _pin_findings(
 
 def _runtime_constraints(image: ImageConfig) -> dict[str, object]:
     runtime = image.runtime
-    return {
+    result: dict[str, object] = {
         "profile": runtime.profile,
         "user": runtime.user,
         "readOnly": runtime.read_only,
@@ -465,3 +465,15 @@ def _runtime_constraints(image: ImageConfig) -> dict[str, object]:
         "nofile": runtime.nofile,
         "capabilities": list(runtime.capabilities),
     }
+    if runtime.root_requirement is not None:
+        result["rootRequirement"] = {
+            "rationale": runtime.root_requirement.rationale,
+            "owner": runtime.root_requirement.owner,
+            "reviewTrigger": runtime.root_requirement.review_trigger,
+        }
+    if runtime.systemd is not None:
+        result["systemd"] = {
+            "requiredUnits": list(runtime.systemd.required_units),
+            "stopSignal": runtime.systemd.stop_signal,
+        }
+    return result

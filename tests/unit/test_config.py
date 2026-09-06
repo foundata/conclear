@@ -27,6 +27,152 @@ def test_repository_configuration_is_validated_and_narrowed(
     assert image.context == root.resolve()
     assert image.native_test_platforms == image.platforms
     assert image.runtime.read_only is True
+    assert image.runtime.root_requirement is None
+    assert image.runtime.systemd is None
+
+
+def test_repository_configuration_accepts_reviewed_root_runtime(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace("user = 10001", "user = 0")
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "The application must manage system identities."
+owner = "platform@example.com"
+review_trigger = "Remove when upstream supports an unprivileged mode."
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    runtime = load_repository_config(path).image("app").runtime
+
+    assert runtime.user == 0
+    assert runtime.root_requirement is not None
+    assert runtime.root_requirement.owner == "platform@example.com"
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    (
+        """[images.runtime]
+profile = "service"
+user = 0
+memory = "512MiB"
+cpus = 1.0
+pids = 128
+nofile = 1024
+health_command = ["/app", "health"]
+""",
+        """[images.runtime]
+profile = "service"
+user = 10001
+memory = "512MiB"
+cpus = 1.0
+pids = 128
+nofile = 1024
+health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "No longer applicable."
+owner = "platform@example.com"
+review_trigger = "Review each release."
+""",
+        """[images.runtime]
+profile = "systemd"
+user = 0
+memory = "512MiB"
+cpus = 1.0
+pids = 128
+nofile = 1024
+health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "Systemd is the image lifecycle manager."
+owner = "platform@example.com"
+review_trigger = "Review when the image lifecycle changes."
+""",
+        """[images.runtime]
+profile = "systemd"
+user = 10001
+memory = "512MiB"
+cpus = 1.0
+pids = 128
+nofile = 1024
+health_command = ["/app", "health"]
+
+[images.runtime.systemd]
+required_units = ["multi-user.target"]
+stop_signal = "RTMIN+3"
+""",
+    ),
+)
+def test_repository_configuration_rejects_incomplete_root_contract(
+    repository_factory: Callable[..., Path], replacement: str
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    original = """[images.runtime]
+profile = "service"
+user = 10001
+memory = "512MiB"
+cpus = 1.0
+pids = 128
+nofile = 1024
+health_command = ["/app", "health"]
+"""
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(original, replacement),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError):
+        load_repository_config(path)
+
+
+def test_repository_configuration_narrows_systemd_runtime(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace('profile = "service"\nuser = 10001', 'profile = "systemd"\nuser = 0')
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "Systemd is the image lifecycle manager."
+owner = "platform@example.com"
+review_trigger = "Review when the image lifecycle changes."
+
+[images.runtime.systemd]
+required_units = ["multi-user.target", "sshd.service"]
+stop_signal = "RTMIN+3"
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    runtime = load_repository_config(path).image("app").runtime
+
+    assert runtime.profile == "systemd"
+    assert runtime.systemd is not None
+    assert runtime.systemd.required_units == ("multi-user.target", "sshd.service")
+    assert runtime.writable_mounts == (
+        "/run",
+        "/run/lock",
+        "/tmp",
+        "/var/log/journal",
+    )
 
 
 def test_repository_configuration_accepts_explicit_arm64_v8(
@@ -639,6 +785,24 @@ def test_repository_configuration_rejects_unsafe_container_mount(
     path.write_text(content, encoding="utf-8")
 
     with pytest.raises(InvalidInvocationError, match="unsafe container path"):
+        load_repository_config(path)
+
+
+def test_repository_configuration_rejects_immutable_writable_path_overlap(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "user = 10001",
+            'user = 10001\nwritable_mounts = ["/var/lib/app"]\n'
+            'immutable_paths = ["/var/lib/app/config"]',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="cannot overlap"):
         load_repository_config(path)
 
 

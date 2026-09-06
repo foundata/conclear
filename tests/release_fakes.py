@@ -175,6 +175,10 @@ class FakePodman:
         del values
         return ""
 
+    def inspect_pid1(self, **values: Any) -> str:
+        del values
+        return "systemd"
+
     def exec_observe(self, **values: Any) -> ExecObservation:
         del values
         return ExecObservation(0, "", "")

@@ -193,7 +193,10 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
                     {
                         "EffectiveCaps": [],
                         "BoundingCaps": [],
-                        "Config": {"User": "10001:10001"},
+                        "Config": {
+                            "User": "10001:10001",
+                            "StopSignal": "SIGTERM",
+                        },
                         "HostConfig": {
                             "ReadonlyRootfs": True,
                             "Tmpfs": {
@@ -213,6 +216,9 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
                             "CapAdd": [],
                             "CapDrop": ["ALL"],
                             "SecurityOpt": ["no-new-privileges"],
+                            "UsernsMode": "private",
+                            "CgroupMode": "private",
+                            "Privileged": False,
                         },
                     }
                 ]
@@ -227,6 +233,9 @@ def test_podman_controls_include_exact_tmpfs_destinations(tmp_path: Path) -> Non
 
     assert observation.writable_mounts == ("/run", "/tmp")
     assert not observation.effective_capabilities
+    assert observation.user_namespace == "private"
+    assert observation.cgroup_namespace == "private"
+    assert observation.privileged is False
 
 
 def test_podman_launch_inputs_remain_argument_arrays_and_redact_secret_mounts(
@@ -288,6 +297,74 @@ def test_podman_launch_inputs_remain_argument_arrays_and_redact_secret_mounts(
         for value in request.argv
     )
     assert request.secret_paths == (secret,)
+    assert request.argv[request.argv.index("--systemd") + 1] == "false"
+    assert request.argv[request.argv.index("--cgroupns") + 1] == "private"
+
+
+def test_podman_systemd_launch_uses_explicit_rootless_lifecycle_controls(
+    tmp_path: Path,
+    repository_factory: Callable[..., Path],
+) -> None:
+    runner = FakeRunner(
+        result(),
+        result(
+            json.dumps(
+                [
+                    {
+                        "Id": "container-id",
+                        "State": {
+                            "Pid": 100,
+                            "ExitCode": None,
+                            "Status": "running",
+                        },
+                    }
+                ]
+            )
+        ),
+    )
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace('profile = "service"\nuser = 10001', 'profile = "systemd"\nuser = 0')
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "Systemd is the image lifecycle manager."
+owner = "platform@example.com"
+review_trigger = "Review when the image lifecycle changes."
+
+[images.runtime.systemd]
+required_units = ["multi-user.target"]
+stop_signal = "RTMIN+3"
+""",
+        ),
+        encoding="utf-8",
+    )
+    runtime = load_repository_config(path).image("app").runtime
+
+    adapter.create_container(
+        root=tmp_path / "root",
+        runroot=tmp_path / "runroot",
+        name="test",
+        image_name="localhost/exact@sha256:fixture",
+        runtime=runtime,
+        platform=Platform.parse("linux/amd64"),
+    )
+
+    argv = runner.requests[0].argv
+    assert argv[argv.index("--user") + 1] == "0"
+    assert argv[argv.index("--userns") + 1] == "keep-id:uid=0,gid=0"
+    assert argv[argv.index("--systemd") + 1] == "always"
+    assert argv[argv.index("--stop-signal") + 1] == "RTMIN+3"
+    assert {
+        argv[index + 1].split(":", maxsplit=1)[0]
+        for index, value in enumerate(argv)
+        if value == "--tmpfs"
+    } == {"/run", "/run/lock", "/tmp", "/var/log/journal"}
 
 
 def test_podman_observes_writable_bind_as_runtime_write_surface(
@@ -312,7 +389,7 @@ def test_podman_observes_writable_bind_as_runtime_write_surface(
                                 "Destination": "/input",
                             },
                         ],
-                        "Config": {"User": "10001"},
+                        "Config": {"User": "10001", "StopSignal": "SIGTERM"},
                         "HostConfig": {
                             "ReadonlyRootfs": True,
                             "Tmpfs": {},
@@ -329,6 +406,9 @@ def test_podman_observes_writable_bind_as_runtime_write_surface(
                             "CapAdd": [],
                             "CapDrop": ["ALL"],
                             "SecurityOpt": ["no-new-privileges"],
+                            "UsernsMode": "private",
+                            "CgroupMode": "private",
+                            "Privileged": False,
                         },
                     }
                 ]
@@ -342,6 +422,22 @@ def test_podman_observes_writable_bind_as_runtime_write_surface(
     )
 
     assert observation.writable_mounts == ("/output",)
+
+
+def test_podman_observes_systemd_as_pid1(tmp_path: Path) -> None:
+    runner = FakeRunner(result("PID COMMAND\n1 systemd\n23 worker\n"))
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    assert (
+        adapter.inspect_pid1(
+            root=tmp_path / "root",
+            runroot=tmp_path / "runroot",
+            name="test",
+            timeout_seconds=5,
+        )
+        == "systemd"
+    )
+    assert runner.requests[0].argv[-4:] == ("top", "test", "pid", "comm")
 
 
 def test_podman_observes_in_container_command_status(tmp_path: Path) -> None:

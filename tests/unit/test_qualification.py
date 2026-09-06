@@ -165,6 +165,8 @@ class Runtime:
         health_outputs: tuple[str, ...] = ("",),
         container_observations: tuple[ContainerObservation, ...] = (),
         immutable_stat_output: str = "",
+        pid1: str = "systemd",
+        inactive_systemd_units: tuple[str, ...] = (),
     ) -> None:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
@@ -180,6 +182,8 @@ class Runtime:
         self.health_outputs = health_outputs
         self.container_observations = list(container_observations)
         self.immutable_stat_output = immutable_stat_output
+        self.pid1 = pid1
+        self.inactive_systemd_units = frozenset(inactive_systemd_units)
         self.removals = 0
         self.removed_names: list[str] = []
         self.import_calls = 0
@@ -190,6 +194,8 @@ class Runtime:
         self.health_timeouts: list[float] = []
         self.inspect_timeouts: list[float] = []
         self.signals = 0
+        self.signal_names: list[str] = []
+        self.systemd_commands: list[tuple[str, ...]] = []
 
     def import_layout(self, **values: Any) -> ImportObservation:
         self.import_calls += 1
@@ -226,7 +232,7 @@ class Runtime:
         runtime = self.runtimes.get(str(values["name"]))
         writable_mounts = () if runtime is None else tuple(runtime.writable_mounts)
         return RuntimeControlObservation(
-            user="10001",
+            user="10001" if runtime is None else str(runtime.user),
             read_only=True,
             writable_mounts=writable_mounts,
             memory_bytes=512 * 1024 * 1024,
@@ -239,6 +245,15 @@ class Runtime:
             bounding_capabilities=self.bounding_capabilities,
             effective_capabilities=self.effective_capabilities,
             security_options=("no-new-privileges",),
+            stop_signal=(
+                "SIGTERM"
+                if runtime is None or runtime.systemd is None
+                else (
+                    runtime.systemd.stop_signal
+                    if runtime.systemd.stop_signal.startswith("SIG")
+                    else f"SIG{runtime.systemd.stop_signal}"
+                )
+            ),
         )
 
     def inspect_container(self, **values: Any) -> ContainerObservation:
@@ -252,7 +267,19 @@ class Runtime:
     def exec(self, **values: Any) -> str:
         return self.immutable_stat_output
 
+    def inspect_pid1(self, **values: Any) -> str:
+        del values
+        return self.pid1
+
     def exec_observe(self, **values: Any) -> ExecObservation:
+        command = tuple(values["command"])
+        if command[:2] == ("systemctl", "show"):
+            self.systemd_commands.append(command)
+            return ExecObservation(0, "259\n", "")
+        if command[:2] == ("systemctl", "is-active"):
+            self.systemd_commands.append(command)
+            status = 3 if command[-1] in self.inactive_systemd_units else 0
+            return ExecObservation(status, "", "")
         if self.fail_health:
             raise OperationalError("injected health failure")
         if self.timeout_health:
@@ -271,6 +298,7 @@ class Runtime:
 
     def signal(self, **values: Any) -> None:
         self.signals += 1
+        self.signal_names.append(str(values["signal_name"]))
         return None
 
     def wait(self, **values: Any) -> int:
@@ -529,6 +557,29 @@ def pin_observations(
             history_initialized=True,
             findings=(),
         ),
+    )
+
+
+def configure_systemd_runtime(root: Path) -> None:
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace('profile = "service"\nuser = 10001', 'profile = "systemd"\nuser = 0')
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "Systemd is the image lifecycle manager."
+owner = "platform@example.com"
+review_trigger = "Review when the image lifecycle changes."
+
+[images.runtime.systemd]
+required_units = ["multi-user.target", "sshd.service"]
+stop_signal = "RTMIN+3"
+""",
+        ),
+        encoding="utf-8",
     )
 
 
@@ -1037,6 +1088,137 @@ def test_service_without_health_command_does_not_poll(
     assert runtime.health_calls == 0
     assert all(item["name"] != "health" for item in evidence.test_results)
     assert runtime.signals == 1
+
+
+def test_systemd_profile_verifies_pid1_units_and_configured_shutdown(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_systemd_runtime(root)
+    value = inputs(root, tmp_path)
+    runtime = Runtime()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+    )
+
+    results = {str(item["name"]): item for item in evidence.test_results}
+    assert results["systemdPid1"]["status"] == "passed"
+    assert results["systemdManager"]["status"] == "passed"
+    assert results["systemdUnit:multi-user.target"]["status"] == "passed"
+    assert results["systemdUnit:sshd.service"]["status"] == "passed"
+    assert results["health"]["status"] == "passed"
+    assert evidence.findings == ()
+    assert runtime.signal_names == ["RTMIN+3"]
+    assert runtime.systemd_commands == [
+        ("systemctl", "show", "--property=Version", "--value"),
+        ("systemctl", "is-active", "--quiet", "multi-user.target"),
+        ("systemctl", "is-active", "--quiet", "sshd.service"),
+    ]
+
+
+def test_systemd_qualification_records_review_and_lifecycle_contract(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_systemd_runtime(root)
+    value = inputs(root, tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        pin_observations=pin_observations(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    record = json.loads(result.record_path.read_text(encoding="utf-8"))
+    validate_record(record)
+    constraints = record["payload"]["runtimeConstraints"]
+    assert constraints["user"] == 0
+    assert constraints["rootRequirement"]["owner"] == "platform@example.com"
+    assert constraints["systemd"] == {
+        "requiredUnits": ["multi-user.target", "sshd.service"],
+        "stopSignal": "RTMIN+3",
+    }
+    assert constraints["writableMounts"] == [
+        "/run",
+        "/run/lock",
+        "/tmp",
+        "/var/log/journal",
+    ]
+
+
+def test_systemd_profile_rejects_non_systemd_pid1(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_systemd_runtime(root)
+    value = inputs(root, tmp_path)
+    runtime = Runtime(pid1="bash")
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+    )
+
+    result = next(
+        item for item in evidence.test_results if item["name"] == "systemdPid1"
+    )
+    assert result["status"] == "failed"
+    assert any("PID 1 is not systemd" in item.message for item in evidence.findings)
+    assert runtime.systemd_commands == []
+    assert runtime.signal_names == ["RTMIN+3"]
+
+
+def test_systemd_profile_rejects_unit_that_misses_shared_startup_deadline(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_systemd_runtime(root)
+    value = inputs(root, tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(value.image.runtime, startup_timeout_seconds=1),
+        ),
+    )
+    runtime = Runtime(inactive_systemd_units=("multi-user.target",))
+    timing = FakeReadinessTiming()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+        _readiness_timing=timing.value,
+    )
+
+    unit = next(
+        item
+        for item in evidence.test_results
+        if item["name"] == "systemdUnit:multi-user.target"
+    )
+    assert unit["status"] == "failed"
+    assert unit["outcome"] == "timeout"
+    assert unit["elapsedSeconds"] == 1.0
+    assert all(
+        item["name"] != "systemdUnit:sshd.service" for item in evidence.test_results
+    )
+    assert any("multi-user.target" in item.message for item in evidence.findings)
 
 
 def test_runtime_rejects_observed_effective_capabilities(

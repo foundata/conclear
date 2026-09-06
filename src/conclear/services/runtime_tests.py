@@ -130,6 +130,17 @@ class RuntimeAdapter(Protocol):
         """Execute one fixed argument array."""
         ...
 
+    def inspect_pid1(
+        self,
+        *,
+        root: Path,
+        runroot: Path,
+        name: str,
+        timeout_seconds: float,
+    ) -> str:
+        """Observe the command name for container PID 1."""
+        ...
+
     def exec_observe(
         self,
         *,
@@ -889,7 +900,7 @@ def _exercise_container(
                 f"Platform {inputs.platform} requires native runtime testing",
             )
         )
-    if inputs.image.runtime.profile == "service":
+    if inputs.image.runtime.profile in {"service", "systemd"}:
         _exercise_service(
             inputs,
             runtime,
@@ -961,7 +972,26 @@ def _exercise_service(
                 "containerExitStatus": container.exit_code,
             }
         )
-    if inputs.image.runtime.health_command:
+    timing = readiness_timing or _ReadinessTiming(
+        monotonic=time.monotonic, sleep=time.sleep
+    )
+    readiness_start = timing.monotonic()
+    readiness_deadline = readiness_start + inputs.image.runtime.startup_timeout_seconds
+    if running and inputs.image.runtime.systemd is not None:
+        container, running = _exercise_systemd_readiness(
+            inputs,
+            runtime,
+            container,
+            storage_root=storage_root,
+            runroot=runroot,
+            container_name=container_name,
+            findings=findings,
+            results=results,
+            timing=timing,
+            readiness_start=readiness_start,
+            readiness_deadline=readiness_deadline,
+        )
+    if running and inputs.image.runtime.health_command:
         health = _wait_for_service_health(
             runtime,
             root=storage_root,
@@ -970,10 +1000,9 @@ def _exercise_service(
             command=inputs.image.runtime.health_command,
             initial=container,
             timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
-            timing=(
-                readiness_timing
-                or _ReadinessTiming(monotonic=time.monotonic, sleep=time.sleep)
-            ),
+            timing=timing,
+            start_time=readiness_start,
+            deadline=readiness_deadline,
         )
         results.append(_health_test_result(health))
         container = health.container
@@ -1014,11 +1043,16 @@ def _exercise_service(
     _check_immutable_paths(
         inputs, runtime, storage_root, runroot, container_name, findings
     )
+    signal_name = (
+        "TERM"
+        if inputs.image.runtime.systemd is None
+        else inputs.image.runtime.systemd.stop_signal
+    )
     runtime.signal(
         root=storage_root,
         runroot=runroot,
         name=container_name,
-        signal_name="TERM",
+        signal_name=signal_name,
     )
     exit_status = runtime.wait(
         root=storage_root,
@@ -1044,6 +1078,114 @@ def _exercise_service(
     )
 
 
+def _exercise_systemd_readiness(
+    inputs: QualificationInputs,
+    runtime: RuntimeAdapter,
+    container: ContainerObservation,
+    *,
+    storage_root: Path,
+    runroot: Path,
+    container_name: str,
+    findings: list[Finding],
+    results: list[dict[str, object]],
+    timing: _ReadinessTiming,
+    readiness_start: float,
+    readiness_deadline: float,
+) -> tuple[ContainerObservation, bool]:
+    systemd = inputs.image.runtime.systemd
+    if systemd is None:
+        raise OperationalError("Systemd readiness requires systemd configuration")
+    remaining = readiness_deadline - timing.monotonic()
+    if remaining <= 0:
+        findings.append(
+            Finding("CC0403", "error", "Systemd readiness deadline expired")
+        )
+        return container, _container_is_running(container)
+    pid1 = runtime.inspect_pid1(
+        root=storage_root,
+        runroot=runroot,
+        name=container_name,
+        timeout_seconds=remaining,
+    )
+    pid1_passed = Path(pid1).name == "systemd"
+    results.append(
+        {
+            "name": "systemdPid1",
+            "status": "passed" if pid1_passed else "failed",
+            "outputDigest": sha256_bytes(pid1.encode("utf-8")),
+        }
+    )
+    if not pid1_passed:
+        findings.append(
+            Finding("CC0403", "error", f"Container PID 1 is not systemd: {pid1}")
+        )
+        return container, _container_is_running(container)
+
+    remaining = readiness_deadline - timing.monotonic()
+    if remaining <= 0:
+        findings.append(
+            Finding("CC0403", "error", "Systemd readiness deadline expired")
+        )
+        return container, _container_is_running(container)
+    manager = runtime.exec_observe(
+        root=storage_root,
+        runroot=runroot,
+        name=container_name,
+        command=("systemctl", "show", "--property=Version", "--value"),
+        timeout_seconds=remaining,
+    )
+    manager_passed = manager.exit_status == 0 and bool(manager.stdout.strip())
+    results.append(_command_test_result("systemdManager", manager, manager_passed))
+    if not manager_passed:
+        findings.append(
+            Finding("CC0403", "error", "Systemd manager is not operational")
+        )
+        return container, _container_is_running(container)
+
+    for unit in systemd.required_units:
+        observation = _wait_for_service_health(
+            runtime,
+            root=storage_root,
+            runroot=runroot,
+            name=container_name,
+            command=("systemctl", "is-active", "--quiet", unit),
+            initial=container,
+            timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
+            timing=timing,
+            start_time=readiness_start,
+            deadline=readiness_deadline,
+        )
+        result = _health_test_result(observation)
+        result["name"] = f"systemdUnit:{unit}"
+        results.append(result)
+        container = observation.container
+        if observation.outcome != "ready":
+            findings.append(
+                Finding(
+                    "CC0403",
+                    "error",
+                    f"Required systemd unit did not become active: {unit}",
+                )
+            )
+            return container, _container_is_running(container)
+    return container, _container_is_running(container)
+
+
+def _command_test_result(
+    name: str, observation: ExecObservation, passed: bool
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "status": "passed" if passed else "failed",
+        "exitStatus": observation.exit_status,
+        "outputDigest": sha256_bytes(
+            canonical_json_bytes(
+                {"stdout": observation.stdout, "stderr": observation.stderr}
+            )
+        ),
+    }
+
+
 def _wait_for_service_health(
     runtime: RuntimeAdapter,
     *,
@@ -1054,11 +1196,13 @@ def _wait_for_service_health(
     initial: ContainerObservation,
     timeout_seconds: int,
     timing: _ReadinessTiming,
+    start_time: float | None = None,
+    deadline: float | None = None,
 ) -> _HealthObservation:
     if timing.interval_seconds <= 0:
         raise OperationalError("Readiness polling interval must be positive")
-    start = timing.monotonic()
-    deadline = start + timeout_seconds
+    start = timing.monotonic() if start_time is None else start_time
+    deadline = start + timeout_seconds if deadline is None else deadline
     attempts = 0
     current = initial
     final_command: ExecObservation | None = None
@@ -1197,6 +1341,16 @@ def _control_findings(
         for value in observed.security_options
     ):
         mismatches.append("no-new-privileges")
+    if observed.user_namespace != "private":
+        mismatches.append("user namespace")
+    if observed.cgroup_namespace != "private":
+        mismatches.append("cgroup namespace")
+    if observed.privileged:
+        mismatches.append("privileged mode")
+    if expected.systemd is not None and _normalized_signal(
+        observed.stop_signal
+    ) != _normalized_signal(expected.systemd.stop_signal):
+        mismatches.append("stop signal")
     # Podman reports CapAdd and CapDrop relative to its own default set, so an
     # explicitly added default capability is invisible there; the bounding set
     # is the authoritative statement of what the container may ever hold.
@@ -1222,6 +1376,10 @@ def _control_findings(
                 "no-new-privileges",
                 "capability drop",
                 "added capabilities",
+                "user namespace",
+                "cgroup namespace",
+                "privileged mode",
+                "stop signal",
             }
             else "CC0402",
             "error",
@@ -1288,6 +1446,10 @@ def _controls_dict(value: RuntimeControlObservation) -> dict[str, object]:
         "boundingCapabilities": list(value.bounding_capabilities),
         "effectiveCapabilities": list(value.effective_capabilities),
         "securityOptions": list(value.security_options),
+        "userNamespace": value.user_namespace,
+        "cgroupNamespace": value.cgroup_namespace,
+        "privileged": value.privileged,
+        "stopSignal": value.stop_signal,
     }
 
 
@@ -1301,3 +1463,7 @@ def _memory_bytes(value: str) -> int:
 
 def _normalized_architecture(value: str) -> str:
     return {"x86_64": "amd64", "aarch64": "arm64"}.get(value, value)
+
+
+def _normalized_signal(value: str) -> str:
+    return value if value.startswith("SIG") else f"SIG{value}"

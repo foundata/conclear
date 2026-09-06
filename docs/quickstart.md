@@ -83,9 +83,11 @@ Every external image in `FROM` or `COPY --from` must use a fully qualified tag
 and digest. Declare the same reference in `conclear.toml`; ConClear rejects
 undeclared and unused pins.
 
-The final image must use a numeric, non-root user and JSON-array `ENTRYPOINT` or
-`CMD`. Do not add Docker-format `HEALTHCHECK` metadata. Declare the health
-command in `conclear.toml` so ConClear can run and record it itself.
+The final image must use the numeric user declared in `conclear.toml` and a
+JSON-array `ENTRYPOINT` or `CMD`. Use a non-zero UID unless the image has a
+reviewed root requirement as described below. Do not add Docker-format
+`HEALTHCHECK` metadata. Declare the health command in `conclear.toml` so
+ConClear can run and record it itself.
 
 ConClear supplies `IMAGE_REVISION`, `IMAGE_CREATED`, `IMAGE_VERSION` when a
 version was requested, and `SOURCE_DATE_EPOCH`. The built image must record the
@@ -191,6 +193,62 @@ contract may set its expected exit status. The root filesystem is always
 read-only, so runtime writable paths must be listed explicitly. Repository
 configuration can narrow ConClear's built-in time limits in `[images.limits]`
 but cannot extend or disable them.
+
+UID 0 is accepted only with a source-reviewed exception that states why root is
+required, who owns the decision and what change triggers another review:
+
+```toml
+[images.runtime]
+profile = "service"
+user = 0
+memory = "512MiB"
+cpus = 1.0
+pids = 256
+nofile = 1024
+
+[images.runtime.root_requirement]
+rationale = "The service manages operating-system identities."
+owner = "platform@example.com"
+review_trigger = "Review when upstream supports an unprivileged mode."
+```
+
+Root inside the container remains rootless on the host. ConClear still uses a
+private user and cgroup namespace, a read-only root filesystem, dropped
+capabilities, `no-new-privileges` and the declared resource limits. It does not
+offer privileged mode, host namespaces, host devices or repository-selected
+writable host paths. The separately declared run-owned test outputs described
+below remain the only writable bind-mount source.
+
+Use `profile = "systemd"` only when systemd is the documented lifecycle manager.
+The Containerfile must set `USER 0`, use systemd as its entrypoint and set
+`STOPSIGNAL SIGRTMIN+3`. The runtime contract adds the reviewed root requirement
+plus systemd-specific readiness:
+
+```toml
+[images.runtime]
+profile = "systemd"
+user = 0
+memory = "1GiB"
+cpus = 2.0
+pids = 512
+nofile = 4096
+
+[images.runtime.root_requirement]
+rationale = "The image tests operating-system services under systemd."
+owner = "platform@example.com"
+review_trigger = "Review when the image no longer needs a system manager."
+
+[images.runtime.systemd]
+required_units = ["multi-user.target", "sshd.service"]
+stop_signal = "RTMIN+3"
+```
+
+The systemd profile provisions `/run`, `/run/lock`, `/tmp` and
+`/var/log/journal` as private tmpfs mounts. Declare any additional writable
+paths normally. Qualification verifies systemd as PID 1, contacts the manager,
+waits for every required unit and the optional health command within one startup
+deadline, sends the configured stop signal and verifies bounded shutdown and the
+expected exit status.
 
 
 ## 6. Describe application test inputs when needed

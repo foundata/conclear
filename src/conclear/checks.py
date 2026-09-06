@@ -58,7 +58,12 @@ class ContainerfileAnalysis:
     findings: tuple[Finding, ...]
 
 
-def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
+def analyze_containerfile(
+    path: Path,
+    *,
+    expected_user: int | None = None,
+    expected_stop_signal: str | None = None,
+) -> ContainerfileAnalysis:
     """Parse a Containerfile and return facts plus rule findings."""
     content = read_regular_file(
         path,
@@ -91,6 +96,7 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
     stage_names: set[str] = set()
     external_references: list[str] = []
     final_user: Instruction | None = None
+    final_stop_signal: Instruction | None = None
     has_entrypoint = False
     has_cmd = False
 
@@ -106,6 +112,7 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
         argument = instruction.argument.strip()
         if keyword == "FROM":
             final_user = None
+            final_stop_signal = None
             reference, stage_name = _parse_from(argument, line_location, findings)
             if reference is not None and reference != "scratch":
                 if reference not in stage_names:
@@ -173,6 +180,8 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
                         _check_external_reference(value, line_location, findings)
         elif keyword == "USER":
             final_user = instruction
+        elif keyword == "STOPSIGNAL":
+            final_stop_signal = instruction
         elif keyword == "ENTRYPOINT":
             has_entrypoint = True
             _check_exec_form(instruction, findings, path)
@@ -188,16 +197,44 @@ def analyze_containerfile(path: Path) -> ContainerfileAnalysis:
                 )
             )
 
-    if (
-        final_user is None
-        or re.fullmatch(r"[1-9][0-9]*(?::[0-9]+)?", final_user.argument.strip()) is None
-    ):
+    user_match = (
+        None
+        if final_user is None
+        else re.fullmatch(
+            r"(?P<uid>0|[1-9][0-9]*)(?::[0-9]+)?", final_user.argument.strip()
+        )
+    )
+    valid_user = user_match is not None and (
+        (expected_user is None and user_match.group("uid") != "0")
+        or (expected_user is not None and int(user_match.group("uid")) == expected_user)
+    )
+    if not valid_user:
         user_location = (
             f"{path}:{final_user.line_number}" if final_user is not None else str(path)
         )
+        requirement = (
+            "a numeric non-root UID"
+            if expected_user is None
+            else f"configured numeric UID {expected_user}"
+        )
+        findings.append(
+            _finding("CC0110", f"Final USER must be {requirement}", user_location)
+        )
+    if expected_stop_signal is not None and (
+        final_stop_signal is None
+        or _normalized_signal(final_stop_signal.argument.strip())
+        != _normalized_signal(expected_stop_signal)
+    ):
+        stop_location = (
+            f"{path}:{final_stop_signal.line_number}"
+            if final_stop_signal is not None
+            else str(path)
+        )
         findings.append(
             _finding(
-                "CC0110", "Final USER must be a numeric non-root UID", user_location
+                "CC0115",
+                f"Final STOPSIGNAL must match configured {expected_stop_signal}",
+                stop_location,
             )
         )
     if not has_entrypoint and not has_cmd:
@@ -271,7 +308,13 @@ def external_reference_occurrences(path: Path) -> tuple[ReferenceOccurrence, ...
 
 def check_image_static(image: ImageConfig) -> tuple[Finding, ...]:
     """Run all hermetic source and context checks for one image."""
-    analysis = analyze_containerfile(image.containerfile)
+    analysis = analyze_containerfile(
+        image.containerfile,
+        expected_user=image.runtime.user,
+        expected_stop_signal=(
+            None if image.runtime.systemd is None else image.runtime.systemd.stop_signal
+        ),
+    )
     findings = list(analysis.findings)
     findings.extend(_check_context(image.context))
     declared = {str(pin.reference) for pin in image.pins}
@@ -351,6 +394,10 @@ def _has_unsafe_chmod(argument: str) -> bool:
         if mode is not None and _unsafe_chmod_mode(mode):
             return True
     return False
+
+
+def _normalized_signal(value: str) -> str:
+    return value if value.startswith("SIG") else f"SIG{value}"
 
 
 def _unsafe_chmod_mode(mode: str) -> bool:

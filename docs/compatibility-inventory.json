@@ -104,6 +104,12 @@
         "severity": "error"
       },
       {
+        "anchor": "entrypoint-command-and-signal-handling",
+        "behavior": "automated",
+        "id": "CC0115",
+        "severity": "error"
+      },
+      {
         "anchor": "build-context",
         "behavior": "automated",
         "id": "CC0201",

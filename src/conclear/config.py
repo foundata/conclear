@@ -40,6 +40,7 @@ _ENVIRONMENT_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
 _SECRET_ENVIRONMENT_PATTERN = re.compile(
     r"(?:^|_)(?:PASSWORD|PASSPHRASE|SECRET|TOKEN)(?:_|$)"
 )
+SYSTEMD_WRITABLE_MOUNTS = ("/run", "/run/lock", "/tmp", "/var/log/journal")
 
 
 class PinIntent(StrEnum):
@@ -153,6 +154,23 @@ class TestConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class RootRequirement:
+    """Reviewed justification for running as container UID 0."""
+
+    rationale: str
+    owner: str
+    review_trigger: str
+
+
+@dataclass(frozen=True, slots=True)
+class SystemdConfig:
+    """Systemd-specific lifecycle expectations."""
+
+    required_units: tuple[str, ...]
+    stop_signal: str
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeConfig:
     """Runtime contract and hardening constraints."""
 
@@ -169,6 +187,8 @@ class RuntimeConfig:
     capabilities: tuple[str, ...]
     startup_timeout_seconds: int
     shutdown_timeout_seconds: int
+    root_requirement: RootRequirement | None = None
+    systemd: SystemdConfig | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -741,7 +761,7 @@ def _test_fixture_path(source_root: Path, value: str) -> Path:
 
 
 def _container_paths_overlap(left: str, right: str) -> bool:
-    return left.startswith(right + "/") or right.startswith(left + "/")
+    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
 
 
 def _require_unique_names(values: tuple[object, ...], label: str) -> None:
@@ -767,17 +787,53 @@ def _parse_release_tags(value: dict[str, Any]) -> ReleaseTags:
 
 
 def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
-    writable_mounts = _container_paths(
-        value.get("writable_mounts", []), field_name="writable_mounts", allow_root=False
+    profile = toml_string(value["profile"])
+    writable_mounts = set(
+        _container_paths(
+            value.get("writable_mounts", []),
+            field_name="writable_mounts",
+            allow_root=False,
+        )
     )
+    if profile == "systemd":
+        writable_mounts.update(SYSTEMD_WRITABLE_MOUNTS)
     immutable_paths = _container_paths(
         value.get("immutable_paths", []), field_name="immutable_paths", allow_root=True
     )
+    if any(
+        _container_paths_overlap(immutable, writable)
+        for immutable in immutable_paths
+        for writable in writable_mounts
+    ):
+        raise InvalidInvocationError(
+            "Immutable runtime paths cannot overlap writable runtime mounts"
+        )
+    root_value = value.get("root_requirement")
+    root_requirement = (
+        None
+        if root_value is None
+        else RootRequirement(
+            rationale=toml_string(toml_table(root_value)["rationale"]),
+            owner=toml_string(toml_table(root_value)["owner"]),
+            review_trigger=toml_string(toml_table(root_value)["review_trigger"]),
+        )
+    )
+    systemd_value = value.get("systemd")
+    systemd = (
+        None
+        if systemd_value is None
+        else SystemdConfig(
+            required_units=tuple(
+                _string_list(toml_table(systemd_value)["required_units"])
+            ),
+            stop_signal=toml_string(toml_table(systemd_value)["stop_signal"]),
+        )
+    )
     return RuntimeConfig(
-        profile=toml_string(value["profile"]),
+        profile=profile,
         user=toml_integer(value["user"]),
         read_only=True,
-        writable_mounts=writable_mounts,
+        writable_mounts=tuple(sorted(writable_mounts)),
         memory=toml_string(value["memory"]),
         cpus=_number(value["cpus"]),
         pids=toml_integer(value["pids"]),
@@ -791,6 +847,8 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
         shutdown_timeout_seconds=toml_integer(
             value.get("shutdown_timeout_seconds", 30)
         ),
+        root_requirement=root_requirement,
+        systemd=systemd,
     )
 
 

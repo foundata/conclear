@@ -198,21 +198,52 @@
       "additionalProperties": false,
       "required": ["profile", "user", "readOnly", "writableMounts", "memory", "cpus", "pids", "nofile", "capabilities"],
       "properties": {
-        "profile": {"enum": ["service", "one-shot", "scratch"]},
-        "user": {"type": "integer", "minimum": 1},
+        "profile": {"enum": ["service", "one-shot", "scratch", "systemd"]},
+        "user": {"type": "integer", "minimum": 0},
         "readOnly": {"const": true},
         "writableMounts": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
         "memory": {"type": "string", "pattern": "^[1-9][0-9]*(?:KiB|MiB|GiB)$"},
         "cpus": {"type": "number", "exclusiveMinimum": 0},
         "pids": {"type": "integer", "minimum": 1},
         "nofile": {"type": "integer", "minimum": 1},
-        "capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
-      }
+        "capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "rootRequirement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rationale", "owner", "reviewTrigger"],
+          "properties": {
+            "rationale": {"type": "string", "minLength": 1},
+            "owner": {"type": "string", "minLength": 1},
+            "reviewTrigger": {"type": "string", "minLength": 1}
+          }
+        },
+        "systemd": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requiredUnits", "stopSignal"],
+          "properties": {
+            "requiredUnits": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+            "stopSignal": {"type": "string", "minLength": 1}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"user": {"const": 0}}, "required": ["user"]},
+          "then": {"required": ["rootRequirement"]},
+          "else": {"not": {"required": ["rootRequirement"]}}
+        },
+        {
+          "if": {"properties": {"profile": {"const": "systemd"}}, "required": ["profile"]},
+          "then": {"required": ["systemd"], "properties": {"user": {"const": 0}}},
+          "else": {"not": {"required": ["systemd"]}}
+        }
+      ]
     },
     "runtimeObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["user", "readOnly", "writableMounts", "memoryBytes", "nanoCpus", "pidsLimit", "nofile", "capAdd", "capDrop", "effectiveCapabilities", "securityOptions"],
+      "required": ["user", "readOnly", "writableMounts", "memoryBytes", "nanoCpus", "pidsLimit", "nofile", "capAdd", "capDrop", "effectiveCapabilities", "securityOptions", "userNamespace", "cgroupNamespace", "privileged", "stopSignal"],
       "properties": {
         "user": {"type": "string"},
         "readOnly": {"type": "boolean"},
@@ -225,7 +256,11 @@
         "capDrop": {"$ref": "#/$defs/stringArray"},
         "boundingCapabilities": {"$ref": "#/$defs/stringArray"},
         "effectiveCapabilities": {"$ref": "#/$defs/stringArray"},
-        "securityOptions": {"$ref": "#/$defs/stringArray"}
+        "securityOptions": {"$ref": "#/$defs/stringArray"},
+        "userNamespace": {"const": "private"},
+        "cgroupNamespace": {"const": "private"},
+        "privileged": {"const": false},
+        "stopSignal": {"type": "string", "minLength": 1}
       }
     },
     "testResult": {

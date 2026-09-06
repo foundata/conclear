@@ -24,6 +24,8 @@ def check_image(image: ImageConfig, hadolint: HadolintAdapter) -> CheckOutcome:
     """Run deterministic source checks and the supported Hadolint adapter."""
     findings = list(check_image_static(image))
     for item in hadolint.check(image.containerfile, config_directory=image.context):
+        if item.code == "DL3002" and image.runtime.root_requirement is not None:
+            continue
         severity = "warning" if item.level in {"warning", "info", "style"} else "error"
         findings.append(
             Finding(
