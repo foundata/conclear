@@ -118,7 +118,6 @@ source = "https://git.example.com/foundata/example"
 id = "app"
 repository = "quay.io/foundata/example"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "The required runtime dependency is not available for arm64."
 scanner = "trivy"
 
 [images.release]
@@ -140,7 +139,7 @@ reference = "quay.io/example/base:1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 tag_intent = "immutable-version"
 ```
 
-Every image must include `linux/amd64`. Add `linux/arm64` when the image supports it; otherwise record the reason in `arm64_omission_reason`. `containerfile` defaults to `Containerfile` and `context` to `.`, both relative to the repository root. `native_test_platforms` identifies platforms that must run without emulation and defaults to `["linux/amd64"]`. `scanner` is optional and currently accepts only `trivy`; it documents the gating scanner for the reader.
+Every image must include `linux/amd64`; `linux/arm64` is optional. `containerfile` defaults to `Containerfile` and `context` to `.`, both relative to the repository root. `native_test_platforms` identifies platforms that must run without emulation and defaults to `["linux/amd64"]`. `scanner` is optional and currently accepts only `trivy`; it documents the gating scanner for the reader.
 
 Use `profile = "one-shot"` for a command that should exit. The test launch contract may set its expected exit status. The root filesystem is always read-only, so runtime writable paths must be listed explicitly. Repository configuration can narrow ConClear's built-in time limits in `[images.limits]` but cannot extend or disable them.
 

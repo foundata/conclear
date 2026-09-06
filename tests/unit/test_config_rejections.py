@@ -17,7 +17,6 @@ SECOND_IMAGE = """
 id = "generator"
 repository = "quay.io/example/generator"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "Only amd64 is required for this test."
 
 [images.release]
 immutable_tags = ["{version}"]
@@ -74,13 +73,6 @@ def _before_release(addition: str) -> Callable[[str], str]:
                 1,
             ),
             "subset of platforms",
-        ),
-        (
-            lambda text: text.replace(
-                'arm64_omission_reason = "The dependency is not available for arm64."\n',
-                "",
-            ),
-            "arm64_omission_reason",
         ),
         (
             lambda text: text.replace(
@@ -253,7 +245,6 @@ command = ["/app"]
         "duplicate-semantic-platform",
         "missing-amd64",
         "native-not-subset",
-        "missing-arm64-reason",
         "tagged-repository",
         "duplicate-exception",
         "exception-expiry",

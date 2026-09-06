@@ -55,13 +55,8 @@ CMD ["service"]
 CONTAINERIGNORE = "*\n!Containerfile\n!conclear.toml\n!conclear-fixture-*\n"
 
 
-def _configuration(platforms: Sequence[str], omission_reason: str | None) -> str:
+def _configuration(platforms: Sequence[str]) -> str:
     platform_list = ", ".join(f'"{item}"' for item in platforms)
-    omission = (
-        ""
-        if omission_reason is None
-        else f'arm64_omission_reason = "{omission_reason}"\n'
-    )
     return f"""schema_version = 1
 
 [project]
@@ -72,7 +67,7 @@ source = "{SOURCE}"
 id = "app"
 repository = "quay.io/llmtest/app"
 platforms = [{platform_list}]
-{omission}
+
 [images.release]
 immutable_tags = ["{{version}}"]
 moving_tags = ["stable"]
@@ -143,7 +138,6 @@ def _prepare_repository(
     root: Path,
     *,
     platforms: Sequence[str],
-    omission_reason: str | None,
 ) -> Path:
     repository = root / "repository"
     repository.mkdir(mode=0o700, parents=True)
@@ -177,7 +171,7 @@ def _prepare_repository(
     (repository / "Containerfile").write_text(CONTAINERFILE, encoding="utf-8")
     (repository / ".containerignore").write_text(CONTAINERIGNORE, encoding="utf-8")
     (repository / "conclear.toml").write_text(
-        _configuration(platforms, omission_reason), encoding="utf-8"
+        _configuration(platforms), encoding="utf-8"
     )
     git = str(runtime.tools[ToolName.GIT].path)
 
@@ -258,7 +252,6 @@ def _scenario(
     tmp_path: Path,
     *,
     platforms: Sequence[str],
-    omission_reason: str | None,
 ) -> None:
     run_id = manifest_run_id()
     executable = _cli_executable()
@@ -275,9 +268,7 @@ def _scenario(
         ).stdout
     )
     assert len(identity["sourceRevision"]) in {40, 64}, identity
-    repository = _prepare_repository(
-        runtime, root, platforms=platforms, omission_reason=omission_reason
-    )
+    repository = _prepare_repository(runtime, root, platforms=platforms)
     state_home = root / "state"
     cache_home = root / "cache"
     (cache_home / "conclear").mkdir(mode=0o700, parents=True)
@@ -457,7 +448,6 @@ def test_two_native_workers_assemble_one_index_through_the_cli(tmp_path: Path) -
     _scenario(
         tmp_path,
         platforms=("linux/amd64", "linux/amd64/v3"),
-        omission_reason="The end-to-end fixture exercises two native x86-64 variants.",
     )
 
 
@@ -475,5 +465,4 @@ def test_amd64_and_arm64_workers_assemble_one_index_through_the_cli(
     _scenario(
         tmp_path,
         platforms=("linux/amd64", "linux/arm64"),
-        omission_reason=None,
     )

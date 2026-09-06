@@ -495,7 +495,6 @@ command = ["scripts/hook"]
 id = "generator"
 repository = "quay.io/example/generator"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "Only amd64 is required for this test."
 
 [images.release]
 immutable_tags = ["{version}"]

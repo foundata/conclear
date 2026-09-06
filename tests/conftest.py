@@ -41,7 +41,6 @@ source = "https://github.com/example/app.git"
 id = "app"
 repository = "quay.io/example/app"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "The dependency is not available for arm64."
 
 [images.release]
 immutable_tags = ["{{version}}"]

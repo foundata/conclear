@@ -630,7 +630,6 @@ context = "."
 repository = "quay.io/example/runtime-inputs"
 platforms = ["linux/amd64"]
 native_test_platforms = ["linux/amd64"]
-arm64_omission_reason = "This isolated integration fixture exercises the native runtime."
 
 [images.test]
 dependencies = ["generator"]
@@ -687,7 +686,6 @@ context = "."
 repository = "quay.io/example/runtime-input-generator"
 platforms = ["linux/amd64"]
 native_test_platforms = ["linux/amd64"]
-arm64_omission_reason = "This isolated integration fixture exercises the native runtime."
 
 [images.release]
 immutable_tags = ["{{version}}"]

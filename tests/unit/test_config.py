@@ -35,14 +35,9 @@ def test_repository_configuration_accepts_explicit_arm64_v8(
     root = repository_factory()
     path = root / "conclear.toml"
     path.write_text(
-        path.read_text(encoding="utf-8")
-        .replace(
+        path.read_text(encoding="utf-8").replace(
             'platforms = ["linux/amd64"]',
             'platforms = ["linux/amd64", "linux/arm64/v8"]',
-        )
-        .replace(
-            'arm64_omission_reason = "The dependency is not available for arm64."\n',
-            "",
         ),
         encoding="utf-8",
     )
@@ -50,6 +45,35 @@ def test_repository_configuration_accepts_explicit_arm64_v8(
     image = load_repository_config(path).image("app")
 
     assert str(image.platforms[-1]) == "linux/arm64/v8"
+
+
+def test_amd64_only_image_needs_no_arm64_omission_reason(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    content = (root / "conclear.toml").read_text(encoding="utf-8")
+    assert "arm64" not in content
+
+    image = load_repository_config(root / "conclear.toml").image("app")
+
+    assert [str(item) for item in image.platforms] == ["linux/amd64"]
+
+
+def test_arm64_omission_reason_is_an_unknown_key(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            'platforms = ["linux/amd64"]',
+            'platforms = ["linux/amd64"]\narm64_omission_reason = "No arm64 worker."',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="Additional properties"):
+        load_repository_config(path)
 
 
 def test_repository_configuration_parses_exact_runtime_test_inputs(
@@ -473,8 +497,8 @@ def test_candidate_lifetime_is_accepted_only_in_limits(
             "[images.release]",
         )
         .replace(
-            "arm64_omission_reason =",
-            'candidate_lifetime = "24h"\narm64_omission_reason =',
+            'platforms = ["linux/amd64"]',
+            'platforms = ["linux/amd64"]\ncandidate_lifetime = "24h"',
         )
     )
     path.write_text(direct, encoding="utf-8")
@@ -700,7 +724,6 @@ def _image_text(
 id = "{image_id}"
 repository = "quay.io/example/{image_id}"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "Only amd64 is required for this test."
 
 [images.release]
 immutable_tags = ["{{version}}"]

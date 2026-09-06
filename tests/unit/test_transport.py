@@ -94,13 +94,8 @@ def two_platform_repository(repository_factory: Callable[..., Path]) -> Path:
     root = repository_factory()
     path = root / "conclear.toml"
     path.write_text(
-        path.read_text(encoding="utf-8")
-        .replace(
+        path.read_text(encoding="utf-8").replace(
             'platforms = ["linux/amd64"]', 'platforms = ["linux/amd64", "linux/arm64"]'
-        )
-        .replace(
-            'arm64_omission_reason = "The dependency is not available for arm64."\n',
-            "",
         ),
         encoding="utf-8",
     )

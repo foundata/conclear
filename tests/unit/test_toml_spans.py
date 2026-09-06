@@ -149,7 +149,6 @@ source = "https://github.com/foundata/oci-openldap-declarative"
 id = "runtime"
 repository = "quay.io/foundata/openldap-declarative"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "2026-09-03: no arm64 worker."
 
 [images.test]
 dependencies = ["generator"]

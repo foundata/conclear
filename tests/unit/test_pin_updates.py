@@ -69,7 +69,6 @@ source = "https://github.com/example/app"
 id = "runtime"
 repository = "quay.io/example/runtime"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "No arm64 worker."
 
 [images.release]
 immutable_tags = ["{{version}}"]
@@ -93,7 +92,6 @@ id = "generator"
 containerfile = "Containerfile.generator"
 repository = "quay.io/example/generator"
 platforms = ["linux/amd64"]
-arm64_omission_reason = "No arm64 worker."
 
 [[images.pins]]
 reference = "{OLD_REFERENCE}"
@@ -514,7 +512,7 @@ def test_closed_selection_limits_the_proposal_to_selected_images(
         ),
         (
             lambda root: (root / "conclear.toml").write_text(
-                CONFIGURATION.replace("No arm64 worker.", "Still no arm64 worker."),
+                CONFIGURATION.replace('name = "example"', 'name = "renamed"'),
                 encoding="utf-8",
             ),
             "configuration",

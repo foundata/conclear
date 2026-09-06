@@ -205,7 +205,6 @@ class ImageConfig:
     repository: OCIReference
     platforms: tuple[Platform, ...]
     native_test_platforms: tuple[Platform, ...]
-    arm64_omission_reason: str | None
     scanner: str
     rescan_scope: str
     release: ReleaseTags
@@ -380,7 +379,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     ):
         raise InvalidInvocationError("An image cannot declare duplicate platforms")
     amd64 = Platform.parse("linux/amd64")
-    arm64 = Platform.parse("linux/arm64")
     if not any(platform.semantically_matches(amd64) for platform in platforms):
         raise InvalidInvocationError("Every image must include linux/amd64")
     native_platforms = tuple(
@@ -394,20 +392,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             "native_test_platforms must be a subset of platforms"
         )
-    omission_reason_value = value.get("arm64_omission_reason")
-    omission_reason = (
-        toml_string(omission_reason_value)
-        if omission_reason_value is not None
-        else None
-    )
-    if (
-        not any(platform.semantically_matches(arm64) for platform in platforms)
-        and omission_reason is None
-    ):
-        raise InvalidInvocationError(
-            "An image omitting linux/arm64 must provide arm64_omission_reason"
-        )
-
     release_value = toml_table(value["release"])
     release = _parse_release_tags(release_value)
     runtime_value = toml_table(value["runtime"])
@@ -458,7 +442,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         repository=repository,
         platforms=platforms,
         native_test_platforms=native_platforms,
-        arm64_omission_reason=omission_reason,
         scanner=toml_string(value.get("scanner", "trivy")),
         rescan_scope=toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
         release=release,
