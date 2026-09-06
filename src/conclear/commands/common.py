@@ -14,6 +14,7 @@ from conclear.adapters.ci import (
     CIContextObservation,
     observe_ci_context,
 )
+from conclear.errors import bind_failed_run
 from conclear.presentation import CommandResult, present_human, present_json
 from conclear.release_profile import (
     CIContextPolicy,
@@ -22,7 +23,9 @@ from conclear.release_profile import (
 )
 from conclear.runtime import ApplicationRuntime
 from conclear.secrets import read_passphrase
+from conclear.services.run_context import finish_run_failure
 from conclear.tools import ToolName
+from conclear.workspace import RunWorkspace
 
 
 def state_home() -> Path:
@@ -113,6 +116,26 @@ def emit(result: CommandResult, output_format: str) -> None:
         present_human(result, sys.stdout)
     if result.exit_status:
         raise click.exceptions.Exit(int(result.exit_status))
+
+
+@contextmanager
+def owned_run(workspace: RunWorkspace) -> Iterator[None]:
+    """Settle and name a created run when the command fails inside it.
+
+    A result the command already presented leaves through Click's ``Exit``
+    with the run state the command settled itself. Every other failure moves
+    the run to its rejected or incomplete state and carries the run identity
+    to the top-level handler, so the failure output names the run whose
+    journaled resources `cleanup` can remove.
+    """
+    try:
+        yield
+    except click.exceptions.Exit:
+        raise
+    except BaseException as exc:
+        finish_run_failure(workspace, exc)
+        bind_failed_run(exc, workspace.run_id)
+        raise
 
 
 @contextmanager

@@ -29,6 +29,7 @@ from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
+    bind_failed_run,
 )
 from conclear.jsonutil import atomic_write_json, sha256_bytes
 from conclear.pins import PinResolver, PinStore, check_image_pins
@@ -52,6 +53,7 @@ from conclear.services.qualification import qualify_platform
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.run_context import (
     create_source_run,
+    finish_run_failure,
     hook_runner,
     open_source_run,
 )
@@ -147,6 +149,7 @@ def execute_release(
         )
     except BaseException as exc:
         _finish_failure(workspace, exc, now_factory())
+        bind_failed_run(exc, workspace.run_id)
         raise
     return result
 
@@ -245,6 +248,7 @@ def resume_release(
         )
     except BaseException as exc:
         _finish_failure(workspace, exc, now_factory())
+        bind_failed_run(exc, workspace.run_id)
         raise
 
 
@@ -565,16 +569,9 @@ def _write_summary(
 def _finish_failure(
     workspace: RunWorkspace, failure: BaseException, now: datetime
 ) -> None:
-    state = workspace.load().state
-    if state is RunState.PROMOTED:
+    if workspace.load().state is RunState.PROMOTED:
         return
-    if state not in {RunState.REJECTED, RunState.INCOMPLETE}:
-        target = (
-            RunState.REJECTED
-            if isinstance(failure, RuleRejectionError)
-            else RunState.INCOMPLETE
-        )
-        workspace.transition(target, now=now)
+    finish_run_failure(workspace, failure, now=now)
     snapshot = workspace.load()
     failure_value: dict[str, object]
     if isinstance(failure, ConClearError):

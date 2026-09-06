@@ -5,12 +5,20 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import click
 import pytest
 from click.testing import CliRunner
 
 import conclear.commands.local as local_commands
 from conclear.cli import main, root
-from conclear.errors import OperationalError, RuleRejectionError
+from conclear.errors import (
+    ConClearError,
+    OperationalError,
+    RuleRejectionError,
+    bind_failed_run,
+    failed_run_id,
+)
+from conclear.presentation import CommandResult, ResultStatus
 
 DOCUMENTED_COMMANDS = {
     "assemble",
@@ -308,3 +316,82 @@ def test_main_preserves_rule_identifier_in_human_and_json_output(
         {"checkId": "CC0107", "severity": "error", "message": "rejected"}
     ]
     assert "CC0107 error: rejected" in captured.err
+
+
+RUN_ID = "01m1t72srrb9dfv2rk96396tvs"
+
+
+def test_bound_run_identity_is_read_from_the_failure_or_its_cause() -> None:
+    error = OperationalError("failed")
+    assert failed_run_id(error) is None
+    bind_failed_run(error, RUN_ID)
+    assert error.run_id == RUN_ID
+    assert failed_run_id(error) == RUN_ID
+
+    interrupt = KeyboardInterrupt()
+    bind_failed_run(interrupt, RUN_ID)
+    try:
+        raise click.Abort() from interrupt
+    except click.Abort as abort:
+        assert failed_run_id(abort) == RUN_ID
+    assert failed_run_id(ValueError("plain")) is None
+
+
+def test_failure_results_carry_only_the_run_identity() -> None:
+    CommandResult(
+        "check", ResultStatus.OPERATIONAL_FAILURE, "failed", data={"runId": RUN_ID}
+    ).to_dict()
+    with pytest.raises(ConClearError):
+        CommandResult(
+            "check",
+            ResultStatus.OPERATIONAL_FAILURE,
+            "failed",
+            data={"runId": RUN_ID, "layout": "/layout"},
+        ).to_dict()
+
+
+@pytest.mark.parametrize(
+    ("failure", "exit_code", "status"),
+    [
+        (OperationalError("failed"), 1, "operationalFailure"),
+        (RuleRejectionError("rejected", code="CC0306"), 2, "ruleRejection"),
+        (click.UsageError("undeclared platform"), 64, "invalidInvocation"),
+        (ValueError("internal"), 1, "operationalFailure"),
+        (KeyboardInterrupt(), 1, "operationalFailure"),
+    ],
+)
+def test_main_names_the_bound_run_in_every_failure_output(
+    repository_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: BaseException,
+    exit_code: int,
+    status: str,
+) -> None:
+    root_path = repository_factory()
+    monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
+
+    def fail(image: Any, hadolint: Any) -> None:
+        bind_failed_run(failure, RUN_ID)
+        raise failure
+
+    monkeypatch.setattr(local_commands, "check_image", fail)
+
+    assert (
+        main(
+            [
+                "check",
+                "--config",
+                str(root_path / "conclear.toml"),
+                "--image",
+                "app",
+                "--format",
+                "json",
+            ]
+        )
+        == exit_code
+    )
+    captured = capsys.readouterr()
+    value = json.loads(captured.out)
+    assert (value["status"], value["data"]) == (status, {"runId": RUN_ID})
+    assert f"conclear cleanup {RUN_ID}" in captured.err

@@ -209,13 +209,46 @@ def test_build_rejects_platform_that_the_image_does_not_declare(
     run = FakeSourceRun(repository_factory(), tmp_path)
     _local(monkeypatch, run)
 
-    code, value, _ = invoke(
+    code, value, stderr = invoke(
         ["build", "--revision", "v1", "--image", "app", "--platform", "linux/arm64"]
     )
 
     assert code == 64
     assert value["status"] == "invalidInvocation"
     assert "not configured" in value["message"]
+    assert value["data"] == {"runId": run.workspace.run_id}
+    assert f"conclear cleanup {run.workspace.run_id}" in stderr
+    assert run.workspace.load().state is RunState.INCOMPLETE
+
+
+@pytest.mark.parametrize(
+    ("command", "fake"),
+    [("build", "build_platform"), ("qualify", "check_image")],
+)
+def test_run_creating_commands_name_their_run_when_a_phase_fails(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    command: str,
+    fake: str,
+) -> None:
+    run = FakeSourceRun(repository_factory(), tmp_path)
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise OperationalError("tool failed")
+
+    _local(monkeypatch, run, **{fake: fail})
+
+    code, value, stderr = invoke(
+        [command, "--revision", "v1", "--image", "app", "--platform", "linux/amd64"]
+    )
+
+    assert (code, value["status"]) == (1, "operationalFailure")
+    assert value["message"] == "tool failed"
+    assert value["data"] == {"runId": run.workspace.run_id}
+    assert f"conclear cleanup {run.workspace.run_id}" in stderr
+    assert run.workspace.load().state is RunState.INCOMPLETE
 
 
 @pytest.mark.parametrize(
@@ -462,7 +495,7 @@ def test_assemble_command_records_a_failed_import_on_the_coordinator_run(
         assemble_candidate=lambda *args, **kwargs: pytest.fail("assembled"),
     )
 
-    code, value, _ = invoke(
+    code, value, stderr = invoke(
         [
             "assemble",
             "--revision",
@@ -476,6 +509,8 @@ def test_assemble_command_records_a_failed_import_on_the_coordinator_run(
     )
 
     assert (code, value["status"]) == (exit_code, status)
+    assert value["data"] == {"runId": run.workspace.run_id}
+    assert f"conclear cleanup {run.workspace.run_id}" in stderr
     assert run.workspace.load().state is state
 
 

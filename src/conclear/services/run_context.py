@@ -42,6 +42,27 @@ class SourceRun:
     runtime: ApplicationRuntime
 
 
+def finish_run_failure(
+    workspace: RunWorkspace, failure: BaseException, *, now: datetime | None = None
+) -> None:
+    """Settle a run that failed before reaching a terminal state.
+
+    A rule rejection ends the run as rejected. Any other failure, including an
+    interrupt or an internal error, leaves it incomplete so `cleanup` can remove
+    the journaled resources and `release --resume` can continue where allowed.
+    A run that already reached a terminal state is left alone.
+    """
+    state = workspace.load().state
+    if state in {RunState.REJECTED, RunState.INCOMPLETE, RunState.PROMOTED}:
+        return
+    workspace.transition(
+        RunState.REJECTED
+        if isinstance(failure, RuleRejectionError)
+        else RunState.INCOMPLETE,
+        now=now,
+    )
+
+
 def hook_runner(
     runtime: ApplicationRuntime, repository: RepositoryConfig, workspace: RunWorkspace
 ) -> HookRunner:

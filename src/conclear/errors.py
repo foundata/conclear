@@ -22,6 +22,7 @@ class ConClearError(RuntimeError):
         """Create an expected failure with an optional stable check code."""
         super().__init__(message)
         self.code = code
+        self.run_id: str | None = None
 
 
 class OperationalError(ConClearError):
@@ -75,3 +76,27 @@ class InvalidInvocationError(ConClearError):
 
     exit_status = ExitStatus.INVALID_INVOCATION
     error_type = "invalidInvocation"
+
+
+def bind_failed_run(failure: BaseException, run_id: str) -> None:
+    """Name the run whose journaled resources a failure leaves behind.
+
+    Every exception instance carries the identity, so an interrupt or an
+    internal error raised inside a created run is reported like an expected
+    failure.
+    """
+    if isinstance(failure, ConClearError):
+        failure.run_id = run_id
+    else:
+        failure.__dict__["run_id"] = run_id
+
+
+def failed_run_id(failure: BaseException) -> str | None:
+    """Return the run bound to a failure or to the failure it was raised from."""
+    for candidate in (failure, failure.__cause__):
+        if candidate is None:
+            continue
+        value = candidate.__dict__.get("run_id")
+        if isinstance(value, str) and value:
+            return value
+    return None

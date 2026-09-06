@@ -42,6 +42,7 @@ from .common import (
     config_option,
     emit,
     format_option,
+    owned_run,
     passphrase_option,
     profile,
     profile_option,
@@ -405,96 +406,97 @@ def rescan_command(
             **profile_inputs(selected),
         },
     )
-    runtime = ApplicationRuntime.create(
-        workspace.root / "environment",
-        names=(ToolName.SKOPEO, ToolName.TRIVY, ToolName.COSIGN),
-    )
-    workspace.bind_immutable_inputs(
-        {
-            f"tool.{tool.name.value}": f"{tool.version}@{tool.executable_digest}"
-            for tool in runtime.tools.values()
-        }
-    )
-    history_store = RescanHistoryStore(state_home())
-    attested_history = verified_rescan_history(
-        subject,
-        signer=runtime.cosign(auth_file=selected.auth_file),
-        public_key=selected.cosign_public_key,
-    )
-    remediation_history = history_store.synchronize(
-        subject,
-        attested_history,
-        previous_result,
-    )
-    database = select_fresh_database(
-        runtime.trivy(),
-        trivy_cache_root(cache_home()),
-        now=utc_now(),
-    )
-    signing = (
-        RescanSigning(
-            selected.cosign_private_key or "",
-            selected.cosign_public_key,
-            passphrase,
-            selected.passphrase_file,
+    with owned_run(workspace):
+        runtime = ApplicationRuntime.create(
+            workspace.root / "environment",
+            names=(ToolName.SKOPEO, ToolName.TRIVY, ToolName.COSIGN),
         )
-        if authoritative
-        else None
-    )
-    result = rescan_release(
-        subject,
-        workspace=workspace,
-        registry=runtime.skopeo(),
-        signer=runtime.cosign(auth_file=selected.auth_file),
-        scanner=runtime.trivy(),
-        database=database,
-        public_key=selected.cosign_public_key,
-        auth_file=selected.auth_file,
-        tools=runtime.identities,
-        image_id=image_id,
-        expected_configuration_digest=configuration_digest,
-        scope=image.rescan_scope,
-        exceptions=image.vulnerability_exceptions,
-        triage=triage,
-        previous_result_digest=previous_result,
-        remediation_limit=image.limits.remediation,
-        remediation_history=remediation_history,
-        signing=signing,
-        now=utc_now(),
-        record_clock=utc_now,
-    )
-    if result.authoritative:
-        if result.verified_at is None:
-            raise OperationalError("Authoritative rescan has no verification time")
-        history_store.record(
+        workspace.bind_immutable_inputs(
+            {
+                f"tool.{tool.name.value}": f"{tool.version}@{tool.executable_digest}"
+                for tool in runtime.tools.values()
+            }
+        )
+        history_store = RescanHistoryStore(state_home())
+        attested_history = verified_rescan_history(
             subject,
-            RescanHistoryEntry(
-                record_digest=result.record_digest,
-                verified_at=parse_timestamp(
-                    result.verified_at,
-                    "Rescan verification time",
-                    error=InvalidInvocationError,
-                ),
-                active_findings=result.active_findings,
-            ),
-            expected_previous=previous_result,
+            signer=runtime.cosign(auth_file=selected.auth_file),
+            public_key=selected.cosign_public_key,
         )
-    emit(
-        CommandResult(
-            "rescan",
-            (
-                ResultStatus.SUCCESS
-                if result.verdict.value == "accepted"
-                else ResultStatus.RULE_REJECTION
+        remediation_history = history_store.synchronize(
+            subject,
+            attested_history,
+            previous_result,
+        )
+        database = select_fresh_database(
+            runtime.trivy(),
+            trivy_cache_root(cache_home()),
+            now=utc_now(),
+        )
+        signing = (
+            RescanSigning(
+                selected.cosign_private_key or "",
+                selected.cosign_public_key,
+                passphrase,
+                selected.passphrase_file,
+            )
+            if authoritative
+            else None
+        )
+        result = rescan_release(
+            subject,
+            workspace=workspace,
+            registry=runtime.skopeo(),
+            signer=runtime.cosign(auth_file=selected.auth_file),
+            scanner=runtime.trivy(),
+            database=database,
+            public_key=selected.cosign_public_key,
+            auth_file=selected.auth_file,
+            tools=runtime.identities,
+            image_id=image_id,
+            expected_configuration_digest=configuration_digest,
+            scope=image.rescan_scope,
+            exceptions=image.vulnerability_exceptions,
+            triage=triage,
+            previous_result_digest=previous_result,
+            remediation_limit=image.limits.remediation,
+            remediation_history=remediation_history,
+            signing=signing,
+            now=utc_now(),
+            record_clock=utc_now,
+        )
+        if result.authoritative:
+            if result.verified_at is None:
+                raise OperationalError("Authoritative rescan has no verification time")
+            history_store.record(
+                subject,
+                RescanHistoryEntry(
+                    record_digest=result.record_digest,
+                    verified_at=parse_timestamp(
+                        result.verified_at,
+                        "Rescan verification time",
+                        error=InvalidInvocationError,
+                    ),
+                    active_findings=result.active_findings,
+                ),
+                expected_previous=previous_result,
+            )
+        emit(
+            CommandResult(
+                "rescan",
+                (
+                    ResultStatus.SUCCESS
+                    if result.verdict.value == "accepted"
+                    else ResultStatus.RULE_REJECTION
+                ),
+                "Released subject rescan completed",
+                data={
+                    "runId": workspace.run_id,
+                    "record": str(result.record_path),
+                    "recordDigest": result.record_digest,
+                    "authoritative": result.authoritative,
+                    "verifiedAt": result.verified_at,
+                },
             ),
-            "Released subject rescan completed",
-            data={
-                "runId": workspace.run_id,
-                "record": str(result.record_path),
-                "recordDigest": result.record_digest,
-                "authoritative": result.authoritative,
-                "verifiedAt": result.verified_at,
-            },
-        ),
-        output_format,
-    )
+            output_format,
+        )

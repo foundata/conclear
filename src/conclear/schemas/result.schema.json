@@ -106,7 +106,11 @@
           "data": {
             "type": "object",
             "additionalProperties": false,
-            "properties": {}
+            "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              }
+            }
           }
         }
       }
@@ -214,6 +218,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "reportDigest": {
                 "$ref": "#/$defs/digest"
               }
@@ -433,6 +440,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "tools": {
                 "type": "array",
                 "items": {
@@ -515,6 +525,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "observations": {
                 "type": "array",
                 "items": {
@@ -606,6 +619,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "proposal": {
                 "$ref": "#/$defs/path"
               },
@@ -718,6 +734,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "status": {
                 "enum": [
                   "applied",
@@ -837,6 +856,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "removed": {
                 "type": "array",
                 "items": {
@@ -961,6 +983,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "path": {
                 "$ref": "#/$defs/path"
               },
@@ -1012,6 +1037,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "reference": {
                 "$ref": "#/$defs/text"
               },
@@ -1069,6 +1097,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "subject": {
                 "$ref": "#/$defs/text"
               }
@@ -1117,6 +1148,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "record": {
                 "$ref": "#/$defs/path"
               },
@@ -1168,6 +1202,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "runId": {
+                "$ref": "#/$defs/runId"
+              },
               "tags": {
                 "$ref": "#/$defs/tagAssignments"
               },

@@ -293,6 +293,7 @@ def _scenario(
     (root / "runtime").mkdir(mode=0o700)
     version = "0.0.1"
     run_ids: list[str] = []
+    rejected_runs: list[str] = []
     try:
         transports: list[tuple[Path, str, dict[str, Any]]] = []
         worker_descriptor_platforms: list[str] = []
@@ -355,6 +356,10 @@ def _scenario(
         )
         assert rejected["status"] == "ruleRejection"
         assert any(item["checkId"] == "CC0306" for item in rejected["findings"])
+        # The rejected coordinator run is named so its worktree and staging
+        # directory can be removed like every other run of the scenario.
+        assert rejected["data"]["runId"] not in run_ids
+        rejected_runs.append(rejected["data"]["runId"])
 
         transport_arguments: list[str] = []
         for destination, digest, _data in transports:
@@ -435,9 +440,29 @@ def _scenario(
                 in {"candidateReference", "tagWrite", "signature", "attestation"}
             ]
     finally:
-        for run in run_ids:
+        for run in (*run_ids, *rejected_runs):
             cleaned = cli.run("cleanup", run)
             assert cleaned["status"] == "success", cleaned
+    _assert_every_run_is_settled(state_home, expected={*run_ids, *rejected_runs})
+
+
+def _assert_every_run_is_settled(state_home: Path, *, expected: set[str]) -> None:
+    """Require that the scenario left no unknown run and no unresolved journal."""
+    runs_root = state_home / "conclear" / "runs"
+    observed = {path.name for path in runs_root.iterdir() if path.is_dir()}
+    assert observed == expected, (observed, expected)
+    for run in sorted(observed):
+        state = json.loads((runs_root / run / "run.json").read_text(encoding="utf-8"))
+        assert state["state"] in {"qualified", "assembled", "rejected"}, (run, state)
+        journal = json.loads(
+            (runs_root / run / "resources.json").read_text(encoding="utf-8")
+        )
+        unresolved = [
+            entry["resourceId"]
+            for entry in journal["resources"]
+            if entry["status"] in {"planned", "created", "failed"}
+        ]
+        assert not unresolved, (run, unresolved)
 
 
 @pytest.mark.local_integration

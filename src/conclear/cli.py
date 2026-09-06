@@ -31,7 +31,7 @@ from conclear.commands.remote import (
 )
 from conclear.commands.transport import transport_group
 from conclear.commands.version import version_command, write_version
-from conclear.errors import ConClearError, ExitStatus
+from conclear.errors import ConClearError, ExitStatus, failed_run_id
 from conclear.presentation import CommandResult, Finding, ResultStatus
 
 LOGGER = logging.getLogger(__name__)
@@ -93,20 +93,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except click.ClickException as exc:
         exc.show(file=sys.stderr)
+        data = _failed_run_data(exc)
         if wants_json:
             _write_error_json(
                 command=_command_name(arguments),
                 status=ResultStatus.INVALID_INVOCATION,
                 message=exc.format_message(),
+                data=data,
             )
         return int(ExitStatus.INVALID_INVOCATION)
-    except click.Abort:
+    except click.Abort as exc:
         print("Aborted.", file=sys.stderr)
+        data = _failed_run_data(exc)
         if wants_json:
             _write_error_json(
                 command=_command_name(arguments),
                 status=ResultStatus.OPERATIONAL_FAILURE,
                 message="Operation was interrupted",
+                data=data,
             )
         return int(ExitStatus.OPERATIONAL_FAILURE)
     except ConClearError as exc:
@@ -117,6 +121,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             else str(exc)
         )
         print(diagnostic, file=sys.stderr)
+        data = _failed_run_data(exc)
         if wants_json:
             status = ResultStatus(exc.error_type)
             _write_error_json(
@@ -124,9 +129,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 status=status,
                 message=str(exc),
                 findings=(() if finding is None else (finding,)),
+                data=data,
             )
         return int(exc.exit_status)
     except Exception as exc:
+        data = _failed_run_data(exc)
         if not wants_json:
             raise
         message = "ConClear encountered an internal error"
@@ -141,9 +148,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             command=_command_name(arguments),
             status=ResultStatus.OPERATIONAL_FAILURE,
             message=message,
+            data=data,
         )
         return int(ExitStatus.OPERATIONAL_FAILURE)
     return int(result) if isinstance(result, int) else int(ExitStatus.SUCCESS)
+
+
+def _failed_run_data(failure: BaseException) -> dict[str, object]:
+    """Report the run a failing command created so its resources can be found."""
+    run_id = failed_run_id(failure)
+    if run_id is None:
+        return {}
+    print(
+        f"Run {run_id} keeps its journaled resources; remove them with: "
+        f"conclear cleanup {run_id}",
+        file=sys.stderr,
+    )
+    return {"runId": run_id}
 
 
 def _requests_json(arguments: Sequence[str]) -> bool:
@@ -177,12 +198,14 @@ def _write_error_json(
     status: ResultStatus,
     message: str,
     findings: tuple[Finding, ...] = (),
+    data: dict[str, object] | None = None,
 ) -> None:
     result = CommandResult(
         command=command,
         status=status,
         message=message,
         findings=findings,
+        data=dict(data or {}),
     )
     json.dump(result.to_dict(), sys.stdout, ensure_ascii=True, sort_keys=True)
     sys.stdout.write("\n")

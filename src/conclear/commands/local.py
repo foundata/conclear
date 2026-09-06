@@ -14,7 +14,6 @@ from conclear.database import (
     select_fresh_database,
     trivy_cache_root,
 )
-from conclear.errors import RuleRejectionError
 from conclear.pins import PinStore, check_image_pins
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import utc_now
@@ -45,7 +44,7 @@ from conclear.services.runtime_tests import test_platform
 from conclear.tools import ToolName
 from conclear.transport import ImportedTransport, import_transport
 from conclear.values import Digest, Platform
-from conclear.workspace import RunState, RunWorkspace
+from conclear.workspace import RunState
 
 from .common import (
     cache_home,
@@ -53,6 +52,7 @@ from .common import (
     config_option,
     emit,
     format_option,
+    owned_run,
     platform_option,
     profile,
     profile_option,
@@ -124,40 +124,41 @@ def build_command(
         profile_name="none" if selected is None else selected.name,
         additional_inputs=None if selected is None else profile_inputs(selected),
     )
-    inputs = _inputs(source_run, platform_text, selected)
-    build = build_platform(inputs, source_run.runtime.buildah())
-    build_path = write_build_evidence(inputs, build)
-    dependencies = build_test_dependencies(inputs, source_run.runtime.buildah())
-    dependency_paths = [
-        write_build_evidence(replace(inputs, image=item.image), item.build)
-        for item in dependencies
-    ]
-    build_findings = build.findings + tuple(
-        finding for item in dependencies for finding in item.build.findings
-    )
-    accepted = not any(finding.severity == "error" for finding in build_findings)
-    if not accepted:
-        source_run.workspace.transition(RunState.REJECTED)
-    emit(
-        CommandResult(
-            "build",
-            ResultStatus.SUCCESS if accepted else ResultStatus.RULE_REJECTION,
-            (
-                f"Built {inputs.platform}"
-                if accepted
-                else f"Built {inputs.platform}, but metadata was rejected"
+    with owned_run(source_run.workspace):
+        inputs = _inputs(source_run, platform_text, selected)
+        build = build_platform(inputs, source_run.runtime.buildah())
+        build_path = write_build_evidence(inputs, build)
+        dependencies = build_test_dependencies(inputs, source_run.runtime.buildah())
+        dependency_paths = [
+            write_build_evidence(replace(inputs, image=item.image), item.build)
+            for item in dependencies
+        ]
+        build_findings = build.findings + tuple(
+            finding for item in dependencies for finding in item.build.findings
+        )
+        accepted = not any(finding.severity == "error" for finding in build_findings)
+        if not accepted:
+            source_run.workspace.transition(RunState.REJECTED)
+        emit(
+            CommandResult(
+                "build",
+                ResultStatus.SUCCESS if accepted else ResultStatus.RULE_REJECTION,
+                (
+                    f"Built {inputs.platform}"
+                    if accepted
+                    else f"Built {inputs.platform}, but metadata was rejected"
+                ),
+                findings=build_findings,
+                data={
+                    "runId": source_run.workspace.run_id,
+                    "layout": str(build.observation.layout_path),
+                    "digest": str(build.observation.graph.digest),
+                    "buildEvidence": str(build_path),
+                    "testDependencyEvidence": [str(path) for path in dependency_paths],
+                },
             ),
-            findings=build_findings,
-            data={
-                "runId": source_run.workspace.run_id,
-                "layout": str(build.observation.layout_path),
-                "digest": str(build.observation.graph.digest),
-                "buildEvidence": str(build_path),
-                "testDependencyEvidence": [str(path) for path in dependency_paths],
-            },
-        ),
-        output_format,
-    )
+            output_format,
+        )
 
 
 @click.command("test")
@@ -254,84 +255,89 @@ def qualify_command(
         profile_name="none" if selected is None else selected.name,
         additional_inputs=additional_inputs or None,
     )
-    image = source_run.repository.image(image_id)
-    inputs = _inputs(source_run, platform_text, selected)
-    preflight = check_image(image, source_run.runtime.hadolint())
-    resolver = AuthenticatedPinResolver(
-        source_run.runtime, None if selected is None else selected.auth_file
-    )
-    pin_observations = check_image_pins(
-        PinStore(state_home()), image, resolver=resolver, now=utc_now()
-    )
-    if not preflight.accepted or any(not item.accepted for item in pin_observations):
-        source_run.workspace.transition(RunState.REJECTED)
-        findings = preflight.findings + tuple(
-            finding for item in pin_observations for finding in item.findings
+    with owned_run(source_run.workspace):
+        image = source_run.repository.image(image_id)
+        inputs = _inputs(source_run, platform_text, selected)
+        preflight = check_image(image, source_run.runtime.hadolint())
+        resolver = AuthenticatedPinResolver(
+            source_run.runtime, None if selected is None else selected.auth_file
         )
+        pin_observations = check_image_pins(
+            PinStore(state_home()), image, resolver=resolver, now=utc_now()
+        )
+        if not preflight.accepted or any(
+            not item.accepted for item in pin_observations
+        ):
+            source_run.workspace.transition(RunState.REJECTED)
+            findings = preflight.findings + tuple(
+                finding for item in pin_observations for finding in item.findings
+            )
+            emit(
+                CommandResult(
+                    "qualify",
+                    ResultStatus.RULE_REJECTION,
+                    "Qualification preflight was rejected",
+                    findings=findings,
+                    data={"runId": source_run.workspace.run_id},
+                ),
+                output_format,
+            )
+            return
+        database_cache = trivy_cache_root(cache_home())
+        database = (
+            select_fresh_database(
+                source_run.runtime.trivy(),
+                database_cache,
+                now=utc_now(),
+            )
+            if expected_database is None
+            else select_database_by_digest(
+                source_run.runtime.trivy(),
+                database_cache,
+                expected_digest=expected_database,
+            )
+        )
+        hooks = hook_runner(
+            source_run.runtime, source_run.repository, source_run.workspace
+        )
+        result = qualify_platform(
+            inputs,
+            builder=source_run.runtime.buildah(),
+            runtime=source_run.runtime.podman(),
+            hooks=hooks,
+            scanner=source_run.runtime.trivy(),
+            database=database,
+            pin_observations=pin_observations,
+            preflight_findings=preflight.findings,
+            now=utc_now(),
+        )
+        target = {
+            "accepted": RunState.QUALIFIED,
+            "rejected": RunState.REJECTED,
+            "incomplete": RunState.INCOMPLETE,
+        }[result.verdict.value]
+        source_run.workspace.transition(target)
+        status = {
+            "accepted": ResultStatus.SUCCESS,
+            "rejected": ResultStatus.RULE_REJECTION,
+            "incomplete": ResultStatus.OPERATIONAL_FAILURE,
+        }[result.verdict.value]
         emit(
             CommandResult(
                 "qualify",
-                ResultStatus.RULE_REJECTION,
-                "Qualification preflight was rejected",
-                findings=findings,
-                data={"runId": source_run.workspace.run_id},
+                status,
+                f"Platform qualification is {result.verdict.value}",
+                findings=result.findings,
+                data={
+                    "runId": source_run.workspace.run_id,
+                    "record": str(result.record_path),
+                    "recordDigest": result.record_digest,
+                    "layout": str(result.layout_path),
+                    "databaseDigest": database.digest,
+                },
             ),
             output_format,
         )
-        return
-    database_cache = trivy_cache_root(cache_home())
-    database = (
-        select_fresh_database(
-            source_run.runtime.trivy(),
-            database_cache,
-            now=utc_now(),
-        )
-        if expected_database is None
-        else select_database_by_digest(
-            source_run.runtime.trivy(),
-            database_cache,
-            expected_digest=expected_database,
-        )
-    )
-    hooks = hook_runner(source_run.runtime, source_run.repository, source_run.workspace)
-    result = qualify_platform(
-        inputs,
-        builder=source_run.runtime.buildah(),
-        runtime=source_run.runtime.podman(),
-        hooks=hooks,
-        scanner=source_run.runtime.trivy(),
-        database=database,
-        pin_observations=pin_observations,
-        preflight_findings=preflight.findings,
-        now=utc_now(),
-    )
-    target = {
-        "accepted": RunState.QUALIFIED,
-        "rejected": RunState.REJECTED,
-        "incomplete": RunState.INCOMPLETE,
-    }[result.verdict.value]
-    source_run.workspace.transition(target)
-    status = {
-        "accepted": ResultStatus.SUCCESS,
-        "rejected": ResultStatus.RULE_REJECTION,
-        "incomplete": ResultStatus.OPERATIONAL_FAILURE,
-    }[result.verdict.value]
-    emit(
-        CommandResult(
-            "qualify",
-            status,
-            f"Platform qualification is {result.verdict.value}",
-            findings=result.findings,
-            data={
-                "runId": source_run.workspace.run_id,
-                "record": str(result.record_path),
-                "recordDigest": result.record_digest,
-                "layout": str(result.layout_path),
-                "databaseDigest": database.digest,
-            },
-        ),
-        output_format,
-    )
 
 
 @click.command("assemble")
@@ -380,7 +386,7 @@ def assemble_command(
     )
     workspace = source_run.workspace
     image = source_run.repository.image(image_id)
-    try:
+    with owned_run(workspace):
         imported = tuple(
             import_transport(
                 path,
@@ -400,9 +406,6 @@ def assemble_command(
             tools=source_run.runtime.identities,
             now=utc_now(),
         )
-    except BaseException as exc:
-        _finish_coordinator_failure(workspace, exc)
-        raise
     emit(
         CommandResult(
             "assemble",
@@ -436,19 +439,6 @@ def _transport_entry(item: ImportedTransport) -> dict[str, object]:
         "manifestDigest": item.manifest_digest,
         "recordDigest": item.record_digest,
     }
-
-
-def _finish_coordinator_failure(
-    workspace: RunWorkspace, failure: BaseException
-) -> None:
-    state = workspace.load().state
-    if state in {RunState.REJECTED, RunState.INCOMPLETE}:
-        return
-    workspace.transition(
-        RunState.REJECTED
-        if isinstance(failure, RuleRejectionError)
-        else RunState.INCOMPLETE
-    )
 
 
 def _inputs(
