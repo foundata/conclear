@@ -224,8 +224,7 @@
         {"path": "tests/unit/test_config.py", "tier": "unit"},
         {"path": "tests/unit/test_checks.py", "tier": "unit"},
         {"path": "tests/unit/test_qualification.py", "tier": "unit"},
-        {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
-        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}
+        {"path": "tests/unit/test_adapters.py", "tier": "unit"}
       ]
     },
     {
