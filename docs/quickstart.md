@@ -4,7 +4,7 @@ ConClear takes a reviewed Git commit through local qualification, publication, s
 
 A container project adopts it by adding a repository configuration, making each Containerfile comply with the guide and declaring any runtime inputs its tests need. Release credentials and trust policy stay outside the project repository.
 
-This quick start is the shortest path from installation to a first release. The [README](../README.md) is the project overview, the [architecture](../ARCHITECTURE.md) is the complete behavioral contract, and the [conformance catalog](./conformance.md) lists the checks ConClear applies.
+This quick start is the shortest path from installation to a first release. The [README](../README.md) is the project overview, the [architecture](../ARCHITECTURE.md) is the current behavioral contract, the [implementation matrix](./implementation-1.0.0.md) links its promises to code and tests, and the [conformance catalog](./conformance.md) lists the checks ConClear applies.
 
 
 ## Contents

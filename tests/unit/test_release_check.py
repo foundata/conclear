@@ -69,6 +69,7 @@ def test_wheel_hygiene_requires_embedded_identity(tmp_path: Path) -> None:
         for name in (
             "conclear/_embedded_identity.py",
             "conclear/data/checks.json",
+            "conclear/data/implementation.json",
             "conclear/schemas/config.schema.json",
             "conclear/schemas/profile.schema.json",
             "conclear/schemas/proposal.schema.json",
@@ -106,8 +107,8 @@ def test_validated_distribution_artifacts_are_retained_atomically(
 ) -> None:
     artifacts = tmp_path / "gate-artifacts"
     artifacts.mkdir()
-    sdist = artifacts / "conclear-0.1.0.tar.gz"
-    wheel = artifacts / "conclear-0.1.0-py3-none-any.whl"
+    sdist = artifacts / "conclear-1.0.0.tar.gz"
+    wheel = artifacts / "conclear-1.0.0-py3-none-any.whl"
     sdist.write_bytes(b"validated source distribution")
     wheel.write_bytes(b"validated wheel")
     destination = tmp_path / "retained"

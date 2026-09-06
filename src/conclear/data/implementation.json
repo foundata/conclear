@@ -1,0 +1,361 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": 1,
+  "productVersion": "1.0.0",
+  "promises": [
+    {
+      "id": "IP0001",
+      "summary": "Run the complete fail-closed image release workflow from a reviewed source revision through verified promotion",
+      "implementation": ["src/conclear/commands/remote.py", "src/conclear/services/release.py"],
+      "tests": [
+        {"path": "tests/unit/test_release.py", "tier": "unit"},
+        {"path": "tests/unit/test_release_workflow.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0002",
+      "summary": "Separate pin observation, proposal, application and repository-owner acceptance",
+      "implementation": ["src/conclear/pins.py", "src/conclear/pin_updates.py", "src/conclear/pin_application.py"],
+      "tests": [
+        {"path": "tests/unit/test_pins_cli.py", "tier": "unit"},
+        {"path": "tests/unit/test_pin_updates.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0003",
+      "summary": "Preserve one digest-bound OCI artifact flow without rebuilding between qualification and publication",
+      "implementation": ["src/conclear/services/qualification.py", "src/conclear/services/assembly.py", "src/conclear/services/publication.py"],
+      "tests": [
+        {"path": "tests/unit/test_qualification.py", "tier": "unit"},
+        {"path": "tests/unit/test_assembly_verification.py", "tier": "unit"},
+        {"path": "tests/unit/test_publication.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0004",
+      "summary": "Support digest-verified distributed qualification and coordinator assembly",
+      "implementation": ["src/conclear/transport.py", "src/conclear/services/assembly.py", "src/conclear/commands/transport.py"],
+      "tests": [
+        {"path": "tests/unit/test_transport.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_transport_cli.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0005",
+      "summary": "Advance release state monotonically and resume only against unchanged immutable inputs and remote observations",
+      "implementation": ["src/conclear/workspace.py", "src/conclear/services/release.py", "src/conclear/services/publication.py"],
+      "tests": [
+        {"path": "tests/unit/test_workspace.py", "tier": "unit"},
+        {"path": "tests/unit/test_release_workflow.py", "tier": "unit"},
+        {"path": "tests/unit/test_publication_resume.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0006",
+      "summary": "Enforce the digest, identity, ownership, secrecy and failure-classification invariants",
+      "implementation": ["src/conclear/cli.py", "src/conclear/secrets.py", "src/conclear/services/cleanup.py", "src/conclear/workspace.py"],
+      "tests": [
+        {"path": "tests/unit/test_cli.py", "tier": "unit"},
+        {"path": "tests/unit/test_secrets.py", "tier": "unit"},
+        {"path": "tests/unit/test_cleanup_ownership.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0007",
+      "summary": "Embed exact ConClear and guide identities and maintain stable guide-mapped check identifiers",
+      "implementation": ["src/conclear/identity.py", "src/conclear/catalog.py", "src/conclear/conformance.py"],
+      "tests": [
+        {"path": "tests/unit/test_identity.py", "tier": "unit"},
+        {"path": "tests/unit/test_catalog.py", "tier": "unit"},
+        {"path": "tests/unit/test_catalog_loading.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0008",
+      "summary": "Validate closed repository configuration and confine every configured source path",
+      "implementation": ["src/conclear/config.py", "src/conclear/schema.py", "src/conclear/path_safety.py"],
+      "tests": [
+        {"path": "tests/unit/test_config.py", "tier": "unit"},
+        {"path": "tests/unit/test_config_rejections.py", "tier": "unit"},
+        {"path": "tests/unit/test_path_safety.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0009",
+      "summary": "Materialize typed fixtures, generated outputs, preparation steps and exact same-revision test-image dependencies",
+      "implementation": ["src/conclear/test_inputs.py", "src/conclear/services/qualification_inputs.py", "src/conclear/services/runtime_tests.py"],
+      "tests": [
+        {"path": "tests/unit/test_test_inputs.py", "tier": "unit"},
+        {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0010",
+      "summary": "Keep release trust, credentials, signing inputs and optional CI context outside repository control",
+      "implementation": ["src/conclear/release_profile.py", "src/conclear/secrets.py", "src/conclear/adapters/ci.py", "src/conclear/services/ci_context.py"],
+      "tests": [
+        {"path": "tests/unit/test_release_profile.py", "tier": "unit"},
+        {"path": "tests/unit/test_secrets.py", "tier": "unit"},
+        {"path": "tests/unit/test_ci_context.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0011",
+      "summary": "Enforce non-disableable maximums and retain durable pin observations outside the project checkout",
+      "implementation": ["src/conclear/config.py", "src/conclear/pins.py"],
+      "tests": [
+        {"path": "tests/unit/test_config.py", "tier": "unit"},
+        {"path": "tests/unit/test_pins.py", "tier": "unit"},
+        {"path": "tests/unit/test_pins_state.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0012",
+      "summary": "Generate deterministic repository-wide pin proposals from parsed declarations and exact byte spans",
+      "implementation": ["src/conclear/pin_updates.py", "src/conclear/toml_spans.py"],
+      "tests": [
+        {"path": "tests/unit/test_pin_updates.py", "tier": "unit"},
+        {"path": "tests/unit/test_toml_spans.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0013",
+      "summary": "Apply verified pin proposals all-or-nothing and restore exact original bytes after failure",
+      "implementation": ["src/conclear/pin_application.py", "src/conclear/fileio.py"],
+      "tests": [
+        {"path": "tests/unit/test_pin_updates.py", "tier": "unit"},
+        {"path": "tests/unit/test_fileio.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0014",
+      "summary": "Expose one composable CLI with schema-validated JSON results and stable failure classifications",
+      "implementation": ["src/conclear/cli.py", "src/conclear/presentation.py", "src/conclear/schemas/result.schema.json"],
+      "tests": [
+        {"path": "tests/unit/test_cli.py", "tier": "unit"},
+        {"path": "tests/unit/test_commands.py", "tier": "unit"},
+        {"path": "tests/unit/test_contract.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0015",
+      "summary": "Serialize deterministic digest-bound public records under independently versioned schemas",
+      "implementation": ["src/conclear/records.py", "src/conclear/schema.py", "src/conclear/artifacts.py"],
+      "tests": [
+        {"path": "tests/unit/test_records.py", "tier": "unit"},
+        {"path": "tests/unit/test_schema.py", "tier": "unit"},
+        {"path": "tests/unit/test_schema_fixtures.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0016",
+      "summary": "Journal owned resources and clean only ephemeral resources proven to belong to the selected run",
+      "implementation": ["src/conclear/workspace.py", "src/conclear/services/cleanup.py"],
+      "tests": [
+        {"path": "tests/unit/test_workspace_journal.py", "tier": "unit"},
+        {"path": "tests/unit/test_cleanup.py", "tier": "unit"},
+        {"path": "tests/unit/test_cleanup_ownership.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0017",
+      "summary": "Resolve supported host tools by immutable executable identity and run bounded sanitized redacted subprocesses",
+      "implementation": ["src/conclear/tools.py", "src/conclear/process.py", "src/conclear/runtime.py"],
+      "tests": [
+        {"path": "tests/unit/test_process.py", "tier": "unit"},
+        {"path": "tests/unit/test_runtime.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_adapter_failures.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0018",
+      "summary": "Select one validated immutable Trivy database snapshot and hold its digest across qualification workers",
+      "implementation": ["src/conclear/database.py", "src/conclear/adapters/trivy.py"],
+      "tests": [
+        {"path": "tests/unit/test_scan_policy.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_trivy_database.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0019",
+      "summary": "Build only from the selected isolated Git worktree with confined context and reviewed Hadolint configuration",
+      "implementation": ["src/conclear/services/run_context.py", "src/conclear/context.py", "src/conclear/checks.py", "src/conclear/adapters/hadolint.py"],
+      "tests": [
+        {"path": "tests/unit/test_run_context.py", "tier": "unit"},
+        {"path": "tests/unit/test_context.py", "tier": "unit"},
+        {"path": "tests/unit/test_checks.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0020",
+      "summary": "Build rootless OCI layouts with controlled source timestamps and verified OCI labels",
+      "implementation": ["src/conclear/services/qualification.py", "src/conclear/adapters/buildah.py", "src/conclear/oci.py"],
+      "tests": [
+        {"path": "tests/unit/test_qualification.py", "tier": "unit"},
+        {"path": "tests/unit/test_oci.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0021",
+      "summary": "Qualify declared OCI platforms through observed native or QEMU execution and enforce native-only selections",
+      "implementation": ["src/conclear/emulation.py", "src/conclear/values.py", "src/conclear/services/assembly.py"],
+      "tests": [
+        {"path": "tests/unit/test_emulation.py", "tier": "unit"},
+        {"path": "tests/unit/test_assembly_verification.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_emulation.py", "tier": "emulation"}
+      ]
+    },
+    {
+      "id": "IP0022",
+      "summary": "Import primary and dependency layouts by reverified digest before preparation or runtime tests",
+      "implementation": ["src/conclear/services/runtime_tests.py", "src/conclear/services/qualification_inputs.py", "src/conclear/adapters/podman.py"],
+      "tests": [
+        {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
+        {"path": "tests/unit/test_qualification.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0023",
+      "summary": "Test runtime identity, read-only filesystems, capabilities, resources, health, signals and exit behavior",
+      "implementation": ["src/conclear/services/runtime_tests.py", "src/conclear/adapters/podman.py"],
+      "tests": [
+        {"path": "tests/unit/test_qualification.py", "tier": "unit"},
+        {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0024",
+      "summary": "Expose only non-secret exact-image facts to reviewed hooks and destroy generated private test material",
+      "implementation": ["src/conclear/hooks.py", "src/conclear/test_inputs.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/cleanup.py"],
+      "tests": [
+        {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
+        {"path": "tests/unit/test_secrets.py", "tier": "unit"},
+        {"path": "tests/unit/test_cleanup.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0025",
+      "summary": "Gate local content with Trivy and retain a validated SPDX 2.3 SBOM for every platform",
+      "implementation": ["src/conclear/scan_policy.py", "src/conclear/spdx.py", "src/conclear/services/qualification.py", "src/conclear/adapters/trivy.py"],
+      "tests": [
+        {"path": "tests/unit/test_scan_policy.py", "tier": "unit"},
+        {"path": "tests/unit/test_spdx_validation.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_trivy_database.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0026",
+      "summary": "Export and import bounded transports only after caller-supplied digest and member verification",
+      "implementation": ["src/conclear/transport.py", "src/conclear/path_safety.py"],
+      "tests": [
+        {"path": "tests/unit/test_transport.py", "tier": "unit"},
+        {"path": "tests/unit/test_path_confinement.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_transport_cli.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0027",
+      "summary": "Assemble only mutually consistent accepted qualifications with exact required platform coverage",
+      "implementation": ["src/conclear/services/assembly.py", "src/conclear/layout_assembly.py", "src/conclear/oci.py"],
+      "tests": [
+        {"path": "tests/unit/test_assembly.py", "tier": "unit"},
+        {"path": "tests/unit/test_assembly_verification.py", "tier": "unit"},
+        {"path": "tests/unit/test_layout_assembly_errors.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0028",
+      "summary": "Separate provider-neutral OCI transport from an explicitly selected compatible Quay control backend",
+      "implementation": ["src/conclear/registry_control.py", "src/conclear/adapters/registry_backends.py", "src/conclear/adapters/quay.py"],
+      "tests": [
+        {"path": "tests/unit/test_registry_backends.py", "tier": "unit"},
+        {"path": "tests/network/test_quay_candidate.py", "tier": "network"}
+      ]
+    },
+    {
+      "id": "IP0029",
+      "summary": "Publish one unique candidate, preserve its complete digest graph and enforce its independent lifetime",
+      "implementation": ["src/conclear/services/publication.py", "src/conclear/adapters/quay.py", "src/conclear/adapters/skopeo.py"],
+      "tests": [
+        {"path": "tests/unit/test_publication.py", "tier": "unit"},
+        {"path": "tests/unit/test_publication_retry.py", "tier": "unit"},
+        {"path": "tests/network/test_quay_candidate.py", "tier": "network"}
+      ]
+    },
+    {
+      "id": "IP0030",
+      "summary": "Promote only the verified digest, verify every tag and remove the owned candidate reference",
+      "implementation": ["src/conclear/services/publication.py", "src/conclear/services/cleanup.py"],
+      "tests": [
+        {"path": "tests/unit/test_publication.py", "tier": "unit"},
+        {"path": "tests/unit/test_cleanup.py", "tier": "unit"},
+        {"path": "tests/network/test_quay_candidate.py", "tier": "network"}
+      ]
+    },
+    {
+      "id": "IP0031",
+      "summary": "Generate SLSA Provenance v1 from accepted subjects and independently controlled source, builder and implementation identities",
+      "implementation": ["src/conclear/provenance.py", "src/conclear/services/release.py"],
+      "tests": [
+        {"path": "tests/unit/test_provenance.py", "tier": "unit"},
+        {"path": "tests/unit/test_release.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0032",
+      "summary": "Attach SBOM and provenance attestations and sign every unique subject with mandatory public log inclusion",
+      "implementation": ["src/conclear/adapters/cosign.py", "src/conclear/services/publication.py", "src/conclear/attestations.py"],
+      "tests": [
+        {"path": "tests/unit/test_attestations.py", "tier": "unit"},
+        {"path": "tests/unit/test_publication.py", "tier": "unit"},
+        {"path": "tests/network/test_cosign_attestation.py", "tier": "network"}
+      ]
+    },
+    {
+      "id": "IP0033",
+      "summary": "Verify the remote graph, signatures, attestations and identities before attaching the final verification result",
+      "implementation": ["src/conclear/services/publication.py", "src/conclear/attestations.py", "src/conclear/oci.py"],
+      "tests": [
+        {"path": "tests/unit/test_publication.py", "tier": "unit"},
+        {"path": "tests/unit/test_assembly_verification.py", "tier": "unit"},
+        {"path": "tests/network/test_cosign_attestation.py", "tier": "network"}
+      ]
+    },
+    {
+      "id": "IP0034",
+      "summary": "Rescan immutable released subjects through verified evidence and preserve linked remediation history",
+      "implementation": ["src/conclear/services/rescan.py", "src/conclear/rescan_history.py", "src/conclear/triage.py"],
+      "tests": [
+        {"path": "tests/unit/test_rescan.py", "tier": "unit"},
+        {"path": "tests/unit/test_rescan_history.py", "tier": "unit"},
+        {"path": "tests/unit/test_rescan_history_state.py", "tier": "unit"},
+        {"path": "tests/unit/test_triage.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0035",
+      "summary": "Keep policy decisions in services and bound retries and writes by typed adapter observations and ownership",
+      "implementation": ["src/conclear/process.py", "src/conclear/adapters/base.py", "src/conclear/services/publication.py"],
+      "tests": [
+        {"path": "tests/unit/test_process.py", "tier": "unit"},
+        {"path": "tests/unit/test_publication_retry.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_adapter_failures.py", "tier": "local_integration"}
+      ]
+    },
+    {
+      "id": "IP0036",
+      "summary": "Verify release readiness through hermetic, real-tool, emulation, network, compatibility and clean-distribution gates",
+      "implementation": ["src/conclear/release_check.py"],
+      "tests": [
+        {"path": "tests/unit/test_release_check.py", "tier": "unit"},
+        {"path": "tests/unit/test_release_check_gate.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"},
+        {"path": "tests/network/test_quay_candidate.py", "tier": "network"}
+      ]
+    }
+  ]
+}

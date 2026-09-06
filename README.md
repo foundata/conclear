@@ -194,9 +194,9 @@ Public qualification, transport, candidate, verification and rescan records each
 
 ## Conformance<a id="conformance"></a>
 
-The generated [conformance catalog](./docs/conformance.md) maps stable `CCnnnn` identifiers to guide requirements, records which requirements need human review rather than a mechanical check, lists guide options that ConClear does not implement, and states the built-in limits that repository configuration may narrow but never disable.
+The generated [conformance catalog](./docs/conformance.md) maps stable `CCnnnn` identifiers to guide requirements, records which requirements need human review rather than a mechanical check, and states the built-in limits that repository configuration may narrow but never disable.
 
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) is the behavioral contract behind those checks. The generated [contract inventory](./docs/contract-v1.json) lists the commands, options, schemas, record types, exit statuses and check identifiers that form the compatibility surface.
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) describes the current behavioral contract behind those checks. The generated [ConClear 1.0.0 implementation matrix](./docs/implementation-1.0.0.md) links every architectural promise to production code and verification tests. The generated [internal contract inventory](./docs/contract-v1.json) lists those promises with the commands, options, schemas, record types, exit statuses and check identifiers that form the compatibility surface; the inventory file's own JSON layout is not an external interface. Planned behavior remains in [GitHub issues](https://github.com/foundata/conclear/issues) until it is implemented and tested.
 
 
 ## Contributing<a id="contributing"></a>

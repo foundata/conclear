@@ -49,7 +49,7 @@ def test_provenance_separates_configured_builder_and_conclear_identities(
     assert value["predicate"]["runDetails"]["builder"] == {
         "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/",
         "version": {
-            "conclear": "0.1.0",
+            "conclear": "1.0.0",
             "conclearSourceRevision": "c" * 40,
         },
     }

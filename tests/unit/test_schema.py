@@ -125,7 +125,7 @@ def test_pin_update_proposal_schema_is_closed_and_bounded() -> None:
     digest = "sha256:" + "a" * 64
     reference = "docker.io/library/debian:13-slim@" + digest
     ruleset: dict[str, object] = {
-        "conclearVersion": "0.1.0",
+        "conclearVersion": "1.0.0",
         "conclearRevision": "b" * 40,
         "guideTitle": "OCI container image build and release guide",
         "guideRepository": "https://github.com/foundata/guidelines",

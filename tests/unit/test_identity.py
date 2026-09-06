@@ -15,7 +15,7 @@ def test_identity_exposes_selected_guide_revision() -> None:
     assert GUIDE_REVISION == "1082f52c72e26a21b9cf10df3e79cb2f293d77a5"
     assert IDENTITY.to_public_dict() == {
         "name": "conclear",
-        "version": "0.1.0",
+        "version": "1.0.0",
         "sourceRevision": SOURCE_REVISION,
         "guide": {
             "title": "OCI container image build and release guide",
@@ -35,7 +35,7 @@ def test_identity_object_is_json_serializable() -> None:
 
 def test_human_identity_matches_normative_shape() -> None:
     assert human_version().splitlines() == [
-        f"ConClear 0.1.0 (commit {SOURCE_REVISION})",
+        f"ConClear 1.0.0 (commit {SOURCE_REVISION})",
         'Implements the automatable rules of foundata "OCI container image build and release guide", oci-container-image-guide.md at commit 1082f52c72e26a21b9cf10df3e79cb2f293d77a5',
     ]
 

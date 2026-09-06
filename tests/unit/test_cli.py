@@ -87,7 +87,7 @@ def test_qualify_help_exposes_distributed_database_digest() -> None:
 def test_root_version_reports_full_identity() -> None:
     result = CliRunner().invoke(root, ["--version"])
     assert result.exit_code == 0
-    assert "ConClear 0.1.0" in result.stdout
+    assert "ConClear 1.0.0" in result.stdout
     assert "1082f52c72e26a21b9cf10df3e79cb2f293d77a5" in result.stdout
     assert result.stderr == ""
 

@@ -323,7 +323,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
     assert provenance["predicate"]["runDetails"]["builder"] == {
         "id": BUILDER_ID,
         "version": {
-            "conclear": "0.1.0",
+            "conclear": "1.0.0",
             "conclearSourceRevision": "c" * 40,
         },
     }

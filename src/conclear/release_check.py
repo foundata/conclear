@@ -19,7 +19,7 @@ from conclear.errors import (
     ConClearError,
     OperationalError,
 )
-from conclear.identity import GUIDE_REVISION
+from conclear.identity import GUIDE_REVISION, VERSION
 from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.path_safety import extract_tar_safely
 from conclear.process import (
@@ -286,6 +286,7 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
             "pyproject.toml",
             "uv.lock",
             "docs/conformance.md",
+            f"docs/implementation-{VERSION}.md",
             "LICENSES/GPL-3.0-or-later.txt",
             "src/conclear/_embedded_identity.py",
         }
@@ -294,6 +295,7 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
         suffixes = {
             "conclear/_embedded_identity.py",
             "conclear/data/checks.json",
+            "conclear/data/implementation.json",
             "conclear/schemas/config.schema.json",
             "conclear/schemas/profile.schema.json",
             "conclear/schemas/proposal.schema.json",
@@ -341,8 +343,12 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
             ("python", "-m", "conclear.conformance", "--check"),
         ),
         (
-            "check public contract inventory",
+            "check internal compatibility inventory",
             ("python", "-m", "conclear.contract", "--check"),
+        ),
+        (
+            "check implementation matrix",
+            ("python", "-m", "conclear.implementation", "--check"),
         ),
     ):
         runtime.run(

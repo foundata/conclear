@@ -1,4 +1,4 @@
-"""The committed prospective-v1 contract inventory must match the implementation."""
+"""The internal version-1 inventory must match public compatibility surfaces."""
 
 import json
 import sys
@@ -19,6 +19,7 @@ from conclear.contract import (
     write_contract,
 )
 from conclear.errors import ExitStatus
+from conclear.implementation import MATRIX_SCHEMA_VERSION, load_implementation_matrix
 from conclear.presentation import ResultStatus
 
 REPOSITORY = Path(__file__).parents[2]
@@ -34,7 +35,7 @@ def test_committed_contract_inventory_matches_the_implementation() -> None:
     assert (REPOSITORY / CONTRACT_PATH).read_text(encoding="utf-8") == (
         render_contract_text()
     ), (
-        "public contract changed; review the diff and regenerate docs/contract-v1.json "
+        "compatibility inventory changed; review the diff and regenerate docs/contract-v1.json "
         "with `uv run python -m conclear.contract`"
     )
 
@@ -107,6 +108,13 @@ def test_contract_records_exit_statuses_schemas_and_identifiers() -> None:
     assert active == {check.check_id for check in catalog.checks}
     assert retired == {check.check_id for check in catalog.retired}
     assert not active & retired
+
+    implementation = load_implementation_matrix()
+    assert value["implementation"] == {
+        "matrixSchemaVersion": MATRIX_SCHEMA_VERSION,
+        "productVersion": implementation.product_version,
+        "promises": [item.promise_id for item in implementation.promises],
+    }
 
 
 def test_contract_detects_removed_or_renamed_surfaces() -> None:

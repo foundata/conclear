@@ -22,6 +22,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Network tests](#network-tests)
 - [Generated conformance catalog](#conformance-catalog)
 - [Generated contract inventory](#contract-inventory)
+- [Generated implementation matrix](#implementation-matrix)
 - [CI context observation](#ci-context-observation)
 - [Recommended development workflow](#development-workflow)
   - [Before making changes](#before-making-changes)
@@ -79,18 +80,19 @@ Hermetic unit tests need no container tools, credentials or network access.
 ```text
 conclear/
 ├── CONTRIBUTING.md
-├── ARCHITECTURE.md                     # Normative behavioral contract
+├── ARCHITECTURE.md               # Normative behavioral contract
 ├── DEVELOPMENT.md                # This file
 ├── README.md
 ├── REUSE.toml
 ├── LICENSES/                     # License texts (SPDX)
 ├── docs/
 │   ├── conformance.md            # Generated check catalog (do not edit by hand)
-│   ├── contract-v1.json          # Generated public contract inventory (do not edit by hand)
+│   ├── contract-v1.json          # Generated internal compatibility inventory
+│   ├── implementation-1.0.0.md   # Generated release-specific promise matrix
 │   └── quickstart.md             # Project adoption quick start
 ├── pyproject.toml                # Project configuration
 ├── uv.lock                       # Dependency lock file
-├── src/conclear/          # Main package
+├── src/conclear/                 # Main package
 │   ├── cli.py                    # Click entry point and error-to-exit mapping
 │   ├── identity.py               # Embedded tool and guide identity
 │   ├── config.py                 # Repository-owned conclear.toml
@@ -99,6 +101,7 @@ conclear/
 │   ├── checks.py                 # Static Containerfile and context checks
 │   ├── conformance.py            # docs/conformance.md generator
 │   ├── contract.py               # docs/contract-v1.json generator
+│   ├── implementation.py         # Release-specific implementation matrix generator
 │   ├── emulation.py              # binfmt handler detection and execution-mode facts
 │   ├── records.py                # Record envelopes and digests
 │   ├── parsing.py                # Typed narrowing of untrusted JSON and TOML values
@@ -126,7 +129,8 @@ conclear/
 │   ├── services/                 # Workflow decisions (qualification,
 │   │                             # assembly, publication, rescan, cleanup)
 │   ├── schemas/                  # Shipped JSON Schemas
-│   └── data/checks.json          # Check catalog source of truth
+│   ├── data/checks.json          # Check catalog source of truth
+│   └── data/implementation.json  # Current promise-to-code-and-test mappings
 └── tests/
     ├── conftest.py               # Marker auto-assignment and shared fixtures
     ├── fixtures/                 # Test data
@@ -218,22 +222,22 @@ Do not prepare releases, create tags or push from local validation work.
 
 ### Contract changes<a id="contract-changes"></a>
 
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) is the behavioral contract, not a description of the current code. Put every `ARCHITECTURE.md` edit in its own commit whose subject names it as a contract change, such as `architecture: require a new run after an ambiguous candidate write`, and never fold one into a commit that also changes code. Give the reason in the commit body when the diff does not carry it.
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) is the current behavioral contract: every promise in it must be implemented and tested in the same source tree. Put every `ARCHITECTURE.md` edit in its own commit whose subject names it as a contract change, such as `architecture: require a new run after an ambiguous candidate write`, and never fold one into a commit that also changes code. Give the reason in the commit body when the diff does not carry it.
 
-Do not amend the contract to match an implementation that turned out differently. When the code cannot meet a documented rule, leave the rule alone and report the conflict so the maintainer decides whether the design or the code changes.
+Keep planned behavior in a [GitHub issue](https://github.com/foundata/conclear/issues) until its code, tests and contract text can land together. Do not silently amend the contract to normalize an implementation defect. Decide whether the implementation or the promise is wrong, then either fix the code or make an explicit contract correction whose rationale is reviewable.
 
-Report every contract change when reporting completed work. A summary that lists implemented behavior but omits an edit to `ARCHITECTURE.md`, a shipped schema, an exit status, a record layout or a `CCnnnn` identifier is incomplete.
+Report every contract change when reporting completed work. A summary that lists implemented behavior but omits an edit to `ARCHITECTURE.md`, an `IPnnnn` promise, a shipped schema, an exit status, a record layout or a `CCnnnn` identifier is incomplete.
 
 The guide that `ARCHITECTURE.md` implements is normative and lives outside this repository. Each build embeds one exact guide revision. Moving to a newer revision means reviewing every changed rule, updating the embedded identity, catalog, generated conformance document, schemas and tests together; ConClear must not advertise a revision whose automatable rules it does not implement.
 
 
 ### Compatibility<a id="compatibility"></a>
 
-ConClear follows Semantic Versioning. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses and stable check identifiers are compatibility surfaces. Change them deliberately and document the effect. The committed [contract inventory](./docs/contract-v1.json) enumerates these surfaces; the unit suite and the release gate fail until a changed surface is regenerated and reviewed (see [Generated contract inventory](#contract-inventory)).
+ConClear follows Semantic Versioning. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses, stable check identifiers and implementation promises are compatibility surfaces. Change them deliberately and document the effect. The committed [internal contract inventory](./docs/contract-v1.json) enumerates these surfaces; the unit suite and the release gate fail until a changed surface is regenerated and reviewed (see [Generated contract inventory](#contract-inventory)).
 
 A `CCnnnn` identifier is never reused for a different rule. Removing a check leaves a retired entry in the catalog so historical findings stay understandable.
 
-Do not add a changelog before the project reaches 1.0.0. Do not prepare releases, create tags or push from local validation work.
+Do not add a changelog before the first 1.0.0 release is published. Do not prepare releases, create tags or push from local validation work.
 
 
 ## Testing<a id="testing"></a>
@@ -377,7 +381,7 @@ Commit a catalog change together with the check definition, implementation, test
 
 ## Generated contract inventory<a id="contract-inventory"></a>
 
-`docs/contract-v1.json` is generated from the Click command hierarchy, the bundled JSON Schemas, the record and command-result schema versions, the exit statuses and the check catalog. It lists every prospective 1.0 compatibility surface in one reviewable file. Never edit it by hand.
+`docs/contract-v1.json` is a repository-internal inventory generated from the Click command hierarchy, the bundled JSON Schemas, the record and command-result schema versions, the exit statuses, the check catalog and the current implementation-promise identifiers. It lists the current version-1 compatibility surface in one reviewable file. The inventory's own JSON layout is not a supported external interface and may change without an external compatibility-version change. Never edit it by hand.
 
 ```sh
 # Regenerate the inventory
@@ -387,7 +391,22 @@ uv run python -m conclear.contract
 uv run python -m conclear.contract --check
 ```
 
-A diff in this file is a public contract change. Review it as such: a removed or renamed command, option, schema identifier, record type or exit status before 1.0.0 needs a deliberate decision, and after 1.0.0 it needs a major version. The unit suite and the release gate fail while the committed inventory is stale.
+A diff in this file is a compatibility-review signal, not automatically a public contract change. A diff that only changes internal inventory structure or metadata is internal. A diff caused by a removed or renamed command, option, schema identifier, record type, exit status or other inventoried surface changes public behavior and needs a deliberate decision before the first 1.0.0 release; after that release, an incompatible change needs a new major version. The unit suite and the release gate fail while the committed inventory is stale.
+
+
+## Generated implementation matrix<a id="implementation-matrix"></a>
+
+`src/conclear/data/implementation.json` is the machine-readable source for stable `IPnnnn` promises marked in `ARCHITECTURE.md`. Each entry summarizes one current behavior and links it to production modules and verification tests. The generated `docs/implementation-<product-version>.md` makes those links reviewable for one exact ConClear version. Never edit the generated Markdown by hand.
+
+```sh
+# Regenerate the matrix for the current package version
+uv run python -m conclear.implementation
+
+# Verify promise anchors, file links and generated output
+uv run python -m conclear.implementation --check
+```
+
+Update the catalog when a promise, its implementation ownership or its verification changes. A package-version change also updates the catalog's `productVersion`, the versioned document path and links to it. The unit suite and release gate reject stale output, absent or unsafe paths, mismatched versions, duplicate identifiers and architecture promises missing from either side of the mapping.
 
 
 ## CI context observation<a id="ci-context-observation"></a>
@@ -459,6 +478,9 @@ uv run python -m conclear.conformance --check
 
 # 6. Verify the generated contract inventory is current
 uv run python -m conclear.contract --check
+
+# 7. Verify the release-specific implementation matrix is current
+uv run python -m conclear.implementation --check
 ```
 
 
@@ -470,7 +492,7 @@ The provider-independent release check requires a clean Git checkout and locally
 uv run python -m conclear.release_check
 ```
 
-The command checks formatting, linting, strict typing, the generated conformance documentation, the generated contract inventory and the unit-test matrix on every supported interpreter, enforcing the branch-coverage floor on the first interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
+The command checks formatting, linting, strict typing, the generated conformance documentation, the generated contract inventory, the release-specific implementation matrix and the unit-test matrix on every supported interpreter, enforcing the branch-coverage floor on the first interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate, create a private parent directory and select a new revision-specific output directory:
 
@@ -524,5 +546,6 @@ Keep validation and test isolation intact when resolving the following failures.
 - **`uv run conclear version` reports `development-source-tree`**: Expected in a source checkout. Only a distribution build embeds a real revision, and only such a build can emit records.
 - **The retained distribution destination already exists**: Choose a new path. The release gate never merges with or overwrites prior output.
 - **Conformance check fails after editing `docs/conformance.md`**: The file is generated. Change `src/conclear/data/checks.json` and regenerate.
+- **Implementation-matrix check fails after a contract or version change**: Update `src/conclear/data/implementation.json`, the matching `IPnnnn` anchor or the versioned documentation link, then regenerate the matrix.
 - **A local integration test fails on the run ID**: The identifier becomes part of an OCI repository name and must be lowercase.
 - **Unit tests suddenly need the network or container storage**: A test landed in `tests/unit/` that belongs in `local_integration` or `network`. Move it rather than relaxing the tier.

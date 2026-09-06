@@ -7,6 +7,7 @@ import stat
 import tarfile
 import zipfile
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -29,9 +30,9 @@ REVISION = "a" * 40
 
 
 def _artifacts(tmp_path: Path) -> tuple[Path, Path]:
-    sdist = tmp_path / "conclear-0.1.0.tar.gz"
+    sdist = tmp_path / "conclear-1.0.0.tar.gz"
     sdist.write_bytes(b"sdist")
-    wheel = tmp_path / "conclear-0.1.0-py3-none-any.whl"
+    wheel = tmp_path / "conclear-1.0.0-py3-none-any.whl"
     wheel.write_bytes(b"wheel")
     return sdist, wheel
 
@@ -145,11 +146,12 @@ def _sdist(path: Path, names: list[str], *, symlink: str | None = None) -> Path:
 
 
 REQUIRED_SDIST = [
-    "conclear-0.1.0/pyproject.toml",
-    "conclear-0.1.0/uv.lock",
-    "conclear-0.1.0/docs/conformance.md",
-    "conclear-0.1.0/LICENSES/GPL-3.0-or-later.txt",
-    "conclear-0.1.0/src/conclear/_embedded_identity.py",
+    "conclear-1.0.0/pyproject.toml",
+    "conclear-1.0.0/uv.lock",
+    "conclear-1.0.0/docs/conformance.md",
+    "conclear-1.0.0/docs/implementation-1.0.0.md",
+    "conclear-1.0.0/LICENSES/GPL-3.0-or-later.txt",
+    "conclear-1.0.0/src/conclear/_embedded_identity.py",
 ]
 
 
@@ -165,7 +167,7 @@ def test_source_distribution_hygiene(tmp_path: Path) -> None:
     with pytest.raises(OperationalError, match="generated path"):
         validate_distribution_artifact(
             _sdist(
-                tmp_path / "venv.tar.gz", [*REQUIRED_SDIST, "conclear-0.1.0/.venv/bin"]
+                tmp_path / "venv.tar.gz", [*REQUIRED_SDIST, "conclear-1.0.0/.venv/bin"]
             ),
             kind="sdist",
         )
@@ -173,14 +175,14 @@ def test_source_distribution_hygiene(tmp_path: Path) -> None:
         validate_distribution_artifact(
             _sdist(
                 tmp_path / "pyc.tar.gz",
-                [*REQUIRED_SDIST, "conclear-0.1.0/src/conclear/cli.pyc"],
+                [*REQUIRED_SDIST, "conclear-1.0.0/src/conclear/cli.pyc"],
             ),
             kind="sdist",
         )
     with pytest.raises(OperationalError, match="unsafe member"):
         validate_distribution_artifact(
             _sdist(
-                tmp_path / "link.tar.gz", REQUIRED_SDIST, symlink="conclear-0.1.0/link"
+                tmp_path / "link.tar.gz", REQUIRED_SDIST, symlink="conclear-1.0.0/link"
             ),
             kind="sdist",
         )
@@ -226,6 +228,47 @@ def test_gate_runtime_wraps_step_failures_with_their_label(tmp_path: Path) -> No
 
     with pytest.raises(OperationalError, match="failed during lint: exit 1"):
         runtime.run("lint", (str(tmp_path / "ruff"), "check"))
+
+
+def test_source_gates_check_the_release_specific_implementation_matrix(
+    tmp_path: Path,
+) -> None:
+    class RecordingRuntime:
+        def __init__(self) -> None:
+            self.uv = tmp_path / "uv"
+            self.pythons = {
+                "3.12": tmp_path / "python3.12",
+                "3.13": tmp_path / "python3.13",
+                "3.14": tmp_path / "python3.14",
+            }
+            self.calls: list[tuple[str, tuple[str, ...]]] = []
+
+        def run(
+            self,
+            label: str,
+            argv: tuple[str, ...],
+            **values: object,
+        ) -> ProcessResult:
+            del values
+            self.calls.append((label, argv))
+            return ProcessResult(argv, 0, "", "", 0.0, 0, False, False)
+
+    recorder = RecordingRuntime()
+
+    release_check_module._run_source_gates(cast(GateRuntime, recorder), tmp_path)
+
+    assert (
+        "check implementation matrix",
+        (
+            str(recorder.uv),
+            "run",
+            "--frozen",
+            "python",
+            "-m",
+            "conclear.implementation",
+            "--check",
+        ),
+    ) in recorder.calls
 
 
 def test_gate_helpers_reject_missing_executables_and_ambiguous_artifacts(

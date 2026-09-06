@@ -1,12 +1,14 @@
-"""Prospective version-1 public contract inventory and verification.
+"""Internal inventory of version-1 public compatibility surfaces.
 
 The inventory enumerates every compatibility surface that `DEVELOPMENT.md`
 promises to change only deliberately: the Click command hierarchy with its
 options and arguments, the bundled JSON Schemas, public record types and
-their schema versions, exit statuses and the stable check identifiers. It is
-rendered deterministically and committed as `docs/contract-v1.json`; the unit
-suite fails when the implementation drifts from that committed file, so a
-contract change is always an explicit, reviewable regeneration.
+their schema versions, exit statuses, stable check identifiers and current
+implementation promises. It is rendered deterministically and committed as
+`docs/contract-v1.json`; the unit suite fails when the implementation drifts
+from that committed file, so a surface change is always an explicit,
+reviewable regeneration. The inventory's JSON layout is not itself a supported
+external interface.
 """
 
 import argparse
@@ -19,7 +21,8 @@ import click
 
 from conclear.catalog import load_catalog
 from conclear.cli import root
-from conclear.errors import ExitStatus
+from conclear.errors import ExitStatus, OperationalError
+from conclear.implementation import MATRIX_SCHEMA_VERSION, load_implementation_matrix
 from conclear.jsonutil import atomic_write_bytes
 from conclear.pin_updates import PROPOSAL_RECORD_TYPE, PROPOSAL_SCHEMA_VERSION
 from conclear.presentation import CommandResult, ResultStatus
@@ -51,8 +54,13 @@ EXIT_STATUS_MEANINGS = {
 
 
 def render_contract() -> dict[str, object]:
-    """Return the deterministic public contract inventory."""
+    """Return the deterministic internal compatibility inventory."""
     catalog = load_catalog()
+    implementation = load_implementation_matrix()
+    if implementation.contract_version != CONTRACT_VERSION:
+        raise OperationalError(
+            "Implementation matrix and compatibility inventory versions differ"
+        )
     return {
         "contractVersion": CONTRACT_VERSION,
         "commands": _commands(root, ()),
@@ -87,6 +95,11 @@ def render_contract() -> dict[str, object]:
                 for check in catalog.checks
             ],
             "retired": [check.check_id for check in catalog.retired],
+        },
+        "implementation": {
+            "matrixSchemaVersion": MATRIX_SCHEMA_VERSION,
+            "productVersion": implementation.product_version,
+            "promises": [item.promise_id for item in implementation.promises],
         },
     }
 
@@ -173,7 +186,7 @@ def main() -> int:
     """Generate docs/contract-v1.json or verify that it is current."""
     parser = argparse.ArgumentParser(
         prog="python -m conclear.contract",
-        description="Render or verify the prospective v1 public contract inventory.",
+        description="Render or verify the internal version-1 compatibility inventory.",
     )
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--output", type=Path, default=CONTRACT_PATH)
