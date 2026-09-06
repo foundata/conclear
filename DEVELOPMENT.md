@@ -21,7 +21,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Local integration tests](#local-integration-tests)
   - [Network tests](#network-tests)
 - [Generated conformance catalog](#conformance-catalog)
-- [Generated contract inventory](#contract-inventory)
+- [Generated compatibility inventory](#compatibility-inventory)
 - [Generated implementation matrix](#implementation-matrix)
 - [CI context observation](#ci-context-observation)
 - [Recommended development workflow](#development-workflow)
@@ -87,7 +87,7 @@ conclear/
 ├── LICENSES/                     # License texts (SPDX)
 ├── docs/
 │   ├── conformance.md            # Generated check catalog (do not edit by hand)
-│   ├── contract-v1.json          # Generated internal compatibility inventory
+│   ├── compatibility-inventory.json # Generated internal compatibility inventory
 │   ├── implementation-1.0.0.md   # Generated release-specific promise matrix
 │   └── quickstart.md             # Project adoption quick start
 ├── pyproject.toml                # Project configuration
@@ -100,7 +100,7 @@ conclear/
 │   ├── catalog.py                # CCnnnn check catalog loader
 │   ├── checks.py                 # Static Containerfile and context checks
 │   ├── conformance.py            # docs/conformance.md generator
-│   ├── contract.py               # docs/contract-v1.json generator
+│   ├── compatibility_inventory.py # Internal compatibility inventory generator
 │   ├── implementation.py         # Release-specific implementation matrix generator
 │   ├── emulation.py              # binfmt handler detection and execution-mode facts
 │   ├── records.py                # Record envelopes and digests
@@ -233,7 +233,7 @@ The guide that `ARCHITECTURE.md` implements is normative and lives outside this 
 
 ### Compatibility<a id="compatibility"></a>
 
-ConClear follows Semantic Versioning. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses, stable check identifiers and implementation promises are compatibility surfaces. Change them deliberately and document the effect. The committed [internal contract inventory](./docs/contract-v1.json) enumerates these surfaces; the unit suite and the release gate fail until a changed surface is regenerated and reviewed (see [Generated contract inventory](#contract-inventory)).
+ConClear uses its SemVer product version for the aggregate public behavioral contract. The Click hierarchy, command options, `--format json` objects, JSON Schemas, record layouts, exit statuses, stable check identifiers and implementation promises are compatibility surfaces. Change them deliberately and document the effect. Durable public record formats keep independent integer schema versions because records can outlive the ConClear release that created them. The committed [internal compatibility inventory](./docs/compatibility-inventory.json) enumerates these surfaces; the unit suite and the release gate fail until a changed surface is regenerated and reviewed (see [Generated compatibility inventory](#compatibility-inventory)).
 
 A `CCnnnn` identifier is never reused for a different rule. Removing a check leaves a retired entry in the catalog so historical findings stay understandable.
 
@@ -379,16 +379,16 @@ uv run python -m conclear.conformance --check
 Commit a catalog change together with the check definition, implementation, tests and affected documentation. Continuous integration verifies that identifiers are unique and well formed, that every claimed guide anchor exists at the embedded revision and that the committed document matches the generator.
 
 
-## Generated contract inventory<a id="contract-inventory"></a>
+## Generated compatibility inventory<a id="compatibility-inventory"></a>
 
-`docs/contract-v1.json` is a repository-internal inventory generated from the Click command hierarchy, the bundled JSON Schemas, the record and command-result schema versions, the exit statuses, the check catalog and the current implementation-promise identifiers. It lists the current version-1 compatibility surface in one reviewable file. The inventory's own JSON layout is not a supported external interface and may change without an external compatibility-version change. Never edit it by hand.
+`docs/compatibility-inventory.json` is a repository-internal inventory generated from the Click command hierarchy, the bundled JSON Schemas, the record and command-result schema versions, the exit statuses, the check catalog and the current implementation-promise identifiers. Its `productVersion` is the exact ConClear SemVer whose public behavior it inventories. Its integer `inventorySchemaVersion` describes only this internal file structure and increments when repository tooling needs an incompatible layout change. The inventory's JSON layout is not a supported external interface. Never edit it by hand.
 
 ```sh
 # Regenerate the inventory
-uv run python -m conclear.contract
+uv run python -m conclear.compatibility_inventory
 
 # Verify the committed inventory is current
-uv run python -m conclear.contract --check
+uv run python -m conclear.compatibility_inventory --check
 ```
 
 A diff in this file is a compatibility-review signal, not automatically a public contract change. A diff that only changes internal inventory structure or metadata is internal. A diff caused by a removed or renamed command, option, schema identifier, record type, exit status or other inventoried surface changes public behavior and needs a deliberate decision before the first 1.0.0 release; after that release, an incompatible change needs a new major version. The unit suite and the release gate fail while the committed inventory is stale.
@@ -396,7 +396,7 @@ A diff in this file is a compatibility-review signal, not automatically a public
 
 ## Generated implementation matrix<a id="implementation-matrix"></a>
 
-`src/conclear/data/implementation.json` is the machine-readable source for stable `IPnnnn` promises marked in `ARCHITECTURE.md`. Each entry summarizes one current behavior and links it to production modules and verification tests. The generated `docs/implementation-<product-version>.md` makes those links reviewable for one exact ConClear version. Never edit the generated Markdown by hand.
+`src/conclear/data/implementation.json` is the machine-readable source for stable `IPnnnn` promises marked in `ARCHITECTURE.md`. Its integer `schemaVersion` describes the internal matrix structure, while `productVersion` identifies the exact ConClear SemVer. Each entry summarizes one current behavior and links it to production modules and verification tests. The generated `docs/implementation-<product-version>.md` makes those links reviewable for one exact ConClear version. Never edit the generated Markdown by hand.
 
 ```sh
 # Regenerate the matrix for the current package version
@@ -476,8 +476,8 @@ uv run pytest
 # 5. Verify the generated conformance catalog is current
 uv run python -m conclear.conformance --check
 
-# 6. Verify the generated contract inventory is current
-uv run python -m conclear.contract --check
+# 6. Verify the generated compatibility inventory is current
+uv run python -m conclear.compatibility_inventory --check
 
 # 7. Verify the release-specific implementation matrix is current
 uv run python -m conclear.implementation --check
@@ -492,7 +492,7 @@ The provider-independent release check requires a clean Git checkout and locally
 uv run python -m conclear.release_check
 ```
 
-The command checks formatting, linting, strict typing, the generated conformance documentation, the generated contract inventory, the release-specific implementation matrix and the unit-test matrix on every supported interpreter, enforcing the branch-coverage floor on the first interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
+The command checks formatting, linting, strict typing, the generated conformance documentation, the generated compatibility inventory, the release-specific implementation matrix and the unit-test matrix on every supported interpreter, enforcing the branch-coverage floor on the first interpreter. It then creates a temporary clean source archive, embeds the committed source revision, builds a source distribution, builds a wheel from that source distribution, inspects artifact contents, installs the wheel into a clean environment and runs import, `--version` and `--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate, create a private parent directory and select a new revision-specific output directory:
 
@@ -524,7 +524,7 @@ A revision is a locally validated 1.0 release candidate when all of the followin
 1. The distribution gate on all supported interpreters, retaining its artifacts under a directory named for the full revision:
    `uv run python -m conclear.release_check --output-directory "${HOME}/.local/share/conclear/distributions/$(git rev-parse HEAD)"`.
 2. The complete local tier from an external run manifest, `uv run pytest -m "local_integration or emulation"` with manifest-owned identifiers as described under [Local integration tests](#local-integration-tests), including the CLI transport scenario against the retained wheel, run with `-rs` so every skip is listed with its reason; record any skipped case as a missing result, not as a pass, and a skipped emulation case as a missing platform.
-3. The retained wheel installed into a fresh environment, with `conclear version --format json` reporting the embedded ConClear and guide revisions and `conclear --help` listing the command hierarchy recorded in the contract inventory.
+3. The retained wheel installed into a fresh environment, with `conclear version --format json` reporting the embedded ConClear and guide revisions and `conclear --help` listing the command hierarchy recorded in the compatibility inventory.
 4. `conclear check` and `conclear pins check` run from that installed wheel against the current [OpenLDAP compatibility project](https://github.com/foundata/oci-openldap-declarative) checkout for every image it declares, with every `CCnnnn` finding recorded verbatim and no exception added to reach an accepted verdict.
 
 Local readiness does not prove the release path. It cannot show that Quay's tag immutability, candidate expiry and post-write observation behave as the typed fakes assume, that Cosign writes the expected predicate and bundle to the public transparency log, that Rekor inclusion verifies, that an ambiguous remote write is recovered correctly, or that arm64 qualification works on a host that has no enabled emulation handler. Those facts exist only on the external side of the trust boundary.

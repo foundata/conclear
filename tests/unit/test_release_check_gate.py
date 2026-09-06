@@ -148,6 +148,7 @@ def _sdist(path: Path, names: list[str], *, symlink: str | None = None) -> Path:
 REQUIRED_SDIST = [
     "conclear-1.0.0/pyproject.toml",
     "conclear-1.0.0/uv.lock",
+    "conclear-1.0.0/docs/compatibility-inventory.json",
     "conclear-1.0.0/docs/conformance.md",
     "conclear-1.0.0/docs/implementation-1.0.0.md",
     "conclear-1.0.0/LICENSES/GPL-3.0-or-later.txt",
@@ -230,7 +231,7 @@ def test_gate_runtime_wraps_step_failures_with_their_label(tmp_path: Path) -> No
         runtime.run("lint", (str(tmp_path / "ruff"), "check"))
 
 
-def test_source_gates_check_the_release_specific_implementation_matrix(
+def test_source_gates_check_the_generated_inventories(
     tmp_path: Path,
 ) -> None:
     class RecordingRuntime:
@@ -257,6 +258,18 @@ def test_source_gates_check_the_release_specific_implementation_matrix(
 
     release_check_module._run_source_gates(cast(GateRuntime, recorder), tmp_path)
 
+    assert (
+        "check internal compatibility inventory",
+        (
+            str(recorder.uv),
+            "run",
+            "--frozen",
+            "python",
+            "-m",
+            "conclear.compatibility_inventory",
+            "--check",
+        ),
+    ) in recorder.calls
     assert (
         "check implementation matrix",
         (

@@ -13,7 +13,6 @@ import conclear.implementation as implementation_module
 from conclear.errors import OperationalError
 from conclear.identity import VERSION
 from conclear.implementation import (
-    CONTRACT_VERSION,
     MATRIX_PATH,
     MATRIX_SCHEMA_VERSION,
     ImplementationMatrix,
@@ -43,7 +42,6 @@ class _Resource:
 def _matrix(**changes: Any) -> dict[str, Any]:
     value: dict[str, Any] = {
         "schemaVersion": MATRIX_SCHEMA_VERSION,
-        "contractVersion": CONTRACT_VERSION,
         "productVersion": VERSION,
         "promises": [
             {
@@ -88,7 +86,6 @@ def test_committed_matrix_matches_current_architecture_code_and_tests() -> None:
         ("{not json", "Unable to load"),
         ([], "must be a JSON object"),
         (_matrix(schemaVersion=2), "Unsupported implementation matrix schema"),
-        (_matrix(contractVersion=2), "contract version is unsupported"),
         (_matrix(productVersion="9.9.9"), "does not match the build"),
         (_matrix(promises={}), "promises are malformed"),
         (_matrix(promises=[1]), "malformed promise"),
@@ -169,7 +166,6 @@ def test_link_validation_rejects_drift_and_unsafe_paths(tmp_path: Path) -> None:
     ):
         path.write_text(MATRIX_PATH.name, encoding="utf-8")
     matrix = ImplementationMatrix(
-        CONTRACT_VERSION,
         VERSION,
         (
             ImplementationPromise(

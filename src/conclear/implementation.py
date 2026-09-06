@@ -15,7 +15,6 @@ from conclear.identity import VERSION
 from conclear.jsonutil import atomic_write_bytes, structure_depth_is_bounded
 
 MATRIX_SCHEMA_VERSION = 1
-CONTRACT_VERSION = 1
 MATRIX_PATH = Path(f"docs/implementation-{VERSION}.md")
 ARCHITECTURE_PATH = Path("ARCHITECTURE.md")
 MATRIX_REFERENCE_PATHS = (
@@ -56,7 +55,6 @@ class ImplementationPromise:
 class ImplementationMatrix:
     """The complete implementation inventory for one product contract."""
 
-    contract_version: int
     product_version: str
     promises: tuple[ImplementationPromise, ...]
 
@@ -72,8 +70,6 @@ def load_implementation_matrix() -> ImplementationMatrix:
         raise OperationalError("Implementation matrix must be a JSON object")
     if untrusted.get("schemaVersion") != MATRIX_SCHEMA_VERSION:
         raise OperationalError("Unsupported implementation matrix schema")
-    if untrusted.get("contractVersion") != CONTRACT_VERSION:
-        raise OperationalError("Implementation matrix contract version is unsupported")
     if untrusted.get("productVersion") != VERSION:
         raise OperationalError(
             "Implementation matrix product version does not match the build"
@@ -88,7 +84,7 @@ def load_implementation_matrix() -> ImplementationMatrix:
         raise OperationalError("Implementation promise identifiers must be unique")
     if identifiers != tuple(sorted(identifiers)):
         raise OperationalError("Implementation promises must be ordered by identifier")
-    return ImplementationMatrix(CONTRACT_VERSION, VERSION, promises)
+    return ImplementationMatrix(VERSION, promises)
 
 
 def validate_implementation_links(
@@ -159,8 +155,6 @@ def render_implementation_matrix(
         "gate checks the inventory, its links and the generated document before "
         "building a distribution; the embedded source revision identifies the exact "
         "released implementation.",
-        "",
-        f"Contract version: `{selected.contract_version}`.",
         "",
         "| Promise | Current behavior | Architecture | Implementation | Verification |",
         "|---|---|---|---|---|",

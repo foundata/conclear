@@ -1,12 +1,12 @@
-"""Internal inventory of version-1 public compatibility surfaces.
+"""Internal inventory of public compatibility surfaces.
 
 The inventory enumerates every compatibility surface that `DEVELOPMENT.md`
 promises to change only deliberately: the Click command hierarchy with its
 options and arguments, the bundled JSON Schemas, public record types and
 their schema versions, exit statuses, stable check identifiers and current
 implementation promises. It is rendered deterministically and committed as
-`docs/contract-v1.json`; the unit suite fails when the implementation drifts
-from that committed file, so a surface change is always an explicit,
+`docs/compatibility-inventory.json`; the unit suite fails when the implementation
+drifts from that committed file, so a surface change is always an explicit,
 reviewable regeneration. The inventory's JSON layout is not itself a supported
 external interface.
 """
@@ -21,7 +21,8 @@ import click
 
 from conclear.catalog import load_catalog
 from conclear.cli import root
-from conclear.errors import ExitStatus, OperationalError
+from conclear.errors import ExitStatus
+from conclear.identity import VERSION
 from conclear.implementation import MATRIX_SCHEMA_VERSION, load_implementation_matrix
 from conclear.jsonutil import atomic_write_bytes
 from conclear.pin_updates import PROPOSAL_RECORD_TYPE, PROPOSAL_SCHEMA_VERSION
@@ -29,8 +30,8 @@ from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import RECORD_SCHEMA_VERSIONS
 from conclear.schema import load_schema
 
-CONTRACT_VERSION = 1
-CONTRACT_PATH = Path("docs/contract-v1.json")
+INVENTORY_SCHEMA_VERSION = 1
+INVENTORY_PATH = Path("docs/compatibility-inventory.json")
 SCHEMA_NAMES = (
     "config",
     "profile",
@@ -53,16 +54,13 @@ EXIT_STATUS_MEANINGS = {
 }
 
 
-def render_contract() -> dict[str, object]:
+def render_inventory() -> dict[str, object]:
     """Return the deterministic internal compatibility inventory."""
     catalog = load_catalog()
     implementation = load_implementation_matrix()
-    if implementation.contract_version != CONTRACT_VERSION:
-        raise OperationalError(
-            "Implementation matrix and compatibility inventory versions differ"
-        )
     return {
-        "contractVersion": CONTRACT_VERSION,
+        "inventorySchemaVersion": INVENTORY_SCHEMA_VERSION,
+        "productVersion": VERSION,
         "commands": _commands(root, ()),
         "schemas": [_schema(name) for name in SCHEMA_NAMES],
         "recordTypes": {
@@ -70,7 +68,7 @@ def render_contract() -> dict[str, object]:
             PROPOSAL_RECORD_TYPE: PROPOSAL_SCHEMA_VERSION,
         },
         "commandResultSchemaVersion": CommandResult(
-            "version", ResultStatus.SUCCESS, "contract"
+            "version", ResultStatus.SUCCESS, "inventory"
         ).to_dict()["schemaVersion"],
         "exitStatuses": [
             {
@@ -81,7 +79,7 @@ def render_contract() -> dict[str, object]:
             for status in ExitStatus
         ],
         "resultStatuses": {
-            status.value: int(CommandResult("version", status, "contract").exit_status)
+            status.value: int(CommandResult("version", status, "inventory").exit_status)
             for status in ResultStatus
         },
         "checks": {
@@ -98,20 +96,19 @@ def render_contract() -> dict[str, object]:
         },
         "implementation": {
             "matrixSchemaVersion": MATRIX_SCHEMA_VERSION,
-            "productVersion": implementation.product_version,
             "promises": [item.promise_id for item in implementation.promises],
         },
     }
 
 
-def render_contract_text() -> str:
+def render_inventory_text() -> str:
     """Return the reviewable JSON form committed to the repository."""
-    return json.dumps(render_contract(), indent=2, sort_keys=True) + "\n"
+    return json.dumps(render_inventory(), indent=2, sort_keys=True) + "\n"
 
 
-def write_contract(path: Path) -> None:
-    """Write the contract inventory atomically."""
-    atomic_write_bytes(path, render_contract_text().encode("utf-8"), mode=0o644)
+def write_inventory(path: Path) -> None:
+    """Write the compatibility inventory atomically."""
+    atomic_write_bytes(path, render_inventory_text().encode("utf-8"), mode=0o644)
 
 
 def _commands(command: click.Command, path: tuple[str, ...]) -> list[dict[str, object]]:
@@ -183,30 +180,33 @@ def _schema(name: str) -> dict[str, object]:
 
 
 def main() -> int:
-    """Generate docs/contract-v1.json or verify that it is current."""
+    """Generate the compatibility inventory or verify that it is current."""
     parser = argparse.ArgumentParser(
-        prog="python -m conclear.contract",
-        description="Render or verify the internal version-1 compatibility inventory.",
+        prog="python -m conclear.compatibility_inventory",
+        description="Render or verify the internal compatibility inventory.",
     )
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", type=Path, default=CONTRACT_PATH)
+    parser.add_argument("--output", type=Path, default=INVENTORY_PATH)
     arguments = parser.parse_args()
-    expected = render_contract_text()
+    expected = render_inventory_text()
     if arguments.check:
         try:
             observed = arguments.output.read_text(encoding="utf-8")
         except OSError:
-            print(f"Contract inventory is missing: {arguments.output}", file=sys.stderr)
+            print(
+                f"Compatibility inventory is missing: {arguments.output}",
+                file=sys.stderr,
+            )
             return 1
         if observed != expected:
             print(
-                "Contract inventory is stale; review the change and regenerate it "
-                "with `uv run python -m conclear.contract`",
+                "Compatibility inventory is stale; review the change and regenerate "
+                "it with `uv run python -m conclear.compatibility_inventory`",
                 file=sys.stderr,
             )
             return 1
         return 0
-    write_contract(arguments.output)
+    write_inventory(arguments.output)
     return 0
 
 

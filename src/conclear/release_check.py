@@ -285,6 +285,7 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
         suffixes = {
             "pyproject.toml",
             "uv.lock",
+            "docs/compatibility-inventory.json",
             "docs/conformance.md",
             f"docs/implementation-{VERSION}.md",
             "LICENSES/GPL-3.0-or-later.txt",
@@ -344,7 +345,7 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
         ),
         (
             "check internal compatibility inventory",
-            ("python", "-m", "conclear.contract", "--check"),
+            ("python", "-m", "conclear.compatibility_inventory", "--check"),
         ),
         (
             "check implementation matrix",

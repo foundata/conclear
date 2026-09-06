@@ -1447,7 +1447,6 @@
       ]
     }
   ],
-  "contractVersion": 1,
   "exitStatuses": [
     {
       "meaning": "Success.",
@@ -1472,7 +1471,6 @@
   ],
   "implementation": {
     "matrixSchemaVersion": 1,
-    "productVersion": "1.0.0",
     "promises": [
       "IP0001",
       "IP0002",
@@ -1512,6 +1510,8 @@
       "IP0036"
     ]
   },
+  "inventorySchemaVersion": 1,
+  "productVersion": "1.0.0",
   "recordTypes": {
     "pinUpdateProposal": 1,
     "platformQualification": 1,

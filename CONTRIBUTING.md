@@ -38,7 +38,7 @@ There is no public discussion or forum. If you have something to discuss or comm
 Make sure you read [`DEVELOPMENT.md`](./DEVELOPMENT.md). Make sure:
 
 1. That all source code or other components are compatible with the project's [licensing](./README.md#licensing-copyright) and are traceable. Otherwise, we cannot accept your contribution.
-2. Your code is working / fix the problem / introduce a sane new feature. Formatting, linting, strict typing, the generated conformance catalog, contract inventory, implementation matrix and unit suite must pass, and documentation is updated in the same commit as the behavior it describes.
+2. Your code is working / fix the problem / introduce a sane new feature. Formatting, linting, strict typing, the generated conformance catalog, compatibility inventory, implementation matrix and unit suite must pass, and documentation is updated in the same commit as the behavior it describes.
 3. Your PR contains a proper commit message with a description of the change and reasoning, following the `<scope>: <description>` format. Bonus: reference an issue (if any; PRs without a related issue are still welcome).
 4. Changes to [`ARCHITECTURE.md`](./ARCHITECTURE.md), `IPnnnn` promises, the shipped JSON schemas, record layouts, exit statuses, CLI options or `CCnnnn` identifiers are contract changes. Put each one in its own commit whose subject says so. Architecture text describes implemented and tested behavior; keep planned behavior in a GitHub issue. Do not silently weaken a promise to hide an implementation defect: make a deliberate contract correction with its rationale, or fix the code.
 

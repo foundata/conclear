@@ -1,6 +1,5 @@
 {
   "schemaVersion": 1,
-  "contractVersion": 1,
   "productVersion": "1.0.0",
   "promises": [
     {
@@ -135,7 +134,7 @@
       "tests": [
         {"path": "tests/unit/test_cli.py", "tier": "unit"},
         {"path": "tests/unit/test_commands.py", "tier": "unit"},
-        {"path": "tests/unit/test_contract.py", "tier": "unit"}
+        {"path": "tests/unit/test_compatibility_inventory.py", "tier": "unit"}
       ]
     },
     {
