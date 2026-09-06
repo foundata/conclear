@@ -2,6 +2,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from conclear.adapters.hadolint import HadolintFinding
 from conclear.checks import (
     analyze_containerfile,
@@ -252,6 +254,60 @@ stop_signal = "RTMIN+3"
     )
     accepted = check_image_static(load_repository_config(path).image("app"))
     assert all(finding.check_id != "CC0115" for finding in accepted)
+
+
+@pytest.mark.parametrize("volume", ('VOLUME ["/var/lib/app"]', "VOLUME /var/lib/app"))
+def test_static_checks_require_final_stage_volumes_in_writable_contract(
+    repository_factory: Callable[..., Path], volume: str
+) -> None:
+    root = repository_factory(
+        containerfile=(
+            "FROM quay.io/example/base:1@sha256:" + "a" * 64 + " AS runtime\n"
+            f"{volume}\n"
+            "USER 10001:10001\n"
+            'ENTRYPOINT ["/app"]\n'
+        )
+    )
+    path = root / "conclear.toml"
+
+    findings = check_image_static(load_repository_config(path).image("app"))
+
+    assert [item.check_id for item in findings].count("CC0116") == 1
+    assert "/var/lib/app" in next(
+        item.message for item in findings if item.check_id == "CC0116"
+    )
+
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "user = 10001", 'user = 10001\nwritable_mounts = ["/var/lib/app"]'
+        ),
+        encoding="utf-8",
+    )
+    accepted = check_image_static(load_repository_config(path).image("app"))
+    assert all(item.check_id != "CC0116" for item in accepted)
+
+
+@pytest.mark.parametrize("volume", ("VOLUME []", "VOLUME relative", "VOLUME $DATA"))
+def test_static_checks_reject_malformed_or_dynamic_volumes(
+    repository_factory: Callable[..., Path], volume: str
+) -> None:
+    root = repository_factory(
+        containerfile=(
+            "FROM quay.io/example/base:1@sha256:" + "a" * 64 + " AS runtime\n"
+            f"{volume}\n"
+            "USER 10001:10001\n"
+            'ENTRYPOINT ["/app"]\n'
+        )
+    )
+
+    findings = check_image_static(
+        load_repository_config(root / "conclear.toml").image("app")
+    )
+
+    assert [item.check_id for item in findings].count("CC0116") == 1
+    assert "literal absolute paths" in next(
+        item.message for item in findings if item.check_id == "CC0116"
+    )
 
 
 def test_world_writable_numeric_and_symbolic_modes_are_rejected(

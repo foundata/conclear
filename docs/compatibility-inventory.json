@@ -110,6 +110,12 @@
         "severity": "error"
       },
       {
+        "anchor": "ports-volumes-and-health-checks",
+        "behavior": "automated",
+        "id": "CC0116",
+        "severity": "error"
+      },
+      {
         "anchor": "build-context",
         "behavior": "automated",
         "id": "CC0201",

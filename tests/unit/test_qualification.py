@@ -167,6 +167,7 @@ class Runtime:
         immutable_stat_output: str = "",
         pid1: str = "systemd",
         inactive_systemd_units: tuple[str, ...] = (),
+        observed_writable_mounts: tuple[str, ...] | None = None,
     ) -> None:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
@@ -184,6 +185,7 @@ class Runtime:
         self.immutable_stat_output = immutable_stat_output
         self.pid1 = pid1
         self.inactive_systemd_units = frozenset(inactive_systemd_units)
+        self.observed_writable_mounts = observed_writable_mounts
         self.removals = 0
         self.removed_names: list[str] = []
         self.import_calls = 0
@@ -230,7 +232,13 @@ class Runtime:
 
     def inspect_controls(self, **values: Any) -> RuntimeControlObservation:
         runtime = self.runtimes.get(str(values["name"]))
-        writable_mounts = () if runtime is None else tuple(runtime.writable_mounts)
+        writable_mounts = (
+            self.observed_writable_mounts
+            if self.observed_writable_mounts is not None
+            else ()
+            if runtime is None
+            else tuple(runtime.writable_mounts)
+        )
         return RuntimeControlObservation(
             user="10001" if runtime is None else str(runtime.user),
             read_only=True,
@@ -1238,6 +1246,28 @@ def test_runtime_rejects_observed_effective_capabilities(
         finding.check_id == "CC0401" and "capability" in finding.message
         for finding in evidence.findings
     )
+
+
+def test_runtime_reports_unexpected_image_volume_destination(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    build = build_platform(value, Builder())
+
+    evidence = run_platform_tests(
+        value,
+        build,
+        Runtime(observed_writable_mounts=("/var/lib/journal",)),
+        hook_runner(value),
+    )
+
+    writable = [
+        finding
+        for finding in evidence.findings
+        if finding.check_id == "CC0401" and "writable mounts" in finding.message
+    ]
+    assert len(writable) == 1
+    assert writable[0].message.endswith("(unexpected: /var/lib/journal; missing: none)")
 
 
 def _capability_findings(evidence: Any) -> set[str]:

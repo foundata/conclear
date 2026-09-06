@@ -63,6 +63,7 @@ def analyze_containerfile(
     *,
     expected_user: int | None = None,
     expected_stop_signal: str | None = None,
+    expected_writable_mounts: tuple[str, ...] | None = None,
 ) -> ContainerfileAnalysis:
     """Parse a Containerfile and return facts plus rule findings."""
     content = read_regular_file(
@@ -97,6 +98,7 @@ def analyze_containerfile(
     external_references: list[str] = []
     final_user: Instruction | None = None
     final_stop_signal: Instruction | None = None
+    final_volumes: list[tuple[str, str]] = []
     has_entrypoint = False
     has_cmd = False
 
@@ -113,6 +115,7 @@ def analyze_containerfile(
         if keyword == "FROM":
             final_user = None
             final_stop_signal = None
+            final_volumes = []
             reference, stage_name = _parse_from(argument, line_location, findings)
             if reference is not None and reference != "scratch":
                 if reference not in stage_names:
@@ -182,6 +185,11 @@ def analyze_containerfile(
             final_user = instruction
         elif keyword == "STOPSIGNAL":
             final_stop_signal = instruction
+        elif keyword == "VOLUME":
+            final_volumes.extend(
+                (volume, line_location)
+                for volume in _volume_paths(argument, line_location, findings)
+            )
         elif keyword == "ENTRYPOINT":
             has_entrypoint = True
             _check_exec_form(instruction, findings, path)
@@ -237,6 +245,18 @@ def analyze_containerfile(
                 stop_location,
             )
         )
+    if expected_writable_mounts is not None:
+        declared = set(expected_writable_mounts)
+        for volume, volume_location in final_volumes:
+            if volume not in declared:
+                findings.append(
+                    _finding(
+                        "CC0116",
+                        "Final-stage VOLUME destination must be declared in "
+                        f"runtime writable_mounts: {volume}",
+                        volume_location,
+                    )
+                )
     if not has_entrypoint and not has_cmd:
         findings.append(
             _finding("CC0111", "Final image must define ENTRYPOINT or CMD", str(path))
@@ -314,6 +334,7 @@ def check_image_static(image: ImageConfig) -> tuple[Finding, ...]:
         expected_stop_signal=(
             None if image.runtime.systemd is None else image.runtime.systemd.stop_signal
         ),
+        expected_writable_mounts=image.runtime.writable_mounts,
     )
     findings = list(analysis.findings)
     findings.extend(_check_context(image.context))
@@ -398,6 +419,41 @@ def _has_unsafe_chmod(argument: str) -> bool:
 
 def _normalized_signal(value: str) -> str:
     return value if value.startswith("SIG") else f"SIG{value}"
+
+
+def _volume_paths(
+    argument: str, location: str, findings: list[Finding]
+) -> tuple[str, ...]:
+    try:
+        parsed = (
+            json.loads(argument) if argument.startswith("[") else shlex.split(argument)
+        )
+    except (json.JSONDecodeError, RecursionError, ValueError):
+        parsed = None
+    if (
+        not isinstance(parsed, list)
+        or not parsed
+        or any(not isinstance(item, str) or not item for item in parsed)
+    ):
+        findings.append(
+            _finding(
+                "CC0116",
+                "VOLUME must contain one or more literal absolute paths",
+                location,
+            )
+        )
+        return ()
+    paths = tuple(PurePosixPath(item).as_posix() for item in parsed)
+    if any(not item.startswith("/") or "$" in item for item in paths):
+        findings.append(
+            _finding(
+                "CC0116",
+                "VOLUME must contain one or more literal absolute paths",
+                location,
+            )
+        )
+        return ()
+    return paths
 
 
 def _unsafe_chmod_mode(mode: str) -> bool:

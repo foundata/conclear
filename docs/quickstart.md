@@ -190,9 +190,15 @@ reader.
 
 Use `profile = "one-shot"` for a command that should exit. The test launch
 contract may set its expected exit status. The root filesystem is always
-read-only, so runtime writable paths must be listed explicitly. Repository
-configuration can narrow ConClear's built-in time limits in `[images.limits]`
-but cannot extend or disable them.
+read-only, so runtime writable paths must be listed explicitly. The effective
+set is exact: a Containerfile or base-image `VOLUME` creates an anonymous
+writable mount and its destination must also appear in `writable_mounts`.
+ConClear places private tmpfs at every declared destination. The static check
+reports an undeclared `VOLUME` in the final local build stage as `CC0116`; the
+runtime check reports inherited or otherwise unexpected writable mounts as
+`CC0401` and names the differing paths. Repository configuration can narrow
+ConClear's built-in time limits in `[images.limits]` but cannot extend or disable
+them.
 
 UID 0 is accepted only with a source-reviewed exception that states why root is
 required, who owns the decision and what change triggers another review:
@@ -245,10 +251,13 @@ stop_signal = "RTMIN+3"
 
 The systemd profile provisions `/run`, `/run/lock`, `/tmp` and
 `/var/log/journal` as private tmpfs mounts. Declare any additional writable
-paths normally. Qualification verifies systemd as PID 1, contacts the manager,
-waits for every required unit and the optional health command within one startup
-deadline, sends the configured stop signal and verifies bounded shutdown and the
-expected exit status.
+paths normally, including additional destinations declared by the image's
+`VOLUME` metadata. Do not repeat the four profile-provided paths. Qualification
+verifies systemd as PID 1, contacts the manager, waits for every required unit
+and the optional health command within one startup deadline, sends the
+configured stop signal and verifies bounded shutdown and the expected exit
+status. The other runtime profiles explicitly disable Podman's automatic
+systemd mode.
 
 
 ## 6. Describe application test inputs when needed

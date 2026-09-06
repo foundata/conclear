@@ -1319,12 +1319,22 @@ def _control_findings(
 ) -> tuple[Finding, ...]:
     expected = image.runtime
     mismatches: list[str] = []
+    messages: dict[str, str] = {}
     if observed.user.split(":", maxsplit=1)[0] != str(expected.user):
         mismatches.append("user")
     if observed.read_only is not expected.read_only:
         mismatches.append("read-only root")
     if observed.writable_mounts != tuple(sorted(expected.writable_mounts)):
         mismatches.append("writable mounts")
+        unexpected = sorted(
+            set(observed.writable_mounts) - set(expected.writable_mounts)
+        )
+        missing = sorted(set(expected.writable_mounts) - set(observed.writable_mounts))
+        messages["writable mounts"] = (
+            "Effective runtime writable mounts do not match configuration "
+            f"(unexpected: {', '.join(unexpected) or 'none'}; "
+            f"missing: {', '.join(missing) or 'none'})"
+        )
     if observed.memory_bytes != _memory_bytes(expected.memory):
         mismatches.append("memory")
     if observed.nano_cpus != round(expected.cpus * 1_000_000_000):
@@ -1383,7 +1393,9 @@ def _control_findings(
             }
             else "CC0402",
             "error",
-            f"Effective runtime {name} control does not match configuration",
+            messages.get(
+                name, f"Effective runtime {name} control does not match configuration"
+            ),
         )
         for name in mismatches
     )

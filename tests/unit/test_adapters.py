@@ -367,7 +367,7 @@ stop_signal = "RTMIN+3"
     } == {"/run", "/run/lock", "/tmp", "/var/log/journal"}
 
 
-def test_podman_observes_writable_bind_as_runtime_write_surface(
+def test_podman_observes_every_writable_mount_type_as_runtime_write_surface(
     tmp_path: Path,
 ) -> None:
     runner = FakeRunner(
@@ -382,6 +382,11 @@ def test_podman_observes_writable_bind_as_runtime_write_surface(
                                 "Type": "bind",
                                 "RW": True,
                                 "Destination": "/output",
+                            },
+                            {
+                                "Type": "volume",
+                                "RW": True,
+                                "Destination": "/image-data",
                             },
                             {
                                 "Type": "bind",
@@ -421,7 +426,7 @@ def test_podman_observes_writable_bind_as_runtime_write_surface(
         root=tmp_path / "root", runroot=tmp_path / "runroot", name="test"
     )
 
-    assert observation.writable_mounts == ("/output",)
+    assert observation.writable_mounts == ("/image-data", "/output")
 
 
 def test_podman_observes_systemd_as_pid1(tmp_path: Path) -> None:
