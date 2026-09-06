@@ -95,8 +95,8 @@ def test_valid_catalog_renders_retired_and_limit_sections(
     rendered = render_conformance(catalog)
 
     assert catalog.retired[0].check_id == "CC0999"
-    assert "| `CC0999` | Retired rule |" in rendered
-    assert "| Pin divergence | 7 days |" in rendered
+    assert "| `CC0999` | Retired rule       |" in rendered
+    assert "| Pin divergence |  7 days |" in rendered
 
 
 def test_guide_anchor_validation_reports_missing_anchors(tmp_path: Path) -> None:
