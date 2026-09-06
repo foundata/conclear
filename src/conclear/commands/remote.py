@@ -146,7 +146,7 @@ def attest_command(
         evidence,
         image=image,
         workspace=source_run.workspace,
-        signer=source_run.runtime.cosign(),
+        signer=source_run.runtime.cosign(auth_file=selected.auth_file),
         private_key=key,
         public_key=selected.cosign_public_key,
         passphrase=passphrase,
@@ -185,7 +185,7 @@ def verify_command(
     candidate = load_candidate(source_run.workspace, image)
     published = load_published(source_run.workspace, candidate, image)
     evidence = load_release_evidence(source_run.workspace, image)
-    signer = source_run.runtime.cosign()
+    signer = source_run.runtime.cosign(auth_file=selected.auth_file)
     mode, key_id = signer_identity(selected, signer)
     public_ci_context = resolve_ci_context(
         ci_context(selected),
@@ -258,7 +258,7 @@ def promote_command(
             workspace=source_run.workspace,
             registry_control=registry_control,
             registry=source_run.runtime.skopeo(),
-            signer=source_run.runtime.cosign(),
+            signer=source_run.runtime.cosign(auth_file=selected.auth_file),
             public_key=selected.cosign_public_key,
             auth_file=selected.auth_file,
             now=utc_now(),

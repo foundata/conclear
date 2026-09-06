@@ -299,7 +299,7 @@ def _continue_release(
     if private_key is None:
         raise InvalidInvocationError("Release profile has no Cosign signing key")
     registry = runtime.skopeo()
-    signer = runtime.cosign()
+    signer = runtime.cosign(auth_file=request.profile.auth_file)
     registry_control = create_registry_control(
         request.profile, destinations=(image.repository,)
     )

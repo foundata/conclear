@@ -418,7 +418,7 @@ def rescan_command(
     history_store = RescanHistoryStore(state_home())
     attested_history = verified_rescan_history(
         subject,
-        signer=runtime.cosign(),
+        signer=runtime.cosign(auth_file=selected.auth_file),
         public_key=selected.cosign_public_key,
     )
     remediation_history = history_store.synchronize(
@@ -445,7 +445,7 @@ def rescan_command(
         subject,
         workspace=workspace,
         registry=runtime.skopeo(),
-        signer=runtime.cosign(),
+        signer=runtime.cosign(auth_file=selected.auth_file),
         scanner=runtime.trivy(),
         database=database,
         public_key=selected.cosign_public_key,

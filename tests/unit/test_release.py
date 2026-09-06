@@ -139,7 +139,7 @@ def test_release_does_not_promote_until_verification_transitions_state(
     repository = SimpleNamespace(image=lambda _image_id: image)
     runtime = SimpleNamespace(
         skopeo=lambda: object(),
-        cosign=lambda: object(),
+        cosign=lambda **kwargs: object(),
     )
     registry_control = SimpleNamespace(close=lambda: None)
     monkeypatch.setattr(release, "load_candidate", lambda *_args: object())

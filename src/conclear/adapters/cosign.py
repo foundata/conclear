@@ -1,11 +1,17 @@
 """Cosign 3 production signing and verification adapter."""
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
-from conclear.errors import CommandExecutionError, OperationalError
+from conclear.errors import (
+    CommandExecutionError,
+    InvalidInvocationError,
+    OperationalError,
+)
+from conclear.jsonutil import atomic_write_bytes
 from conclear.parsing import array_value, json_value
 from conclear.process import OperationKind
 from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
@@ -40,6 +46,34 @@ class VerificationObservation:
 
 class CosignAdapter(ToolAdapter):
     """Sign and verify with isolated configuration and default public Rekor use."""
+
+    _docker_config: Path | None = None
+    _auth_file: Path | None = None
+
+    def use_registry_credentials(self, auth_file: Path) -> None:
+        """Give Cosign the registry credentials Skopeo receives through `--authfile`.
+
+        Cosign reads Docker-style credentials from `DOCKER_CONFIG`, so the
+        protected auth file is copied once into a run-owned directory with mode
+        `0600` and that directory is exported to every Cosign process. The
+        source path and the copy are redacted from diagnostics.
+        """
+        content = read_protected_file(auth_file, maximum_bytes=MAX_PROFILE_BYTES)
+        try:
+            value: object = json.loads(content.decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise InvalidInvocationError(
+                "Registry auth file is not a JSON object"
+            ) from exc
+        if not isinstance(value, dict) or "auths" not in value:
+            raise InvalidInvocationError(
+                "Registry auth file does not contain a Docker auths object"
+            )
+        directory = self._log_directory.parent / "cosign-docker"
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        atomic_write_bytes(directory / "config.json", content, mode=0o600)
+        self._docker_config = directory
+        self._auth_file = auth_file
 
     def initialize(self) -> None:
         """Initialize and verify access to default public Sigstore trust data."""
@@ -250,13 +284,21 @@ class CosignAdapter(ToolAdapter):
                 "Cosign release operations cannot disable log transparency",
                 code="CC0701",
             )
+        environment = dict(extra_environment or {})
+        if self._docker_config is not None and self._auth_file is not None:
+            environment["DOCKER_CONFIG"] = str(self._docker_config)
+            secret_paths = (
+                *secret_paths,
+                self._auth_file,
+                self._docker_config / "config.json",
+            )
         try:
             return self._run(
                 arguments,
                 timeout_seconds=600,
                 operation=operation,
                 retries=2 if operation is OperationKind.READ else 0,
-                extra_environment=extra_environment,
+                extra_environment=environment,
                 secret_values=secret_values,
                 secret_paths=secret_paths,
             ).stdout

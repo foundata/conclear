@@ -730,6 +730,40 @@ def test_cosign_release_signing_keeps_public_log_policy_enabled(
     )
 
 
+def test_cosign_receives_registry_credentials_through_a_run_owned_docker_config(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(lambda request: result(), lambda request: result())
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+    auth_file = tmp_path / "auth.json"
+    auth_file.write_text(
+        '{"auths": {"quay.io": {"auth": "c2VjcmV0"}}}', encoding="utf-8"
+    )
+    auth_file.chmod(0o600)
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
+
+    adapter.sign(subject=subject, private_key="key", passphrase="pw")
+    assert "DOCKER_CONFIG" not in runner.requests[-1].environment
+
+    adapter.use_registry_credentials(auth_file)
+    adapter.sign(subject=subject, private_key="key", passphrase="pw")
+
+    request = runner.requests[-1]
+    config_directory = Path(request.environment["DOCKER_CONFIG"])
+    copied = config_directory / "config.json"
+    assert copied.is_file()
+    assert copied.read_bytes() == auth_file.read_bytes()
+    assert (copied.stat().st_mode & 0o777) == 0o600
+    assert auth_file in request.secret_paths
+    assert copied in request.secret_paths
+
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"credsStore": "none"}', encoding="utf-8")
+    bad.chmod(0o600)
+    with pytest.raises(InvalidInvocationError, match="Docker auths object"):
+        adapter.use_registry_credentials(bad)
+
+
 def test_cosign_signing_failure_redacts_private_key_path(tmp_path: Path) -> None:
     executable = tmp_path / "cosign"
     executable.write_text(

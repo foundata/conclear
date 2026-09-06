@@ -590,5 +590,6 @@ class FakeRuntime:
     def skopeo(self) -> FakeRegistry:
         return self.registry
 
-    def cosign(self) -> FakeSigner:
+    def cosign(self, *, auth_file: Path | None = None) -> FakeSigner:
+        del auth_file
         return self.signer

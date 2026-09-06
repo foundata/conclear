@@ -103,9 +103,12 @@ class ApplicationRuntime:
         """Return the resolved Trivy adapter."""
         return self._adapter(TrivyAdapter, ToolName.TRIVY)
 
-    def cosign(self) -> CosignAdapter:
-        """Return the resolved Cosign adapter."""
-        return self._adapter(CosignAdapter, ToolName.COSIGN)
+    def cosign(self, *, auth_file: Path | None = None) -> CosignAdapter:
+        """Return the resolved Cosign adapter, with registry credentials when given."""
+        adapter = self._adapter(CosignAdapter, ToolName.COSIGN)
+        if auth_file is not None:
+            adapter.use_registry_credentials(auth_file)
+        return adapter
 
     def _adapter[T: ToolAdapter](self, adapter: type[T], name: ToolName) -> T:
         cached = self._adapters.get(name)

@@ -116,7 +116,7 @@ class FakeSourceRun:
             trivy=lambda: object(),
             hadolint=lambda: object(),
             skopeo=lambda: object(),
-            cosign=lambda: object(),
+            cosign=lambda **kwargs: object(),
             identities=(),
             runner=object(),
             environment={"PATH": "/usr/bin"},
