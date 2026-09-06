@@ -11,6 +11,8 @@ from conclear.parsing import object_value
 from conclear.values import Digest
 
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
+LEGACY_STATEMENT_TYPE = "https://in-toto.io/Statement/v0.1"
+_ACCEPTED_STATEMENT_TYPES = frozenset({STATEMENT_TYPE, LEGACY_STATEMENT_TYPE})
 RELEASE_VERIFICATION_TYPE = (
     "https://github.com/foundata/conclear/predicates/release-verification/v1"
 )
@@ -49,10 +51,21 @@ def write_statement(
 def decode_dsse_statements(
     envelopes: tuple[object, ...],
 ) -> tuple[dict[str, object], ...]:
-    """Decode bounded Cosign DSSE envelopes into runtime-validated statements."""
+    """Decode bounded Cosign DSSE envelopes into runtime-validated statements.
+
+    Cosign 3 downloads Sigstore bundles that carry the DSSE envelope under
+    `dsseEnvelope`; a bare envelope is accepted as well. Cosign writes the
+    in-toto Statement v0.1 type, so both v0.1 and v1 are accepted.
+    """
     statements: list[dict[str, object]] = []
     for raw in envelopes:
-        envelope = object_value(raw, "DSSE envelope")
+        item = object_value(raw, "DSSE envelope")
+        bundled = item.get("dsseEnvelope")
+        envelope = (
+            item
+            if bundled is None
+            else object_value(bundled, "Sigstore bundle DSSE envelope")
+        )
         payload_type = envelope.get("payloadType")
         if payload_type != "application/vnd.in-toto+json":
             raise OperationalError("Cosign returned an unexpected DSSE payload type")
@@ -72,8 +85,8 @@ def decode_dsse_statements(
         if not structure_depth_is_bounded(value):
             raise OperationalError("Cosign DSSE payload exceeds the nesting limit")
         statement = object_value(value, "in-toto Statement")
-        if statement.get("_type") != STATEMENT_TYPE:
-            raise OperationalError("Cosign payload is not an in-toto Statement v1")
+        if statement.get("_type") not in _ACCEPTED_STATEMENT_TYPES:
+            raise OperationalError("Cosign payload is not an in-toto Statement")
         statements.append(statement)
     return tuple(statements)
 
