@@ -305,6 +305,22 @@ declared individually. Release tag templates may use only the documented
 `{version}` value; unversioned projects omit version-dependent templates.
 Candidate tags remain entirely ConClear-owned.
 
+The configured runtime user is a numeric non-zero UID by default and must match
+the final Containerfile `USER`. UID 0 is accepted only when the runtime also
+contains a closed `root_requirement` table with non-empty `rationale`, `owner`
+and `review_trigger` values. The exception is reviewed repository input and is
+recorded in the platform qualification. A root requirement is rejected for a
+non-zero UID.
+
+The `service`, `one-shot` and `scratch` profiles use the ordinary process
+lifecycle. The separate `systemd` profile requires UID 0, a root requirement and
+a closed `systemd` table containing at least one `required_units` entry and a
+`stop_signal` of `RTMIN+3` or `SIGRTMIN+3`. Its Containerfile must set the same
+`STOPSIGNAL`. The profile adds `/run`, `/run/lock`, `/tmp` and
+`/var/log/journal` to the effective private tmpfs set. Repository configuration
+may declare further writable paths, but an immutable path cannot overlap any
+effective writable path.
+
 Repository test hooks are argument arrays, not shell strings. ConClear supplies
 documented paths and immutable references as individual environment values.
 Hooks cannot interpolate command text and cannot override release state,
@@ -766,15 +782,36 @@ output before a later step may consume it.
 
 <a id="promise-ip0023"></a>
 Built-in runtime checks cover the configured user, read-only root filesystem,
-writable mounts, capabilities, `no-new-privileges`, startup, health command,
-signal forwarding, expected exit-status propagation, shutdown, file ownership
-and resource behavior. Runtime application files expected to remain immutable
-are checked for root ownership and permission modes that deny group and other
-writes to the configured non-root runtime identity. Owner-write bits do not
-grant that identity access and are not rejected. A documented supervisor may be
-PID 1 when the tests establish forwarding and propagation behavior. Launch
-arguments and non-secret environment values supplement the image's original
-entrypoint; they cannot replace it or override a built-in gate.
+writable mounts, private user and cgroup namespaces, absence of privileged mode,
+capabilities, `no-new-privileges`, startup, health command, signal forwarding,
+expected exit-status propagation, shutdown, file ownership and resource
+behavior. Runtime application files expected to remain immutable are checked
+for root ownership and permission modes that deny group and other writes. They
+cannot overlap a writable runtime mount. For a non-root runtime identity,
+owner-write bits do not grant that identity access and are not rejected. For UID
+0, the read-only root and non-overlap requirements keep those paths immutable.
+Launch arguments and non-secret environment values supplement the image's
+original entrypoint; they cannot replace it or override a built-in gate.
+
+Every runtime container uses rootless Podman with an explicit private user
+namespace and private cgroup namespace. Container UID 0 therefore maps through
+the invoking rootless user's namespace and does not grant host root. ConClear
+never enables privileged mode, a host user or cgroup namespace, host devices or
+repository-selected writable host paths. Only separately declared, run-owned
+test outputs may be writable bind mounts. It drops every capability before
+adding only the exact reviewed set in configuration and verifies the resulting
+bounding and effective sets. These constraints apply equally to the systemd
+profile.
+
+For a systemd image, ConClear explicitly enables Podman's systemd mode and
+applies the configured stop signal. It verifies that PID 1 is `systemd`, that a
+`systemctl` manager query succeeds and that every configured required unit
+becomes active. Required-unit probes and an optional application health command
+share the one monotonic startup budget. The profile then sends the configured
+systemd stop signal and applies the ordinary bounded shutdown and exit-status
+checks. Failure of PID 1, manager, unit, health or shutdown expectations
+produces a `CC0403` rejection; an inability to invoke or observe Podman remains
+an operational failure.
 
 For a service health command, a nonzero application status means not ready and
 is retried at a bounded implementation-owned interval until success or the
