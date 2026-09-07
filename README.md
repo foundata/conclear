@@ -152,7 +152,9 @@ distributed platform work and recovery without defining an alternative workflow:
 `doctor`, `check`, `pins check`, `pins propose`, `pins apply`, `build`, `test`,
 `qualify`, `transport export`, `assemble`, `provenance`, `publish`, `attest`,
 `verify`, `promote`, `rescan` and `cleanup`. Run any of them with `--help` for
-its exact inputs.
+its exact inputs. `doctor --scope qualify` validates a workstation or worker
+that only qualifies, without a release profile; the default `release` scope
+validates the complete release environment.
 
 No command offers an option that disables a gate, skips verification or affects
 transparency-log behavior.
@@ -288,10 +290,19 @@ configured deadline of at most 30 days.
 
 ## Supported tools<a id="supported-tools"></a>
 
-The initial supported host-tool matrix is intentionally exact. ConClear resolves
-every executable at release start, records its version and digest, rejects an
-unsupported combination and rechecks the identities before later use, so a
-package upgrade during a run cannot silently change the toolchain.
+Each command resolves only the host tools its call path executes, records
+their versions and executable digests, and rechecks those identities before a
+later phase uses them, so a package upgrade during a run cannot silently change
+the toolchain. A run pins a tool from the first phase that resolves it: a
+qualification never needs Cosign, and a publication never needs Buildah,
+Podman, Hadolint or Trivy. `doctor --scope check|qualify|release` reports every
+missing or unsupported tool of a scope in one pass.
+
+The supported versions are exactly the versions the local integration tier and
+the external release drill exercised. ConClear parses tool output and depends
+on behavior that changes between versions, so a version it has not been
+tested with is rejected rather than assumed to work; the matrix widens only
+with that evidence.
 
 |   Tool   | Version |
 | -------- | ------: |
@@ -302,6 +313,31 @@ package upgrade during a run cannot silently change the toolchain.
 | Hadolint |  2.14.0 |
 | Trivy    |  0.69.3 |
 | Cosign   |   3.1.3 |
+
+|      Command       |                     Tools                      | Release profile | Credentials and services |
+| ------------------ | ---------------------------------------------- | --------------- | ------------------------ |
+| `version`          | none                                           | none            | none |
+| `check`            | Hadolint                                       | none            | none |
+| `pins check`       | Skopeo                                         | optional        | registry reads with the profile's auth file |
+| `pins propose`     | Git, Skopeo                                    | optional        | registry reads with the profile's auth file |
+| `pins apply`       | Git                                            | none            | none |
+| `build`            | Git, Buildah                                   | optional        | registry reads for image inputs |
+| `test`             | Git, Podman                                    | none            | none |
+| `qualify`          | Git, Buildah, Podman, Skopeo, Hadolint, Trivy  | optional        | registry reads for image inputs |
+| `transport export` | Git                                            | none            | none |
+| `assemble`         | Git                                            | optional        | none; the profile only records trust inputs |
+| `provenance`       | Git                                            | none            | none |
+| `publish`          | Git, Skopeo                                    | required        | registry writes, registry control API |
+| `attest`           | Git, Skopeo, Cosign                            | required        | registry writes, signing key and passphrase, public Sigstore services |
+| `verify`           | Git, Skopeo, Cosign                            | required        | registry reads, signing key and passphrase, public Sigstore services |
+| `promote`          | Git, Skopeo, Cosign                            | required        | registry writes, registry control API, public Sigstore services |
+| `release`          | all seven                                      | required        | everything above |
+| `rescan`           | Skopeo, Trivy, Cosign                          | required        | registry reads, public Sigstore services; signing key for `--authoritative` |
+| `cleanup`          | Git, Buildah, Podman                           | optional        | registry control API when a profile is given |
+| `doctor`           | the union of its scope                         | `release` scope | `release` scope probes the registry and Sigstore read-only |
+
+The generated [compatibility inventory](./docs/compatibility-inventory.json)
+carries the same declarations in machine-readable form.
 
 Trivy is the only supported scanner stack. Production signing always uses Cosign
 3 public Rekor logging and verifies log inclusion; there is no release option

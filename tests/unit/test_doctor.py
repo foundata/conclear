@@ -7,37 +7,43 @@ import pytest
 
 import conclear.services.doctor as doctor_module
 from conclear.config import load_repository_config
-from conclear.errors import ExitStatus, OperationalError
-from conclear.services.doctor import diagnose_environment
+from conclear.dependencies import DOCTOR_SCOPES
+from conclear.errors import ExitStatus, InvalidInvocationError, OperationalError
+from conclear.services.doctor import DoctorScope, diagnose_environment
 from conclear.values import Platform
 
 
 class _FakeTool:
+    def __init__(self, calls: list[str], name: str) -> None:
+        self.calls = calls
+        self.name = name
+
     def info(self, *, root: Path, runroot: Path) -> dict[str, object]:
         del root, runroot
+        self.calls.append(f"{self.name}.info")
         return {}
 
     def initialize(self) -> None:
-        pass
+        self.calls.append(f"{self.name}.initialize")
 
 
 class _FakeRuntime:
     def __init__(self, root: Path) -> None:
         self.root = root
-        self._tool = _FakeTool()
+        self.calls: list[str] = []
         self.identities: tuple[object, ...] = ()
 
     def buildah(self) -> _FakeTool:
-        return self._tool
+        return _FakeTool(self.calls, "buildah")
 
     def podman(self) -> _FakeTool:
-        return self._tool
+        return _FakeTool(self.calls, "podman")
 
     def cosign(self) -> _FakeTool:
-        return self._tool
+        return _FakeTool(self.calls, "cosign")
 
     def assert_unchanged(self) -> None:
-        pass
+        self.calls.append("assert_unchanged")
 
 
 class _UnexpectedRegistryControl:
@@ -47,7 +53,7 @@ class _UnexpectedRegistryControl:
 
     def observe_tag(self, repository: object, tag: str) -> None:
         del repository, tag
-        pytest.fail("doctor must reject missing binfmt before probing the registry")
+        pytest.fail("doctor must not probe the registry in this scope")
 
 
 class _FakeRegistryControl:
@@ -63,28 +69,93 @@ class _FakeRegistryControl:
         self.observed += 1
 
 
-def test_doctor_reports_selected_registry_backend(
+def test_scopes_match_the_declared_doctor_scopes() -> None:
+    assert tuple(item.value for item in DoctorScope) == tuple(DOCTOR_SCOPES)
+
+
+def test_release_scope_probes_registry_and_sigstore(
     repository_factory: Any, tmp_path: Path
 ) -> None:
     repository = load_repository_config(repository_factory() / "conclear.toml")
     registry_control = _FakeRegistryControl()
+    runtime = _FakeRuntime(tmp_path)
 
     observation = diagnose_environment(
         repository,
-        cast(Any, object()),
-        cast(Any, _FakeRuntime(tmp_path)),
+        cast(Any, runtime),
+        scope=DoctorScope.RELEASE,
+        profile=cast(Any, object()),
         registry_control=cast(Any, registry_control),
     )
 
+    assert observation.scope is DoctorScope.RELEASE
     assert observation.registry_provider == "quay"
-    assert observation.registry_access
+    assert observation.registry_access and observation.sigstore_access
     assert registry_control.observed == len(repository.images)
+    assert runtime.calls == [
+        "buildah.info",
+        "podman.info",
+        "cosign.initialize",
+        "assert_unchanged",
+    ]
 
 
+def test_release_scope_needs_a_profile_and_registry_backend(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+
+    with pytest.raises(InvalidInvocationError, match="needs a release profile"):
+        diagnose_environment(
+            repository, cast(Any, _FakeRuntime(tmp_path)), scope=DoctorScope.RELEASE
+        )
+
+
+def test_qualify_scope_checks_storage_and_execution_only(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+    runtime = _FakeRuntime(tmp_path)
+
+    observation = diagnose_environment(
+        repository,
+        cast(Any, runtime),
+        scope=DoctorScope.QUALIFY,
+        registry_control=cast(Any, _UnexpectedRegistryControl()),
+    )
+
+    assert observation.scope is DoctorScope.QUALIFY
+    assert observation.registry_provider is None
+    assert not observation.registry_access and not observation.sigstore_access
+    assert runtime.calls == ["buildah.info", "podman.info", "assert_unchanged"]
+
+
+def test_check_scope_touches_no_storage_registry_or_signing(
+    repository_factory: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+    runtime = _FakeRuntime(tmp_path)
+    monkeypatch.setattr(
+        doctor_module,
+        "binfmt_handler",
+        lambda architecture: pytest.fail("check scope must not inspect binfmt"),
+    )
+
+    observation = diagnose_environment(
+        repository, cast(Any, runtime), scope=DoctorScope.CHECK
+    )
+
+    assert observation.scope is DoctorScope.CHECK
+    assert observation.emulated_architectures == ()
+    assert runtime.calls == ["assert_unchanged"]
+
+
+@pytest.mark.parametrize("scope", [DoctorScope.QUALIFY, DoctorScope.RELEASE])
 def test_missing_binfmt_handler_is_an_operational_failure(
     repository_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    scope: DoctorScope,
 ) -> None:
     repository = load_repository_config(repository_factory() / "conclear.toml")
     image = repository.image("app")
@@ -106,8 +177,9 @@ def test_missing_binfmt_handler_is_an_operational_failure(
     with pytest.raises(OperationalError) as raised:
         diagnose_environment(
             repository,
-            cast(Any, object()),
             cast(Any, _FakeRuntime(tmp_path)),
+            scope=scope,
+            profile=cast(Any, object()),
             registry_control=cast(Any, _UnexpectedRegistryControl()),
         )
 

@@ -18,9 +18,15 @@ import conclear.commands.local as local_commands
 import conclear.commands.maintenance as maintenance_commands
 import conclear.commands.remote as remote_commands
 import conclear.commands.transport as transport_commands
+import conclear.services.release as release_module
 from conclear.cli import main
 from conclear.config import load_repository_config
-from conclear.errors import OperationalError, RuleRejectionError
+from conclear.dependencies import command_tools, scope_dependencies
+from conclear.errors import (
+    InvalidInvocationError,
+    OperationalError,
+    RuleRejectionError,
+)
 from conclear.presentation import Finding
 from conclear.records import SourceIdentity, Verdict
 from conclear.release_profile import (
@@ -30,11 +36,15 @@ from conclear.release_profile import (
     RegistryProvider,
     ReleaseProfile,
 )
+from conclear.runtime import ToolProblem
+from conclear.services.doctor import DoctorScope
+from conclear.tools import ToolName
 from conclear.values import Digest
 from conclear.workspace import RunState, RunWorkspace
 
 BUILDER_ID = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
 DIGEST = "sha256:" + "a" * 64
+RUN_ID = "01arz3ndektsv4rrffq69g5fav"
 
 
 class FixedIdFactory:
@@ -959,10 +969,9 @@ def test_doctor_reports_environment_observations(
     monkeypatch.setattr(
         maintenance_commands, "create_registry_control", lambda *a, **k: control
     )
+    requested: list[tuple[ToolName, ...]] = []
     monkeypatch.setattr(
-        maintenance_commands,
-        "command_runtime",
-        lambda names: _Context(SimpleNamespace()),
+        maintenance_commands, "diagnostic_runtime", _recording_runtime(requested)
     )
     monkeypatch.setattr(
         maintenance_commands,
@@ -983,9 +992,149 @@ def test_doctor_reports_environment_observations(
     )
 
     assert code == 0
+    assert value["message"] == "Environment is ready for release"
+    assert value["data"]["scope"] == "release"
+    assert value["data"]["profile"] == "production"
     assert value["data"]["registryProvider"] == "quay"
     assert value["data"]["ciContextObserved"] is False
     assert closed == [True]
+    assert requested == [scope_dependencies("release").tools]
+
+
+def test_doctor_qualify_scope_needs_no_profile_registry_or_signing(
+    repository_factory: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+) -> None:
+    root = repository_factory()
+    monkeypatch.setattr(
+        maintenance_commands,
+        "profile",
+        lambda name: pytest.fail("qualify scope must not load a profile"),
+    )
+    monkeypatch.setattr(
+        maintenance_commands,
+        "create_registry_control",
+        lambda *a, **k: pytest.fail("qualify scope must not create a registry control"),
+    )
+    requested: list[tuple[ToolName, ...]] = []
+    monkeypatch.setattr(
+        maintenance_commands, "diagnostic_runtime", _recording_runtime(requested)
+    )
+    seen: dict[str, Any] = {}
+
+    def diagnose(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        seen.update(kwargs)
+        return SimpleNamespace(
+            tools=({"name": "buildah", "version": "1.43.2"},),
+            native_architecture="amd64",
+            emulated_architectures=("arm64",),
+            registry_provider=None,
+            registry_access=False,
+            sigstore_access=False,
+        )
+
+    monkeypatch.setattr(maintenance_commands, "diagnose_environment", diagnose)
+
+    code, value, _ = invoke(
+        ["doctor", "--config", str(root / "conclear.toml"), "--scope", "qualify"]
+    )
+
+    assert code == 0
+    assert value["message"] == "Environment is ready for qualify"
+    assert value["data"] == {
+        "scope": "qualify",
+        "tools": [{"name": "buildah", "version": "1.43.2"}],
+        "nativeArchitecture": "amd64",
+        "emulatedArchitectures": ["arm64"],
+    }
+    assert seen["scope"] is DoctorScope.QUALIFY
+    assert seen["profile"] is None and seen["registry_control"] is None
+    assert requested == [scope_dependencies("qualify").tools]
+    assert ToolName.COSIGN not in requested[0]
+
+
+def test_doctor_release_scope_requires_a_profile(
+    repository_factory: Callable[..., Path],
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+) -> None:
+    root = repository_factory()
+
+    code, value, _ = invoke(["doctor", "--config", str(root / "conclear.toml")])
+
+    assert code == 64
+    assert "--profile is required for --scope release" in value["message"]
+    assert "--scope qualify" in value["message"]
+
+
+@pytest.mark.parametrize(
+    ("problems", "exit_code"),
+    [
+        (
+            (
+                ToolProblem(
+                    ToolName.TRIVY,
+                    RuleRejectionError(
+                        "Unsupported trivy version 0.1.0; supported: 0.69.3",
+                        code="CC0301",
+                    ),
+                ),
+                ToolProblem(
+                    ToolName.COSIGN,
+                    OperationalError("Required tool is unavailable: cosign"),
+                ),
+            ),
+            1,
+        ),
+        (
+            (
+                ToolProblem(
+                    ToolName.TRIVY,
+                    RuleRejectionError(
+                        "Unsupported trivy version 0.1.0; supported: 0.69.3",
+                        code="CC0301",
+                    ),
+                ),
+            ),
+            2,
+        ),
+    ],
+)
+def test_doctor_reports_every_unresolved_tool_at_once(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    problems: tuple[ToolProblem, ...],
+    exit_code: int,
+) -> None:
+    root = repository_factory()
+    profile = release_profile(tmp_path)
+    monkeypatch.setattr(maintenance_commands, "profile", lambda name: profile)
+    monkeypatch.setattr(
+        maintenance_commands,
+        "create_registry_control",
+        lambda *a, **k: SimpleNamespace(close=lambda: None),
+    )
+    monkeypatch.setattr(
+        maintenance_commands,
+        "diagnostic_runtime",
+        lambda names: _Context((SimpleNamespace(), problems)),
+    )
+    monkeypatch.setattr(
+        maintenance_commands,
+        "diagnose_environment",
+        lambda *a, **k: pytest.fail("diagnosis must stop on unresolved tools"),
+    )
+
+    code, value, _ = invoke(
+        ["doctor", "--config", str(root / "conclear.toml"), "--profile", "production"]
+    )
+
+    assert code == exit_code
+    assert value["message"].startswith("Environment is not ready for release: ")
+    for problem in problems:
+        assert problem.message in value["message"]
 
 
 def test_cleanup_command_refuses_a_foreign_profile_and_reports_ownership(
@@ -1172,3 +1321,225 @@ class _Context:
 
     def __exit__(self, *exc: object) -> None:
         return None
+
+
+def _recording_runtime(
+    recorded: list[tuple[ToolName, ...]], problems: tuple[ToolProblem, ...] = ()
+) -> Callable[[tuple[ToolName, ...]], Any]:
+    def create(names: tuple[ToolName, ...]) -> Any:
+        recorded.append(names)
+        return _Context((SimpleNamespace(), problems))
+
+    return create
+
+
+def _stopping_run(recorded: list[tuple[ToolName, ...]]) -> Callable[..., Any]:
+    def create(*args: Any, **kwargs: Any) -> Any:
+        recorded.append(kwargs["names"])
+        raise InvalidInvocationError("stopped after resolving tools")
+
+    return create
+
+
+class _StopOnEnter:
+    def __enter__(self) -> Any:
+        raise InvalidInvocationError("stopped after resolving tools")
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def _stopping_runtime(recorded: list[tuple[ToolName, ...]]) -> Callable[..., Any]:
+    def create(names: tuple[ToolName, ...]) -> _StopOnEnter:
+        recorded.append(names)
+        return _StopOnEnter()
+
+    return create
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (["check", "--image", "app"], command_tools("check")),
+        (["pins", "check", "--image", "app"], command_tools("pins check")),
+        (
+            ["pins", "propose", "--output", "{tmp}/proposal.json"],
+            command_tools("pins propose"),
+        ),
+        (
+            ["pins", "apply", "--proposal", "{tmp}/proposal.json"],
+            command_tools("pins apply"),
+        ),
+        (
+            [
+                "build",
+                "--source",
+                "{root}",
+                "--revision",
+                "v1",
+                "--image",
+                "app",
+                "--platform",
+                "linux/amd64",
+            ],
+            command_tools("build"),
+        ),
+        (["test", RUN_ID, "--platform", "linux/amd64"], command_tools("test")),
+        (
+            [
+                "qualify",
+                "--source",
+                "{root}",
+                "--revision",
+                "v1",
+                "--image",
+                "app",
+                "--platform",
+                "linux/amd64",
+            ],
+            command_tools("qualify"),
+        ),
+        (
+            [
+                "assemble",
+                "--source",
+                "{root}",
+                "--revision",
+                "v1",
+                "--image",
+                "app",
+                "--transport",
+                "{tmp}/t",
+                DIGEST,
+            ],
+            command_tools("assemble"),
+        ),
+        (
+            [
+                "transport",
+                "export",
+                RUN_ID,
+                "--platform",
+                "linux/amd64",
+                "--output",
+                "{tmp}/out",
+            ],
+            command_tools("transport export"),
+        ),
+        (["provenance", RUN_ID], command_tools("provenance")),
+        (["publish", RUN_ID, "--profile", "production"], command_tools("publish")),
+        (["attest", RUN_ID, "--profile", "production"], command_tools("attest")),
+        (["verify", RUN_ID, "--profile", "production"], command_tools("verify")),
+        (["promote", RUN_ID, "--profile", "production"], command_tools("promote")),
+        (
+            [
+                "release",
+                "--source",
+                "{root}",
+                "--revision",
+                "v1",
+                "--image",
+                "app",
+                "--profile",
+                "production",
+            ],
+            command_tools("release"),
+        ),
+        (
+            [
+                "rescan",
+                "--subject",
+                "{subject}",
+                "--image",
+                "app",
+                "--profile",
+                "production",
+            ],
+            command_tools("rescan"),
+        ),
+        (["cleanup", RUN_ID], command_tools("cleanup")),
+        (["doctor", "--scope", "check"], scope_dependencies("check").tools),
+        (["doctor", "--scope", "qualify"], scope_dependencies("qualify").tools),
+        (
+            ["doctor", "--scope", "release", "--profile", "production"],
+            scope_dependencies("release").tools,
+        ),
+    ],
+    ids=lambda value: (
+        " ".join(
+            item
+            for item in value
+            if not item.startswith(("-", "{", "sha256:", "01arz", "v1", "linux/"))
+        )
+        if isinstance(value, list)
+        else ""
+    ),
+)
+def test_every_command_resolves_exactly_its_declared_tools(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    arguments: list[str],
+    expected: tuple[ToolName, ...],
+) -> None:
+    """Production call paths request only the declared tools before anything else runs."""
+    root = repository_factory()
+    profile = release_profile(tmp_path)
+    run = FakeSourceRun(root, tmp_path)
+    image = run.repository.image("app")
+    substitutions = {
+        "{root}": str(root),
+        "{tmp}": str(tmp_path),
+        "{subject}": f"{image.repository}@{DIGEST}",
+    }
+    recorded: list[tuple[ToolName, ...]] = []
+    stop_run = _stopping_run(recorded)
+    stop_runtime = _stopping_runtime(recorded)
+    for module in (
+        local_commands,
+        remote_commands,
+        transport_commands,
+        maintenance_commands,
+        release_module,
+    ):
+        for name in ("create_source_run", "open_source_run"):
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, stop_run)
+        for name in ("command_runtime", "diagnostic_runtime"):
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, stop_runtime)
+        for name, value in (
+            ("profile", lambda name: profile),
+            ("state_home", lambda: tmp_path / "state"),
+            ("signing_passphrase", lambda *a, **k: "secret"),
+            ("ci_context", lambda selected: None),
+            (
+                "create_registry_control",
+                lambda *a, **k: SimpleNamespace(close=lambda: None),
+            ),
+        ):
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, value)
+    monkeypatch.setattr(
+        maintenance_commands,
+        "ApplicationRuntime",
+        SimpleNamespace(create=lambda root, names: stop_run(names=names)),
+    )
+    monkeypatch.setattr(
+        maintenance_commands, "load_proposal", lambda path: SimpleNamespace()
+    )
+    resolved = [substitutions.get(item, item) for item in arguments]
+    if "--config" not in resolved and resolved[0] in {
+        "check",
+        "pins",
+        "rescan",
+        "doctor",
+    }:
+        resolved += ["--config", str(root / "conclear.toml")]
+
+    code, value, _ = invoke(resolved)
+
+    assert code == 64, value
+    assert "stopped after resolving tools" in value["message"]
+    assert recorded == [expected]

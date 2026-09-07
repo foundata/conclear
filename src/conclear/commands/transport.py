@@ -4,6 +4,7 @@ from pathlib import Path
 
 import click
 
+from conclear.dependencies import command_tools
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import utc_now
 from conclear.services.run_context import open_source_run
@@ -45,7 +46,9 @@ def export_command(
     output_format: str,
 ) -> None:
     """Export one accepted qualification, its layout and evidence as a transport."""
-    source_run = open_source_run(state_home=state_home(), run_id=run_id, names=())
+    source_run = open_source_run(
+        state_home=state_home(), run_id=run_id, names=command_tools("transport export")
+    )
     snapshot = source_run.workspace.load()
     image = source_run.repository.image(snapshot.immutable_inputs["image"])
     platform = Platform.parse(platform_text)

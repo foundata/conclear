@@ -14,6 +14,7 @@ from conclear.database import (
     select_fresh_database,
     trivy_cache_root,
 )
+from conclear.dependencies import command_tools
 from conclear.pins import PinStore, check_image_pins
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import utc_now
@@ -41,7 +42,6 @@ from conclear.services.run_context import (
     open_source_run,
 )
 from conclear.services.runtime_tests import test_platform
-from conclear.tools import ToolName
 from conclear.transport import ImportedTransport, import_transport
 from conclear.values import Digest, Platform
 from conclear.workspace import RunState
@@ -85,7 +85,7 @@ def _source_options[FC: Callable[..., Any]](function: FC) -> FC:
 def check_command(config_path: Path, image_id: str, output_format: str) -> None:
     """Run static Containerfile, context, metadata and pin-declaration checks."""
     repository = load_repository_config(config_path)
-    with command_runtime((ToolName.HADOLINT,)) as runtime:
+    with command_runtime(command_tools("check")) as runtime:
         outcome = check_image(repository.image(image_id), runtime.hadolint())
     emit(
         CommandResult(
@@ -120,7 +120,7 @@ def build_command(
         image_id=image_id,
         version=version,
         state_home=state_home(),
-        names=(ToolName.BUILDAH,),
+        names=command_tools("build"),
         profile_name="none" if selected is None else selected.name,
         additional_inputs=None if selected is None else profile_inputs(selected),
     )
@@ -170,7 +170,7 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
     source_run = open_source_run(
         state_home=state_home(),
         run_id=run_id,
-        names=(ToolName.PODMAN,),
+        names=command_tools("test"),
     )
     inputs = _inputs(source_run, platform_text, None)
     build = load_build_evidence(inputs)
@@ -251,7 +251,7 @@ def qualify_command(
         image_id=image_id,
         version=version,
         state_home=state_home(),
-        names=tuple(ToolName),
+        names=command_tools("qualify"),
         profile_name="none" if selected is None else selected.name,
         additional_inputs=additional_inputs or None,
     )
@@ -380,7 +380,7 @@ def assemble_command(
         image_id=image_id,
         version=version,
         state_home=state_home(),
-        names=(),
+        names=command_tools("assemble"),
         profile_name="none" if selected is None else selected.name,
         additional_inputs=None if selected is None else profile_inputs(selected),
     )

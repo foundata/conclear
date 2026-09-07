@@ -24,6 +24,7 @@ from conclear.artifacts import (
 )
 from conclear.config import ImageConfig, RepositoryConfig
 from conclear.database import select_fresh_database, trivy_cache_root
+from conclear.dependencies import command_tools
 from conclear.errors import (
     ConClearError,
     InvalidInvocationError,
@@ -57,7 +58,6 @@ from conclear.services.run_context import (
     hook_runner,
     open_source_run,
 )
-from conclear.tools import ToolName
 from conclear.values import (
     Digest,
     OCIReference,
@@ -130,7 +130,7 @@ def execute_release(
         image_id=request.image_id,
         version=request.version,
         state_home=request.state_home,
-        names=tuple(ToolName),
+        names=command_tools("release"),
         profile_name=request.profile.name,
         additional_inputs=_profile_inputs(request.profile),
         id_factory=id_factory or UlidFactory(),
@@ -169,7 +169,7 @@ def resume_release(
     source_run = open_source_run(
         state_home=state_home,
         run_id=run_id,
-        names=tuple(ToolName),
+        names=command_tools("release"),
     )
     workspace = source_run.workspace
     snapshot = workspace.load()

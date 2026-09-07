@@ -2,8 +2,9 @@
 
 The inventory enumerates every compatibility surface that `DEVELOPMENT.md`
 promises to change only deliberately: the Click command hierarchy with its
-options and arguments, the bundled JSON Schemas, public record types and
-their schema versions, exit statuses, stable check identifiers and current
+options and arguments, the tool, profile and credential dependencies each
+command declares, the bundled JSON Schemas, public record types and their
+schema versions, exit statuses, stable check identifiers and current
 implementation promises. It is rendered deterministically and committed as
 `docs/compatibility-inventory.json`; the unit suite fails when the implementation
 drifts from that committed file, so a surface change is always an explicit,
@@ -21,6 +22,11 @@ import click
 
 from conclear.catalog import load_catalog
 from conclear.cli import root
+from conclear.dependencies import (
+    COMMAND_DEPENDENCIES,
+    DOCTOR_SCOPES,
+    scope_dependencies,
+)
 from conclear.errors import ExitStatus
 from conclear.identity import VERSION
 from conclear.implementation import MATRIX_SCHEMA_VERSION, load_implementation_matrix
@@ -114,20 +120,31 @@ def write_inventory(path: Path) -> None:
 def _commands(command: click.Command, path: tuple[str, ...]) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
     if path:
-        entries.append(
-            {
-                "name": " ".join(path),
-                "group": isinstance(command, click.Group),
-                "help": (command.help or "").strip().splitlines()[0]
-                if command.help
-                else "",
-                "parameters": [_parameter(item) for item in command.params],
-            }
-        )
+        entry: dict[str, object] = {
+            "name": " ".join(path),
+            "group": isinstance(command, click.Group),
+            "help": (command.help or "").strip().splitlines()[0]
+            if command.help
+            else "",
+            "parameters": [_parameter(item) for item in command.params],
+        }
+        if not isinstance(command, click.Group):
+            entry["dependencies"] = _dependencies(" ".join(path))
+        entries.append(entry)
     if isinstance(command, click.Group):
         for name in sorted(command.commands):
             entries.extend(_commands(command.commands[name], (*path, name)))
     return entries
+
+
+def _dependencies(name: str) -> dict[str, object]:
+    if name == "doctor":
+        return {
+            "scopes": {
+                scope: scope_dependencies(scope).to_dict() for scope in DOCTOR_SCOPES
+            }
+        }
+    return COMMAND_DEPENDENCIES[name].to_dict()
 
 
 def _parameter(parameter: click.Parameter) -> dict[str, object]:

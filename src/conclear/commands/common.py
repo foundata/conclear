@@ -21,7 +21,7 @@ from conclear.release_profile import (
     ReleaseProfile,
     load_release_profile,
 )
-from conclear.runtime import ApplicationRuntime
+from conclear.runtime import ApplicationRuntime, ToolProblem
 from conclear.secrets import read_passphrase
 from conclear.services.run_context import finish_run_failure
 from conclear.tools import ToolName
@@ -141,10 +141,25 @@ def owned_run(workspace: RunWorkspace) -> Iterator[None]:
 @contextmanager
 def command_runtime(names: tuple[ToolName, ...]) -> Iterator[ApplicationRuntime]:
     """Create and remove a command-scoped environment with no external resources."""
+    with _command_root() as root:
+        yield ApplicationRuntime.create(root, names=names)
+
+
+@contextmanager
+def diagnostic_runtime(
+    names: tuple[ToolName, ...],
+) -> Iterator[tuple[ApplicationRuntime, tuple[ToolProblem, ...]]]:
+    """Like `command_runtime`, but report every unresolved tool instead of the first."""
+    with _command_root() as root:
+        yield ApplicationRuntime.diagnose(root, names=names)
+
+
+@contextmanager
+def _command_root() -> Iterator[Path]:
     root = state_home() / "conclear" / "commands"
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="command-", dir=root) as temporary:
-        yield ApplicationRuntime.create(Path(temporary), names=names)
+        yield Path(temporary)
 
 
 def ci_context(selected: ReleaseProfile) -> CIContextObservation | None:

@@ -11,15 +11,32 @@ from conclear.adapters.hadolint import HadolintAdapter
 from conclear.adapters.podman import PodmanAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
-from conclear.errors import OperationalError
+from conclear.errors import ConClearError, OperationalError
 from conclear.process import ProcessEnvironment, ProcessRunner
 from conclear.records import ToolIdentity
 from conclear.tools import ResolvedTool, ToolName, ToolResolver
 
 
 @dataclass(frozen=True, slots=True)
+class ToolProblem:
+    """One host tool that could not be resolved for a diagnosis."""
+
+    name: ToolName
+    failure: ConClearError
+
+    @property
+    def message(self) -> str:
+        """Return the failure text prefixed by the tool name."""
+        return f"{self.name.value}: {self.failure}"
+
+
+@dataclass(frozen=True, slots=True)
 class ApplicationRuntime:
-    """Resolved tools and adapters held immutable for one command or release run."""
+    """Resolved tools and adapters held immutable for one command or release run.
+
+    A runtime resolves only the tools its command executes; the identities it
+    records are exactly those tools.
+    """
 
     root: Path
     environment: dict[str, str]
@@ -38,8 +55,50 @@ class ApplicationRuntime:
         root: Path,
         *,
         names: tuple[ToolName, ...] = tuple(ToolName),
+        resolver: ToolResolver | None = None,
     ) -> "ApplicationRuntime":
-        """Create isolated XDG paths and resolve the requested supported tools."""
+        """Create isolated XDG paths and resolve exactly the requested tools."""
+        environment, runner = cls._prepare(root)
+        resolved = (resolver or ToolResolver(runner=runner)).resolve_all(
+            environment=environment,
+            names=names,
+        )
+        return cls(
+            root=root,
+            environment=environment,
+            runner=runner,
+            tools={item.name: item for item in resolved},
+        )
+
+    @classmethod
+    def diagnose(
+        cls,
+        root: Path,
+        *,
+        names: tuple[ToolName, ...],
+        resolver: ToolResolver | None = None,
+    ) -> tuple["ApplicationRuntime", tuple[ToolProblem, ...]]:
+        """Resolve every requested tool and report each failure instead of the first.
+
+        The returned runtime holds only the tools that resolved; a diagnosis
+        must not proceed to use it while problems remain.
+        """
+        environment, runner = cls._prepare(root)
+        selected = resolver or ToolResolver(runner=runner)
+        tools: dict[ToolName, ResolvedTool] = {}
+        problems: list[ToolProblem] = []
+        for name in dict.fromkeys(names):
+            try:
+                tools[name] = selected.resolve(name, environment=environment)
+            except ConClearError as exc:
+                problems.append(ToolProblem(name, exc))
+        return (
+            cls(root=root, environment=environment, runner=runner, tools=tools),
+            tuple(problems),
+        )
+
+    @staticmethod
+    def _prepare(root: Path) -> tuple[dict[str, str], ProcessRunner]:
         paths = {
             "home": root / "home",
             "config": root / "config",
@@ -50,24 +109,14 @@ class ApplicationRuntime:
         }
         for path in paths.values():
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
-        process_environment = ProcessEnvironment(
+        environment = ProcessEnvironment(
             home=paths["home"],
             config_home=paths["config"],
             cache_home=paths["cache"],
             state_home=paths["state"],
             runtime_dir=paths["runtime"],
         ).values()
-        runner = ProcessRunner()
-        resolved = ToolResolver(runner=runner).resolve_all(
-            environment=process_environment,
-            names=names,
-        )
-        return cls(
-            root=root,
-            environment=process_environment,
-            runner=runner,
-            tools={item.name: item for item in resolved},
-        )
+        return environment, ProcessRunner()
 
     @property
     def identities(self) -> tuple[ToolIdentity, ...]:

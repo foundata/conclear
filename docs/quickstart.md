@@ -526,11 +526,15 @@ on another registry before qualification or remote mutation.
 
 ## 11. Check and run the release environment
 
-`doctor` checks the project configuration, supported tools, target execution,
-registry access, signing configuration and public Sigstore services without
-publishing or signing:
+`doctor` checks the environment for one scope without publishing or signing.
+`--scope qualify` needs no release profile and proves the static toolchain,
+run-owned rootless storage and an execution mode for every configured platform;
+the default `release` scope adds the release profile, the selected registry
+backend and the public Sigstore services. Every missing or unsupported tool of
+the scope is reported at once:
 
 ```sh
+conclear doctor --config conclear.toml --scope qualify
 conclear doctor --config conclear.toml --profile foundata
 ```
 

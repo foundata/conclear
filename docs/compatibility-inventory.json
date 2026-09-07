@@ -609,6 +609,16 @@
   "commandResultSchemaVersion": 1,
   "commands": [
     {
+      "dependencies": {
+        "profile": "optional",
+        "registryControl": false,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [
+          "git"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Verify exported qualification transports and assemble a release candidate.",
       "name": "assemble",
@@ -692,6 +702,18 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "required",
+        "registryControl": false,
+        "registryCredentials": true,
+        "signing": true,
+        "tools": [
+          "git",
+          "skopeo",
+          "cosign"
+        ],
+        "transparencyLog": true
+      },
       "group": false,
       "help": "Attach SPDX and provenance and sign every unique subject digest.",
       "name": "attest",
@@ -744,6 +766,17 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "optional",
+        "registryControl": false,
+        "registryCredentials": true,
+        "signing": false,
+        "tools": [
+          "git",
+          "buildah"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Build one platform into isolated storage and an OCI layout.",
       "name": "build",
@@ -827,6 +860,16 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "none",
+        "registryControl": false,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [
+          "hadolint"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Run static Containerfile, context, metadata and pin-declaration checks.",
       "name": "check",
@@ -870,6 +913,18 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "optional",
+        "registryControl": true,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [
+          "git",
+          "buildah",
+          "podman"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Remove only ephemeral resources owned by one release run.",
       "name": "cleanup",
@@ -912,8 +967,53 @@
       ]
     },
     {
+      "dependencies": {
+        "scopes": {
+          "check": {
+            "profile": "none",
+            "registryControl": false,
+            "registryCredentials": false,
+            "signing": false,
+            "tools": [
+              "hadolint"
+            ],
+            "transparencyLog": false
+          },
+          "qualify": {
+            "profile": "optional",
+            "registryControl": false,
+            "registryCredentials": true,
+            "signing": false,
+            "tools": [
+              "git",
+              "buildah",
+              "podman",
+              "skopeo",
+              "hadolint",
+              "trivy"
+            ],
+            "transparencyLog": false
+          },
+          "release": {
+            "profile": "required",
+            "registryControl": true,
+            "registryCredentials": true,
+            "signing": true,
+            "tools": [
+              "git",
+              "buildah",
+              "podman",
+              "skopeo",
+              "hadolint",
+              "trivy",
+              "cosign"
+            ],
+            "transparencyLog": true
+          }
+        }
+      },
       "group": false,
-      "help": "Validate the release environment without publishing or signing.",
+      "help": "Validate the environment for one command scope without publishing or signing.",
       "name": "doctor",
       "parameters": [
         {
@@ -928,13 +1028,29 @@
           "type": "path"
         },
         {
+          "choices": [
+            "check",
+            "qualify",
+            "release"
+          ],
+          "declarations": [
+            "--scope"
+          ],
+          "default": "release",
+          "kind": "option",
+          "multiple": false,
+          "name": "scope_text",
+          "required": false,
+          "type": "choice"
+        },
+        {
           "declarations": [
             "--profile"
           ],
           "kind": "option",
           "multiple": false,
           "name": "profile_name",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -961,6 +1077,16 @@
       "parameters": []
     },
     {
+      "dependencies": {
+        "profile": "none",
+        "registryControl": false,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [
+          "git"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Verify one proposal against the worktree and apply it all-or-nothing.",
       "name": "pins apply",
@@ -1004,6 +1130,16 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "optional",
+        "registryControl": false,
+        "registryCredentials": true,
+        "signing": false,
+        "tools": [
+          "skopeo"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Resolve pins, update durable history and report divergence.",
       "name": "pins check",
@@ -1057,6 +1193,17 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "optional",
+        "registryControl": false,
+        "registryCredentials": true,
+        "signing": false,
+        "tools": [
+          "git",
+          "skopeo"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Resolve each declared tag once and write a non-mutating update proposal.",
       "name": "pins propose",
@@ -1120,6 +1267,18 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "required",
+        "registryControl": true,
+        "registryCredentials": true,
+        "signing": false,
+        "tools": [
+          "git",
+          "skopeo",
+          "cosign"
+        ],
+        "transparencyLog": true
+      },
       "group": false,
       "help": "Apply release tags to only the verified digest and remove the candidate.",
       "name": "promote",
@@ -1172,6 +1331,16 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "none",
+        "registryControl": false,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [
+          "git"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Generate SLSA Provenance v1 for one accepted candidate.",
       "name": "provenance",
@@ -1204,6 +1373,17 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "required",
+        "registryControl": true,
+        "registryCredentials": true,
+        "signing": false,
+        "tools": [
+          "git",
+          "skopeo"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Publish one accepted candidate and verify its complete remote graph.",
       "name": "publish",
@@ -1246,6 +1426,21 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "optional",
+        "registryControl": false,
+        "registryCredentials": true,
+        "signing": false,
+        "tools": [
+          "git",
+          "buildah",
+          "podman",
+          "skopeo",
+          "hadolint",
+          "trivy"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Run all local gates and emit one platform qualification.",
       "name": "qualify",
@@ -1339,6 +1534,22 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "required",
+        "registryControl": true,
+        "registryCredentials": true,
+        "signing": true,
+        "tools": [
+          "git",
+          "buildah",
+          "podman",
+          "skopeo",
+          "hadolint",
+          "trivy",
+          "cosign"
+        ],
+        "transparencyLog": true
+      },
       "group": false,
       "help": "Execute or resume the complete isolated release through promotion.",
       "name": "release",
@@ -1432,6 +1643,18 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "required",
+        "registryControl": false,
+        "registryCredentials": true,
+        "signing": true,
+        "tools": [
+          "skopeo",
+          "trivy",
+          "cosign"
+        ],
+        "transparencyLog": true
+      },
       "group": false,
       "help": "Re-evaluate retained SBOMs for one immutable released subject.",
       "name": "rescan",
@@ -1536,6 +1759,17 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "none",
+        "registryControl": false,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [
+          "git",
+          "podman"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Import one exact layout and run declared constrained tests.",
       "name": "test",
@@ -1584,6 +1818,16 @@
       "parameters": []
     },
     {
+      "dependencies": {
+        "profile": "none",
+        "registryControl": false,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [
+          "git"
+        ],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Export one accepted qualification, its layout and evidence as a transport.",
       "name": "transport export",
@@ -1651,6 +1895,18 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "required",
+        "registryControl": false,
+        "registryCredentials": true,
+        "signing": true,
+        "tools": [
+          "git",
+          "skopeo",
+          "cosign"
+        ],
+        "transparencyLog": true
+      },
       "group": false,
       "help": "Verify remote evidence and attach signed release verification.",
       "name": "verify",
@@ -1703,6 +1959,14 @@
       ]
     },
     {
+      "dependencies": {
+        "profile": "none",
+        "registryControl": false,
+        "registryCredentials": false,
+        "signing": false,
+        "tools": [],
+        "transparencyLog": false
+      },
       "group": false,
       "help": "Report the application and implemented-guide identity.",
       "name": "version",

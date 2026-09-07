@@ -8,7 +8,13 @@ from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.registry_backends import create_registry_control
 from conclear.config import load_repository_config, normalize_observed_source_url
 from conclear.database import select_fresh_database, trivy_cache_root
-from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.dependencies import ProfileUse, command_tools, scope_dependencies
+from conclear.errors import (
+    ConClearError,
+    InvalidInvocationError,
+    OperationalError,
+    RuleRejectionError,
+)
 from conclear.jsonutil import sha256_bytes
 from conclear.pin_application import ApplicationStatus, apply_pin_proposal
 from conclear.pin_updates import (
@@ -21,9 +27,9 @@ from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import SourceIdentity, parse_timestamp, utc_now
 from conclear.registry_control import RegistryControl
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
-from conclear.runtime import ApplicationRuntime
+from conclear.runtime import ApplicationRuntime, ToolProblem
 from conclear.services.cleanup import cleanup_run
-from conclear.services.doctor import diagnose_environment
+from conclear.services.doctor import DoctorScope, diagnose_environment
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
 from conclear.services.rescan import (
     RescanSigning,
@@ -40,6 +46,7 @@ from .common import (
     ci_context,
     command_runtime,
     config_option,
+    diagnostic_runtime,
     emit,
     format_option,
     owned_run,
@@ -54,50 +61,88 @@ from .common import (
 
 @click.command("doctor")
 @config_option
-@required_profile_option
+@click.option(
+    "scope_text",
+    "--scope",
+    type=click.Choice([item.value for item in DoctorScope], case_sensitive=True),
+    default=DoctorScope.RELEASE.value,
+    show_default=True,
+    help=(
+        "Commands to validate the environment for: check needs the static "
+        "toolchain only, qualify adds rootless storage and platform execution, "
+        "release adds the release profile, registry backend and Sigstore services."
+    ),
+)
+@profile_option
 @format_option
-def doctor_command(config_path: Path, profile_name: str, output_format: str) -> None:
-    """Validate the release environment without publishing or signing."""
+def doctor_command(
+    config_path: Path, scope_text: str, profile_name: str | None, output_format: str
+) -> None:
+    """Validate the environment for one command scope without publishing or signing."""
+    scope = DoctorScope(scope_text)
+    dependencies = scope_dependencies(scope.value)
+    if profile_name is None and dependencies.profile is ProfileUse.REQUIRED:
+        raise click.UsageError(
+            f"--profile is required for --scope {scope.value}; use --scope "
+            f"{DoctorScope.QUALIFY.value} without a release profile"
+        )
     repository = load_repository_config(config_path)
-    selected = profile(profile_name)
-    registry_control = create_registry_control(
-        selected,
-        destinations=tuple(image.repository for image in repository.images),
-    )
+    selected = profile(profile_name) if profile_name else None
+    registry_control: RegistryControl | None = None
+    if scope is DoctorScope.RELEASE and selected is not None:
+        registry_control = create_registry_control(
+            selected,
+            destinations=tuple(image.repository for image in repository.images),
+        )
     try:
-        with command_runtime(tuple(ToolName)) as runtime:
+        with diagnostic_runtime(dependencies.tools) as (runtime, problems):
+            if problems:
+                raise _not_ready(scope, problems)
             observation = diagnose_environment(
                 repository,
-                selected,
                 runtime,
+                scope=scope,
+                profile=selected,
                 registry_control=registry_control,
             )
     finally:
-        registry_control.close()
-    observed_ci = ci_context(selected)
+        if registry_control is not None:
+            registry_control.close()
+    observed_ci = None if selected is None else ci_context(selected)
+    data: dict[str, object] = {
+        "scope": scope.value,
+        "tools": list(observation.tools),
+        "nativeArchitecture": observation.native_architecture,
+        "emulatedArchitectures": list(observation.emulated_architectures),
+    }
+    if selected is not None:
+        data["profile"] = selected.name
+        data["ciContextPolicy"] = selected.ci_context.value
+        data["ciContextObserved"] = isinstance(observed_ci, ObservedCIContext)
+        if isinstance(observed_ci, ObservedCIContext):
+            data["ciProvider"] = observed_ci.provider
+    if scope is DoctorScope.RELEASE:
+        data["registryProvider"] = observation.registry_provider
+        data["registryAccess"] = observation.registry_access
+        data["sigstoreAccess"] = observation.sigstore_access
     emit(
         CommandResult(
             "doctor",
             ResultStatus.SUCCESS,
-            "Release environment is ready",
-            data={
-                "tools": list(observation.tools),
-                "nativeArchitecture": observation.native_architecture,
-                "emulatedArchitectures": list(observation.emulated_architectures),
-                "registryProvider": observation.registry_provider,
-                "registryAccess": observation.registry_access,
-                "sigstoreAccess": observation.sigstore_access,
-                "ciContextPolicy": selected.ci_context.value,
-                "ciContextObserved": isinstance(observed_ci, ObservedCIContext),
-                **(
-                    {"ciProvider": observed_ci.provider}
-                    if isinstance(observed_ci, ObservedCIContext)
-                    else {}
-                ),
-            },
+            f"Environment is ready for {scope.value}",
+            data=data,
         ),
         output_format,
     )
+
+
+def _not_ready(scope: DoctorScope, problems: tuple[ToolProblem, ...]) -> ConClearError:
+    message = f"Environment is not ready for {scope.value}: " + "; ".join(
+        problem.message for problem in problems
+    )
+    if all(isinstance(problem.failure, RuleRejectionError) for problem in problems):
+        return RuleRejectionError(message, code="CC0301")
+    return OperationalError(message)
 
 
 @click.group("pins")
@@ -121,7 +166,7 @@ def pins_check_command(
     image = repository.image(image_id)
     selected = profile(profile_name) if profile_name else None
     auth_file = selected.auth_file if selected else None
-    with command_runtime((ToolName.SKOPEO,)) as runtime:
+    with command_runtime(command_tools("pins check")) as runtime:
         resolver = AuthenticatedPinResolver(runtime, auth_file)
         observations = check_image_pins(
             PinStore(state_home()), image, resolver=resolver, now=utc_now()
@@ -174,7 +219,7 @@ def pins_propose_command(
     auth_file = selected.auth_file if selected else None
     if output_path.is_symlink() or output_path.exists():
         raise InvalidInvocationError(f"Proposal output already exists: {output_path}")
-    with command_runtime((ToolName.GIT, ToolName.SKOPEO)) as runtime:
+    with command_runtime(command_tools("pins propose")) as runtime:
         source = _observed_source(runtime, repository.path.parent)
         proposal = propose_pin_updates(
             repository,
@@ -237,7 +282,7 @@ def pins_apply_command(
         raise InvalidInvocationError(
             f"Repository configuration is unavailable: {config_path}"
         ) from exc
-    with command_runtime((ToolName.GIT,)) as runtime:
+    with command_runtime(command_tools("pins apply")) as runtime:
         source = _observed_source(runtime, root)
     outcome = apply_pin_proposal(
         proposal,
@@ -322,7 +367,7 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
     workspace = RunWorkspace.open(state_home=state_home(), run_id=run_id)
     runtime = ApplicationRuntime.create(
         workspace.root / "environment",
-        names=(ToolName.GIT, ToolName.BUILDAH, ToolName.PODMAN),
+        names=command_tools("cleanup"),
     )
     registry_control: RegistryControl | None = None
     if profile_name is not None:
@@ -409,7 +454,7 @@ def rescan_command(
     with owned_run(workspace):
         runtime = ApplicationRuntime.create(
             workspace.root / "environment",
-            names=(ToolName.SKOPEO, ToolName.TRIVY, ToolName.COSIGN),
+            names=command_tools("rescan"),
         )
         workspace.bind_immutable_inputs(
             {

@@ -443,6 +443,16 @@
               "runId": {
                 "$ref": "#/$defs/runId"
               },
+              "scope": {
+                "enum": [
+                  "check",
+                  "qualify",
+                  "release"
+                ]
+              },
+              "profile": {
+                "$ref": "#/$defs/text"
+              },
               "tools": {
                 "type": "array",
                 "items": {
@@ -1574,6 +1584,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "scope": {
+          "enum": [
+            "check",
+            "qualify",
+            "release"
+          ]
+        },
+        "profile": {
+          "$ref": "#/$defs/text"
+        },
         "tools": {
           "type": "array",
           "items": {
@@ -1613,13 +1633,9 @@
         }
       },
       "required": [
-        "ciContextObserved",
-        "ciContextPolicy",
         "emulatedArchitectures",
         "nativeArchitecture",
-        "registryAccess",
-        "registryProvider",
-        "sigstoreAccess",
+        "scope",
         "tools"
       ]
     },

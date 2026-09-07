@@ -1,12 +1,17 @@
 import json
 import os
+import shutil
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+import conclear.tools as tools_module
+from conclear.cli import main
 from conclear.config import load_repository_config
+from conclear.dependencies import command_tools, scope_dependencies
 from conclear.errors import CommandExecutionError
 from conclear.hooks import HookRunner
 from conclear.jsonutil import sha256_bytes
@@ -23,7 +28,7 @@ from conclear.services.qualification import (
 )
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.runtime_tests import test_platform as run_platform_tests
-from conclear.tools import SUPPORTED_TOOLS, ToolName
+from conclear.tools import SUPPORTED_TOOLS, ToolName, ToolResolver
 from conclear.values import Platform
 from conclear.workspace import RunWorkspace
 from tests.local_integration.fixtures import (
@@ -732,3 +737,61 @@ def _wait_for_supervisor(
         command=command,
         timeout_seconds=5,
     )
+
+
+def test_qualification_scope_resolves_without_cosign_and_release_scope_names_it(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The real toolchain minus Cosign serves qualification; doctor names the gap."""
+
+    def hide_cosign(name: str, search_path: str) -> str | None:
+        if name == ToolName.COSIGN.value:
+            return None
+        return shutil.which(name, path=search_path)
+
+    resolver = ToolResolver(locator=hide_cosign)
+    runtime = ApplicationRuntime.create(
+        tmp_path / "qualify", names=command_tools("qualify"), resolver=resolver
+    )
+    assert set(runtime.tools) == set(command_tools("qualify"))
+    assert [item.name for item in runtime.identities] == sorted(
+        tool.value for tool in command_tools("qualify")
+    )
+    for name in command_tools("qualify"):
+        assert runtime.tools[name].version in SUPPORTED_TOOLS[name].supported_versions
+
+    _, problems = ApplicationRuntime.diagnose(
+        tmp_path / "release",
+        names=scope_dependencies("release").tools,
+        resolver=resolver,
+    )
+    assert [problem.name for problem in problems] == [ToolName.COSIGN]
+    assert problems[0].message == "cosign: Required tool is unavailable: cosign"
+
+    root = repository_factory()
+    monkeypatch.setattr(tools_module, "_locate_on_path", hide_cosign)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    for scope in ("check", "qualify"):
+        capsys.readouterr()
+        exit_code = main(
+            [
+                "doctor",
+                "--config",
+                str(root / "conclear.toml"),
+                "--scope",
+                scope,
+                "--format",
+                "json",
+            ]
+        )
+        result = json.loads(capsys.readouterr().out)
+        assert exit_code == 0, result
+        assert result["data"]["scope"] == scope
+        assert "profile" not in result["data"]
+        assert "registryProvider" not in result["data"]
+        assert [item["name"] for item in result["data"]["tools"]] == sorted(
+            tool.value for tool in scope_dependencies(scope).tools
+        )

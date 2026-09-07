@@ -13,6 +13,7 @@ from conclear.artifacts import (
     load_verification,
 )
 from conclear.config import ImageConfig
+from conclear.dependencies import command_tools
 from conclear.errors import InvalidInvocationError
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import format_timestamp, utc_now
@@ -33,7 +34,6 @@ from conclear.services.release import (
     signer_identity,
 )
 from conclear.services.run_context import SourceRun, open_source_run
-from conclear.tools import ToolName
 from conclear.workspace import RunState
 
 from .common import (
@@ -54,7 +54,9 @@ from .common import (
 @format_option
 def provenance_command(run_id: str, output_format: str) -> None:
     """Generate SLSA Provenance v1 for one accepted candidate."""
-    source_run = open_source_run(state_home=state_home(), run_id=run_id, names=())
+    source_run = open_source_run(
+        state_home=state_home(), run_id=run_id, names=command_tools("provenance")
+    )
     if source_run.workspace.load().state is not RunState.ASSEMBLED:
         raise InvalidInvocationError("Provenance requires assembled state")
     snapshot = source_run.workspace.load()
@@ -87,7 +89,7 @@ def provenance_command(run_id: str, output_format: str) -> None:
 @format_option
 def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
     """Publish one accepted candidate and verify its complete remote graph."""
-    source_run, selected = _remote_run(run_id, profile_name)
+    source_run, selected = _remote_run(run_id, profile_name, "publish")
     image = _image(source_run)
     candidate = load_candidate(source_run.workspace, image)
     load_release_evidence(source_run.workspace, image)
@@ -134,7 +136,7 @@ def attest_command(
     output_format: str,
 ) -> None:
     """Attach SPDX and provenance and sign every unique subject digest."""
-    source_run, selected = _remote_run(run_id, profile_name)
+    source_run, selected = _remote_run(run_id, profile_name, "attest")
     key = _private_key(selected)
     passphrase = signing_passphrase(selected, passphrase_fd, required=True)
     image = _image(source_run)
@@ -178,7 +180,7 @@ def verify_command(
     output_format: str,
 ) -> None:
     """Verify remote evidence and attach signed release verification."""
-    source_run, selected = _remote_run(run_id, profile_name)
+    source_run, selected = _remote_run(run_id, profile_name, "verify")
     key = _private_key(selected)
     passphrase = signing_passphrase(selected, passphrase_fd, required=True)
     image = _image(source_run)
@@ -234,7 +236,7 @@ def promote_command(
     output_format: str,
 ) -> None:
     """Apply release tags to only the verified digest and remove the candidate."""
-    source_run, selected = _remote_run(run_id, profile_name)
+    source_run, selected = _remote_run(run_id, profile_name, "promote")
     image = _image(source_run)
     candidate = load_candidate(source_run.workspace, image)
     published = load_published(source_run.workspace, candidate, image)
@@ -370,10 +372,12 @@ def release_command(
     )
 
 
-def _remote_run(run_id: str, profile_name: str) -> tuple[SourceRun, ReleaseProfile]:
+def _remote_run(
+    run_id: str, profile_name: str, command: str
+) -> tuple[SourceRun, ReleaseProfile]:
     selected = profile(profile_name)
     source_run = open_source_run(
-        state_home=state_home(), run_id=run_id, names=tuple(ToolName)
+        state_home=state_home(), run_id=run_id, names=command_tools(command)
     )
     inputs = source_run.workspace.load().immutable_inputs
     if inputs.get("profile") != selected.name:
