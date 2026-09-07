@@ -28,7 +28,7 @@ from conclear.services.qualification import (
 )
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.runtime_tests import test_platform as run_platform_tests
-from conclear.tools import SUPPORTED_TOOLS, ToolName, ToolResolver
+from conclear.tools import SUPPORTED_TOOLS, ToolName, ToolResolver, ToolVersion
 from conclear.values import Platform
 from conclear.workspace import RunWorkspace
 from tests.local_integration.fixtures import (
@@ -44,9 +44,14 @@ pytestmark = pytest.mark.local_integration
 def test_supported_real_tool_matrix_and_read_only_interfaces(tmp_path: Path) -> None:
     runtime = ApplicationRuntime.create(tmp_path / "environment")
 
-    assert {name: runtime.tools[name].version for name in ToolName} == {
-        name: next(iter(SUPPORTED_TOOLS[name].supported_versions)) for name in ToolName
-    }
+    for name in ToolName:
+        version = ToolVersion.parse(runtime.tools[name].version)
+        policy = SUPPORTED_TOOLS[name].policy
+        assert policy.accepts(version), (name, version)
+        assert version in policy.tested, (
+            f"{name.value} {version} ran this tier but is not listed as real-tool "
+            "tested; add it to the policy only after this tier passed with it"
+        )
     repository = tmp_path / "repository"
     repository.mkdir(mode=0o700)
     (repository / "tracked.txt").write_text("test\n", encoding="utf-8")
@@ -761,7 +766,10 @@ def test_qualification_scope_resolves_without_cosign_and_release_scope_names_it(
         tool.value for tool in command_tools("qualify")
     )
     for name in command_tools("qualify"):
-        assert runtime.tools[name].version in SUPPORTED_TOOLS[name].supported_versions
+        assert (
+            ToolVersion.parse(runtime.tools[name].version)
+            in SUPPORTED_TOOLS[name].policy.tested
+        )
 
     _, problems = ApplicationRuntime.diagnose(
         tmp_path / "release",

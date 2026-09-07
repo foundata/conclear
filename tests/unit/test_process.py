@@ -301,3 +301,8 @@ def test_tool_resolver_rejects_unsupported_version(tmp_path: Path) -> None:
     ) as failure:
         resolver.resolve(ToolName.COSIGN, environment={"PATH": "/usr/bin"})
     assert failure.value.code == "CC0301"
+    assert "accepted 3.1.3 <= version < 4.0.0" in str(failure.value)
+    assert "excluded: none" in str(failure.value)
+    assert "real-tool tested (not the only accepted versions): 3.1.3" in str(
+        failure.value
+    )
