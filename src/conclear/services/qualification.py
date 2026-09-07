@@ -38,7 +38,8 @@ from conclear.services.qualification_inputs import (
     execution_observation,
     require_execution_mode,
 )
-from conclear.services.runtime_tests import RuntimeAdapter, test_platform
+from conclear.services.runtime_lifecycle import RuntimeAdapter
+from conclear.services.runtime_tests import test_platform
 from conclear.values import Platform
 from conclear.workspace import (
     ResourceKind,
