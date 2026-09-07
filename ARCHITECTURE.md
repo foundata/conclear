@@ -388,13 +388,18 @@ external images as resolved dependencies.
 
 An image is releasable when it declares a `repository`; it then also declares
 its release tags. An image without a repository is test-only: it declares only
-what a dependency uses, namely its build inputs, platforms, pins, runtime
-contract and its own dependencies, and the keys that only a qualified image
-uses are rejected there. ConClear refuses to select a test-only image for a
-build, qualification, release or rescan, ignores it when probing or cleaning
-registry destinations, and rejects a test-only image that no image depends on.
-A releasable image may serve as a test dependency as well; both roles use the
-same declaration.
+what a dependency uses, namely its build inputs, platforms, pins, pin limits,
+runtime contract and its own dependencies, and the keys that only a qualified
+image uses are rejected there. ConClear's typed model mirrors that split: the
+common build-image model holds exactly those facts, the release image type adds
+the destination, tags, native-test requirements, scanner and rescan policy,
+test inputs, hooks, vulnerability exceptions and release limits, and scanning,
+runtime qualification, assembly, publication and rescan accept only the
+release image type, so release-only state cannot exist on a test-only image.
+ConClear refuses to select a test-only image for a build, qualification, release
+or rescan, ignores it when probing or cleaning registry destinations, and
+rejects a test-only image that no image depends on. A releasable image may serve
+as a test dependency as well; both roles use the same declaration.
 
 Vulnerability exceptions use a dedicated typed table declared inside the image
 they apply to, which identifies the image as the guide requires; each exception
