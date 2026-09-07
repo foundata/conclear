@@ -319,9 +319,10 @@ non-zero UID.
 The `service`, `one-shot` and `scratch` profiles use the ordinary process
 lifecycle and explicitly disable Podman's automatic systemd mode. The separate
 `systemd` profile requires UID 0, a root requirement and a closed `systemd`
-table containing at least one `required_units` entry and a `stop_signal` of
-`RTMIN+3` or `SIGRTMIN+3`. Its Containerfile must set the same `STOPSIGNAL`. The
-profile adds `/run`, `/run/lock`, `/tmp` and `/var/log/journal` to the effective
+table containing at least one `required_units` entry. The profile declares no
+stop signal: systemd shuts down on `SIGRTMIN+3`, ConClear always sends that
+signal, and the Containerfile must set the same `STOPSIGNAL`. The profile adds
+`/run`, `/run/lock`, `/tmp` and `/var/log/journal` to the effective
 private tmpfs set. Repository configuration may declare further writable paths,
 but an immutable path cannot overlap any effective writable path.
 
@@ -850,11 +851,10 @@ bounding and effective sets. These constraints apply equally to the systemd
 profile.
 
 For a systemd image, ConClear explicitly enables Podman's systemd mode and
-applies the configured stop signal. It verifies that PID 1 is `systemd`, that a
+applies the `SIGRTMIN+3` stop signal. It verifies that PID 1 is `systemd`, that a
 `systemctl` manager query succeeds and that every configured required unit
 becomes active. Required-unit probes and an optional application health command
-share the one monotonic startup budget. The profile then sends the configured
-systemd stop signal and applies the ordinary bounded shutdown and exit-status
+share the one monotonic startup budget. The profile then sends `SIGRTMIN+3` and applies the ordinary bounded shutdown and exit-status
 checks. Failure of PID 1, manager, unit, health or shutdown expectations
 produces a `CC0403` rejection; an inability to invoke or observe Podman remains
 an operational failure.
