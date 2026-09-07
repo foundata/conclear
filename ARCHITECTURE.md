@@ -382,9 +382,13 @@ The platform qualification records, for each dependency, its Containerfile and
 context digests, build arguments, external images, pin observations and
 effective pin limits next to its layout and manifest digests. Transport import
 and assembly verify that evidence against the configured dependency set, pins
-and limits, assembly requires it to agree across platforms, and release
-provenance names each dependency's Containerfile, context, tested manifest and
-external images as resolved dependencies.
+and limits, and assembly requires it to agree across platforms. Build arguments
+are validated wherever a record is read: `IMAGE_REVISION` must name the record's
+source revision, `IMAGE_CREATED` must equal the `SOURCE_DATE_EPOCH` instant,
+every dependency must carry the same arguments as the qualified image, and
+assembly requires the arguments to agree across platforms. Release provenance
+names each dependency's Containerfile, context, tested manifest and external
+images as resolved dependencies.
 
 An image is releasable when it declares a `repository`; it then also declares
 its release tags. An image without a repository is test-only: it declares only
