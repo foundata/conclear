@@ -373,12 +373,24 @@ defaults to zero.
 Test-image dependencies form an acyclic graph of image IDs declared in the same
 `conclear.toml`. ConClear rejects unknown IDs, self-dependencies, duplicates,
 cycles and dependencies that do not cover every platform of the depending image.
-For a qualification, ConClear builds each dependency once from the same isolated
-revision, source timestamp, target platform, version input and resolved Buildah
-toolchain, validates its OCI layout and labels, imports it by its reverified
-manifest digest, and exposes no mutable reference. A dependency participates
-only in the primary image's tests and is not represented as independently
-qualified or releasable.
+Before a qualification builds anything, the static checks and the pin gate run
+for the complete dependency closure: the selected image and every transitive
+dependency, each under its own Containerfile, context, declared pins and pin
+limits. Every distinct readable tag is resolved once for the whole closure, so
+images that share a tag observe one digest, and a static rejection anywhere in
+the closure stops the run before any registry is contacted. ConClear then
+builds each dependency once from the same isolated revision, source timestamp,
+target platform, version input and resolved Buildah toolchain, validates its
+OCI layout and labels, imports it by its reverified manifest digest, and
+exposes no mutable reference. A dependency participates only in the primary
+image's tests and is not represented as independently qualified or releasable.
+The platform qualification records, for each dependency, its Containerfile and
+context digests, build arguments, external images, pin observations and
+effective pin limits next to its layout and manifest digests. Assembly verifies
+that evidence against the configured dependency set, pins and limits and
+requires it to agree across platforms, and release provenance names each
+dependency's Containerfile, context, tested manifest and external images as
+resolved dependencies.
 
 An image is releasable when it declares a `repository`; it then also declares
 its release tags. An image without a repository is test-only: it declares only
@@ -575,7 +587,7 @@ the repository.
 | `pins apply`       | Verify one proposal against the current worktree, Git revision and file digests, then replace only the proposed byte spans all-or-nothing without resolving, committing, building or publishing. |
 | `build`            | Build one platform into isolated Buildah storage and export an OCI layout plus build metadata. |
 | `test`             | Validate and import one layout, compare its imported digest, and run generic and repository-specific tests under the declared runtime constraints. |
-| `qualify`          | Run `check`, the pin gate, `build`, `test` and evidence generation for one platform in its own worker run and emit `platform-qualification-<platform>.json`. |
+| `qualify`          | Run `check` and the pin gate for the image and its test dependencies, then `build`, `test` and evidence generation for one platform in its own worker run and emit `platform-qualification-<platform>.json`. |
 | `transport export` | Write one accepted qualification, its OCI layout and the evidence payloads it names as a new archive or directory transport with a digest-binding manifest, and report the transport and record digests. |
 | `assemble`         | Create a coordinator run from the reviewed source revision, import each transport only against a caller-supplied digest, verify every record, layout, descriptor and payload, require exact platform coverage, create an index when needed and emit `release-candidate.json`. |
 | `provenance`       | Generate an in-toto Statement predicate using SLSA Provenance v1 from the accepted candidate and observed release data. |
