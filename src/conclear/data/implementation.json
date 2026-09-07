@@ -228,6 +228,7 @@
         {"path": "tests/unit/test_config.py", "tier": "unit"},
         {"path": "tests/unit/test_checks.py", "tier": "unit"},
         {"path": "tests/unit/test_qualification.py", "tier": "unit"},
+        {"path": "tests/unit/test_runtime_controls.py", "tier": "unit"},
         {"path": "tests/unit/test_adapters.py", "tier": "unit"}
       ]
     },
