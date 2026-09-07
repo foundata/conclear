@@ -456,3 +456,32 @@ def test_hadolint_diagnostics_use_the_adapter_check_identifier(
     assert finding.severity == "error"
     assert finding.message == "Hadolint DL3008: Pin versions in apt get install"
     assert finding.location == f"{root / 'Containerfile'}:7:5"
+
+
+def test_comment_lines_inside_a_continued_instruction_are_ignored(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        "FROM quay.io/example/base:1@sha256:" + "a" * 64 + "\n"
+        "RUN apt-get update \\\n"
+        "    # comments may interleave a continued instruction\n"
+        "    && apt-get install -y curl \\\n"
+        "    && rm -rf /var/lib/apt/lists/*\n"
+        "USER 10001\n"
+        'ENTRYPOINT ["/app"]\n',
+        encoding="utf-8",
+    )
+
+    analysis = analyze_containerfile(path)
+
+    run = next(item for item in analysis.instructions if item.keyword == "RUN")
+    assert (run.line_number, run.end_line_number) == (2, 5)
+    assert "apt-get install -y curl" in run.argument
+    assert "#" not in run.argument
+    assert [item.keyword for item in analysis.instructions] == [
+        "FROM",
+        "RUN",
+        "USER",
+        "ENTRYPOINT",
+    ]

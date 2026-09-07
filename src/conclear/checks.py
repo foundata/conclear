@@ -188,7 +188,7 @@ def analyze_containerfile(
         elif keyword == "VOLUME":
             final_volumes.extend(
                 (volume, line_location)
-                for volume in _volume_paths(argument, line_location, findings)
+                for volume in volume_paths(argument, line_location, findings)
             )
         elif keyword == "ENTRYPOINT":
             has_entrypoint = True
@@ -421,9 +421,10 @@ def _normalized_signal(value: str) -> str:
     return value if value.startswith("SIG") else f"SIG{value}"
 
 
-def _volume_paths(
+def volume_paths(
     argument: str, location: str, findings: list[Finding]
 ) -> tuple[str, ...]:
+    """Return the destinations one VOLUME instruction declares, in either form."""
     try:
         parsed = (
             json.loads(argument) if argument.startswith("[") else shlex.split(argument)
@@ -481,7 +482,11 @@ def _logical_instructions(text: str, path: Path) -> tuple[Instruction, ...]:
     start_line = 0
     for line_number, raw_line in enumerate(text.splitlines(), start=1):
         stripped = raw_line.strip()
-        if not pending and (not stripped or stripped.startswith("#")):
+        if stripped.startswith("#"):
+            # A comment line never ends a continued instruction: the builder
+            # removes comment lines before it joins continuation lines.
+            continue
+        if not pending and not stripped:
             continue
         if not pending:
             start_line = line_number
