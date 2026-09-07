@@ -235,7 +235,10 @@ affected by the commit. ConClear uses these recurring scopes:
 | `transport`                                                          | Qualification transport export, caller-verified import and coordinator assembly inputs |
 | `scanner`                                                            | Scan policy, immutable database snapshots and scanner behavior shared by qualification and rescans |
 | `release`                                                            | Release-run orchestration, resume behavior and terminal summaries |
-| `publication`                                                        | Candidate publication, registry observation, attestations, signing, verification and promotion |
+| `publication`                                                        | Candidate publication, remote-graph verification and the ownership-journal retry rule shared by the later phases |
+| `attestation`                                                        | SBOM and provenance attestation, image signing and the downloaded-statement matching later phases reuse |
+| `verification`                                                       | Independent verification of the attested candidate and the signed release-verification result |
+| `promotion`                                                          | Release-tag writes, tag protection and candidate removal for the verified digest |
 | `registry`                                                           | Provider-neutral registry control contracts, backend selection and support policy |
 | `rescan`                                                             | Post-release scanning, triage, remediation history and rescan cleanup |
 | `adapters`                                                           | Shared adapter contracts or one change spanning several external tools |
