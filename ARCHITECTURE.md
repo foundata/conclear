@@ -248,10 +248,10 @@ schema is versioned and validated before any build or network operation. Unknown
 keys are errors so misspelled security settings cannot be ignored.
 
 The configuration declares image definitions, Containerfile and context paths, a
-fully qualified release destination, required platforms, native-testing
-requirements, runtime expectations, resource limits, typed test inputs,
-test-image dependencies, test hooks, image-pin intent, candidate lifetime
-reductions and permitted exceptions. Paths resolve below the isolated source
+fully qualified release destination for every releasable image, required
+platforms, native-testing requirements, runtime expectations, resource limits,
+typed test inputs, test-image dependencies, test hooks, image-pin intent,
+candidate lifetime reductions and permitted exceptions. Paths resolve below the isolated source
 root and cannot escape through `..`, symlinks or archive entries. The configured
 source is always a credential-free canonical HTTPS repository identity. An
 observed Git remote may use that HTTPS form or an equivalent
@@ -373,6 +373,16 @@ toolchain, validates its OCI layout and labels, imports it by its reverified
 manifest digest, and exposes no mutable reference. A dependency participates
 only in the primary image's tests and is not represented as independently
 qualified or releasable.
+
+An image is releasable when it declares a `repository`; it then also declares
+its release tags. An image without a repository is test-only: it declares only
+what a dependency uses, namely its build inputs, platforms, pins, runtime
+contract and its own dependencies, and the keys that only a qualified image
+uses are rejected there. ConClear refuses to select a test-only image for a
+build, qualification, release or rescan, ignores it when probing or cleaning
+registry destinations, and rejects a test-only image that no image depends on.
+A releasable image may serve as a test dependency as well; both roles use the
+same declaration.
 
 Vulnerability exceptions use a dedicated typed table declared inside the image
 they apply to, which identifies the image as the guide requires; each exception
