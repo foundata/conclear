@@ -333,8 +333,14 @@ mounts = [{ name = "generated", target = "/run/generated" }]
 ```
 
 A mount names a declared fixture or output and is read-only unless it sets
-`read_only = false`. Every output must have a writable producer before it is
-consumed. The `generator` image must be another `[[images]]` entry in the same
+`read_only = false`. ConClear creates every output as an empty private
+directory before the first preparation runs. A read-only mount may name only an
+output that an earlier preparation wrote, and every output must be mounted
+writable by at least one preparation or by the launch. An output that only the
+launched container writes, such as a state or work directory, therefore needs
+no preparation: declare it, mount it with `read_only = false` at a destination
+the runtime contract lists in `writable_mounts`, and ConClear records what the
+container left there. The `generator` image must be another `[[images]]` entry in the same
 file, cover every tested platform and declare `/output` in its own
 `images.runtime.writable_mounts`. An image that exists only for tests omits
 `repository` and `[images.release]`: ConClear builds it as a dependency under

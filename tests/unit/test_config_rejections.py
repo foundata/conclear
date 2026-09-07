@@ -190,7 +190,18 @@ mounts = [{ name = "result", target = "/out", read_only = false }]
 name = "orphan"
 """
             ),
-            "no preparation producer",
+            "no writable preparation or launch mount",
+        ),
+        (
+            _before_release(
+                """[images.test]
+[[images.test.outputs]]
+name = "scratch"
+[images.test.launch]
+mounts = [{ name = "scratch", target = "/in" }]
+"""
+            ),
+            "Launch consumes output scratch before it is produced",
         ),
         (
             _before_release(
@@ -252,7 +263,8 @@ command = ["/app"]
         "environment-name",
         "duplicate-mount-target",
         "consume-before-produce",
-        "orphan-output",
+        "unwritten-output",
+        "launch-reads-unwritten-output",
         "duplicate-preparation-name",
         "preparation-name",
         "nul-in-command",

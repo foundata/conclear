@@ -947,6 +947,37 @@ def test_test_only_image_omits_the_release_destination_and_cannot_be_selected(
         config.release_image("helper")
 
 
+def test_launch_may_write_a_declared_output_without_a_preparation(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace("user = 10001\n", 'user = 10001\nwritable_mounts = ["/state"]\n')
+        .replace(
+            "[images.release]",
+            """[[images.test.outputs]]
+name = "state"
+secret = true
+
+[images.test.launch]
+mounts = [{ name = "state", target = "/state", read_only = false }]
+
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    test = load_repository_config(path).release_image("app").test
+
+    assert test.preparations == ()
+    assert [(item.name, item.secret) for item in test.outputs] == [("state", True)]
+    assert [(item.name, item.read_only) for item in test.launch.mounts] == [
+        ("state", False)
+    ]
+
+
 def test_released_image_also_serves_as_a_test_dependency(
     repository_factory: Callable[..., Path],
 ) -> None:

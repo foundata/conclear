@@ -103,7 +103,7 @@ class TestFixtureConfig:
 
 @dataclass(frozen=True, slots=True)
 class TestOutputConfig:
-    """One run-owned generated output handle."""
+    """One run-owned output directory, created empty and written during the test."""
 
     name: str
     secret: bool
@@ -723,20 +723,22 @@ def _validate_mount_handles(test: TestConfig) -> None:
             for mount in preparation.mounts
             if mount.source is TestMountSource.OUTPUT and not mount.read_only
         )
-    missing_producers = outputs - available_outputs
-    if missing_producers:
-        raise InvalidInvocationError(
-            "Test outputs have no preparation producer: "
-            + ", ".join(sorted(missing_producers))
-        )
+    launch_written: set[str] = set()
     for mount in test.launch.mounts:
-        if (
-            mount.source is TestMountSource.OUTPUT
-            and mount.name not in available_outputs
-        ):
+        if mount.source is not TestMountSource.OUTPUT:
+            continue
+        if mount.read_only and mount.name not in available_outputs:
             raise InvalidInvocationError(
                 f"Launch consumes output {mount.name} before it is produced"
             )
+        if not mount.read_only:
+            launch_written.add(mount.name)
+    unwritten = outputs - available_outputs - launch_written
+    if unwritten:
+        raise InvalidInvocationError(
+            "Test outputs have no writable preparation or launch mount: "
+            + ", ".join(sorted(unwritten))
+        )
 
 
 def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
