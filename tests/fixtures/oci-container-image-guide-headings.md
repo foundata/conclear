@@ -1,6 +1,6 @@
 # OCI container image build and release guide
 
-Selected revision: `1082f52c72e26a21b9cf10df3e79cb2f293d77a5`.
+Selected revision: `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## Goals and scope<a id="goals-and-scope"></a>
 
