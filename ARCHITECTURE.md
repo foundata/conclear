@@ -1173,8 +1173,8 @@ The implementation separates these responsibilities:
 - Buildah, Podman, Skopeo, scanner and Cosign adapters, plus a provider-neutral
   registry control contract and compiled backend selection.
 - OCI layout, descriptor and registry-graph validation.
-- Qualification, assembly, provenance, publication, verification and promotion
-  services.
+- Qualification, assembly, provenance, publication, attestation, verification
+  and promotion services.
 - Versioned JSON schemas and deterministic record serialization.
 
 Adapters return typed observations and never decide the release verdict
