@@ -24,6 +24,7 @@ This file provides information for maintainers and contributors to `conclear`.
 - [Generated guide-option support inventory](#guide-option-inventory)
 - [Generated guide requirement inventory](#guide-requirement-inventory)
 - [Generated compatibility inventory](#compatibility-inventory)
+- [Generated supported-tools table](#supported-tools-table)
 - [Generated implementation matrix](#implementation-matrix)
 - [CI context observation](#ci-context-observation)
 - [Recommended development workflow](#development-workflow)
@@ -31,7 +32,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Making changes](#making-changes)
   - [Before committing](#before-committing)
 - [Releases](#releases)
-  - [Local 1.0-readiness checklist](#local-readiness)
+  - [Release procedure](#release-procedure)
 - [Troubleshooting](#troubleshooting)
   - [Common issues](#common-issues)
 
@@ -49,8 +50,8 @@ This file provides information for maintainers and contributors to `conclear`.
   [Hadolint](https://github.com/hadolint/hadolint), [Trivy](https://trivy.dev/)
   and [Cosign](https://docs.sigstore.dev/cosign/)** - Only for the opt-in local
   integration tier and for real releases. The default unit suite does not need
-  them. [`README.md`](./README.md#supported-tools) lists the exact supported
-  versions.
+  them. [`README.md`](./README.md#supported-tools) lists the accepted ranges and
+  exact real-tool tested versions.
 
 Hermetic unit tests need no container tools, credentials or network access.
 
@@ -89,8 +90,9 @@ Hermetic unit tests need no container tools, credentials or network access.
 
 ```text
 conclear/
-├── CONTRIBUTING.md
 ├── ARCHITECTURE.md               # Normative behavioral contract
+├── CHANGELOG.md
+├── CONTRIBUTING.md
 ├── DEVELOPMENT.md                # This file
 ├── README.md
 ├── REUSE.toml
@@ -208,66 +210,11 @@ uv run mypy --strict src tests
 
 ```
 
-Markdown follows the
-[foundata Markdown style guide](https://github.com/foundata/guidelines/blob/main/markdown-style-guide.md).
-Its rules are applied through command-line options alone, so no local
-configuration can alter the result, and the release gate runs the same `check`
-invocation together with `git diff --check` over the committed tree.
-
-```sh
-# Format Markdown: rewrites files, fixing everything with a safe automatic fix.
-uv run rumdl fmt \
-  --no-config \
-  --deny-config-warnings \
-  --extend-enable MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088 \
-  --config 'MD003.style="atx"' \
-  --config 'MD004.style="dash"' \
-  --config 'MD007.indent=2' \
-  --config 'MD012.maximum=3' \
-  --config 'MD013.line-length=80' \
-  --config 'MD013.reflow=true' \
-  --config 'MD013.reflow-mode="default"' \
-  --config 'MD013.code-blocks=false' \
-  --config 'MD013.code-spans=false' \
-  --config 'MD013.tables=false' \
-  --config 'MD024.siblings-only=true' \
-  --config 'MD029.style="ordered"' \
-  --config 'MD033.allowed-elements=["a","br"]' \
-  --config 'MD046.style="fenced"' \
-  --config 'MD060.style="aligned"' \
-  --config 'MD060.column-align-header="center"' \
-  --config 'MD060.loose-last-column=true' \
-  --config 'MD082.allow-parent-headings=true' \
-  .
-
-# Check Markdown: validates without modifying files; the release gate runs this.
-uv run rumdl check \
-  --no-config \
-  --deny-config-warnings \
-  --extend-enable MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088 \
-  --config 'MD003.style="atx"' \
-  --config 'MD004.style="dash"' \
-  --config 'MD007.indent=2' \
-  --config 'MD012.maximum=3' \
-  --config 'MD013.line-length=80' \
-  --config 'MD013.reflow=true' \
-  --config 'MD013.reflow-mode="default"' \
-  --config 'MD013.code-blocks=false' \
-  --config 'MD013.code-spans=false' \
-  --config 'MD013.tables=false' \
-  --config 'MD024.siblings-only=true' \
-  --config 'MD029.style="ordered"' \
-  --config 'MD033.allowed-elements=["a","br"]' \
-  --config 'MD046.style="fenced"' \
-  --config 'MD060.style="aligned"' \
-  --config 'MD060.column-align-header="center"' \
-  --config 'MD060.loose-last-column=true' \
-  --config 'MD082.allow-parent-headings=true' \
-  .
-
-# Trailing whitespace and whitespace errors that rumdl cannot flag
-git diff --check
-```
+Markdown follows the foundata Markdown style guide's canonical
+[`fmt` and `check` invocations](https://github.com/foundata/guidelines/blob/main/markdown-style-guide.md#linting-and-automatic-formatting).
+Run those commands from this repository. Their arguments are deliberately not
+duplicated here; the release gate applies the same `check` policy together with
+`git diff --check` over the committed tree.
 
 
 ### Commit messages and scopes<a id="commit-scopes"></a>
@@ -342,7 +289,7 @@ normalize an implementation defect. Decide whether the implementation or the
 promise is wrong, then either fix the code or make an explicit contract
 correction whose rationale is reviewable.
 
-Report every contract change when reporting completed work. A summary that lists
+Every contract change has to be reported. A summary that lists
 implemented behavior but omits an edit to `ARCHITECTURE.md`, an `IPnnnn`
 promise, a shipped schema, an exit status, a record layout or a `CCnnnn`
 identifier is incomplete.
@@ -375,9 +322,6 @@ changed surface is regenerated and reviewed (see
 A `CCnnnn` identifier is never reused for a different rule. Removing a check
 leaves a retired entry in the catalog so historical findings stay
 understandable.
-
-Do not add a changelog before the first 1.0.0 release is published. Do not
-prepare releases, create tags or push from local validation work.
 
 
 ## Testing<a id="testing"></a>
@@ -888,124 +832,288 @@ uv run python -m conclear.tool_matrix --check
 
 ## Releases<a id="releases"></a>
 
-The provider-independent release check requires a clean Git checkout and locally
-available Python 3.12, 3.13 and 3.14 interpreters:
+A ConClear release consists of one Semantic Versioning version, one annotated
+`vX.Y.Z` Git tag, one GitHub release and the source distribution and wheel
+published for that version. Release only a clean, committed revision. Test
+results and retained artifacts belong to that exact revision and cannot be
+carried over after another commit.
 
-```sh
-uv run python -m conclear.release_check
-```
+The source tree identifies itself as `development-source-tree` and cannot emit
+release evidence. The release check creates a clean source archive and embeds
+the selected full Git revision as `conclear/_embedded_identity.py` before it
+builds the distributions. Runtime identity is never inferred from the consumer
+repository.
 
-The command verifies a clean checkout without whitespace errors, then checks
-formatting, linting, the Markdown style guide's `rumdl` invocation, strict
-typing, the generated conformance documentation, the guide-option support
-inventory, the guide requirement inventory and coverage, the generated
-compatibility inventory, the release-specific implementation matrix, the
-generated supported-tools table and the unit-test matrix on every supported
-interpreter, enforcing the branch-coverage floor on the first interpreter. It
-then creates a temporary clean source archive, embeds the committed source
-revision, builds a source distribution, builds a wheel from that source
-distribution, inspects artifact contents, installs the wheel into a clean
-environment and runs import, `--version` and `--help` smoke tests.
-
-To retain the exact source distribution and wheel that passed the complete gate,
-create a private parent directory and select a new revision-specific output
-directory:
-
-```sh
-install -d -m 0700 "${HOME}/.local/share/conclear/distributions"
-revision=$(git rev-parse HEAD)
-uv run python -m conclear.release_check \
-  --output-directory "${HOME}/.local/share/conclear/distributions/${revision}"
-```
-
-The destination must not exist before the command starts. ConClear publishes the
-directory only after all source, matrix, distribution-content, clean-install and
-smoke checks pass. `artifacts.json` records the embedded ConClear and guide
-revisions plus the SHA-256 digest of each retained file.
-
-Install that retained wheel into a new environment without rebuilding it:
-
-```sh
-uv venv --python python3.12 /tmp/conclear-dogfood
-uv pip install --python /tmp/conclear-dogfood/bin/python \
-  "${HOME}/.local/share/conclear/distributions/${revision}"/*.whl
-/tmp/conclear-dogfood/bin/conclear version --format json
-```
-
-The release check does not create a release, write to a registry, sign content,
-create transparency-log entries, tag Git or push commits.
+The maintainer performing a release also needs `jq`, `sha256sum`, an
+authenticated `gh` installation, an authorized PyPI publishing identity and the
+Quay and Sigstore test inputs described below. Keep credentials, signing keys,
+test workspaces and resource manifests outside the repository.
 
 
-### Local 1.0-readiness checklist<a id="local-readiness"></a>
+### Release procedure<a id="release-procedure"></a>
 
-A revision is a locally validated 1.0 release candidate when all of the
-following pass from a clean checkout of that revision, in this order, without
-changing any gate, exception, coverage floor or configuration to obtain the
-result:
-
-1. The distribution gate on all supported interpreters, retaining its artifacts
-   under a directory named for the full revision:
+1. **Choose the release version and open a release issue.** Select the version
+   according to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+   Use the issue to record the candidate revision, artifact digests, local and
+   external test results, every skip and final cleanup. A skip is a missing
+   result, not a pass.
 
    ```sh
-   uv run python -m conclear.release_check \
-     --output-directory "${HOME}/.local/share/conclear/distributions/$(git rev-parse HEAD)"
+   version="<major.minor.patch>"
+   tag="v${version}"
+
+   git status --short
+   git tag --list "${tag}"
    ```
 
-2. The complete local tier from an external run manifest,
-   `uv run pytest -m "local_integration or emulation"` with manifest-owned
-   identifiers as described under
-   [Local integration tests](#local-integration-tests), including the CLI
-   transport scenario against the retained wheel, run with `-rs` so every skip
-   is listed with its reason; record any skipped case as a missing result, not
-   as a pass, and a skipped emulation case as a missing platform.
-3. The retained wheel installed into a fresh environment, with
-   `conclear version --format json` reporting the embedded ConClear and guide
-   revisions and `conclear --help` listing the command hierarchy recorded in the
-   compatibility inventory.
-4. `conclear check` and `conclear pins check` run from that installed wheel
-   against the current
-   [OpenLDAP compatibility project](https://github.com/foundata/oci-openldap-declarative)
-   checkout for every image it declares, with every `CCnnnn` finding recorded
-   verbatim and no exception added to reach an accepted verdict.
+   Start from a clean branch and stop if the version or tag already exists.
 
-Local readiness does not prove the release path. It cannot show that Quay's tag
-immutability, candidate expiry and post-write observation behave as the typed
-fakes assume, that Cosign writes the expected predicate and bundle to the public
-transparency log, that Rekor inclusion verifies, that an ambiguous remote write
-is recovered correctly, or that arm64 qualification works on a host that has no
-enabled emulation handler. Those facts exist only on the external side of the
-trust boundary.
+2. **Prepare the versioned sources and changelog.** Move the accumulated entries
+   under `Unreleased` in [`CHANGELOG.md`](./CHANGELOG.md) to a section named for
+   the version and release date, then leave an `Unreleased` section containing
+   `No unreleased changes.` above it. Add a link for the new release; after a
+   previous release exists, also add or update the comparison links.
 
-Before tagging `1.0.0`, one complete external release drill is mandatory: the
-opt-in [network tests](#network-tests) against an explicitly authorized
-disposable Quay repository with dedicated test signing keys, followed by a
-complete `conclear release` of the OpenLDAP compatibility project into a
-disposable repository, including `publish`, `attest`, `verify`, `promote` and
-candidate cleanup, and an arm64 qualification on a host with an enabled handler
-or native hardware. The drill must also run the composable remote path once:
-`qualify` and `transport export` per platform, then `assemble`, `provenance`,
-`publish`, `attest`, `verify` and `promote` as separate invocations against the
-same disposable repository, because a monolithic `release` never reopens a run
-and cannot expose a defect in first-use tool binding. Record the observed
-results in the release issue. A locally validated candidate without that drill
-stays a candidate.
+   Keep the version in `pyproject.toml`, `src/conclear/identity.py`,
+   `src/conclear/data/implementation.json` and
+   `src/conclear/data/guide-options.json` aligned. Review version-specific prose
+   and links in `README.md`, `ARCHITECTURE.md`, `DEVELOPMENT.md` and `docs/`.
+   Preserve earlier release-specific matrices as historical documents.
 
-Two facts are proven only indirectly by the automated tiers and belong to the
-same gate until they are automated: a complete `conclear qualify` from the
-retained wheel on a host without Cosign installed, which the local tier cannot
-stage because ConClear searches a fixed tool path, and the composable remote
-path above.
+   Regenerate the lock file and every version-dependent document rather than
+   editing generated output:
 
-CI configuration should delegate project checks to this command and verify the
-catalog against the OCI guide at the exact embedded revision. The provider
-configuration must not redefine formatting, typing, test or distribution-build
-logic.
+   ```sh
+   uv lock
+   uv run python -m conclear.guide_options
+   uv run python -m conclear.implementation
+   uv run python -m conclear.compatibility_inventory
+   uv run python -m conclear.conformance
+   uv run python -m conclear.tool_matrix
+   ```
 
-The source tree uses `development-source-tree` as its local identity.
-Distribution builds generate `conclear/_embedded_identity.py` from an externally
-observed full Git revision; identity is never derived from an application
-repository at runtime. A build without an embedded revision cannot produce
-release evidence.
+3. **Review and commit the release preparation.** Inspect every changed file,
+   stage only the reviewed release changes and create one release commit.
+
+   ```sh
+   git diff --check
+   git diff
+   git add --all
+   git diff --cached
+   git commit -m "release: prepare ${version}"
+
+   revision="$(git rev-parse --verify HEAD)"
+   git status --short
+   ```
+
+   The final command must print nothing. Do not amend the release commit after
+   its validation starts.
+
+4. **Run the distribution gate and retain its exact artifacts.** The gate needs
+   locally available Python 3.12, 3.13 and 3.14 interpreters. It checks clean
+   whitespace, formatting, linting, Markdown, strict typing, all generated
+   artifacts and the unit suite on every supported interpreter. It then builds
+   the source distribution from a clean archive, builds the wheel from that
+   source distribution, validates their contents, installs the wheel into a
+   clean environment and smoke-tests its import, version and help output.
+
+   ```sh
+   install -d -m 0700 "${HOME}/.local/share/conclear/distributions"
+   artifact_dir="${HOME}/.local/share/conclear/distributions/${revision}"
+
+   uv run python -m conclear.release_check \
+     --output-directory "${artifact_dir}"
+   ```
+
+   The destination must not exist before the command starts. A successful gate
+   publishes it atomically. Verify the retained files against the generated
+   manifest:
+
+   ```sh
+   (
+     cd "${artifact_dir}"
+     jq -r '.artifacts[] | "\(.sha256)  \(.filename)"' artifacts.json |
+       sha256sum --check -
+   )
+   ```
+
+5. **Run the complete local integration tier against the retained wheel.** Read
+   [Local integration tests](#local-integration-tests) first. Create and record
+   the external resource manifest, workspace, unique lowercase identifiers,
+   container names and Trivy cache before running the tests. Install the wheel
+   without rebuilding it and supply that executable to the CLI transport test.
+
+   ```sh
+   dogfood="<external-run-workspace>/conclear-venv"
+   uv venv --python python3.12 "${dogfood}"
+   uv pip install --python "${dogfood}/bin/python" \
+     "${artifact_dir}"/*.whl
+
+   CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
+   CONCLEAR_TEST_SERVICE_ULID=<manifest-owned-lowercase-ulid> \
+   CONCLEAR_TEST_ONE_SHOT_ULID=<manifest-owned-lowercase-ulid> \
+   CONCLEAR_TEST_CLI="${dogfood}/bin/conclear" \
+   CONCLEAR_TEST_TRIVY_CACHE=<manifest-owned-cache> \
+   uv run pytest -m "local_integration or emulation" -rs \
+     --basetemp <external-run-workspace>/tmp/pytest
+   ```
+
+   Supply `CONCLEAR_TEST_TRIVY_DOWNLOAD=1` only when the recorded cache needs a
+   database snapshot. An emulation skip means the platform remains unverified.
+
+6. **Verify the installed identity and compatibility projects.** The installed
+   command must report the selected version, candidate revision and embedded
+   guide revision. Its help hierarchy must agree with the compatibility
+   inventory.
+
+   ```sh
+   "${dogfood}/bin/conclear" version --format json
+   "${dogfood}/bin/conclear" --help
+   ```
+
+   From the retained wheel, run `conclear check` and `conclear pins check` for
+   every image in the current
+   [OpenLDAP compatibility project](https://github.com/foundata/oci-openldap-declarative).
+   Record every `CCnnnn` finding verbatim and do not add an exception to obtain
+   an accepted result. Also complete one `conclear qualify` with Cosign absent
+   from the executable search path; qualification must not acquire a signing
+   dependency.
+
+7. **Exercise the external trust boundaries.** Follow
+   [Network tests](#network-tests) with an explicitly authorized disposable Quay
+   repository, dedicated test signing keys and an external resource manifest.
+
+   ```sh
+   CONCLEAR_TEST_NETWORK_AUTHORIZED=yes \
+   CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
+   CONCLEAR_TEST_RESOURCE_MANIFEST=<external-resource-manifest> \
+   CONCLEAR_TEST_QUAY_REPOSITORY=quay.io/<organization>/<repository> \
+   CONCLEAR_TEST_QUAY_CANDIDATE=quay.io/<organization>/<repository>:<candidate-tag> \
+   CONCLEAR_TEST_QUAY_CANDIDATE_DIGEST=sha256:<candidate-digest> \
+   CONCLEAR_TEST_QUAY_TOKEN_FILE=<quay-api-token-file> \
+   CONCLEAR_TEST_COSIGN_SUBJECT=quay.io/<organization>/<repository>@sha256:<subject-digest> \
+   CONCLEAR_TEST_DOCKER_CONFIG=<registry-auth-file> \
+   CONCLEAR_TEST_COSIGN_PRIVATE_KEY=<test-private-key> \
+   CONCLEAR_TEST_COSIGN_PUBLIC_KEY=<test-public-key> \
+   CONCLEAR_TEST_COSIGN_PASSPHRASE_FILE=<test-passphrase-file> \
+   uv run pytest -m network -rs
+   ```
+
+   Run a complete `conclear release` of the OpenLDAP compatibility project into
+   a disposable repository. It must cover publication, attestation,
+   verification, promotion, public transparency-log verification and candidate
+   cleanup. Run an arm64 qualification on native hardware or through an enabled
+   emulation handler.
+
+   ```sh
+   "${dogfood}/bin/conclear" release \
+     --source <openldap-checkout> \
+     --revision <full-openldap-revision> \
+     --image <image-id> \
+     --version <disposable-release-version> \
+     --profile <disposable-release-profile> \
+     --format json
+   ```
+
+   Exercise the composable path separately: `qualify` and `transport export` on
+   each worker, followed by `assemble`, `provenance`, `publish`, `attest`,
+   `verify` and `promote` as separate invocations. This proves run reopening and
+   first-use tool binding, which the monolithic command cannot. Verify that the
+   disposable registry and every run workspace have no unresolved owned
+   resources, then record cleanup in the release issue.
+
+8. **Freeze the validated candidate.** Compare the release issue with the
+   candidate revision and `artifacts.json`. Do not continue when any mandatory
+   result is absent. Any tracked-file change invalidates the retained artifacts
+   and all results that depend on them: commit the change, choose a new
+   revision-specific artifact directory and repeat validation from step 4.
+
+9. **Create and push the release tag.** Tag the exact revision recorded by the
+   gate, inspect it, then push the branch and that tag explicitly.
+
+   ```sh
+   test "$(git rev-parse --verify HEAD)" = "${revision}"
+   git status --short
+
+   git tag -a "${tag}" "${revision}" -m "version ${version}"
+   git show "${tag}"
+
+   git push origin main
+   git push origin "refs/tags/${tag}"
+   ```
+
+   Stop if the status command prints anything or the tag does not point to the
+   validated revision.
+
+10. **Publish the retained distributions to PyPI without rebuilding.** Upload
+    only the source distribution and wheel named in `artifacts.json`. Prefer the
+    configured trusted-publishing environment. When a maintainer token is the
+    configured mechanism, keep it out of shell history and process arguments:
+
+    ```sh
+    printf 'PyPI API token: '
+    read -rs UV_PUBLISH_TOKEN
+    printf '\n'
+    export UV_PUBLISH_TOKEN
+
+    uv publish \
+      "${artifact_dir}/conclear-${version}.tar.gz" \
+      "${artifact_dir}/conclear-${version}-py3-none-any.whl"
+
+    unset UV_PUBLISH_TOKEN
+    ```
+
+    PyPI versions are immutable. Never rebuild and retry the same version with
+    different bytes.
+
+11. **Verify the public installation.** Install the exact version from PyPI in
+    an isolated environment. Check both the product version and the embedded
+    candidate revision rather than accepting version text alone.
+
+    ```sh
+    published_identity="$(
+      uv run --isolated --no-project --with "conclear==${version}" -- \
+        conclear version --format json
+    )"
+    printf '%s\n' "${published_identity}" | jq -e \
+      --arg version "${version}" \
+      --arg revision "${revision}" \
+      '.version == $version and .sourceRevision == $revision'
+
+    uv run --isolated --no-project --with "conclear==${version}" -- \
+      conclear --help
+    ```
+
+12. **Create and verify the GitHub release.** Use the matching changelog section
+    as the release notes. Attach `artifacts.json` and the exact distributions
+    already published to PyPI.
+
+    ```sh
+    gh release create "${tag}" \
+      "${artifact_dir}/artifacts.json" \
+      "${artifact_dir}/conclear-${version}.tar.gz" \
+      "${artifact_dir}/conclear-${version}-py3-none-any.whl" \
+      --verify-tag \
+      --title "${tag}" \
+      --notes-file <release-notes-file>
+
+    gh release view "${tag}"
+    ```
+
+    Confirm that GitHub reports the new release as latest, that the attached
+    files match `artifacts.json`, and that the release issue contains the final
+    public URLs and cleanup result.
+
+Before either PyPI or a GitHub release exposes an artifact, a bad tag may be
+deleted and the procedure restarted. Once either service has published the
+version, do not replace it or reuse its tag. Yank a defective PyPI release when
+appropriate and publish the correction under a new patch version.
+
+The release check itself never writes to a registry, signs content, creates
+transparency-log entries, tags Git, pushes commits or publishes Python packages.
+CI configuration should delegate checks to this command and verify the catalog
+against the exact embedded guide revision instead of redefining the project
+gates.
 
 
 ## Troubleshooting<a id="troubleshooting"></a>
