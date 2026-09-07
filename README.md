@@ -320,28 +320,28 @@ with that evidence.
 | Trivy    |  0.69.3 |
 | Cosign   |   3.1.3 |
 
-|      Command       |                     Tools                      | Release profile | Credentials and services |
-| ------------------ | ---------------------------------------------- | --------------- | ------------------------ |
-| `version`          | none                                           | none            | none |
-| `adopt`            | Git                                            | none            | none |
-| `check`            | Hadolint                                       | none            | none |
-| `pins check`       | Skopeo                                         | optional        | registry reads with the profile's auth file |
-| `pins propose`     | Git, Skopeo                                    | optional        | registry reads with the profile's auth file |
-| `pins apply`       | Git                                            | none            | none |
-| `build`            | Git, Buildah                                   | optional        | registry reads for image inputs |
-| `test`             | Git, Podman                                    | none            | none |
-| `qualify`          | Git, Buildah, Podman, Skopeo, Hadolint, Trivy  | optional        | registry reads for image inputs |
-| `transport export` | Git                                            | none            | none |
-| `assemble`         | Git                                            | optional        | none; the profile only records trust inputs |
-| `provenance`       | Git                                            | none            | none |
-| `publish`          | Git, Skopeo                                    | required        | registry writes, registry control API |
-| `attest`           | Git, Skopeo, Cosign                            | required        | registry writes, signing key and passphrase, public Sigstore services |
-| `verify`           | Git, Skopeo, Cosign                            | required        | registry writes for the signed verification, signing key and passphrase, public Sigstore services |
-| `promote`          | Git, Skopeo, Cosign                            | required        | registry reads, tag writes through the registry control API, public Sigstore services |
-| `release`          | all seven                                      | required        | everything above |
-| `rescan`           | Skopeo, Trivy, Cosign                          | required        | registry reads, public Sigstore services; `--authoritative` adds registry writes with the auth file and the signing key with passphrase |
-| `cleanup`          | Git, Buildah, Podman                           | optional        | registry control API when a profile is given |
-| `doctor`           | the union of its scope                         | `release` scope | `release` scope requires the profile's auth file, control-plane token and signing key, then probes the registry and Sigstore read-only |
+|      Command       |                     Tools                     | Release profile | Credentials and services |
+| ------------------ | --------------------------------------------- | --------------- | ------------------------ |
+| `version`          | none                                          | none            | none                     |
+| `adopt`            | Git                                           | none            | none                     |
+| `check`            | Hadolint                                      | none            | none                     |
+| `pins check`       | Skopeo                                        | optional        | registry reads with the profile's auth file |
+| `pins propose`     | Git, Skopeo                                   | optional        | registry reads with the profile's auth file |
+| `pins apply`       | Git                                           | none            | none                     |
+| `build`            | Git, Buildah                                  | optional        | registry reads for image inputs |
+| `test`             | Git, Podman                                   | none            | none                     |
+| `qualify`          | Git, Buildah, Podman, Skopeo, Hadolint, Trivy | optional        | registry reads for image inputs |
+| `transport export` | Git                                           | none            | none                     |
+| `assemble`         | Git                                           | optional        | none; the profile only records trust inputs |
+| `provenance`       | Git                                           | none            | none                     |
+| `publish`          | Git, Skopeo                                   | required        | registry writes, registry control API |
+| `attest`           | Git, Skopeo, Cosign                           | required        | registry writes, signing key and passphrase, public Sigstore services |
+| `verify`           | Git, Skopeo, Cosign                           | required        | registry writes for the signed verification, signing key and passphrase, public Sigstore services |
+| `promote`          | Git, Skopeo, Cosign                           | required        | registry reads, tag writes through the registry control API, public Sigstore services |
+| `release`          | all seven                                     | required        | everything above         |
+| `rescan`           | Skopeo, Trivy, Cosign                         | required        | registry reads, public Sigstore services; `--authoritative` adds registry writes with the auth file and the signing key with passphrase |
+| `cleanup`          | Git, Buildah, Podman                          | optional        | registry control API when a profile is given |
+| `doctor`           | the union of its scope                        | `release` scope | `release` scope requires the profile's auth file, control-plane token and signing key, then probes the registry and Sigstore read-only |
 
 The generated [compatibility inventory](./docs/compatibility-inventory.json)
 carries the same declarations in machine-readable form, including the

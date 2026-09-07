@@ -103,7 +103,6 @@ conclear/
 │   └── quickstart.md             # Project adoption quick start
 ├── pyproject.toml                # Project configuration
 ├── uv.lock                       # Dependency lock file
-├── .rumdl.toml                   # Markdown conventions checked by rumdl
 ├── src/conclear/                 # Main package
 │   ├── cli.py                    # Click entry point and error-to-exit mapping
 │   ├── identity.py               # Embedded tool and guide identity
@@ -207,11 +206,67 @@ uv run ruff check --fix .
 # Strict type checking
 uv run mypy --strict src tests
 
-# Check Markdown against the conventions in .rumdl.toml
-uv run rumdl check .
+```
 
-# Apply the automatic Markdown fixes
-uv run rumdl check --fix .
+Markdown follows the
+[foundata Markdown style guide](https://github.com/foundata/guidelines/blob/main/markdown-style-guide.md).
+Its rules are applied through command-line options alone, so no local
+configuration can alter the result, and the release gate runs the same `check`
+invocation together with `git diff --check` over the committed tree.
+
+```sh
+# Format Markdown: rewrites files, fixing everything with a safe automatic fix.
+uv run rumdl fmt \
+  --no-config \
+  --deny-config-warnings \
+  --extend-enable MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088 \
+  --config 'MD003.style="atx"' \
+  --config 'MD004.style="dash"' \
+  --config 'MD007.indent=2' \
+  --config 'MD012.maximum=3' \
+  --config 'MD013.line-length=80' \
+  --config 'MD013.reflow=true' \
+  --config 'MD013.reflow-mode="default"' \
+  --config 'MD013.code-blocks=false' \
+  --config 'MD013.code-spans=false' \
+  --config 'MD013.tables=false' \
+  --config 'MD024.siblings-only=true' \
+  --config 'MD029.style="ordered"' \
+  --config 'MD033.allowed-elements=["a","br"]' \
+  --config 'MD046.style="fenced"' \
+  --config 'MD060.style="aligned"' \
+  --config 'MD060.column-align-header="center"' \
+  --config 'MD060.loose-last-column=true' \
+  --config 'MD082.allow-parent-headings=true' \
+  .
+
+# Check Markdown: validates without modifying files; the release gate runs this.
+uv run rumdl check \
+  --no-config \
+  --deny-config-warnings \
+  --extend-enable MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088 \
+  --config 'MD003.style="atx"' \
+  --config 'MD004.style="dash"' \
+  --config 'MD007.indent=2' \
+  --config 'MD012.maximum=3' \
+  --config 'MD013.line-length=80' \
+  --config 'MD013.reflow=true' \
+  --config 'MD013.reflow-mode="default"' \
+  --config 'MD013.code-blocks=false' \
+  --config 'MD013.code-spans=false' \
+  --config 'MD013.tables=false' \
+  --config 'MD024.siblings-only=true' \
+  --config 'MD029.style="ordered"' \
+  --config 'MD033.allowed-elements=["a","br"]' \
+  --config 'MD046.style="fenced"' \
+  --config 'MD060.style="aligned"' \
+  --config 'MD060.column-align-header="center"' \
+  --config 'MD060.loose-last-column=true' \
+  --config 'MD082.allow-parent-headings=true' \
+  .
+
+# Trailing whitespace and whitespace errors that rumdl cannot flag
+git diff --check
 ```
 
 
@@ -623,8 +678,8 @@ Moving to a newer guide revision:
    uv run python -m conclear.guide_requirements --diff /tmp/guide-requirements.json
    ```
 
-   The command prints the added, removed and reworded requirements together
-   with the checks, guide options and coverage entries that reference each one.
+   The command prints the added, removed and reworded requirements together with
+   the checks, guide options and coverage entries that reference each one.
 3. Replace the embedded revision in `src/conclear/identity.py`, in the three
    data files and in the `guideRevision` constants of the record and proposal
    schemas.
@@ -800,16 +855,17 @@ available Python 3.12, 3.13 and 3.14 interpreters:
 uv run python -m conclear.release_check
 ```
 
-The command checks formatting, linting, the Markdown conventions in
-`.rumdl.toml`, strict typing, the generated conformance documentation, the
-guide-option support inventory, the guide requirement inventory and coverage,
-the generated compatibility inventory, the release-specific implementation
-matrix and the unit-test matrix on every supported interpreter, enforcing the
-branch-coverage floor on the first interpreter. It then creates a temporary
-clean source archive, embeds the committed source revision, builds a source
-distribution, builds a wheel from that source distribution, inspects artifact
-contents, installs the wheel into a clean environment and runs import,
-`--version` and `--help` smoke tests.
+The command verifies a clean checkout without whitespace errors, then checks
+formatting, linting, the Markdown style guide's `rumdl` invocation, strict
+typing, the generated conformance documentation, the guide-option support
+inventory, the guide requirement inventory and coverage, the generated
+compatibility inventory, the release-specific implementation matrix and the
+unit-test matrix on every supported interpreter, enforcing the branch-coverage
+floor on the first interpreter. It then creates a temporary clean source
+archive, embeds the committed source revision, builds a source distribution,
+builds a wheel from that source distribution, inspects artifact contents,
+installs the wheel into a clean environment and runs import,`--version` and
+`--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate,
 create a private parent directory and select a new revision-specific output
