@@ -31,15 +31,13 @@ from conclear.errors import (
 )
 from conclear.fileio import read_regular_file
 from conclear.jsonutil import sha256_bytes
-from conclear.pin_updates import (
+from conclear.pin_occurrences import (
     CONFIGURATION_NAME,
-    PinUpdateProposal,
-    ProposedFile,
     Snapshot,
     confined_target,
     discover_occurrences,
-    require_aware,
 )
+from conclear.pin_updates import PinUpdateProposal, ProposedFile, require_aware
 from conclear.records import SourceIdentity
 
 

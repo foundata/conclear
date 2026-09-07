@@ -119,7 +119,8 @@ conclear/
 │   ├── records.py                # Record envelopes and digests
 │   ├── parsing.py                # Typed narrowing of untrusted JSON and TOML values
 │   ├── pins.py                   # Durable pin observations and divergence policy
-│   ├── pin_updates.py            # Pin proposals and occurrence discovery
+│   ├── pin_occurrences.py        # Read-only pin occurrence discovery
+│   ├── pin_updates.py            # Non-mutating pin-update proposals
 │   ├── pin_application.py        # Verified all-or-nothing proposal application
 │   ├── toml_spans.py             # Structural TOML string spans
 │   ├── workspace.py              # Run state machine and ownership journal
