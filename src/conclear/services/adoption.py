@@ -158,7 +158,7 @@ class ContainerfileObservation:
 
     image_id: str
     containerfile: str
-    context: str
+    conventional: bool
     external_references: tuple[ExternalReference, ...]
     user: FinalUser
     volumes: tuple[str, ...]
@@ -180,7 +180,6 @@ class ContainerfileObservation:
         return {
             "id": self.image_id,
             "containerfile": self.containerfile,
-            "context": self.context,
             "externalReferences": [item.to_dict() for item in self.external_references],
             "user": self.user.to_dict(),
             "volumes": list(self.volumes),
@@ -286,6 +285,8 @@ class Assessment:
                     if image.entrypoint.systemd
                     else image.entrypoint.form.value
                 )
+                + "; context "
+                + ("suggested ." if image.conventional else "undecided")
             )
         for note in self.suggestions:
             lines.append(f"Suggested {_scope(note)}: {note.text}")
@@ -335,9 +336,9 @@ def discover_containerfiles(root: Path) -> tuple[Path, ...]:
         if entry.is_symlink() or not entry.is_file():
             continue
         for family in CONVENTIONAL_NAMES:
-            suffix = entry.name.removeprefix(family + ".")
             if entry.name == family or (
-                entry.name != suffix and _SUFFIX_PATTERN.fullmatch(suffix)
+                entry.name.startswith(family + ".")
+                and _is_conventional_name(entry.name)
             ):
                 families[family].append(entry)
     present = [candidates for candidates in families.values() if candidates]
@@ -447,7 +448,7 @@ def observe_containerfile(
     return ContainerfileObservation(
         image_id=image_id,
         containerfile=path.relative_to(root).as_posix(),
-        context=".",
+        conventional=path.parent == root and _is_conventional_name(path.name),
         external_references=tuple(
             _external_reference(reference) for reference in analysis.external_references
         ),
@@ -481,6 +482,21 @@ def render_draft(
         lines.extend(("", "[[images]]", f"id = {_toml(image.image_id)}"))
         if image.containerfile != "Containerfile":
             lines.append(f"containerfile = {_toml(image.containerfile)}")
+        if not image.conventional:
+            lines.append(
+                "context = "
+                + _toml(
+                    _decide("build context directory relative to the repository root")
+                )
+            )
+        lines.extend(
+            (
+                "# Releasable image: resolve repository and [images.release]. Test-only",
+                "# image: delete both, keep only the build inputs, and add this id to a",
+                "# depending image's [images.test] dependencies; a test-only image that",
+                "# no image depends on is invalid.",
+            )
+        )
         lines.append(
             "repository = "
             + _toml(
@@ -591,12 +607,46 @@ def _notes(
             "create a release profile outside the repository before releasing.",
         )
     )
+    if len(images) > 1:
+        decisions.append(
+            Note(
+                None,
+                "test.dependencies",
+                "Declare which images are test dependencies of which; the draft infers no dependency graph.",
+            )
+        )
     for image in images:
         suggestions.append(
             Note(
                 image.image_id,
                 "id",
                 f"Use the image id {image.image_id!r} derived from {image.containerfile}.",
+            )
+        )
+        if image.conventional:
+            suggestions.append(
+                Note(
+                    image.image_id,
+                    "context",
+                    "Use the repository root as the build context; `context` defaults to `.` and the draft omits it.",
+                )
+            )
+        else:
+            decisions.append(
+                Note(
+                    image.image_id,
+                    "context",
+                    f"Declare the build context directory for {image.containerfile}; a nested or explicitly selected Containerfile does not establish it.",
+                )
+            )
+        decisions.append(
+            Note(
+                image.image_id,
+                "role",
+                "Decide whether the image is released or exists only as a test dependency. "
+                "Releasable: resolve repository and [images.release]. Test-only: delete both, "
+                "keep only the build inputs and list the id in a depending image's "
+                "[images.test] dependencies; a test-only image that no image depends on is invalid.",
             )
         )
         decisions.append(
@@ -900,6 +950,14 @@ def _labels(argument: str) -> dict[str, str]:
         else:
             pending = key
     return labels
+
+
+def _is_conventional_name(name: str) -> bool:
+    for family in CONVENTIONAL_NAMES:
+        suffix = name.removeprefix(family + ".")
+        if name == family or (name != suffix and _SUFFIX_PATTERN.fullmatch(suffix)):
+            return True
+    return False
 
 
 def _image_id_basis(root: Path, path: Path) -> str:

@@ -123,12 +123,19 @@ def test_single_containerfile_observations_suggestions_and_decisions(
     ]
     decided = {note.field for note in assessment.decisions}
     assert {
+        "role",
         "repository",
         "platforms",
         "pins.tag_intent",
         "runtime.health_command",
         "test",
     } <= decided
+    assert "context" not in decided
+    assert _notes(assessment.suggestions, "context") == [
+        "Use the repository root as the build context; `context` defaults to `.` and the draft omits it."
+    ]
+    assert "context =" not in assessment.draft
+    assert "context" not in image.to_dict()
     assert "runtime.user" not in decided
     assert "user = 1001" in assessment.draft
     assert 'writable_mounts = ["/data"]' in assessment.draft
@@ -419,6 +426,92 @@ def test_service_image_volumes_are_expected_as_writable_mounts(
 
     assert assessment.findings == ()
     assert 'writable_mounts = ["/data", "/cache"]' in assessment.draft
+
+
+def test_nested_explicit_containerfile_leaves_the_build_context_undecided(
+    tmp_path: Path,
+) -> None:
+    root = _repository(tmp_path, {})
+    (root / "images" / "api").mkdir(parents=True)
+    (root / "images" / "api" / "Containerfile").write_text(
+        _containerfile(), encoding="utf-8"
+    )
+
+    assessment = _assess(root, "images/api/Containerfile")
+
+    [image] = assessment.images
+    assert image.containerfile == "images/api/Containerfile"
+    assert not image.conventional
+    assert _notes(assessment.suggestions, "context") == []
+    [decision] = _notes(assessment.decisions, "context")
+    assert "images/api/Containerfile" in decision
+    assert (
+        'context = "DECIDE: build context directory relative to the repository root"'
+        in assessment.draft
+    )
+    assert "context undecided" in assessment.details()[1]
+
+
+def test_multiple_images_add_a_dependency_graph_decision_and_role_guidance(
+    tmp_path: Path,
+) -> None:
+    root = _repository(
+        tmp_path,
+        {"Containerfile": _containerfile(), "Containerfile.helper": _containerfile()},
+    )
+
+    assessment = _assess(root)
+
+    assert _notes(assessment.decisions, "test.dependencies") == [
+        "Declare which images are test dependencies of which; the draft infers no dependency graph."
+    ]
+    assert len(_notes(assessment.decisions, "role")) == 2
+    assert assessment.draft.count("# Releasable image: resolve repository") == 2
+
+
+def test_draft_resolves_into_a_releasable_image_with_a_test_only_dependency(
+    tmp_path: Path,
+) -> None:
+    root = _repository(
+        tmp_path,
+        {"Containerfile": _containerfile(), "Containerfile.helper": _containerfile()},
+    )
+    assessment = _assess(root)
+    resolved = re.sub(
+        r'"DECIDE: fully qualified[^"]*"', '"quay.io/example/app"', assessment.draft
+    )
+    resolved = re.sub(r'\["DECIDE: linux/amd64[^"]*"\]', '["linux/amd64"]', resolved)
+    resolved = re.sub(
+        r'"DECIDE: immutable-version[^"]*"', '"immutable-version"', resolved
+    )
+    body = resolved.split("\n[adopt]")[0] + "\n"
+    app, helper = body.split("\n[[images]]\n")[1:]
+    helper_lines = [
+        line
+        for line in helper.splitlines()
+        if not line.startswith(("repository = ", "#"))
+    ]
+    helper_text = "\n".join(helper_lines) + "\n"
+    helper_text = helper_text.replace(
+        '[images.release]\nimmutable_tags = ["{version}"]\nmoving_tags = ["stable"]\n',
+        "",
+    )
+    app_text = app.replace(
+        "\n[images.release]\n",
+        '\n[images.test]\ndependencies = ["helper"]\n\n[images.release]\n',
+    )
+    header = body.split("\n[[images]]\n")[0]
+    draft_path = root / "conclear.toml"
+    draft_path.write_text(
+        header + "\n[[images]]\n" + app_text + "\n[[images]]\n" + helper_text,
+        encoding="utf-8",
+    )
+
+    config = load_repository_config(draft_path)
+
+    assert not config.image("helper").releasable
+    assert config.release_image("example").test_dependencies == ("helper",)
+    assert [item.image_id for item in config.test_dependencies("example")] == ["helper"]
 
 
 @pytest.mark.parametrize(
