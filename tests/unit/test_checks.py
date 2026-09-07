@@ -241,7 +241,6 @@ review_trigger = "Review when the image lifecycle changes."
 
 [images.runtime.systemd]
 required_units = ["multi-user.target"]
-stop_signal = "RTMIN+3"
 """,
         ),
         encoding="utf-8",
@@ -256,7 +255,7 @@ stop_signal = "RTMIN+3"
     ]
 
     assert len(findings) == 1
-    assert "RTMIN+3" in findings[0].message
+    assert "must be SIGRTMIN+3" in findings[0].message
 
     containerfile.write_text(
         containerfile.read_text(encoding="utf-8").replace(

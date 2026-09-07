@@ -41,6 +41,7 @@ _SECRET_ENVIRONMENT_PATTERN = re.compile(
     r"(?:^|_)(?:PASSWORD|PASSPHRASE|SECRET|TOKEN)(?:_|$)"
 )
 SYSTEMD_WRITABLE_MOUNTS = ("/run", "/run/lock", "/tmp", "/var/log/journal")
+SYSTEMD_STOP_SIGNAL = "SIGRTMIN+3"
 
 
 class PinIntent(StrEnum):
@@ -164,10 +165,13 @@ class RootRequirement:
 
 @dataclass(frozen=True, slots=True)
 class SystemdConfig:
-    """Systemd-specific lifecycle expectations."""
+    """Systemd-specific lifecycle expectations.
+
+    The stop signal is not declared: systemd shuts down on `SIGRTMIN+3` and
+    ConClear always sends `SYSTEMD_STOP_SIGNAL` to a systemd container.
+    """
 
     required_units: tuple[str, ...]
-    stop_signal: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -937,7 +941,6 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
             required_units=tuple(
                 _string_list(toml_table(systemd_value)["required_units"])
             ),
-            stop_signal=toml_string(toml_table(systemd_value)["stop_signal"]),
         )
     )
     return RuntimeConfig(

@@ -24,7 +24,7 @@ from conclear.adapters.podman import (
     ImportObservation,
     RuntimeControlObservation,
 )
-from conclear.config import RuntimeConfig
+from conclear.config import SYSTEMD_STOP_SIGNAL, RuntimeConfig
 from conclear.errors import OperationalError
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
 from conclear.presentation import Finding
@@ -357,9 +357,7 @@ def _exercise_service(
         inputs, runtime, storage_root, runroot, container_name, findings
     )
     signal_name = (
-        "TERM"
-        if inputs.image.runtime.systemd is None
-        else inputs.image.runtime.systemd.stop_signal
+        "TERM" if inputs.image.runtime.systemd is None else SYSTEMD_STOP_SIGNAL
     )
     runtime.signal(
         root=storage_root,

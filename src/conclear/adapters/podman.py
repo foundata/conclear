@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
-from conclear.config import RuntimeConfig
+from conclear.config import SYSTEMD_STOP_SIGNAL, RuntimeConfig
 from conclear.errors import CommandExecutionError, OperationalError
 from conclear.parsing import json_value, object_value, string_value
 from conclear.process import OperationKind
@@ -201,7 +201,7 @@ class PodmanAdapter(ToolAdapter):
                     "--systemd",
                     "always",
                     "--stop-signal",
-                    runtime.systemd.stop_signal,
+                    SYSTEMD_STOP_SIGNAL,
                 )
             )
         if runtime.read_only:

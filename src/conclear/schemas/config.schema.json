@@ -161,7 +161,7 @@
         "systemd": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["required_units", "stop_signal"],
+          "required": ["required_units"],
           "properties": {
             "required_units": {
               "type": "array",
@@ -171,9 +171,6 @@
                 "type": "string",
                 "pattern": "^[A-Za-z0-9:_.@-]+\\.(?:service|socket|target|mount|path|timer)$"
               }
-            },
-            "stop_signal": {
-              "enum": ["RTMIN+3", "SIGRTMIN+3"]
             }
           }
         },

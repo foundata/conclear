@@ -111,7 +111,6 @@ health_command = ["/app", "health"]
 
 [images.runtime.systemd]
 required_units = ["multi-user.target"]
-stop_signal = "RTMIN+3"
 """,
     ),
 )
@@ -138,6 +137,35 @@ health_command = ["/app", "health"]
         load_repository_config(path)
 
 
+def test_repository_configuration_rejects_a_declared_systemd_stop_signal(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace('profile = "service"\nuser = 10001', 'profile = "systemd"\nuser = 0')
+        .replace(
+            'health_command = ["/app", "health"]',
+            """health_command = ["/app", "health"]
+
+[images.runtime.root_requirement]
+rationale = "Systemd is the image lifecycle manager."
+owner = "platform@example.com"
+review_trigger = "Review when the image lifecycle changes."
+
+[images.runtime.systemd]
+required_units = ["multi-user.target"]
+stop_signal = "SIGRTMIN+3"
+""",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="stop_signal"):
+        load_repository_config(path)
+
+
 def test_repository_configuration_narrows_systemd_runtime(
     repository_factory: Callable[..., Path],
 ) -> None:
@@ -157,7 +185,6 @@ review_trigger = "Review when the image lifecycle changes."
 
 [images.runtime.systemd]
 required_units = ["multi-user.target", "sshd.service"]
-stop_signal = "RTMIN+3"
 """,
         ),
         encoding="utf-8",

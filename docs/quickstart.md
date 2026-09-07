@@ -228,8 +228,10 @@ below remain the only writable bind-mount source.
 
 Use `profile = "systemd"` only when systemd is the documented lifecycle manager.
 The Containerfile must set `USER 0`, use systemd as its entrypoint and set
-`STOPSIGNAL SIGRTMIN+3`. The runtime contract adds the reviewed root requirement
-plus systemd-specific readiness:
+`STOPSIGNAL SIGRTMIN+3`, the signal systemd documents for orderly shutdown.
+ConClear always stops a systemd container with that signal, so the profile does
+not declare it. The runtime contract adds the reviewed root requirement plus
+systemd-specific readiness:
 
 ```toml
 [images.runtime]
@@ -247,7 +249,6 @@ review_trigger = "Review when the image no longer needs a system manager."
 
 [images.runtime.systemd]
 required_units = ["multi-user.target", "sshd.service"]
-stop_signal = "RTMIN+3"
 ```
 
 The systemd profile provisions `/run`, `/run/lock`, `/tmp` and
@@ -255,8 +256,7 @@ The systemd profile provisions `/run`, `/run/lock`, `/tmp` and
 paths normally, including additional destinations declared by the image's
 `VOLUME` metadata. Do not repeat the four profile-provided paths. Qualification
 verifies systemd as PID 1, contacts the manager, waits for every required unit
-and the optional health command within one startup deadline, sends the
-configured stop signal and verifies bounded shutdown and the expected exit
+and the optional health command within one startup deadline, sends `SIGRTMIN+3` and verifies bounded shutdown and the expected exit
 status. The other runtime profiles explicitly disable Podman's automatic
 systemd mode.
 

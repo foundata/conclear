@@ -356,7 +356,6 @@ review_trigger = "Review when the image lifecycle changes."
 
 [images.runtime.systemd]
 required_units = ["multi-user.target"]
-stop_signal = "RTMIN+3"
 """,
         ),
         encoding="utf-8",
@@ -383,7 +382,7 @@ stop_signal = "RTMIN+3"
     assert argv[argv.index("--user") + 1] == "0"
     assert argv[argv.index("--userns") + 1] == "keep-id:uid=0,gid=0"
     assert argv[argv.index("--systemd") + 1] == "always"
-    assert argv[argv.index("--stop-signal") + 1] == "RTMIN+3"
+    assert argv[argv.index("--stop-signal") + 1] == "SIGRTMIN+3"
     assert {
         argv[index + 1].split(":", maxsplit=1)[0]
         for index, value in enumerate(argv)

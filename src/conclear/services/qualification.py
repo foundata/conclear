@@ -15,7 +15,7 @@ from typing import Protocol
 from conclear.adapters.buildah import BuildObservation
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.checks import validate_image_labels
-from conclear.config import ImageConfig
+from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig
 from conclear.context import hash_build_context
 from conclear.errors import OperationalError
 from conclear.hooks import HookRunner
@@ -475,6 +475,6 @@ def _runtime_constraints(image: ImageConfig) -> dict[str, object]:
     if runtime.systemd is not None:
         result["systemd"] = {
             "requiredUnits": list(runtime.systemd.required_units),
-            "stopSignal": runtime.systemd.stop_signal,
+            "stopSignal": SYSTEMD_STOP_SIGNAL,
         }
     return result

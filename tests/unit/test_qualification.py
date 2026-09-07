@@ -16,7 +16,7 @@ from conclear.adapters.podman import (
 )
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.artifacts import qualification_transport
-from conclear.config import load_repository_config
+from conclear.config import SYSTEMD_STOP_SIGNAL, load_repository_config
 from conclear.errors import CommandTimeoutError, OperationalError, RuleRejectionError
 from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
@@ -256,11 +256,7 @@ class Runtime:
             stop_signal=(
                 "SIGTERM"
                 if runtime is None or runtime.systemd is None
-                else (
-                    runtime.systemd.stop_signal
-                    if runtime.systemd.stop_signal.startswith("SIG")
-                    else f"SIG{runtime.systemd.stop_signal}"
-                )
+                else SYSTEMD_STOP_SIGNAL
             ),
         )
 
@@ -584,7 +580,6 @@ review_trigger = "Review when the image lifecycle changes."
 
 [images.runtime.systemd]
 required_units = ["multi-user.target", "sshd.service"]
-stop_signal = "RTMIN+3"
 """,
         ),
         encoding="utf-8",
@@ -1120,7 +1115,7 @@ def test_systemd_profile_verifies_pid1_units_and_configured_shutdown(
     assert results["systemdUnit:sshd.service"]["status"] == "passed"
     assert results["health"]["status"] == "passed"
     assert evidence.findings == ()
-    assert runtime.signal_names == ["RTMIN+3"]
+    assert runtime.signal_names == ["SIGRTMIN+3"]
     assert runtime.systemd_commands == [
         ("systemctl", "show", "--property=Version", "--value"),
         ("systemctl", "is-active", "--quiet", "multi-user.target"),
@@ -1157,7 +1152,7 @@ def test_systemd_qualification_records_review_and_lifecycle_contract(
     assert constraints["rootRequirement"]["owner"] == "platform@example.com"
     assert constraints["systemd"] == {
         "requiredUnits": ["multi-user.target", "sshd.service"],
-        "stopSignal": "RTMIN+3",
+        "stopSignal": "SIGRTMIN+3",
     }
     assert constraints["writableMounts"] == [
         "/run",
@@ -1188,7 +1183,7 @@ def test_systemd_profile_rejects_non_systemd_pid1(
     assert result["status"] == "failed"
     assert any("PID 1 is not systemd" in item.message for item in evidence.findings)
     assert runtime.systemd_commands == []
-    assert runtime.signal_names == ["RTMIN+3"]
+    assert runtime.signal_names == ["SIGRTMIN+3"]
 
 
 def test_systemd_profile_rejects_unit_that_misses_shared_startup_deadline(

@@ -8,7 +8,7 @@ launch; `controls_dict` renders the observation for the test report.
 """
 
 from conclear.adapters.podman import RuntimeControlObservation
-from conclear.config import ImageConfig
+from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig
 from conclear.errors import OperationalError
 from conclear.presentation import Finding
 
@@ -59,7 +59,7 @@ def control_findings(
         mismatches.append("privileged mode")
     if expected.systemd is not None and _normalized_signal(
         observed.stop_signal
-    ) != _normalized_signal(expected.systemd.stop_signal):
+    ) != _normalized_signal(SYSTEMD_STOP_SIGNAL):
         mismatches.append("stop signal")
     # Podman reports CapAdd and CapDrop relative to its own default set, so an
     # explicitly added default capability is invisible there; the bounding set

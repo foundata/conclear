@@ -6,7 +6,7 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from conclear.config import ImageConfig
+from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig
 from conclear.context import load_containerignore
 from conclear.errors import InvalidInvocationError
 from conclear.fileio import read_regular_file
@@ -241,7 +241,7 @@ def analyze_containerfile(
         findings.append(
             _finding(
                 "CC0115",
-                f"Final STOPSIGNAL must match configured {expected_stop_signal}",
+                f"Final STOPSIGNAL must be {expected_stop_signal} for the systemd profile",
                 stop_location,
             )
         )
@@ -332,7 +332,7 @@ def check_image_static(image: ImageConfig) -> tuple[Finding, ...]:
         image.containerfile,
         expected_user=image.runtime.user,
         expected_stop_signal=(
-            None if image.runtime.systemd is None else image.runtime.systemd.stop_signal
+            None if image.runtime.systemd is None else SYSTEMD_STOP_SIGNAL
         ),
         expected_writable_mounts=image.runtime.writable_mounts,
     )
