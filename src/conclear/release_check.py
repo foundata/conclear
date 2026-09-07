@@ -414,6 +414,10 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
             "check implementation matrix",
             ("python", "-m", "conclear.implementation", "--check"),
         ),
+        (
+            "check supported-tools table",
+            ("python", "-m", "conclear.tool_matrix", "--check"),
+        ),
     ):
         runtime.run(
             label,

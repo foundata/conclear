@@ -863,6 +863,9 @@ uv run python -m conclear.compatibility_inventory --check
 
 # 9. Verify the release-specific implementation matrix is current
 uv run python -m conclear.implementation --check
+
+# 10. Verify the supported-tools table is current
+uv run python -m conclear.tool_matrix --check
 ```
 
 
@@ -879,13 +882,13 @@ The command verifies a clean checkout without whitespace errors, then checks
 formatting, linting, the Markdown style guide's `rumdl` invocation, strict
 typing, the generated conformance documentation, the guide-option support
 inventory, the guide requirement inventory and coverage, the generated
-compatibility inventory, the release-specific implementation matrix and the
-unit-test matrix on every supported interpreter, enforcing the branch-coverage
-floor on the first interpreter. It then creates a temporary clean source
-archive, embeds the committed source revision, builds a source distribution,
-builds a wheel from that source distribution, inspects artifact contents,
-installs the wheel into a clean environment and runs import, `--version` and
-`--help` smoke tests.
+compatibility inventory, the release-specific implementation matrix, the
+generated supported-tools table and the unit-test matrix on every supported
+interpreter, enforcing the branch-coverage floor on the first interpreter. It
+then creates a temporary clean source archive, embeds the committed source
+revision, builds a source distribution, builds a wheel from that source
+distribution, inspects artifact contents, installs the wheel into a clean
+environment and runs import, `--version` and `--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate,
 create a private parent directory and select a new revision-specific output

@@ -297,6 +297,18 @@ def test_source_gates_check_the_generated_inventories(
         ),
     ) in recorder.calls
     assert (
+        "check supported-tools table",
+        (
+            str(recorder.uv),
+            "run",
+            "--frozen",
+            "python",
+            "-m",
+            "conclear.tool_matrix",
+            "--check",
+        ),
+    ) in recorder.calls
+    assert (
         "check Markdown",
         (
             str(recorder.uv),
