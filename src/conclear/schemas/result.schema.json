@@ -75,6 +75,49 @@
       "if": {
         "properties": {
           "command": {
+            "const": "adopt"
+          },
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": [
+          "command",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/adopt-data",
+            "required": ["root", "observations", "suggestions", "requiredDecisions", "draftToml"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "adopt"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/adopt-data"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
             "const": "check"
           },
           "status": {
@@ -1430,6 +1473,96 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {}
+    },
+    "adopt-note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "field", "text"],
+      "properties": {
+        "image": {"type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "field": {"$ref": "#/$defs/text"},
+        "text": {"$ref": "#/$defs/text"}
+      }
+    },
+    "adopt-image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "containerfile", "context", "externalReferences", "user", "volumes", "stopSignal", "labels", "entrypoint"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+        "containerfile": {"$ref": "#/$defs/path"},
+        "context": {"$ref": "#/$defs/path"},
+        "externalReferences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reference", "registry", "repository", "tag", "digest", "pinQuality"],
+            "properties": {
+              "reference": {"$ref": "#/$defs/text"},
+              "registry": {"type": ["string", "null"]},
+              "repository": {"type": ["string", "null"]},
+              "tag": {"type": ["string", "null"]},
+              "digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+              "pinQuality": {"enum": ["pinned", "tag-only", "digest-only", "untagged", "unqualified", "build-argument"]}
+            }
+          }
+        },
+        "user": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["raw", "uid", "kind"],
+          "properties": {
+            "raw": {"type": ["string", "null"]},
+            "uid": {"type": ["integer", "null"], "minimum": 0},
+            "kind": {"enum": ["numeric", "named", "root", "missing"]}
+          }
+        },
+        "volumes": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+        "stopSignal": {"type": ["string", "null"]},
+        "labels": {"type": "object", "additionalProperties": {"type": "string"}},
+        "entrypoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["instruction", "command", "form", "systemd"],
+          "properties": {
+            "instruction": {"type": ["string", "null"], "enum": ["ENTRYPOINT", "CMD", null]},
+            "command": {"type": "array", "items": {"type": "string"}},
+            "form": {"enum": ["exec", "shell", "missing"]},
+            "systemd": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "adopt-data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root": {"$ref": "#/$defs/path"},
+        "observations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project", "images"],
+          "properties": {
+            "project": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "source", "revision", "sourceStatus"],
+              "properties": {
+                "name": {"$ref": "#/$defs/text"},
+                "source": {"type": ["string", "null"], "pattern": "^https://"},
+                "revision": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40,64}$"},
+                "sourceStatus": {"enum": ["observed", "unsupported", "unavailable"]}
+              }
+            },
+            "images": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/adopt-image"}}
+          }
+        },
+        "suggestions": {"type": "array", "items": {"$ref": "#/$defs/adopt-note"}},
+        "requiredDecisions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/adopt-note"}},
+        "draftToml": {"$ref": "#/$defs/text"},
+        "draftPath": {"$ref": "#/$defs/path"}
+      }
     },
     "build-data": {
       "type": "object",

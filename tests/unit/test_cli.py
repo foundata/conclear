@@ -21,6 +21,7 @@ from conclear.errors import (
 from conclear.presentation import CommandResult, ResultStatus
 
 DOCUMENTED_COMMANDS = {
+    "adopt",
     "assemble",
     "attest",
     "build",

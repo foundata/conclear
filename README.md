@@ -106,6 +106,12 @@ build context, `conclear.toml`, runtime test inputs, the local checks, a first
 qualification and candidate, pin updates, the release profile and the release
 itself.
 
+An existing repository can start with `conclear adopt`, which observes its
+conventional Containerfiles and Git origin read-only, separates what it saw
+from what it suggests and from what only a maintainer can decide, and with
+`--output` writes a draft that stays deliberately invalid until every `DECIDE`
+value is resolved and its `[adopt]` table is removed.
+
 In short: repository behavior is declared in a reviewed `conclear.toml` at the
 selected source revision, which holds project facts and the exceptions the guide
 permits, never credentials. Images whose tests need fixtures, generated outputs
@@ -317,6 +323,7 @@ with that evidence.
 |      Command       |                     Tools                      | Release profile | Credentials and services |
 | ------------------ | ---------------------------------------------- | --------------- | ------------------------ |
 | `version`          | none                                           | none            | none |
+| `adopt`            | Git                                            | none            | none |
 | `check`            | Hadolint                                       | none            | none |
 | `pins check`       | Skopeo                                         | optional        | registry reads with the profile's auth file |
 | `pins propose`     | Git, Skopeo                                    | optional        | registry reads with the profile's auth file |

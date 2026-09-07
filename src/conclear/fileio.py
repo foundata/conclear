@@ -3,12 +3,53 @@
 import fcntl
 import os
 import stat
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import IO
 
 from conclear.errors import InvalidInvocationError, OperationalError
+
+
+def create_new_file(path: Path, content: bytes, *, mode: int = 0o644) -> None:
+    """Create one new file with flushed content and never replace an existing one.
+
+    The content is written to a private temporary file beside the target and
+    linked into place, so the target either appears complete or not at all and
+    an existing file, symlink or directory at the target is left untouched.
+    """
+    parent = path.parent
+    if not parent.is_dir():
+        raise InvalidInvocationError(f"Output directory does not exist: {parent}")
+    if path.exists() or path.is_symlink():
+        raise InvalidInvocationError(f"Output already exists: {path}")
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=parent, prefix=f".{path.name}.", suffix=".tmp"
+        )
+    except OSError as exc:
+        raise OperationalError(f"Unable to create output {path}") from exc
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError as exc:
+            raise InvalidInvocationError(f"Output already exists: {path}") from exc
+        directory_descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except OSError as exc:
+        raise OperationalError(f"Unable to create output {path}") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def read_regular_file(path: Path, *, maximum_bytes: int, label: str) -> bytes:

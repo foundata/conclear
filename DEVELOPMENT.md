@@ -226,6 +226,7 @@ affected by the commit. ConClear uses these recurring scopes:
 |                                Scope                                 | Area |
 | -------------------------------------------------------------------- | ---- |
 | `architecture`                                                       | Changes to the contract in `ARCHITECTURE.md` |
+| `adopt`                                                              | Read-only repository assessment and the draft configuration it renders |
 | `catalog`                                                            | Stable `CCnnnn` definitions, conformance generation and generated conformance documentation |
 | `checks`                                                             | Containerfile, context and lint finding checks |
 | `ci`                                                                 | Optional CI context observation and checkout binding, excluding CI gate configuration |

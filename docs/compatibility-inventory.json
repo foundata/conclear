@@ -610,6 +610,69 @@
   "commands": [
     {
       "dependencies": {
+        "profile": "none",
+        "registryAccess": "none",
+        "registryControl": false,
+        "signing": "none",
+        "tools": [
+          "git"
+        ],
+        "transparencyLog": false
+      },
+      "group": false,
+      "help": "Assess an existing repository read-only and draft a conclear.toml to review.",
+      "name": "adopt",
+      "parameters": [
+        {
+          "declarations": [
+            "--source"
+          ],
+          "default": ".",
+          "kind": "option",
+          "multiple": false,
+          "name": "source_root",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--containerfile"
+          ],
+          "kind": "option",
+          "multiple": true,
+          "name": "containerfiles",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--output"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "output_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "dependencies": {
         "profile": "optional",
         "registryAccess": "none",
         "registryControl": false,

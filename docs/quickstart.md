@@ -147,6 +147,13 @@ including nested variants.
 facts and the exceptions the guide permits, never credentials. Unknown keys are
 errors, so a misspelled security setting cannot be silently ignored.
 
+An existing repository can start from `conclear adopt`. It reads the
+conventional Containerfiles and the Git origin, changes nothing, and prints what
+it observed, what it suggests and what only you can decide. With `--output` it
+writes a draft that stays deliberately invalid until every `DECIDE` value is
+resolved and its `[adopt]` table is removed, so the draft cannot pass `check`
+or `qualify` before you reviewed it.
+
 This example declares one `linux/amd64` service image:
 
 ```toml
