@@ -30,7 +30,6 @@ from conclear.presentation import Finding
 from conclear.records import (
     RecordEnvelope,
     Verdict,
-    format_timestamp,
 )
 from conclear.scan_policy import AppliedException, evaluate_trivy_report
 from conclear.services.preflight import ClosurePreflight, ImagePreflight
@@ -39,6 +38,7 @@ from conclear.services.qualification_inputs import (
     BuildInputs,
     QualificationInputs,
     TestDependencyBuild,
+    canonical_build_arguments,
     execution_observation,
     require_execution_mode,
 )
@@ -144,14 +144,12 @@ def build_platform(inputs: BuildInputs, builder: Builder) -> BuildEvidence:
     )
     context = hash_build_context(inputs.image.context)
     containerfile_digest = sha256_file(inputs.image.containerfile)
-    created = format_timestamp(inputs.source_time)
-    build_arguments = {
-        "IMAGE_REVISION": inputs.source.revision,
-        "IMAGE_CREATED": created,
-        "SOURCE_DATE_EPOCH": str(int(inputs.source_time.timestamp())),
-    }
-    if inputs.version is not None:
-        build_arguments["IMAGE_VERSION"] = inputs.version
+    build_arguments = canonical_build_arguments(
+        source_revision=inputs.source.revision,
+        source_time=inputs.source_time,
+        version=inputs.version,
+    )
+    created = build_arguments["IMAGE_CREATED"]
     storage_id = f"buildah-{inputs.image.image_id}-{platform_key}"
     layout_id = f"layout-{inputs.image.image_id}-{platform_key}"
     workspace.journal.plan(

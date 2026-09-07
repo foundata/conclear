@@ -27,6 +27,7 @@ from conclear.presentation import Finding
 from conclear.records import (
     SourceIdentity,
     ToolIdentity,
+    format_timestamp,
 )
 from conclear.values import Platform
 from conclear.workspace import RunWorkspace
@@ -91,6 +92,26 @@ class TestDependencyBuild:
     build: BuildEvidence
     source_revision: str
     platform: Platform
+
+
+def canonical_build_arguments(
+    *, source_revision: str, source_time: datetime, version: str | None
+) -> dict[str, str]:
+    """Return the exact build arguments every build of one release run receives.
+
+    Qualification passes this map to Buildah. Transport import and assembly
+    derive the same map from the coordinator's selected revision, the commit
+    time Git observed for it and the release version, and reject any record
+    whose recorded arguments differ from it.
+    """
+    arguments = {
+        "IMAGE_REVISION": source_revision,
+        "IMAGE_CREATED": format_timestamp(source_time),
+        "SOURCE_DATE_EPOCH": str(int(source_time.timestamp())),
+    }
+    if version is not None:
+        arguments["IMAGE_VERSION"] = version
+    return arguments
 
 
 def require_execution_mode(inputs: BuildInputs) -> None:
