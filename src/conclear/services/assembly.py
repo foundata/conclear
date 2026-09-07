@@ -72,7 +72,7 @@ class CandidateResult:
 
 
 @dataclass(frozen=True, slots=True)
-class _DependencyEvidence:
+class DependencyEvidence:
     """Platform-independent inputs one qualification recorded for a dependency."""
 
     image_id: str
@@ -98,7 +98,7 @@ class _Qualification:
     pin_references: tuple[str, ...]
     pin_resolutions: tuple[tuple[str, str], ...]
     effective_limits: tuple[tuple[str, int], ...]
-    dependencies: tuple[_DependencyEvidence, ...]
+    dependencies: tuple[DependencyEvidence, ...]
     image_version: str | None
     manifest_digest: Digest
     transport: QualificationTransport
@@ -157,7 +157,7 @@ def assemble_candidate(
         raise InvalidInvocationError("Qualifications do not match effective pin limits")
     expected_dependencies = repository.test_dependencies(image.image_id)
     for item in qualifications:
-        _require_dependency_evidence(item, expected_dependencies)
+        _require_dependency_evidence(item.dependencies, expected_dependencies)
     if first.source.repository != repository.project.source:
         raise InvalidInvocationError(
             "Qualifications do not match the selected source repository"
@@ -444,16 +444,44 @@ def _expected_limits(image: ImageConfig) -> tuple[tuple[str, int], ...]:
     )
 
 
+def verify_dependency_evidence(
+    payload: dict[str, object],
+    *,
+    repository: RepositoryConfig,
+    image: ImageConfig,
+    platform: Platform,
+    source_revision: str,
+    record_created_at: datetime,
+    payload_digests: tuple[str, ...],
+) -> tuple[DependencyEvidence, ...]:
+    """Read one qualification's dependency evidence and check it against configuration.
+
+    Transport import and assembly share this check: the recorded dependencies
+    must be exactly the configured closure of the qualified image in
+    dependency-first order, and each entry must carry that dependency's
+    configured pins, its effective pin limits and accepted observations.
+    """
+    evidence = _read_dependencies(
+        payload,
+        platform=platform,
+        source_revision=source_revision,
+        record_created_at=record_created_at,
+        payload_digests=payload_digests,
+    )
+    _require_dependency_evidence(evidence, repository.test_dependencies(image.image_id))
+    return evidence
+
+
 def _require_dependency_evidence(
-    item: _Qualification, expected: tuple[ImageConfig, ...]
+    dependencies: tuple[DependencyEvidence, ...], expected: tuple[ImageConfig, ...]
 ) -> None:
-    if tuple(value.image_id for value in item.dependencies) != tuple(
+    if tuple(value.image_id for value in dependencies) != tuple(
         image.image_id for image in expected
     ):
         raise InvalidInvocationError(
             "Qualifications do not match the configured test dependencies"
         )
-    for evidence, configured in zip(item.dependencies, expected, strict=True):
+    for evidence, configured in zip(dependencies, expected, strict=True):
         if evidence.pin_references != tuple(
             sorted(str(pin.reference) for pin in configured.pins)
         ):
@@ -474,11 +502,11 @@ def _read_dependencies(
     source_revision: str,
     record_created_at: datetime,
     payload_digests: tuple[str, ...],
-) -> tuple[_DependencyEvidence, ...]:
+) -> tuple[DependencyEvidence, ...]:
     raw_entries = payload.get("testImageDependencies")
     if not isinstance(raw_entries, list):
         raise InvalidInvocationError("Qualification test dependencies are malformed")
-    values: list[_DependencyEvidence] = []
+    values: list[DependencyEvidence] = []
     for raw_entry in raw_entries:
         entry = _narrow.object_value(raw_entry, "test dependency")
         image_id = _narrow.string_value(entry.get("imageId"), "test dependency image")
@@ -505,7 +533,7 @@ def _read_dependencies(
             entry, record_created_at=record_created_at, subject=subject
         )
         values.append(
-            _DependencyEvidence(
+            DependencyEvidence(
                 image_id=image_id,
                 containerfile_digest=containerfile_digest,
                 context_digest=context_digest,

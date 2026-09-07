@@ -23,7 +23,7 @@ from types import TracebackType
 from typing import BinaryIO
 
 from conclear.artifacts import qualification_transport
-from conclear.config import ImageConfig
+from conclear.config import ImageConfig, RepositoryConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -45,9 +45,13 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
+    parse_timestamp,
     validate_record,
 )
-from conclear.services.assembly import QualificationTransport
+from conclear.services.assembly import (
+    QualificationTransport,
+    verify_dependency_evidence,
+)
 from conclear.values import Digest, Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
 
@@ -244,6 +248,7 @@ def import_transport(
     expected_digest: str,
     workspace: RunWorkspace,
     image: ImageConfig,
+    repository: RepositoryConfig,
 ) -> ImportedTransport:
     """Verify one transport against a caller-supplied digest and install it.
 
@@ -275,7 +280,7 @@ def import_transport(
         else:
             manifest_bytes = _stage_directory(source, digest, staging)
         workspace.journal.update(resource_id, ResourceStatus.CREATED)
-        verified = _verify_staging(staging, manifest_bytes, image)
+        verified = _verify_staging(staging, manifest_bytes, image, repository)
         transport = _install(workspace, image, verified, transport_digest=str(digest))
         shutil.rmtree(staging)
         workspace.journal.update(resource_id, ResourceStatus.REMOVED)
@@ -351,7 +356,10 @@ def _stage_directory(source: Path, digest: Digest, staging: Path) -> bytes:
 
 
 def _verify_staging(
-    staging: Path, manifest_bytes: bytes, image: ImageConfig
+    staging: Path,
+    manifest_bytes: bytes,
+    image: ImageConfig,
+    repository: RepositoryConfig,
 ) -> _VerifiedStaging:
     manifest = _parse_manifest(manifest_bytes)
     ruleset = _narrow.object_value(manifest.get("ruleset"), "transport ruleset")
@@ -424,6 +432,9 @@ def _verify_staging(
             "Transported qualification identifies another image or platform",
             code=TRANSPORT_CHECK,
         )
+    _verify_dependency_evidence(
+        record, record_payload, image=image, repository=repository
+    )
     graph = validate_layout(staging / "layouts" / key, reference="qualified")
     if payload.get("layoutDescriptor") != graph.root.to_dict():
         raise RuleRejectionError(
@@ -470,6 +481,43 @@ def _verify_staging(
         record_digest=record_digest,
         payload_names=payload_names,
     )
+
+
+def _verify_dependency_evidence(
+    record: dict[str, object],
+    payload: dict[str, object],
+    *,
+    image: ImageConfig,
+    repository: RepositoryConfig,
+) -> None:
+    source = _narrow.object_value(record.get("source"), "qualification source")
+    try:
+        verify_dependency_evidence(
+            payload,
+            repository=repository,
+            image=image,
+            platform=Platform.parse(
+                _narrow.string_value(payload.get("platform"), "qualification platform")
+            ),
+            source_revision=_narrow.string_value(
+                source.get("revision"), "source revision"
+            ),
+            record_created_at=parse_timestamp(
+                record.get("createdAt"),
+                "record creation time",
+                error=InvalidInvocationError,
+            ),
+            payload_digests=tuple(
+                _narrow.string_array_value(
+                    payload.get("payloadDigests"), "payload digests"
+                )
+            ),
+        )
+    except InvalidInvocationError as exc:
+        raise RuleRejectionError(
+            f"Transported qualification dependency evidence is rejected: {exc}",
+            code=TRANSPORT_CHECK,
+        ) from exc
 
 
 def _install(

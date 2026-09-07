@@ -391,6 +391,7 @@ def assemble_command(
                 expected_digest=digest,
                 workspace=workspace,
                 image=image,
+                repository=source_run.repository,
             )
             for path, digest in transports
         )

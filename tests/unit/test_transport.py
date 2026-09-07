@@ -235,7 +235,11 @@ def assemble(
     selected = image or repository.release_image("app")
     imported = tuple(
         import_transport(
-            path, expected_digest=digest, workspace=workspace, image=selected
+            path,
+            expected_digest=digest,
+            workspace=workspace,
+            image=selected,
+            repository=repository,
         )
         for path, digest in transports
     )
@@ -463,6 +467,44 @@ def test_export_refuses_existing_destinations_and_unaccepted_qualifications(
         export(setup.arm64, tmp_path / "exports" / "incomplete.tar")
 
 
+def test_import_rejects_dependency_evidence_the_configuration_does_not_declare(
+    tmp_path: Path, setup: Setup
+) -> None:
+    def plant_dependency(value: dict[str, Any]) -> None:
+        payload = value["payload"]
+        payload["testImageDependencies"] = [
+            {
+                "imageId": "helper",
+                "platform": payload["platform"],
+                "manifestDigest": payload["manifestDigest"],
+                "layoutDescriptor": payload["layoutDescriptor"],
+                "sourceRevision": value["source"]["revision"],
+                "containerfileDigest": payload["containerfileDigest"],
+                "contextDigest": payload["contextDigest"],
+                "buildArguments": {},
+                "externalImages": [],
+                "pinObservations": [],
+                "effectiveLimits": payload["effectiveLimits"],
+                "testResultDigest": payload["payloadDigests"][0],
+            }
+        ]
+
+    setup.amd64.rewrite_record(plant_dependency)
+    planted = export(setup.amd64, tmp_path / "exports" / "amd64-planted.tar")
+    workspace = coordinator_workspace(tmp_path, setup.source_root)
+
+    with pytest.raises(RuleRejectionError, match="configured test dependencies"):
+        import_transport(
+            planted.path,
+            expected_digest=planted.transport_digest,
+            workspace=workspace,
+            image=setup.amd64.image,
+            repository=setup.amd64.inputs.repository,
+        )
+    assert workspace.load().state is RunState.CREATED
+    assert not list((workspace.root / "records").glob("platform-qualification-*"))
+
+
 def test_import_requires_the_caller_supplied_transport_digest(
     tmp_path: Path, setup: Setup
 ) -> None:
@@ -474,6 +516,7 @@ def test_import_requires_the_caller_supplied_transport_digest(
             expected_digest=wrong,
             workspace=workspace,
             image=setup.amd64.image,
+            repository=setup.amd64.inputs.repository,
         )
     assert caught.value.code == "CC0306"
     entries = {entry.resource_id: entry for entry in workspace.journal.entries()}
@@ -491,6 +534,7 @@ def test_import_requires_the_caller_supplied_transport_digest(
             expected_digest=setup.amd64_transport.transport_digest,
             workspace=workspace,
             image=setup.amd64.image,
+            repository=setup.amd64.inputs.repository,
         )
     with pytest.raises(InvalidInvocationError, match="lowercase sha256"):
         import_transport(
@@ -498,6 +542,7 @@ def test_import_requires_the_caller_supplied_transport_digest(
             expected_digest="not-a-digest",
             workspace=workspace,
             image=setup.amd64.image,
+            repository=setup.amd64.inputs.repository,
         )
 
 
@@ -558,7 +603,11 @@ def _import(tmp_path: Path, setup: Setup, path: Path, digest: str) -> Any:
         run_id=f"01arz3ndektsv4rrffq69g5{next(_COORDINATORS):03d}",
     )
     return import_transport(
-        path, expected_digest=digest, workspace=workspace, image=setup.amd64.image
+        path,
+        expected_digest=digest,
+        workspace=workspace,
+        image=setup.amd64.image,
+        repository=setup.amd64.inputs.repository,
     )
 
 
@@ -778,6 +827,7 @@ def test_directory_import_rejects_links_extra_and_missing_files(
         expected_digest=extra.transport_digest,
         workspace=workspace,
         image=setup.amd64.image,
+        repository=setup.amd64.inputs.repository,
     )
     assert not (
         workspace.root / "reports" / "app" / "linux-amd64" / "secret-output"
@@ -1101,6 +1151,7 @@ def test_failed_import_retains_staging_under_a_failed_entry_for_cleanup(
             expected_digest=digest,
             workspace=workspace,
             image=setup.amd64.image,
+            repository=setup.amd64.inputs.repository,
         )
     entry = next(
         item

@@ -411,7 +411,7 @@ def test_assemble_command_imports_transports_into_a_new_coordinator_run(
     worker = "01arz3ndektsv4rrffq69g5faw"
 
     def import_transport(
-        path: Path, *, expected_digest: str, workspace: Any, image: Any
+        path: Path, *, expected_digest: str, workspace: Any, image: Any, repository: Any
     ) -> SimpleNamespace:
         imports.append((path, expected_digest))
         return SimpleNamespace(
