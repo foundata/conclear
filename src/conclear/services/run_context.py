@@ -189,7 +189,12 @@ def open_source_run(
     run_id: str,
     names: tuple[ToolName, ...],
 ) -> SourceRun:
-    """Reopen one run and revalidate checkout, configuration and tool identities."""
+    """Reopen one run and revalidate checkout, configuration and tool identities.
+
+    The phase resolves only the tools it executes. Each resolved identity must
+    equal the one an earlier phase recorded; a tool used for the first time is
+    bound now and held constant for the rest of the run.
+    """
     workspace = RunWorkspace.open(state_home=state_home, run_id=run_id)
     snapshot = workspace.load()
     worktree = workspace.root / "source"
@@ -225,19 +230,13 @@ def open_source_run(
         workspace.root / "environment", names=_with_git(names)
     )
     observed_tools = _tool_inputs(runtime)
-    missing: dict[str, str] = {}
     for key, value in observed_tools.items():
         recorded = snapshot.immutable_inputs.get(key)
-        if recorded is None:
-            missing[key] = value
-        elif recorded != value:
+        if recorded is not None and recorded != value:
             raise InvalidInvocationError(f"Workspace tool identity changed: {key}")
-    if missing:
-        if snapshot.state is not RunState.CREATED:
-            raise InvalidInvocationError(
-                "Workspace lacks required immutable tool identities"
-            )
-        workspace.bind_immutable_inputs(missing)
+    # A tool this phase uses for the first time is pinned from here on; tools
+    # earlier phases recorded were compared above.
+    workspace.bind_tool_identities(observed_tools)
     revision = snapshot.immutable_inputs.get("sourceRevision")
     if revision is None:
         raise InvalidInvocationError("Workspace has no source revision")

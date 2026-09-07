@@ -245,3 +245,33 @@ def test_workspace_locks_refuse_symbolic_links(tmp_path: Path) -> None:
         lock_path.unlink()
     assert workspace.load().state is RunState.CREATED
     assert workspace.journal.entries() == ()
+
+
+def test_tool_identities_bind_at_first_use_and_never_change(tmp_path: Path) -> None:
+    workspace = create_workspace(tmp_path)
+    first = {"tool.git": "2.55.0@sha256:" + "1" * 64}
+    workspace.bind_tool_identities(first)
+    workspace.transition(RunState.QUALIFIED)
+    workspace.transition(RunState.ASSEMBLED)
+
+    later = workspace.bind_tool_identities(
+        {**first, "tool.skopeo": "1.22.2@sha256:" + "2" * 64}
+    )
+    assert later.state is RunState.ASSEMBLED
+    assert later.immutable_inputs["tool.skopeo"].startswith("1.22.2@")
+
+    unchanged = workspace.bind_tool_identities(first)
+    assert unchanged.updated_at == later.updated_at
+
+    with pytest.raises(InvalidInvocationError, match=r"conflict: tool\.git"):
+        workspace.bind_tool_identities({"tool.git": "2.55.0@sha256:" + "3" * 64})
+    with pytest.raises(InvalidInvocationError, match="must name tools"):
+        workspace.bind_tool_identities({"image": "other"})
+    with pytest.raises(InvalidInvocationError, match="must name tools"):
+        workspace.bind_tool_identities({})
+
+    workspace.transition(RunState.REJECTED)
+    assert workspace.bind_tool_identities(first).state is RunState.REJECTED
+    with pytest.raises(InvalidInvocationError, match="finished run"):
+        workspace.bind_tool_identities({"tool.cosign": "3.1.3@sha256:" + "4" * 64})
+    assert "tool.cosign" not in workspace.load().immutable_inputs

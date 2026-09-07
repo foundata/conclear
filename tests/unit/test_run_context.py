@@ -343,12 +343,22 @@ def test_reopened_run_revalidates_checkout_configuration_and_tools(
     settings["digest"] = "sha256:" + "1" * 64
 
     created.workspace.transition(RunState.QUALIFIED)
-    with pytest.raises(InvalidInvocationError, match="lacks required immutable tool"):
+    later_phase = open_source_run(
+        state_home=state_home,
+        run_id=created.workspace.run_id,
+        names=(ToolName.TRIVY,),
+    )
+    assert (
+        later_phase.workspace.load().immutable_inputs["tool.trivy"].startswith("1.0.0@")
+    )
+    settings["digest"] = "sha256:" + "3" * 64
+    with pytest.raises(InvalidInvocationError, match="tool identity changed"):
         open_source_run(
             state_home=state_home,
             run_id=created.workspace.run_id,
             names=(ToolName.TRIVY,),
         )
+    settings["digest"] = "sha256:" + "1" * 64
 
     git.revision = "c" * 40
     with pytest.raises(InvalidInvocationError, match="checkout changed"):
@@ -410,3 +420,47 @@ def _only_workspace(tmp_path: Path) -> Any:
     runs = tmp_path / "state" / "conclear" / "runs"
     (run_directory,) = [item for item in runs.iterdir() if item.is_dir()]
     return RunWorkspace.open(state_home=tmp_path / "state", run_id=run_directory.name)
+
+
+def test_a_later_phase_pins_a_tool_at_first_use_and_a_finished_run_refuses_new_tools(
+    source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
+) -> None:
+    """A coordinator run created by `assemble` records only Git; `publish` adds Skopeo."""
+    root, _git, settings = source
+    created = create(root, tmp_path, names=())
+    state_home = tmp_path / "state"
+    assert [
+        key
+        for key in created.workspace.load().immutable_inputs
+        if key.startswith("tool.")
+    ] == ["tool.git"]
+    for state in (RunState.QUALIFIED, RunState.ASSEMBLED):
+        created.workspace.transition(state)
+
+    publish_phase = open_source_run(
+        state_home=state_home,
+        run_id=created.workspace.run_id,
+        names=(ToolName.SKOPEO,),
+    )
+    inputs = publish_phase.workspace.load().immutable_inputs
+    assert inputs["tool.skopeo"] == "1.0.0@sha256:" + "1" * 64
+
+    settings["digest"] = "sha256:" + "2" * 64
+    with pytest.raises(
+        InvalidInvocationError, match=r"tool identity changed: tool\.git"
+    ):
+        open_source_run(
+            state_home=state_home,
+            run_id=created.workspace.run_id,
+            names=(ToolName.SKOPEO, ToolName.COSIGN),
+        )
+    settings["digest"] = "sha256:" + "1" * 64
+
+    created.workspace.transition(RunState.REJECTED)
+    with pytest.raises(InvalidInvocationError, match="finished run"):
+        open_source_run(
+            state_home=state_home,
+            run_id=created.workspace.run_id,
+            names=(ToolName.COSIGN,),
+        )
+    assert "tool.cosign" not in created.workspace.load().immutable_inputs

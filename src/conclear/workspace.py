@@ -268,6 +268,54 @@ class RunWorkspace:
             atomic_write_json(self.root / "run.json", updated.to_dict())
             return updated
 
+    def bind_tool_identities(
+        self, additions: dict[str, str], *, now: datetime | None = None
+    ) -> RunSnapshot:
+        """Record tool identities at their first use in an unfinished run.
+
+        A phase binds the identity of every tool it resolves. An identity that
+        the run already holds must match exactly; a new one is appended so a
+        later phase that first uses a tool pins it for the rest of the run. A
+        promoted or rejected run records nothing further.
+        """
+        if not additions or any(
+            not key.startswith("tool.") or not value for key, value in additions.items()
+        ):
+            raise InvalidInvocationError("Tool identity additions must name tools")
+        with locked_file(self.root / ".run.lock", label="run state"):
+            snapshot = self.load()
+            conflicts = [
+                key
+                for key, value in additions.items()
+                if key in snapshot.immutable_inputs
+                and snapshot.immutable_inputs[key] != value
+            ]
+            if conflicts:
+                raise InvalidInvocationError(
+                    "Immutable tool identities conflict: "
+                    + ", ".join(sorted(conflicts))
+                )
+            new = {
+                key: value
+                for key, value in additions.items()
+                if key not in snapshot.immutable_inputs
+            }
+            if not new:
+                return snapshot
+            if snapshot.state in {RunState.PROMOTED, RunState.REJECTED}:
+                raise InvalidInvocationError(
+                    "Tool identities cannot be bound to a finished run"
+                )
+            updated = RunSnapshot(
+                run_id=snapshot.run_id,
+                state=snapshot.state,
+                created_at=snapshot.created_at,
+                updated_at=format_timestamp(now or utc_now()),
+                immutable_inputs={**snapshot.immutable_inputs, **new},
+            )
+            atomic_write_json(self.root / "run.json", updated.to_dict())
+            return updated
+
     def resume(
         self,
         expected_inputs: dict[str, str],
