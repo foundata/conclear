@@ -44,11 +44,7 @@ from conclear.services.checking import check_image
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.cleanup import cleanup_run
 from conclear.services.promotion import PromotionResult, promote_candidate
-from conclear.services.publication import (
-    attest_candidate,
-    publish_candidate,
-    verify_candidate,
-)
+from conclear.services.publication import attest_candidate, publish_candidate
 from conclear.services.qualification import qualify_platform
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.run_context import (
@@ -57,6 +53,7 @@ from conclear.services.run_context import (
     hook_runner,
     open_source_run,
 )
+from conclear.services.verification import verify_candidate
 from conclear.values import (
     Digest,
     OCIReference,

@@ -27,10 +27,10 @@ from conclear.services.publication import (
     PublishedCandidate,
     Registry,
     Signer,
-    VerificationResult,
     require_downloaded_statement,
     retry_entry,
 )
+from conclear.services.verification import VerificationResult
 from conclear.values import Digest, OCIReference
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 

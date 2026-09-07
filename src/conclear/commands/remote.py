@@ -24,11 +24,7 @@ from conclear.records import format_timestamp, utc_now
 from conclear.release_profile import ReleaseProfile
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.promotion import promote_candidate
-from conclear.services.publication import (
-    attest_candidate,
-    publish_candidate,
-    verify_candidate,
-)
+from conclear.services.publication import attest_candidate, publish_candidate
 from conclear.services.release import (
     ReleaseRequest,
     execute_release,
@@ -38,6 +34,7 @@ from conclear.services.release import (
     signer_identity,
 )
 from conclear.services.run_context import SourceRun, open_source_run
+from conclear.services.verification import verify_candidate
 from conclear.workspace import RunState
 
 from .common import (

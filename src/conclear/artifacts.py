@@ -20,9 +20,9 @@ from conclear.services.assembly import CandidateResult, QualificationTransport
 from conclear.services.publication import (
     PublishedCandidate,
     ReleaseEvidence,
-    VerificationResult,
     validate_release_provenance,
 )
+from conclear.services.verification import VerificationResult
 from conclear.values import (
     Digest,
     OCIReference,

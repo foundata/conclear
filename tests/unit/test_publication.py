@@ -54,12 +54,11 @@ from conclear.services.ci_context import PublicCIContext
 from conclear.services.promotion import promote_candidate
 from conclear.services.publication import (
     ReleaseEvidence,
-    VerificationResult,
     attest_candidate,
     publish_candidate,
     validate_release_provenance,
-    verify_candidate,
 )
+from conclear.services.verification import VerificationResult, verify_candidate
 from conclear.values import Digest, OCIReference, Platform, candidate_tag
 from conclear.workspace import (
     ResourceKind,
@@ -411,7 +410,7 @@ def test_signature_coverage_failure_uses_stable_check_identifier(
     )
 
     with pytest.raises(OperationalError, match="coverage") as caught:
-        publication_module._verify_image_signature(
+        publication_module.verify_image_signature(
             FailingSignatureSigner(), subject, tmp_path / "cosign.pub"
         )
 

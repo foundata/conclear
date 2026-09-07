@@ -322,7 +322,7 @@
     {
       "id": "IP0033",
       "summary": "Verify the remote graph, signatures, attestations and identities before attaching the final verification result",
-      "implementation": ["src/conclear/services/publication.py", "src/conclear/attestations.py", "src/conclear/oci.py"],
+      "implementation": ["src/conclear/services/verification.py", "src/conclear/attestations.py", "src/conclear/oci.py"],
       "tests": [
         {"path": "tests/unit/test_publication.py", "tier": "unit"},
         {"path": "tests/unit/test_assembly_verification.py", "tier": "unit"},
