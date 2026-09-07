@@ -1,18 +1,30 @@
-[build-system]
-requires = ["uv_build>=0.12.3,<0.13.0"]
-build-backend = "uv_build"
-
 [project]
 name = "conclear"
 version = "1.0.0"
 description = "Build and release OCI container images through digest-bound policy gates"
-readme = "README.md"
-requires-python = ">=3.12"
+keywords = [
+  "oci",
+  "container",
+  "image",
+  "release",
+  "supply-chain",
+  "sbom",
+  "provenance",
+  "sigstore",
+  "buildah",
+  "podman",
+]
 license = "GPL-3.0-or-later"
 license-files = ["LICENSES/GPL-3.0-or-later.txt"]
+readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
-  { name = "foundata GmbH", email = "info@foundata.com" },
+  { name = "foundata GmbH" },
+  { name = "Andreas Haerter", email = "ah@foundata.com" },
 ]
+maintainers = [
+  { name = "Andreas Haerter", email = "ah@foundata.com" },
+]
+requires-python = ">=3.12"
 dependencies = [
   "click>=8.2.1",
   "httpx>=0.28.1",
@@ -20,23 +32,42 @@ dependencies = [
   "python-ulid>=3.1.0",
 ]
 
+# https://pypi.org/classifiers/
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+
+  # Indication for whom the project is for
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Topic :: Security",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: System :: Software Distribution",
+  "Topic :: System :: Systems Administration",
+  "Topic :: Utilities",
+
+  # Supported Python versions
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+
 [project.scripts]
 conclear = "conclear.cli:main"
 
 [project.urls]
-Documentation = "https://github.com/foundata/conclear"
-Repository = "https://github.com/foundata/conclear"
+Homepage = "https://foundata.com/en/projects/conclear/"
+Documentation = "https://foundata.com/en/projects/conclear/#doc"
+Repository = "https://foundata.com/en/projects/conclear/#source"
+Issues = "https://foundata.com/en/projects/conclear/#issues"
+Changelog = "https://foundata.com/en/projects/conclear/#changelog"
 
-[dependency-groups]
-dev = [
-  "hypothesis>=6.138.15",
-  "mypy>=1.17.1",
-  "pytest>=9.0.0",
-  "pytest-cov>=6.2.1",
-  "ruff>=0.12.11",
-  "rumdl>=0.2.66",
-  "types-jsonschema>=4.25.1.20250822",
-]
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "conclear"
@@ -52,49 +83,64 @@ source-include = [
 ]
 wheel-exclude = ["src/conclear/_development_identity.py"]
 
+[dependency-groups]
+dev = [
+  "hypothesis>=6.138.15",
+  "mypy>=1.17.1",
+  "pytest>=9.0.0",
+  "pytest-cov>=6.2.1",
+  "ruff>=0.12.11",
+  "rumdl>=0.2.66",
+  "types-jsonschema>=4.25.1.20250822",
+]
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
+# https://docs.astral.sh/ruff/settings/#lint_select
 select = [
-  "E4",
-  "E7",
-  "E9",
-  "F",
-  "I",
-  "B",
-  "C4",
-  "UP",
-  "RUF",
-  "A",
-  "D",
-  "DTZ",
-  "G",
-  "LOG",
-  "N",
-  "PTH",
+  "E4",  # pycodestyle import errors
+  "E7",  # pycodestyle statement errors
+  "E9",  # pycodestyle runtime errors
+  "F",   # Pyflakes
+  "I",   # import sorting
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade
+  "RUF", # Ruff-specific rules
+  "A",   # flake8-builtins: no shadowing of Python builtins
+  "D",   # pydocstyle: docstrings on public modules, classes and functions
+  "DTZ", # flake8-datetimez: timezone-aware datetime handling only
+  "G",   # flake8-logging-format: lazy logging arguments, no eager formatting
+  "LOG", # flake8-logging: correct use of the logging module
+  "N",   # pep8-naming: PEP 8 naming conventions
+  "PTH", # flake8-use-pathlib: pathlib instead of os.path
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["D"]
+"tests/**/*.py" = [
+  "D", # tests need no docstrings; their names describe the behavior
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.format]
-docstring-code-format = true
-indent-style = "space"
-line-ending = "lf"
 quote-style = "double"
+indent-style = "space"
 skip-magic-trailing-comma = false
+line-ending = "lf"
+docstring-code-format = true
+docstring-code-line-length = 88
 
 [tool.mypy]
 files = ["src", "tests"]
 python_version = "3.12"
 strict = true
-enable_error_code = ["explicit-override"]
-warn_unreachable = true
+enable_error_code = ["explicit-override"] # Extends strict mode.
+warn_unreachable = true                   # Extends strict mode.
 
 [tool.pytest.ini_options]
 addopts = [
