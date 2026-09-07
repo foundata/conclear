@@ -9,11 +9,13 @@ import pytest
 from conclear.cli import root
 from conclear.dependencies import (
     COMMAND_DEPENDENCIES,
+    COMMAND_ESCALATIONS,
     DOCTOR_SCOPES,
     CommandDependencies,
     ProfileUse,
     RegistryAccess,
     SigningUse,
+    command_dependencies,
     command_tools,
     require_profile_capabilities,
     scope_dependencies,
@@ -32,8 +34,30 @@ def _public_commands(command: click.Command, path: tuple[str, ...]) -> set[str]:
     return names
 
 
+def _command(path: tuple[str, ...]) -> click.Command:
+    current: click.Command = root
+    for name in path:
+        assert isinstance(current, click.Group)
+        current = current.commands[name]
+    return current
+
+
 def test_every_public_command_has_one_declaration() -> None:
     assert set(COMMAND_DEPENDENCIES) | {"doctor"} == _public_commands(root, ())
+
+
+def test_every_escalation_names_a_real_option_of_a_declared_command() -> None:
+    for name, escalations in COMMAND_ESCALATIONS.items():
+        assert name in COMMAND_DEPENDENCIES
+        options = {
+            option
+            for parameter in _command(tuple(name.split(" "))).params
+            for option in getattr(parameter, "opts", ())
+        }
+        for option, item in escalations.items():
+            assert option in options, (name, option)
+            assert set(item.tools) >= set(COMMAND_DEPENDENCIES[name].tools)
+            assert item.profile is ProfileUse.REQUIRED
 
 
 def test_declarations_are_deterministic_and_well_formed() -> None:
@@ -88,6 +112,31 @@ def test_doctor_scopes_are_cumulative_unions_of_their_commands() -> None:
     assert set(DOCTOR_SCOPES["qualify"]) <= set(DOCTOR_SCOPES["release"])
     assert set(DOCTOR_SCOPES["release"]) == set(COMMAND_DEPENDENCIES) - {"version"}
     assert list(qualify.tools) == [tool for tool in ToolName if tool in qualify.tools]
+
+
+def test_authoritative_rescan_escalates_to_registry_writes_and_signing() -> None:
+    diagnostic = command_dependencies("rescan")
+    authoritative = command_dependencies("rescan", "--authoritative")
+
+    assert diagnostic == COMMAND_DEPENDENCIES["rescan"]
+    assert diagnostic.registry_access is RegistryAccess.READ
+    assert diagnostic.signing is SigningUse.VERIFY
+    assert authoritative.tools == diagnostic.tools
+    assert authoritative.profile is ProfileUse.REQUIRED
+    assert authoritative.registry_access is RegistryAccess.WRITE
+    assert authoritative.signing is SigningUse.SIGN
+    assert authoritative.transparency_log and not authoritative.registry_control
+    with pytest.raises(InvalidInvocationError, match="no auth_file"):
+        require_profile_capabilities(_profile(auth_file=None), authoritative)
+    with pytest.raises(InvalidInvocationError, match="no Cosign signing key"):
+        require_profile_capabilities(_profile(cosign_private_key=None), authoritative)
+    require_profile_capabilities(
+        _profile(auth_file=None, cosign_private_key=None), diagnostic
+    )
+    with pytest.raises(KeyError):
+        command_dependencies("rescan", "--diagnostic")
+    with pytest.raises(KeyError):
+        command_dependencies("check", "--authoritative")
 
 
 def test_inventory_form_names_every_dependency() -> None:

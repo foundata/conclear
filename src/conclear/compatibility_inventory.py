@@ -24,7 +24,9 @@ from conclear.catalog import load_catalog
 from conclear.cli import root
 from conclear.dependencies import (
     COMMAND_DEPENDENCIES,
+    COMMAND_ESCALATIONS,
     DOCTOR_SCOPES,
+    command_dependencies,
     scope_dependencies,
 )
 from conclear.errors import ExitStatus
@@ -144,7 +146,14 @@ def _dependencies(name: str) -> dict[str, object]:
                 scope: scope_dependencies(scope).to_dict() for scope in DOCTOR_SCOPES
             }
         }
-    return COMMAND_DEPENDENCIES[name].to_dict()
+    value = COMMAND_DEPENDENCIES[name].to_dict()
+    escalations = COMMAND_ESCALATIONS.get(name, {})
+    if escalations:
+        value["escalations"] = {
+            option: command_dependencies(name, option).to_dict()
+            for option in escalations
+        }
+    return value
 
 
 def _parameter(parameter: click.Parameter) -> dict[str, object]:

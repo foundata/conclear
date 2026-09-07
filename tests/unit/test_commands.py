@@ -21,7 +21,11 @@ import conclear.commands.transport as transport_commands
 import conclear.services.release as release_module
 from conclear.cli import main
 from conclear.config import load_repository_config
-from conclear.dependencies import command_tools, scope_dependencies
+from conclear.dependencies import (
+    command_dependencies,
+    command_tools,
+    scope_dependencies,
+)
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -1316,7 +1320,98 @@ def test_rescan_command_validates_subject_profile_and_configuration(
         ]
     )
     assert code == 64
-    assert "requires a signing key" in value["message"]
+    assert "no Cosign signing key" in value["message"]
+
+
+@pytest.mark.parametrize(
+    ("profile_arguments", "expected"),
+    [
+        ({"auth": None}, "has no auth_file for registry writes"),
+        ({"key": None}, "has no Cosign signing key"),
+    ],
+)
+def test_authoritative_rescan_refuses_a_profile_that_cannot_write_or_sign(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    profile_arguments: dict[str, Any],
+    expected: str,
+) -> None:
+    """An authoritative rescan attaches a signed result, so it is a write."""
+    root = repository_factory()
+    profile = release_profile(tmp_path, **profile_arguments)
+    monkeypatch.setattr(maintenance_commands, "profile", lambda name: profile)
+    monkeypatch.setattr(maintenance_commands, "state_home", lambda: tmp_path / "state")
+    monkeypatch.setattr(
+        maintenance_commands,
+        "signing_passphrase",
+        lambda *a, **k: pytest.fail("no passphrase was read before the profile check"),
+    )
+    monkeypatch.setattr(
+        maintenance_commands,
+        "RunWorkspace",
+        SimpleNamespace(
+            create=lambda **k: pytest.fail("no workspace before the profile check")
+        ),
+    )
+
+    code, value, _ = invoke(
+        [
+            "rescan",
+            "--subject",
+            "quay.io/example/app@" + DIGEST,
+            "--config",
+            str(root / "conclear.toml"),
+            "--image",
+            "app",
+            "--profile",
+            "production",
+            "--authoritative",
+        ]
+    )
+
+    assert code == 64
+    assert expected in value["message"]
+    assert not (tmp_path / "state").exists()
+
+
+def test_diagnostic_rescan_accepts_a_read_only_profile(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+) -> None:
+    root = repository_factory()
+    profile = release_profile(tmp_path, key=None, auth=None)
+    recorded: list[tuple[ToolName, ...]] = []
+    monkeypatch.setattr(maintenance_commands, "profile", lambda name: profile)
+    monkeypatch.setattr(maintenance_commands, "state_home", lambda: tmp_path / "state")
+    monkeypatch.setattr(
+        maintenance_commands,
+        "ApplicationRuntime",
+        SimpleNamespace(
+            create=lambda root, names: _stopping_run(recorded)(names=names)
+        ),
+    )
+
+    code, value, _ = invoke(
+        [
+            "rescan",
+            "--subject",
+            "quay.io/example/app@" + DIGEST,
+            "--config",
+            str(root / "conclear.toml"),
+            "--image",
+            "app",
+            "--profile",
+            "production",
+        ]
+    )
+
+    assert code == 64
+    assert "stopped after resolving tools" in value["message"]
+    assert recorded == [command_tools("rescan")]
 
 
 class _Context:
@@ -1463,6 +1558,20 @@ def _stopping_runtime(recorded: list[tuple[ToolName, ...]]) -> Callable[..., Any
                 "production",
             ],
             command_tools("rescan"),
+        ),
+        pytest.param(
+            [
+                "rescan",
+                "--subject",
+                "{subject}",
+                "--image",
+                "app",
+                "--profile",
+                "production",
+                "--authoritative",
+            ],
+            command_dependencies("rescan", "--authoritative").tools,
+            id="rescan app production --authoritative",
         ),
         (["cleanup", RUN_ID], command_tools("cleanup")),
         (["doctor", "--scope", "check"], scope_dependencies("check").tools),

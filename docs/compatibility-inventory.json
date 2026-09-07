@@ -1644,6 +1644,20 @@
     },
     {
       "dependencies": {
+        "escalations": {
+          "--authoritative": {
+            "profile": "required",
+            "registryAccess": "write",
+            "registryControl": false,
+            "signing": "sign",
+            "tools": [
+              "skopeo",
+              "trivy",
+              "cosign"
+            ],
+            "transparencyLog": true
+          }
+        },
         "profile": "required",
         "registryAccess": "read",
         "registryControl": false,

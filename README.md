@@ -332,14 +332,16 @@ with that evidence.
 | `verify`           | Git, Skopeo, Cosign                            | required        | registry writes for the signed verification, signing key and passphrase, public Sigstore services |
 | `promote`          | Git, Skopeo, Cosign                            | required        | registry reads, tag writes through the registry control API, public Sigstore services |
 | `release`          | all seven                                      | required        | everything above |
-| `rescan`           | Skopeo, Trivy, Cosign                          | required        | registry reads, public Sigstore services; signing key for `--authoritative` |
+| `rescan`           | Skopeo, Trivy, Cosign                          | required        | registry reads, public Sigstore services; `--authoritative` adds registry writes with the auth file and the signing key with passphrase |
 | `cleanup`          | Git, Buildah, Podman                           | optional        | registry control API when a profile is given |
 | `doctor`           | the union of its scope                         | `release` scope | `release` scope requires the profile's auth file, control-plane token and signing key, then probes the registry and Sigstore read-only |
 
 The generated [compatibility inventory](./docs/compatibility-inventory.json)
-carries the same declarations in machine-readable form. A command that writes
-to the registry or signs refuses a profile without the auth file or the
-signing key before it opens a run, and `doctor` applies the same rule to its
+carries the same declarations in machine-readable form, including the
+escalation an option such as `--authoritative` adds. A command that writes to
+the registry or signs refuses a profile without the auth file or the signing
+key before it opens a run, `rescan --authoritative` is held to the same rule
+because it attaches a signed result, and `doctor` applies the rule to its
 scope, so readiness is never reported for a profile that cannot publish.
 
 Trivy is the only supported scanner stack. Production signing always uses Cosign

@@ -10,6 +10,7 @@ from conclear.config import load_repository_config, normalize_observed_source_ur
 from conclear.database import select_fresh_database, trivy_cache_root
 from conclear.dependencies import (
     ProfileUse,
+    command_dependencies,
     command_tools,
     require_profile_capabilities,
     scope_dependencies,
@@ -445,8 +446,10 @@ def rescan_command(
         )
     configuration_digest = sha256_bytes(repository.raw_bytes)
     triage = () if triage_path is None else load_triage(triage_path, subject=subject)
-    if authoritative and selected.cosign_private_key is None:
-        raise InvalidInvocationError("Authoritative rescan requires a signing key")
+    dependencies = command_dependencies(
+        "rescan", *(("--authoritative",) if authoritative else ())
+    )
+    require_profile_capabilities(selected, dependencies)
     passphrase = signing_passphrase(selected, passphrase_fd, required=authoritative)
     workspace = RunWorkspace.create(
         state_home=state_home(),
@@ -461,7 +464,7 @@ def rescan_command(
     with owned_run(workspace):
         runtime = ApplicationRuntime.create(
             workspace.root / "environment",
-            names=command_tools("rescan"),
+            names=dependencies.tools,
         )
         workspace.bind_immutable_inputs(
             {

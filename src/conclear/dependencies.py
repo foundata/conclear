@@ -5,7 +5,9 @@ host executables it runs, whether it needs a maintainer-controlled release
 profile, and which credentials and external services it touches. Commands
 resolve exactly the declared tools, `doctor` validates a scope through the union
 of the commands the scope covers, and the compatibility inventory renders the
-declarations so a change is a reviewable diff.
+declarations so a change is a reviewable diff. An option that changes what a
+command executes, such as `rescan --authoritative`, declares its escalation
+separately; `command_dependencies` unions the declaration of one invocation.
 """
 
 from collections.abc import Iterable, Mapping
@@ -151,6 +153,18 @@ COMMAND_DEPENDENCIES: Mapping[str, CommandDependencies] = {
     ),
 }
 
+COMMAND_ESCALATIONS: Mapping[str, Mapping[str, CommandDependencies]] = {
+    "rescan": {
+        "--authoritative": CommandDependencies(
+            tools=(ToolName.SKOPEO, ToolName.TRIVY, ToolName.COSIGN),
+            profile=ProfileUse.REQUIRED,
+            registry_access=RegistryAccess.WRITE,
+            signing=SigningUse.SIGN,
+            transparency_log=True,
+        ),
+    },
+}
+
 DOCTOR_SCOPES: Mapping[str, tuple[str, ...]] = {
     "check": ("check",),
     "qualify": ("check", "pins check", "build", "test", "qualify", "transport export"),
@@ -163,12 +177,46 @@ def command_tools(command: str) -> tuple[ToolName, ...]:
     return COMMAND_DEPENDENCIES[command].tools
 
 
+def command_dependencies(command: str, *options: str) -> CommandDependencies:
+    """Return what one invocation needs: the command escalated by its options.
+
+    Each option must be declared in `COMMAND_ESCALATIONS` for the command;
+    an undeclared option is a programming error and raises `KeyError`.
+    """
+    base = COMMAND_DEPENDENCIES[command]
+    if not options:
+        return base
+    escalations = COMMAND_ESCALATIONS.get(command, {})
+    selected = (base, *(escalations[option] for option in options))
+    added = tuple(
+        tool for item in selected[1:] for tool in item.tools if tool not in base.tools
+    )
+    return _union(selected, tools=(*base.tools, *dict.fromkeys(added)))
+
+
 def scope_dependencies(scope: str) -> CommandDependencies:
-    """Return the union of what every command in one doctor scope needs."""
-    selected = tuple(COMMAND_DEPENDENCIES[name] for name in DOCTOR_SCOPES[scope])
+    """Return the union of what every command in one doctor scope needs.
+
+    Option escalations count: a scope that covers `rescan` also covers an
+    authoritative rescan.
+    """
+    selected = tuple(
+        item
+        for name in DOCTOR_SCOPES[scope]
+        for item in (
+            COMMAND_DEPENDENCIES[name],
+            *COMMAND_ESCALATIONS.get(name, {}).values(),
+        )
+    )
     used = {tool for item in selected for tool in item.tools}
+    return _union(selected, tools=tuple(tool for tool in ToolName if tool in used))
+
+
+def _union(
+    selected: tuple[CommandDependencies, ...], *, tools: tuple[ToolName, ...]
+) -> CommandDependencies:
     return CommandDependencies(
-        tools=tuple(tool for tool in ToolName if tool in used),
+        tools=tools,
         profile=_strongest(ProfileUse, (item.profile for item in selected)),
         registry_access=_strongest(
             RegistryAccess, (item.registry_access for item in selected)
