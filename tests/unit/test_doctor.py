@@ -209,7 +209,7 @@ def test_missing_binfmt_handler_is_an_operational_failure(
     scope: DoctorScope,
 ) -> None:
     repository = load_repository_config(repository_factory() / "conclear.toml")
-    image = repository.image("app")
+    image = repository.release_image("app")
     repository = replace(
         repository,
         images=(

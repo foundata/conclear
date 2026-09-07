@@ -112,7 +112,7 @@ class Harness:
             id_factory=FixedIdFactory(),
             now=NOW,
         )
-        pin_digest = self.repository.image("app").pins[0].reference.digest
+        pin_digest = self.repository.release_image("app").pins[0].reference.digest
         assert pin_digest is not None
         self.runtime = FakeRuntime(pin_digest)
         self.source_run = SimpleNamespace(
@@ -136,7 +136,7 @@ class Harness:
 
     @property
     def image(self) -> Any:
-        return self.repository.image("app")
+        return self.repository.release_image("app")
 
     def request(self, **overrides: Any) -> ReleaseRequest:
         values: dict[str, Any] = {

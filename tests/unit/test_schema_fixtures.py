@@ -155,6 +155,25 @@ def test_configuration_profile_result_and_triage_fixtures(
     ]
     assert _errors("config.schema.json", {**configuration, "images": [image]})
     assert load_repository_config(root / "conclear.toml").images[0].image_id == "app"
+    app = {**configuration["images"][0], "test": {"dependencies": ["helper"]}}
+    helper = {"id": "helper", "platforms": ["linux/amd64"], "runtime": app["runtime"]}
+    assert (
+        _errors("config.schema.json", {**configuration, "images": [app, helper]}) == []
+    )
+    forbidden_cases: tuple[dict[str, object], ...] = (
+        {"release": app["release"]},
+        {"hooks": []},
+        {"native_test_platforms": ["linux/amd64"]},
+        {"test": {"launch": {"arguments": ["x"]}}},
+        {"limits": {"remediation": "7d"}},
+    )
+    for forbidden in forbidden_cases:
+        assert _errors(
+            "config.schema.json",
+            {**configuration, "images": [app, {**helper, **forbidden}]},
+        ), forbidden
+    unreleased = {key: value for key, value in app.items() if key != "release"}
+    assert _errors("config.schema.json", {**configuration, "images": [unreleased]})
 
     profile = {
         "schema_version": 1,

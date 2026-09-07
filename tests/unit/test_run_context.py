@@ -23,6 +23,7 @@ from conclear.services.cleanup import cleanup_run
 from conclear.services.run_context import create_source_run, open_source_run
 from conclear.tools import ToolName
 from conclear.workspace import ResourceStatus, RunState, RunWorkspace
+from tests.unit.test_config import _image_text
 
 REVISION = "b" * 40
 
@@ -194,7 +195,9 @@ def test_checked_out_configuration_must_match_the_git_object(
     source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
 ) -> None:
     root, git, _ = source
-    git.config_override = (root / "conclear.toml").read_text(encoding="utf-8") + "\n"
+    git.config_override = (root / "conclear.toml").read_text(
+        encoding="utf-8"
+    ) + "\from tests.unit.test_config import _image_text\nn"
 
     with pytest.raises(OperationalError, match="differs from Git object") as caught:
         create(root, tmp_path)
@@ -228,6 +231,26 @@ def test_unknown_image_leaves_an_incomplete_run(
 
     with pytest.raises(InvalidInvocationError, match="Unknown image") as caught:
         create(root, tmp_path, image_id="missing")
+
+    workspace = _only_workspace(tmp_path)
+    assert workspace.load().state is RunState.INCOMPLETE
+    assert failed_run_id(caught.value) == workspace.run_id
+    _assert_cleanup_resolves_every_resource(workspace, git)
+
+
+def test_test_only_image_cannot_start_a_run(
+    source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
+) -> None:
+    root, git, _ = source
+    path = root / "conclear.toml"
+    content = path.read_text(encoding="utf-8").replace(
+        "[images.release]",
+        '[images.test]\ndependencies = ["helper"]\n\n[images.release]',
+    )
+    path.write_text(content + _image_text("helper", releasable=False), encoding="utf-8")
+
+    with pytest.raises(InvalidInvocationError, match="helper is test-only") as caught:
+        create(root, tmp_path, image_id="helper")
 
     workspace = _only_workspace(tmp_path)
     assert workspace.load().state is RunState.INCOMPLETE

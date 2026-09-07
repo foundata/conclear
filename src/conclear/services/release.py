@@ -22,7 +22,7 @@ from conclear.artifacts import (
     qualification_transport,
     qualification_transports,
 )
-from conclear.config import ImageConfig, RepositoryConfig
+from conclear.config import ReleaseImageConfig, RepositoryConfig
 from conclear.database import select_fresh_database, trivy_cache_root
 from conclear.dependencies import command_tools
 from conclear.errors import (
@@ -185,7 +185,7 @@ def resume_release(
     if image_id is None or revision is None:
         raise InvalidInvocationError("Run immutable source inputs are incomplete")
     if snapshot.state is RunState.INCOMPLETE:
-        image = source_run.repository.image(image_id)
+        image = source_run.repository.release_image(image_id)
         protected_resources = {
             "source-worktree",
             f"candidate-layout-{image.image_id}",
@@ -259,7 +259,7 @@ def _continue_release(
     source_time: datetime,
     now_factory: Callable[[], datetime],
 ) -> ReleaseResult:
-    image = repository.image(request.image_id)
+    image = repository.release_image(request.image_id)
     validate_registry_destinations(request.profile, (image.repository,))
     public_ci_context = resolve_ci_context(
         request.ci_context,
@@ -384,7 +384,7 @@ def _qualify_release(
     source_time: datetime,
     now_factory: Callable[[], datetime],
 ) -> None:
-    image = repository.image(request.image_id)
+    image = repository.release_image(request.image_id)
     preflight = check_image(image, runtime.hadolint())
     if not preflight.accepted:
         raise RuleRejectionError(
@@ -466,7 +466,7 @@ def _qualify_release(
 def generate_release_provenance(
     workspace: RunWorkspace,
     repository: RepositoryConfig,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     *,
     source: SourceIdentity,
     now: datetime,

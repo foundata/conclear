@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from conclear.config import ImageConfig
+from conclear.config import ReleaseImageConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -44,7 +44,7 @@ def promote_candidate(
     published: PublishedCandidate,
     verification: VerificationResult,
     *,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     version: str | None,
     workspace: RunWorkspace,
     registry_control: RegistryControl,
@@ -192,7 +192,7 @@ def promote_candidate(
 def _write_release_tag(
     tag: str,
     digest: Digest,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     workspace: RunWorkspace,
     registry_control: RegistryControl,
     registry: Registry,
@@ -257,7 +257,7 @@ def _write_release_tag(
 
 def _protect_release_tag(
     registry_control: RegistryControl,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     tag: str,
     *,
     expected_digest: Digest,

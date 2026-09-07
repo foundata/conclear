@@ -29,7 +29,7 @@ NOW = datetime(2026, 1, 1, tzinfo=UTC)
 class Scenario:
     def __init__(self, tmp_path: Path, repository_factory: Callable[..., Path]) -> None:
         repository = load_repository_config(repository_factory() / "conclear.toml")
-        self.image = repository.image("app")
+        self.image = repository.release_image("app")
         self.workspace = RunWorkspace.create(
             state_home=tmp_path / "state",
             immutable_inputs={"sourceRevision": "b" * 40},

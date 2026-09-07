@@ -256,7 +256,7 @@ def qualify_command(
         additional_inputs=additional_inputs or None,
     )
     with owned_run(source_run.workspace):
-        image = source_run.repository.image(image_id)
+        image = source_run.repository.release_image(image_id)
         inputs = _inputs(source_run, platform_text, selected)
         preflight = check_image(image, source_run.runtime.hadolint())
         resolver = AuthenticatedPinResolver(
@@ -385,7 +385,7 @@ def assemble_command(
         additional_inputs=None if selected is None else profile_inputs(selected),
     )
     workspace = source_run.workspace
-    image = source_run.repository.image(image_id)
+    image = source_run.repository.release_image(image_id)
     with owned_run(workspace):
         imported = tuple(
             import_transport(

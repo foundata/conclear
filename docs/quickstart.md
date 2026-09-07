@@ -336,7 +336,11 @@ A mount names a declared fixture or output and is read-only unless it sets
 `read_only = false`. Every output must have a writable producer before it is
 consumed. The `generator` image must be another `[[images]]` entry in the same
 file, cover every tested platform and declare `/output` in its own
-`images.runtime.writable_mounts`.
+`images.runtime.writable_mounts`. An image that exists only for tests omits
+`repository` and `[images.release]`: ConClear builds it as a dependency under
+its runtime contract but refuses to select it for a build, qualification,
+release or rescan, and rejects the keys only a qualified image uses. An image
+that is released and also used as a dependency keeps its complete declaration.
 
 ConClear still owns layout validation, digest-preserving import, runtime
 controls and container hardening, startup, health, signal and exit observation,

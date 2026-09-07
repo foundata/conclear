@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from conclear.config import ImageConfig, RepositoryConfig
+from conclear.config import ReleaseImageConfig, RepositoryConfig
 from conclear.emulation import validate_execution_observation
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import IDENTITY
@@ -95,7 +95,7 @@ def assemble_candidate(
     transports: tuple[QualificationTransport, ...],
     *,
     repository: RepositoryConfig,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     workspace: RunWorkspace,
     version: str | None,
     tools: tuple[ToolIdentity, ...],

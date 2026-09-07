@@ -38,7 +38,7 @@ class Scenario:
         monkeypatch.setattr(assembly_service_module, "IDENTITY", identity)
         self.tmp_path = tmp_path
         self.repository = load_repository_config(repository_factory() / "conclear.toml")
-        self.image = self.repository.image("app")
+        self.image = self.repository.release_image("app")
         self.workspace = RunWorkspace.create(
             state_home=tmp_path / "state",
             immutable_inputs={

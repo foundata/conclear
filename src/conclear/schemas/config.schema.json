@@ -262,7 +262,7 @@
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "repository", "platforms", "release", "runtime"],
+      "required": ["id", "platforms", "runtime"],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
         "containerfile": {"$ref": "#/$defs/relativePath"},
@@ -279,7 +279,32 @@
         "pins": {"type": "array", "items": {"$ref": "#/$defs/pin"}},
         "vulnerability_exceptions": {"type": "array", "items": {"$ref": "#/$defs/exception"}},
         "limits": {"$ref": "#/$defs/limits"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"required": ["repository"]},
+          "then": {"required": ["release"]},
+          "else": {
+            "properties": {
+              "release": false,
+              "native_test_platforms": false,
+              "scanner": false,
+              "rescan_scope": false,
+              "hooks": false,
+              "vulnerability_exceptions": false,
+              "test": {
+                "properties": {
+                  "fixtures": false,
+                  "outputs": false,
+                  "preparations": false,
+                  "launch": false
+                }
+              },
+              "limits": {"properties": {"candidate_lifetime": false, "remediation": false}}
+            }
+          }
+        }
+      ]
     }
   }
 }

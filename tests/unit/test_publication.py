@@ -422,7 +422,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
     repository_factory: Callable[..., Path],
 ) -> None:
     repository = load_repository_config(repository_factory() / "conclear.toml")
-    image = repository.image("app")
+    image = repository.release_image("app")
     workspace = RunWorkspace.create(
         state_home=tmp_path / "state",
         immutable_inputs={"sourceRevision": "b" * 40},
@@ -503,7 +503,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     monkeypatch.setattr(provenance_module, "IDENTITY", identity)
     monkeypatch.setattr(attestation_module, "IDENTITY", identity)
     repository = load_repository_config(repository_factory() / "conclear.toml")
-    image = repository.image("app")
+    image = repository.release_image("app")
     workspace = RunWorkspace.create(
         state_home=tmp_path / "state",
         immutable_inputs={

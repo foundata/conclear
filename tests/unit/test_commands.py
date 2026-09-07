@@ -45,6 +45,7 @@ from conclear.services.doctor import DoctorScope
 from conclear.tools import ToolName
 from conclear.values import Digest
 from conclear.workspace import RunState, RunWorkspace
+from tests.unit.test_config import _image_text
 
 BUILDER_ID = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
 DIGEST = "sha256:" + "a" * 64
@@ -680,8 +681,8 @@ def _candidate() -> SimpleNamespace:
 
 def _published(run: FakeSourceRun) -> SimpleNamespace:
     return SimpleNamespace(
-        reference=run.repository.image("app").repository.with_tag("candidate"),
-        immutable_reference=run.repository.image("app").repository.with_digest(
+        reference=run.repository.release_image("app").repository.with_tag("candidate"),
+        immutable_reference=run.repository.release_image("app").repository.with_digest(
             Digest(DIGEST)
         ),
         graph=graph(),
@@ -1376,6 +1377,47 @@ def test_authoritative_rescan_refuses_a_profile_that_cannot_write_or_sign(
     assert not (tmp_path / "state").exists()
 
 
+def test_rescan_refuses_a_test_only_image(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    content = path.read_text(encoding="utf-8").replace(
+        "[images.release]",
+        '[images.test]\ndependencies = ["helper"]\n\n[images.release]',
+    )
+    path.write_text(content + _image_text("helper", releasable=False), encoding="utf-8")
+    profile = release_profile(tmp_path)
+    monkeypatch.setattr(maintenance_commands, "profile", lambda name: profile)
+    monkeypatch.setattr(
+        maintenance_commands,
+        "RunWorkspace",
+        SimpleNamespace(
+            create=lambda **k: pytest.fail("no workspace for a test-only image")
+        ),
+    )
+
+    code, value, _ = invoke(
+        [
+            "rescan",
+            "--subject",
+            "quay.io/example/helper@" + DIGEST,
+            "--config",
+            str(path),
+            "--image",
+            "helper",
+            "--profile",
+            "production",
+        ]
+    )
+
+    assert code == 64
+    assert "helper is test-only" in value["message"]
+
+
 def test_diagnostic_rescan_accepts_a_read_only_profile(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
@@ -1603,7 +1645,7 @@ def test_every_command_resolves_exactly_its_declared_tools(
     root = repository_factory()
     profile = release_profile(tmp_path)
     run = FakeSourceRun(root, tmp_path)
-    image = run.repository.image("app")
+    image = run.repository.release_image("app")
     substitutions = {
         "{root}": str(root),
         "{tmp}": str(tmp_path),

@@ -427,7 +427,7 @@ def inputs(repository: Path, tmp_path: Path) -> QualificationInputs:
     digest = "sha256:" + "d" * 64
     return QualificationInputs(
         repository=config,
-        image=config.image("app"),
+        image=config.release_image("app"),
         workspace=workspace,
         source=SourceIdentity("https://github.com/example/app", "b" * 40),
         source_time=datetime(2026, 1, 1, tzinfo=UTC),

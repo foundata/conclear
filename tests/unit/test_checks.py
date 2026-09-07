@@ -52,7 +52,7 @@ def test_static_checks_accept_minimal_compliant_source(
 ) -> None:
     root = repository_factory()
     config = load_repository_config(root / "conclear.toml")
-    assert check_image_static(config.image("app")) == ()
+    assert check_image_static(config.release_image("app")) == ()
 
 
 def test_static_checks_report_security_boundaries(tmp_path: Path) -> None:
@@ -152,7 +152,9 @@ review_trigger = "Remove when upstream supports an unprivileged mode."
 
     identifiers = {
         finding.check_id
-        for finding in check_image_static(load_repository_config(path).image("app"))
+        for finding in check_image_static(
+            load_repository_config(path).release_image("app")
+        )
     }
 
     assert "CC0110" not in identifiers
@@ -162,7 +164,7 @@ def test_static_checks_reject_user_that_differs_from_runtime_contract(
     repository_factory: Callable[..., Path],
 ) -> None:
     root = repository_factory(containerfile='USER 10002\nENTRYPOINT ["/app"]\n')
-    image = load_repository_config(root / "conclear.toml").image("app")
+    image = load_repository_config(root / "conclear.toml").release_image("app")
 
     findings = [
         finding for finding in check_image_static(image) if finding.check_id == "CC0110"
@@ -198,7 +200,7 @@ review_trigger = "Remove when upstream supports an unprivileged mode."
         encoding="utf-8",
     )
 
-    image = load_repository_config(path).image("app")
+    image = load_repository_config(path).release_image("app")
     outcome = check_image(image, cast(Any, RootWarningHadolint()))
 
     assert outcome.accepted
@@ -247,7 +249,9 @@ stop_signal = "RTMIN+3"
 
     findings = [
         finding
-        for finding in check_image_static(load_repository_config(path).image("app"))
+        for finding in check_image_static(
+            load_repository_config(path).release_image("app")
+        )
         if finding.check_id == "CC0115"
     ]
 
@@ -260,7 +264,7 @@ stop_signal = "RTMIN+3"
         ),
         encoding="utf-8",
     )
-    accepted = check_image_static(load_repository_config(path).image("app"))
+    accepted = check_image_static(load_repository_config(path).release_image("app"))
     assert all(finding.check_id != "CC0115" for finding in accepted)
 
 
@@ -278,7 +282,7 @@ def test_static_checks_require_final_stage_volumes_in_writable_contract(
     )
     path = root / "conclear.toml"
 
-    findings = check_image_static(load_repository_config(path).image("app"))
+    findings = check_image_static(load_repository_config(path).release_image("app"))
 
     assert [item.check_id for item in findings].count("CC0116") == 1
     assert "/var/lib/app" in next(
@@ -291,7 +295,7 @@ def test_static_checks_require_final_stage_volumes_in_writable_contract(
         ),
         encoding="utf-8",
     )
-    accepted = check_image_static(load_repository_config(path).image("app"))
+    accepted = check_image_static(load_repository_config(path).release_image("app"))
     assert all(item.check_id != "CC0116" for item in accepted)
 
 
@@ -309,7 +313,7 @@ def test_static_checks_reject_malformed_or_dynamic_volumes(
     )
 
     findings = check_image_static(
-        load_repository_config(root / "conclear.toml").image("app")
+        load_repository_config(root / "conclear.toml").release_image("app")
     )
 
     assert [item.check_id for item in findings].count("CC0116") == 1
@@ -391,7 +395,7 @@ def test_default_deny_allowlist_satisfies_required_context_exclusions(
     (root / ".containerignore").write_text(
         "*\n!Containerfile\n!conclear.toml\n", encoding="utf-8"
     )
-    image = load_repository_config(root / "conclear.toml").image("app")
+    image = load_repository_config(root / "conclear.toml").release_image("app")
 
     findings = [
         finding for finding in check_image_static(image) if finding.check_id == "CC0202"
@@ -408,7 +412,7 @@ def test_default_deny_allowlist_rejects_later_private_key_reinclusion(
         "*\n!Containerfile\n!conclear.toml\n!nested/\n!nested/release.key\n",
         encoding="utf-8",
     )
-    image = load_repository_config(root / "conclear.toml").image("app")
+    image = load_repository_config(root / "conclear.toml").release_image("app")
 
     findings = [
         finding for finding in check_image_static(image) if finding.check_id == "CC0202"
@@ -425,7 +429,7 @@ def test_context_exclusion_check_rejects_misleading_near_matches(
         ".git-safe/\n.env.example.txt\n*.key.txt\n.venv-cache/\n",
         encoding="utf-8",
     )
-    image = load_repository_config(root / "conclear.toml").image("app")
+    image = load_repository_config(root / "conclear.toml").release_image("app")
 
     findings = [
         finding for finding in check_image_static(image) if finding.check_id == "CC0202"
@@ -445,7 +449,7 @@ def test_hadolint_diagnostics_use_the_adapter_check_identifier(
     root = repository_factory()
     config = load_repository_config(root / "conclear.toml")
 
-    outcome = check_image(config.image("app"), cast(Any, DiagnosticHadolint()))
+    outcome = check_image(config.release_image("app"), cast(Any, DiagnosticHadolint()))
 
     assert len(outcome.findings) == 1
     finding = outcome.findings[0]

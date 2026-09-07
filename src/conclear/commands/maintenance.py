@@ -100,7 +100,7 @@ def doctor_command(
     if scope is DoctorScope.RELEASE and selected is not None:
         registry_control = create_registry_control(
             selected,
-            destinations=tuple(image.repository for image in repository.images),
+            destinations=tuple(image.repository for image in repository.release_images),
         )
     try:
         with diagnostic_runtime(dependencies.tools) as (runtime, problems):
@@ -439,7 +439,7 @@ def rescan_command(
         raise InvalidInvocationError("Rescan subject cannot include a tag")
     selected = profile(profile_name)
     repository = load_repository_config(config_path)
-    image = repository.image(image_id)
+    image = repository.release_image(image_id)
     if image.repository.repository_name != subject.repository_name:
         raise InvalidInvocationError(
             "Rescan subject repository differs from the selected image"

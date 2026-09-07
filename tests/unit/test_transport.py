@@ -148,7 +148,7 @@ def qualify_worker(
     )
     inputs = QualificationInputs(
         repository=repository,
-        image=repository.image("app"),
+        image=repository.release_image("app"),
         workspace=workspace,
         source=SourceIdentity(repository.project.source, source_revision),
         source_time=NOW,
@@ -232,7 +232,7 @@ def assemble(
     image: Any = None,
 ) -> Any:
     repository = load_repository_config(source_root / "conclear.toml")
-    selected = image or repository.image("app")
+    selected = image or repository.release_image("app")
     imported = tuple(
         import_transport(
             path, expected_digest=digest, workspace=workspace, image=selected
@@ -1026,7 +1026,7 @@ def test_owned_and_imported_records_are_validated_differently(
         assemble_candidate(
             (owned_copy,),
             repository=repository,
-            image=replace(repository.image("app"), platforms=(AMD64,)),
+            image=replace(repository.release_image("app"), platforms=(AMD64,)),
             workspace=workspace,
             version="1.2.3",
             tools=(tool(),),

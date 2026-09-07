@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from conclear.attestations import RELEASE_VERIFICATION_TYPE
-from conclear.config import ImageConfig
+from conclear.config import ImageConfig, ReleaseImageConfig
 from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.jsonutil import load_json, sha256_file
 from conclear.layout_assembly import AssemblyObservation
@@ -32,7 +32,9 @@ from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
 _narrow = Narrower(InvalidInvocationError)
 
 
-def load_candidate(workspace: RunWorkspace, image: ImageConfig) -> CandidateResult:
+def load_candidate(
+    workspace: RunWorkspace, image: ReleaseImageConfig
+) -> CandidateResult:
     """Load and cross-check one assembled candidate and its public record."""
     record_path = workspace.root / "records" / "release-candidate.json"
     value = load_json(record_path)
@@ -257,7 +259,7 @@ def qualification_transport(
 
 
 def load_release_evidence(
-    workspace: RunWorkspace, image: ImageConfig
+    workspace: RunWorkspace, image: ReleaseImageConfig
 ) -> ReleaseEvidence:
     """Load exact SBOM, scan, provenance and qualification evidence."""
     candidate = load_candidate(workspace, image)
@@ -346,7 +348,7 @@ def load_release_evidence(
 
 
 def load_provenance_materials(
-    workspace: RunWorkspace, image: ImageConfig
+    workspace: RunWorkspace, image: ReleaseImageConfig
 ) -> tuple[ProvenanceMaterial, ...]:
     """Load semantically named, digest-bound provenance dependencies."""
     candidate = load_candidate(workspace, image)
@@ -411,7 +413,7 @@ def load_provenance_materials(
 
 
 def load_published(
-    workspace: RunWorkspace, candidate: CandidateResult, image: ImageConfig
+    workspace: RunWorkspace, candidate: CandidateResult, image: ReleaseImageConfig
 ) -> PublishedCandidate:
     """Load a conclusively published candidate from its ownership journal."""
     entries = [
@@ -457,7 +459,7 @@ def load_published(
 
 
 def load_verification(
-    workspace: RunWorkspace, image: ImageConfig, subject: OCIReference
+    workspace: RunWorkspace, image: ReleaseImageConfig, subject: OCIReference
 ) -> VerificationResult:
     """Load a release-verification record and its exact in-toto statement."""
     if subject.digest is None:

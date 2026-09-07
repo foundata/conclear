@@ -17,7 +17,7 @@ from conclear.attestations import (
     STATEMENT_TYPE,
     write_statement,
 )
-from conclear.config import ImageConfig
+from conclear.config import ReleaseImageConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -69,7 +69,7 @@ def verify_candidate(
     evidence: ReleaseEvidence,
     *,
     workspace: RunWorkspace,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     profile: ReleaseProfile,
     signer: Signer,
     registry: Registry,

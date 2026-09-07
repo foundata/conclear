@@ -12,6 +12,7 @@ from conclear.config import (
     normalize_source_url,
 )
 from conclear.errors import InvalidInvocationError
+from conclear.values import Platform
 
 
 def test_repository_configuration_is_validated_and_narrowed(
@@ -19,7 +20,7 @@ def test_repository_configuration_is_validated_and_narrowed(
 ) -> None:
     root = repository_factory()
     config = load_repository_config(root / "conclear.toml")
-    image = config.image("app")
+    image = config.release_image("app")
     assert config.project.source == "https://github.com/example/app"
     assert image.limits.candidate_lifetime == timedelta(days=7)
     assert str(image.platforms[0]) == "linux/amd64"
@@ -52,7 +53,7 @@ review_trigger = "Remove when upstream supports an unprivileged mode."
         encoding="utf-8",
     )
 
-    runtime = load_repository_config(path).image("app").runtime
+    runtime = load_repository_config(path).release_image("app").runtime
 
     assert runtime.user == 0
     assert runtime.root_requirement is not None
@@ -162,7 +163,7 @@ stop_signal = "RTMIN+3"
         encoding="utf-8",
     )
 
-    runtime = load_repository_config(path).image("app").runtime
+    runtime = load_repository_config(path).release_image("app").runtime
 
     assert runtime.profile == "systemd"
     assert runtime.systemd is not None
@@ -188,7 +189,7 @@ def test_repository_configuration_accepts_explicit_arm64_v8(
         encoding="utf-8",
     )
 
-    image = load_repository_config(path).image("app")
+    image = load_repository_config(path).release_image("app")
 
     assert str(image.platforms[-1]) == "linux/arm64/v8"
 
@@ -200,7 +201,7 @@ def test_amd64_only_image_needs_no_arm64_omission_reason(
     content = (root / "conclear.toml").read_text(encoding="utf-8")
     assert "arm64" not in content
 
-    image = load_repository_config(root / "conclear.toml").image("app")
+    image = load_repository_config(root / "conclear.toml").release_image("app")
 
     assert [str(item) for item in image.platforms] == ["linux/amd64"]
 
@@ -273,7 +274,7 @@ mounts = [{ name = "result", target = "/run/result" }]
     path.write_text(content, encoding="utf-8")
 
     config = load_repository_config(path)
-    image = config.image("app")
+    image = config.release_image("app")
 
     assert [item.image_id for item in config.test_dependencies("app")] == ["generator"]
     assert image.test.launch.arguments == ("serve",)
@@ -632,9 +633,9 @@ def test_candidate_lifetime_is_accepted_only_in_limits(
         '[images.limits]\ncandidate_lifetime = "24h"\n\n[images.release]',
     )
     path.write_text(nested, encoding="utf-8")
-    assert load_repository_config(path).image("app").limits.candidate_lifetime == (
-        timedelta(hours=24)
-    )
+    assert load_repository_config(path).release_image(
+        "app"
+    ).limits.candidate_lifetime == (timedelta(hours=24))
 
     direct = (
         path.read_text(encoding="utf-8")
@@ -676,7 +677,9 @@ review_trigger = "Base image update"
         encoding="utf-8",
     )
 
-    exceptions = load_repository_config(path).image("app").vulnerability_exceptions
+    exceptions = (
+        load_repository_config(path).release_image("app").vulnerability_exceptions
+    )
     assert [item.image for item in exceptions] == ["app"]
 
 
@@ -824,7 +827,7 @@ def test_repository_configuration_accepts_non_quay_release_destination(
     )
 
     assert (
-        load_repository_config(path).image("app").repository.repository_name
+        load_repository_config(path).release_image("app").repository.repository_name
         == destination
     )
 
@@ -875,6 +878,9 @@ def _image_text(
     *,
     writable_mount: str | None = None,
     dependencies: tuple[str, ...] = (),
+    releasable: bool = True,
+    keys: str = "",
+    tables: str = "",
 ) -> str:
     dependency_table = ""
     if dependencies:
@@ -883,17 +889,23 @@ def _image_text(
     writable = (
         "" if writable_mount is None else f'writable_mounts = ["{writable_mount}"]\n'
     )
+    destination = (
+        f"""repository = "quay.io/example/{image_id}"
+platforms = ["linux/amd64"]
+{keys}
+[images.release]
+immutable_tags = ["{{version}}"]
+moving_tags = ["stable"]
+"""
+        if releasable
+        else f"""platforms = ["linux/amd64"]
+{keys}"""
+    )
     return f'''
 
 [[images]]
 id = "{image_id}"
-repository = "quay.io/example/{image_id}"
-platforms = ["linux/amd64"]
-
-[images.release]
-immutable_tags = ["{{version}}"]
-moving_tags = ["stable"]
-
+{destination}
 [images.runtime]
 profile = "one-shot"
 user = 10001
@@ -901,4 +913,156 @@ user = 10001
 cpus = 1.0
 pids = 128
 nofile = 1024
-{dependency_table}'''
+{dependency_table}{tables}'''
+
+
+def _depending_on(root: Path, *images: str, dependencies: str = '"helper"') -> Path:
+    path = root / "conclear.toml"
+    content = path.read_text(encoding="utf-8").replace(
+        "[images.release]",
+        f"[images.test]\ndependencies = [{dependencies}]\n\n[images.release]",
+    )
+    path.write_text(content + "".join(images), encoding="utf-8")
+    return path
+
+
+def test_test_only_image_omits_the_release_destination_and_cannot_be_selected(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = _depending_on(root, _image_text("helper", releasable=False))
+
+    config = load_repository_config(path)
+    helper = config.image("helper")
+
+    assert not helper.releasable
+    assert not isinstance(helper, config_module.ReleaseImageConfig)
+    assert helper.platforms == (Platform.parse("linux/amd64"),)
+    assert helper.hooks == () and helper.vulnerability_exceptions == ()
+    assert helper.test.preparations == () and helper.test.launch.arguments == ()
+    assert [item.image_id for item in config.test_dependencies("app")] == ["helper"]
+    assert [item.image_id for item in config.release_images] == ["app"]
+    assert config.release_image("app").releasable
+    with pytest.raises(InvalidInvocationError, match="helper is test-only"):
+        config.release_image("helper")
+
+
+def test_released_image_also_serves_as_a_test_dependency(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = _depending_on(root, _image_text("generator"), dependencies='"generator"')
+
+    config = load_repository_config(path)
+    generator = config.release_image("generator")
+
+    assert generator.repository.repository_name == "quay.io/example/generator"
+    assert generator.release.moving_tags == ("stable",)
+    assert config.test_dependencies("app") == (generator,)
+    assert [item.image_id for item in config.release_images] == ["app", "generator"]
+
+
+def test_test_only_images_chain_in_dependency_first_order(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = _depending_on(
+        root,
+        _image_text("helper", releasable=False, dependencies=("tool",)),
+        _image_text("tool", releasable=False),
+    )
+
+    config = load_repository_config(path)
+
+    assert [item.image_id for item in config.test_dependencies("app")] == [
+        "tool",
+        "helper",
+    ]
+    assert [item.image_id for item in config.release_images] == ["app"]
+
+
+def test_test_only_image_without_a_dependent_is_rejected(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8") + _image_text("helper", releasable=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="no image depends on it"):
+        load_repository_config(path)
+
+
+@pytest.mark.parametrize(
+    ("keys", "tables", "named"),
+    [
+        ("", '[images.release]\nimmutable_tags = ["1"]\nmoving_tags = []\n', "release"),
+        ('native_test_platforms = ["linux/amd64"]\n', "", "native_test_platforms"),
+        ('scanner = "trivy"\n', "", "scanner"),
+        ('rescan_scope = "full-image"\n', "", "rescan_scope"),
+        ("", '[[images.hooks]]\nname = "h"\ncommand = ["/bin/true"]\n', "hooks"),
+        (
+            "",
+            '[images.limits]\ncandidate_lifetime = "24h"\n',
+            "limits.candidate_lifetime",
+        ),
+        ("", '[images.test.launch]\narguments = ["x"]\n', "test.launch"),
+        ("", '[[images.test.outputs]]\nname = "out"\n', "test.outputs"),
+    ],
+)
+def test_test_only_image_rejects_keys_only_a_qualified_image_uses(
+    repository_factory: Callable[..., Path], keys: str, tables: str, named: str
+) -> None:
+    root = repository_factory()
+    path = _depending_on(
+        root, _image_text("helper", releasable=False, keys=keys, tables=tables)
+    )
+
+    with pytest.raises(InvalidInvocationError, match=f"test-only.*{named}"):
+        load_repository_config(path)
+
+
+def test_release_destination_without_release_tags_is_rejected(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    content = path.read_text(encoding="utf-8")
+    start = content.index("[images.release]")
+    end = content.index("[images.runtime]")
+    path.write_text(content[:start] + content[end:], encoding="utf-8")
+
+    with pytest.raises(InvalidInvocationError, match="release"):
+        load_repository_config(path)
+
+
+@pytest.mark.parametrize("releasable", [True, False])
+def test_dependency_platform_gap_applies_to_every_image_kind(
+    repository_factory: Callable[..., Path], releasable: bool
+) -> None:
+    root = repository_factory()
+    path = _depending_on(root, _image_text("helper", releasable=releasable))
+    content = path.read_text(encoding="utf-8").replace(
+        'platforms = ["linux/amd64"]',
+        'platforms = ["linux/amd64", "linux/arm64"]',
+        1,
+    )
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(InvalidInvocationError, match="does not cover"):
+        load_repository_config(path)
+
+
+@pytest.mark.parametrize("releasable", [True, False])
+def test_dependency_cycle_applies_to_every_image_kind(
+    repository_factory: Callable[..., Path], releasable: bool
+) -> None:
+    root = repository_factory()
+    path = _depending_on(
+        root, _image_text("helper", releasable=releasable, dependencies=("app",))
+    )
+
+    with pytest.raises(InvalidInvocationError, match="cycle"):
+        load_repository_config(path)

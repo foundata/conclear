@@ -21,7 +21,7 @@ from conclear.attestations import (
     decode_dsse_statements,
     statement_matches,
 )
-from conclear.config import ImageConfig
+from conclear.config import ReleaseImageConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -131,7 +131,7 @@ def attest_candidate(
     published: PublishedCandidate,
     evidence: ReleaseEvidence,
     *,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     workspace: RunWorkspace,
     signer: Signer,
     private_key: str,
@@ -441,7 +441,7 @@ def validate_release_provenance(
     *,
     evidence: ReleaseEvidence,
     workspace: RunWorkspace,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
 ) -> None:
     """Validate exact provenance subjects, inputs and builder identity."""
     validate_external(provenance, "provenance.schema.json", label="provenance")

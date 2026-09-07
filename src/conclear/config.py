@@ -217,23 +217,49 @@ class VulnerabilityException:
 
 @dataclass(frozen=True, slots=True)
 class ImageConfig:
-    """One image definition after schema and semantic validation."""
+    """One image definition after schema and semantic validation.
+
+    Every image is built from the repository under its runtime contract and
+    may serve as an exact test dependency of another image. Only a
+    `ReleaseImageConfig` names a release destination and can be selected for
+    a build, qualification, release or rescan. An image without a repository
+    is test-only: the schema rejects the keys that only a qualified image uses
+    there, so `native_test_platforms`, `hooks`, `vulnerability_exceptions`,
+    the scanning keys, the release limits and the test inputs other than
+    `dependencies` keep their defaults.
+    """
 
     image_id: str
     containerfile: Path
     context: Path
-    repository: OCIReference
     platforms: tuple[Platform, ...]
     native_test_platforms: tuple[Platform, ...]
     scanner: str
     rescan_scope: str
-    release: ReleaseTags
     runtime: RuntimeConfig
     test: TestConfig
     hooks: tuple[HookConfig, ...]
     pins: tuple[PinConfig, ...]
     vulnerability_exceptions: tuple[VulnerabilityException, ...]
     limits: EffectiveLimits
+
+    @property
+    def releasable(self) -> bool:
+        """Return whether the image names a release destination."""
+        return isinstance(self, ReleaseImageConfig)
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseImageConfig(ImageConfig):
+    """An image with a release destination and release tags.
+
+    This is the only kind of image ConClear qualifies, publishes and rescans.
+    It remains an `ImageConfig`, so a released image can also serve as a test
+    dependency of another image.
+    """
+
+    repository: OCIReference
+    release: ReleaseTags
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +278,23 @@ class RepositoryConfig:
         if not matches:
             raise InvalidInvocationError(f"Unknown image id: {image_id}")
         return matches[0]
+
+    def release_image(self, image_id: str) -> ReleaseImageConfig:
+        """Return one releasable image; a test-only image cannot be selected."""
+        image = self.image(image_id)
+        if not isinstance(image, ReleaseImageConfig):
+            raise InvalidInvocationError(
+                f"Image {image_id} is test-only and cannot be selected: "
+                "it declares no release repository"
+            )
+        return image
+
+    @property
+    def release_images(self) -> tuple[ReleaseImageConfig, ...]:
+        """Return every image that names a release destination."""
+        return tuple(
+            image for image in self.images if isinstance(image, ReleaseImageConfig)
+        )
 
     def test_dependencies(self, image_id: str) -> tuple[ImageConfig, ...]:
         """Return transitive test dependencies in stable dependency-first order."""
@@ -291,6 +334,8 @@ def load_repository_config(path: Path) -> RepositoryConfig:
         raise InvalidInvocationError(
             f"Unable to read repository configuration {path}"
         ) from exc
+    if isinstance(value, dict):
+        _reject_release_keys_without_repository(value)
     validate_external(value, "config.schema.json", label="conclear.toml")
     if not isinstance(value, dict):
         raise InvalidInvocationError("conclear.toml must contain a table")
@@ -412,8 +457,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             "native_test_platforms must be a subset of platforms"
         )
-    release_value = toml_table(value["release"])
-    release = _parse_release_tags(release_value)
     runtime_value = toml_table(value["runtime"])
     limits_value = toml_table(value.get("limits", {}))
     limits = EffectiveLimits(
@@ -438,12 +481,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
             field_name="remediation",
         ),
     )
-    repository = OCIReference.parse(
-        toml_string(value["repository"]),
-        allow_localhost=False,
-    )
-    if repository.tag or repository.digest:
-        raise InvalidInvocationError("Release repositories must be untagged names")
     exceptions = tuple(
         _parse_exception(toml_table(item), image_id)
         for item in _list(value.get("vulnerability_exceptions", []))
@@ -453,29 +490,85 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             f"Vulnerability exceptions for {image_id} must be unique"
         )
-    return ImageConfig(
-        image_id=image_id,
-        containerfile=contained_path(
+    fields: dict[str, Any] = {
+        "image_id": image_id,
+        "containerfile": contained_path(
             source_root, toml_string(value.get("containerfile", "Containerfile"))
         ),
-        context=contained_path(source_root, toml_string(value.get("context", "."))),
-        repository=repository,
-        platforms=platforms,
-        native_test_platforms=native_platforms,
-        scanner=toml_string(value.get("scanner", "trivy")),
-        rescan_scope=toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
-        release=release,
-        runtime=_parse_runtime(runtime_value),
-        test=_parse_test(toml_table(value.get("test", {})), source_root),
-        hooks=tuple(
+        "context": contained_path(source_root, toml_string(value.get("context", "."))),
+        "platforms": platforms,
+        "native_test_platforms": native_platforms,
+        "scanner": toml_string(value.get("scanner", "trivy")),
+        "rescan_scope": toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
+        "runtime": _parse_runtime(runtime_value),
+        "test": _parse_test(toml_table(value.get("test", {})), source_root),
+        "hooks": tuple(
             _parse_hook(toml_table(item)) for item in _list(value.get("hooks", []))
         ),
-        pins=tuple(
+        "pins": tuple(
             _parse_pin(toml_table(item)) for item in _list(value.get("pins", []))
         ),
-        vulnerability_exceptions=exceptions,
-        limits=limits,
+        "vulnerability_exceptions": exceptions,
+        "limits": limits,
+    }
+    repository_value = value.get("repository")
+    if repository_value is None:
+        return ImageConfig(**fields)
+    repository = OCIReference.parse(
+        toml_string(repository_value),
+        allow_localhost=False,
     )
+    if repository.tag or repository.digest:
+        raise InvalidInvocationError("Release repositories must be untagged names")
+    return ReleaseImageConfig(
+        **fields,
+        repository=repository,
+        release=_parse_release_tags(toml_table(value["release"])),
+    )
+
+
+_RELEASE_ONLY_KEYS = (
+    "release",
+    "native_test_platforms",
+    "scanner",
+    "rescan_scope",
+    "hooks",
+    "vulnerability_exceptions",
+)
+_RELEASE_ONLY_TEST_KEYS = ("fixtures", "outputs", "preparations", "launch")
+_RELEASE_ONLY_LIMIT_KEYS = ("candidate_lifetime", "remediation")
+
+
+def _reject_release_keys_without_repository(value: dict[str, Any]) -> None:
+    """Name the keys a test-only image cannot declare before the schema does.
+
+    The schema enforces the same closed key set; this check runs first so the
+    rejection explains that the keys need a release repository.
+    """
+    images = value.get("images")
+    if not isinstance(images, list):
+        return
+    for item in images:
+        if not isinstance(item, dict) or "repository" in item:
+            continue
+        offending = [key for key in _RELEASE_ONLY_KEYS if key in item]
+        test = item.get("test")
+        if isinstance(test, dict):
+            offending.extend(
+                f"test.{key}" for key in _RELEASE_ONLY_TEST_KEYS if key in test
+            )
+        limits = item.get("limits")
+        if isinstance(limits, dict):
+            offending.extend(
+                f"limits.{key}" for key in _RELEASE_ONLY_LIMIT_KEYS if key in limits
+            )
+        if offending:
+            image_id = item.get("id")
+            raise InvalidInvocationError(
+                f"Image {image_id if isinstance(image_id, str) else '?'} declares "
+                "no repository and is test-only; it cannot declare "
+                + ", ".join(offending)
+            )
 
 
 def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
@@ -674,6 +767,16 @@ def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
                 raise InvalidInvocationError(
                     f"Test dependency {dependency_id} does not cover all platforms of {image.image_id}"
                 )
+
+    depended = {
+        dependency_id for image in images for dependency_id in image.test.dependencies
+    }
+    for image in images:
+        if not image.releasable and image.image_id not in depended:
+            raise InvalidInvocationError(
+                f"Image {image.image_id} declares no repository and no image "
+                "depends on it for tests"
+            )
 
     visiting: set[str] = set()
     visited: set[str] = set()

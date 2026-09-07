@@ -167,7 +167,7 @@ def create_source_run(
                 "Observed Git origin differs from configured project source",
                 code="CC0001",
             )
-        repository.image(image_id)
+        repository.release_image(image_id)
     except BaseException as exc:
         # The run exists from here on, so the failure names it even though the
         # caller never receives the workspace.
@@ -225,7 +225,7 @@ def open_source_run(
     image_id = snapshot.immutable_inputs.get("image")
     if image_id is None:
         raise InvalidInvocationError("Workspace has no selected image")
-    repository.image(image_id)
+    repository.release_image(image_id)
     runtime = ApplicationRuntime.create(
         workspace.root / "environment", names=_with_git(names)
     )

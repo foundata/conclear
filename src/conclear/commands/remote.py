@@ -12,7 +12,7 @@ from conclear.artifacts import (
     load_release_evidence,
     load_verification,
 )
-from conclear.config import ImageConfig
+from conclear.config import ReleaseImageConfig
 from conclear.dependencies import (
     COMMAND_DEPENDENCIES,
     command_tools,
@@ -62,7 +62,7 @@ def provenance_command(run_id: str, output_format: str) -> None:
     if source_run.workspace.load().state is not RunState.ASSEMBLED:
         raise InvalidInvocationError("Provenance requires assembled state")
     snapshot = source_run.workspace.load()
-    image = source_run.repository.image(snapshot.immutable_inputs["image"])
+    image = source_run.repository.release_image(snapshot.immutable_inputs["image"])
     path = source_run.workspace.root / "records" / "provenance.json"
     if path.is_file():
         digest = load_release_evidence(source_run.workspace, image).provenance_digest
@@ -393,9 +393,9 @@ def _remote_run(
     return source_run, selected
 
 
-def _image(source_run: SourceRun) -> ImageConfig:
+def _image(source_run: SourceRun) -> ReleaseImageConfig:
     image_id = source_run.workspace.load().immutable_inputs["image"]
-    return source_run.repository.image(image_id)
+    return source_run.repository.release_image(image_id)
 
 
 def _private_key(selected: ReleaseProfile) -> str:

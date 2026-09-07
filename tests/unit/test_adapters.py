@@ -263,7 +263,7 @@ def test_podman_launch_inputs_remain_argument_arrays_and_redact_secret_mounts(
     adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
     runtime = (
         load_repository_config(repository_factory() / "conclear.toml")
-        .image("app")
+        .release_image("app")
         .runtime
     )
     secret = tmp_path / "private-input"
@@ -361,7 +361,7 @@ stop_signal = "RTMIN+3"
         ),
         encoding="utf-8",
     )
-    runtime = load_repository_config(path).image("app").runtime
+    runtime = load_repository_config(path).release_image("app").runtime
 
     adapter.create_container(
         root=tmp_path / "root",

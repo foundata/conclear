@@ -136,7 +136,9 @@ def test_release_does_not_promote_until_verification_transitions_state(
     run_workspace = workspace(tmp_path, profile_value, RunState.ATTESTED)
     published = SimpleNamespace(immutable_reference=object())
     image = SimpleNamespace(repository=object())
-    repository = SimpleNamespace(image=lambda _image_id: image)
+    repository = SimpleNamespace(
+        image=lambda _image_id: image, release_image=lambda _image_id: image
+    )
     runtime = SimpleNamespace(
         skopeo=lambda: object(),
         cosign=lambda **kwargs: object(),
@@ -212,7 +214,9 @@ def test_full_release_rejects_unsupported_registry_before_qualification(
     profile_value = profile(tmp_path)
     run_workspace = workspace(tmp_path, profile_value, RunState.CREATED)
     image = SimpleNamespace(repository=OCIReference.parse("docker.io/example/app"))
-    repository = SimpleNamespace(image=lambda _image_id: image)
+    repository = SimpleNamespace(
+        image=lambda _image_id: image, release_image=lambda _image_id: image
+    )
 
     def unexpected_qualification(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("unsupported registry reached qualification")
@@ -274,7 +278,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
         id_factory=FixedIdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
-    pin_digest = repository.image("app").pins[0].reference.digest
+    pin_digest = repository.release_image("app").pins[0].reference.digest
     assert pin_digest is not None
     runtime = FakeRuntime(pin_digest)
     source_run = SimpleNamespace(

@@ -100,7 +100,7 @@ def diagnose_environment(
             raise InvalidInvocationError(
                 "Release scope diagnosis needs a release profile and registry backend"
             )
-        for image in repository.images:
+        for image in repository.release_images:
             registry_control.observe_tag(image.repository, "conclear-doctor-read-probe")
         registry_provider = registry_control.provider
         runtime.cosign().initialize()

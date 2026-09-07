@@ -215,15 +215,15 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             "containerfileDigest": digest,
             "contextDigest": digest,
             "buildArguments": {"IMAGE_VERSION": "1.2.3"},
-            "externalImages": [str(repository.image("app").pins[0].reference)],
+            "externalImages": [str(repository.release_image("app").pins[0].reference)],
             "pinObservations": [
                 {
-                    "reference": str(repository.image("app").pins[0].reference),
+                    "reference": str(repository.release_image("app").pins[0].reference),
                     "pinnedDigest": str(
-                        repository.image("app").pins[0].reference.digest
+                        repository.release_image("app").pins[0].reference.digest
                     ),
                     "observedDigest": str(
-                        repository.image("app").pins[0].reference.digest
+                        repository.release_image("app").pins[0].reference.digest
                     ),
                     "checkedAt": "2026-01-01T00:00:00Z",
                     "divergenceSince": None,
@@ -301,7 +301,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             ),
         ),
         repository=repository,
-        image=repository.image("app"),
+        image=repository.release_image("app"),
         workspace=workspace,
         version="1.2.3",
         tools=(tool,),
@@ -311,7 +311,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
     assert candidate.record_digest == sha256_file(candidate.record_path)
     assert candidate.observation.graph.digest == graph.digest
     assert workspace.load().state is RunState.ASSEMBLED
-    assert load_candidate(workspace, repository.image("app")).candidate_tag == (
+    assert load_candidate(workspace, repository.release_image("app")).candidate_tag == (
         candidate.candidate_tag
     )
 
@@ -319,7 +319,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
     candidate_record["payload"]["candidateNaming"]["version"] = "9.9.9"
     candidate.record_path.write_text(json.dumps(candidate_record), encoding="utf-8")
     with pytest.raises(RuleRejectionError, match="naming inputs") as caught:
-        load_candidate(workspace, repository.image("app"))
+        load_candidate(workspace, repository.release_image("app"))
     assert caught.value.code == "CC0601"
     assert caught.value.exit_status == 2
 
@@ -342,7 +342,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
                 ),
             ),
             repository=repository,
-            image=repository.image("app"),
+            image=repository.release_image("app"),
             workspace=second_workspace,
             version="1.2.3",
             tools=(tool,),

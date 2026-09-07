@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from conclear.adapters.skopeo import RegistryCopyObservation
-from conclear.config import ImageConfig
+from conclear.config import ImageConfig, ReleaseImageConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -94,7 +94,7 @@ class PublishedCandidate:
 def publish_candidate(
     candidate: CandidateResult,
     *,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     workspace: RunWorkspace,
     registry: Registry,
     registry_control: RegistryControl,
@@ -199,7 +199,7 @@ def _resume_published_candidate(
     *,
     tagged: OCIReference,
     entry: ResourceEntry,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     workspace: RunWorkspace,
     registry: Registry,
     registry_control: RegistryControl,
