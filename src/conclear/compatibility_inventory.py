@@ -37,6 +37,7 @@ from conclear.pin_updates import PROPOSAL_RECORD_TYPE, PROPOSAL_SCHEMA_VERSION
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import RECORD_SCHEMA_VERSIONS
 from conclear.schema import load_schema
+from conclear.tools import SUPPORTED_TOOLS, ToolName
 
 INVENTORY_SCHEMA_VERSION = 1
 INVENTORY_PATH = Path("docs/compatibility-inventory.json")
@@ -71,6 +72,7 @@ def render_inventory() -> dict[str, object]:
         "productVersion": VERSION,
         "commands": _commands(root, ()),
         "schemas": [_schema(name) for name in SCHEMA_NAMES],
+        "tools": _tools(),
         "recordTypes": {
             **dict(sorted(RECORD_SCHEMA_VERSIONS.items())),
             PROPOSAL_RECORD_TYPE: PROPOSAL_SCHEMA_VERSION,
@@ -186,6 +188,23 @@ def _jsonable(value: object) -> Any:
             _jsonable(item) for item in value if isinstance(item, _PUBLIC_DEFAULT_TYPES)
         ]
     return value
+
+
+def _tools() -> list[dict[str, object]]:
+    return [
+        {
+            "name": name.value,
+            "minimum": str(SUPPORTED_TOOLS[name].policy.minimum),
+            "maximumExclusive": str(SUPPORTED_TOOLS[name].policy.maximum),
+            "excluded": [
+                str(item) for item in sorted(SUPPORTED_TOOLS[name].policy.excluded)
+            ],
+            "tested": [
+                str(item) for item in sorted(SUPPORTED_TOOLS[name].policy.tested)
+            ],
+        }
+        for name in ToolName
+    ]
 
 
 def _schema(name: str) -> dict[str, object]:

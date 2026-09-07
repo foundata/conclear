@@ -304,21 +304,31 @@ qualification never needs Cosign, and a publication never needs Buildah,
 Podman, Hadolint or Trivy. `doctor --scope check|qualify|release` reports every
 missing or unsupported tool of a scope in one pass.
 
-The supported versions are exactly the versions the local integration tier and
-the external release drill exercised. ConClear parses tool output and depends
-on behavior that changes between versions, so a version it has not been
-tested with is rejected rather than assumed to work; the matrix widens only
-with that evidence.
+A tool may start a run when its version lies in the tool's accepted interval
+and is not an excluded version. The interval is a compatibility statement based
+on the flags, output fields and behaviors ConClear uses and on published
+advisories; it does not claim that every version in it was tested. The
+real-tool tested versions are the exact versions the local integration tier and
+the external release drill exercised, and the tier fails on a host whose
+version is not yet listed, so that column grows only with evidence. A version
+outside the interval or in the exclusion list is rejected with the observed
+version, the interval, the exclusions and the tested versions. Every run still
+records the exact version and executable digest of each tool it used, and
+distributed qualifications of one release must report identical versions.
 
-|   Tool   | Version |
-| -------- | ------: |
-| Git      |  2.55.0 |
-| Buildah  |  1.43.2 |
-| Podman   |   5.8.4 |
-| Skopeo   |  1.22.2 |
-| Hadolint |  2.14.0 |
-| Trivy    |  0.69.3 |
-| Cosign   |   3.1.3 |
+<!-- supported-tools:begin -->
+
+|   Tool   |     Accepted versions      | Excluded versions | Real-tool tested versions |
+| -------- | -------------------------- | ----------------- | ------------------------- |
+| Git      | 2.43.0 <= version < 3.0.0  | none              | 2.55.0                    |
+| Buildah  | 1.39.0 <= version < 1.44.0 | none              | 1.43.2                    |
+| Podman   | 5.8.4 <= version < 6.0.0   | none              | 5.8.4                     |
+| Skopeo   | 1.14.0 <= version < 2.0.0  | none              | 1.22.2                    |
+| Hadolint | 2.12.0 <= version < 3.0.0  | none              | 2.14.0                    |
+| Trivy    | 0.69.0 <= version < 0.70.0 | 0.69.4            | 0.69.3                    |
+| Cosign   | 3.1.3 <= version < 4.0.0   | none              | 3.1.3                     |
+
+<!-- supported-tools:end -->
 
 |      Command       |                     Tools                     | Release profile | Credentials and services |
 | ------------------ | --------------------------------------------- | --------------- | ------------------------ |

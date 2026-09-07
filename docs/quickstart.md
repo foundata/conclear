@@ -47,8 +47,10 @@ development checkout identifies itself as `development-source-tree` and cannot
 emit release evidence.
 
 Qualification and release also need the rootless container toolchain. ConClear
-accepts only the exact tool versions listed under
-[Supported tools](../README.md#supported-tools) in the README. Use rootless
+accepts each tool within the accepted version interval listed under
+[Supported tools](../README.md#supported-tools) in the README, rejects the
+listed excluded versions, and records the exact version it used; the table
+also names the versions the real-tool tests exercised. Use rootless
 Buildah and Podman; ConClear creates isolated storage for each run and does not
 use the workstation's existing containers or images.
 

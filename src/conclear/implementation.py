@@ -179,7 +179,7 @@ def render_implementation_matrix(
         for promise in selected.promises
     ]
     lines.extend(
-        _aligned_table(
+        aligned_table(
             (
                 "Promise",
                 "Current behavior",
@@ -193,7 +193,7 @@ def render_implementation_matrix(
     return "\n".join(lines) + "\n"
 
 
-def _aligned_table(
+def aligned_table(
     headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]
 ) -> list[str]:
     """Render a table in the Markdown guide's aligned style.

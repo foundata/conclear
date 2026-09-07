@@ -418,7 +418,7 @@ hermetic. `tests/conftest.py` assigns markers by directory, and pytest's
 |       Marker        |          Location          | Requires |
 | ------------------- | -------------------------- | -------- |
 | `unit`              | `tests/unit/`              | Nothing. No container storage, credentials, network or wall-clock dependency. |
-| `local_integration` | `tests/local_integration/` | Installed rootless tools at supported versions. |
+| `local_integration` | `tests/local_integration/` | Installed rootless tools at real-tool tested versions; the tier fails on a version the policy does not yet list as tested. |
 | `emulation`         | `tests/local_integration/` | Non-native execution through an enabled arm64 binfmt handler. The tier skips, with the handler diagnostic, on a host without one; ConClear never installs emulators or registers handlers. |
 | `network`           | `tests/network/`           | An explicitly authorized disposable Quay repository and test signing keys. |
 
@@ -719,6 +719,26 @@ after that release, an incompatible change needs a new major version. The unit
 suite and the release gate fail while the committed inventory is stale.
 
 
+## Generated supported-tools table<a id="supported-tools-table"></a>
+
+The table under [Supported tools](README.md#supported-tools) in the README is
+rendered from the tool policies in `src/conclear/tools.py` between two HTML
+comment markers. Never edit it by hand; change the policy and regenerate. An
+accepted interval and its exclusions come from the flags and output fields the
+adapters use and from published advisories; the tested column lists only the
+versions the real-tool tier ran against, and that tier fails on a host whose
+version is not listed, so a version is added there after the tier passed with
+it.
+
+```sh
+# Regenerate the table
+uv run python -m conclear.tool_matrix
+
+# Verify the committed table is current
+uv run python -m conclear.tool_matrix --check
+```
+
+
 ## Generated implementation matrix<a id="implementation-matrix"></a>
 
 `src/conclear/data/implementation.json` is the machine-readable source for
@@ -864,7 +884,7 @@ unit-test matrix on every supported interpreter, enforcing the branch-coverage
 floor on the first interpreter. It then creates a temporary clean source
 archive, embeds the committed source revision, builds a source distribution,
 builds a wheel from that source distribution, inspects artifact contents,
-installs the wheel into a clean environment and runs import,`--version` and
+installs the wheel into a clean environment and runs import, `--version` and
 `--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate,
