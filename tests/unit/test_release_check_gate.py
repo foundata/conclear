@@ -2,7 +2,6 @@
 
 import io
 import os
-import shlex
 import shutil
 import stat
 import tarfile
@@ -362,17 +361,19 @@ def test_module_entry_point_reports_gate_failures(
     assert seen == [Path("/tmp/x")]
 
 
-def test_markdown_invocation_matches_the_documented_check_command() -> None:
+def test_development_guide_delegates_the_markdown_policy() -> None:
     text = Path("DEVELOPMENT.md").read_text(encoding="utf-8")
-    start = text.index("uv run rumdl check \\\n")
-    end = text.index("\n  .\n", start)
-    lines = text[start:end].splitlines()[1:]
-    documented = tuple(
-        token for line in lines for token in shlex.split(line.rstrip("\\").strip())
-    )
+    start = text.index("### Code formatting and linting")
+    end = text.index("### Commit messages and scopes", start)
+    section = text[start:end]
+    normalized = " ".join(section.split())
 
-    assert documented == release_check_module.MARKDOWN_RULE_ARGUMENTS
-    assert "--no-config" in documented and "--deny-config-warnings" in documented
+    assert (
+        "https://github.com/foundata/guidelines/blob/main/"
+        "markdown-style-guide.md#linting-and-automatic-formatting"
+    ) in section
+    assert "arguments are deliberately not duplicated here" in normalized
+    assert "uv run rumdl" not in section
 
 
 def test_whitespace_check_diffs_the_empty_tree_against_the_revision(
