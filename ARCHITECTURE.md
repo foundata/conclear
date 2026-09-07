@@ -572,7 +572,10 @@ the repository.
 | `cleanup`          | Resume cleanup of resources recorded as owned by one release run. |
 
 A command that writes to the registry or signs refuses a release profile that
-lacks the auth file or the signing key before it creates or reopens a run.
+lacks the auth file or the signing key before it creates or reopens a run. An
+option that escalates what a command executes carries its own declaration:
+`rescan --authoritative` attaches a signed result and is therefore held to the
+write and signing rule, while a diagnostic rescan stays read-only.
 
 `release` selects an image and a Git revision, resolves that selector to a
 complete commit ID, creates a detached worktree and derives all source facts
