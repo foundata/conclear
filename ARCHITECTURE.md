@@ -224,10 +224,14 @@ understandable. Findings, narrow suppressions and documentation use these
 identifiers.
 
 One machine-readable check catalog is the implementation source for each
-identifier, summary, severity, automatable behavior and guide anchor.
-`docs/conformance.md` is generated from that catalog and records the selected
-guide revision. CI verifies that identifiers are unique, claimed anchors exist
-and generated documentation is current.
+identifier, summary, severity, automatable behavior and the guide requirement
+identifiers (`IGnnnn`) the check covers. ConClear ships the guide's requirement
+inventory for the embedded revision and a coverage file that gives every
+requirement no check covers one status: automated, manual, external or
+unsupported. `docs/conformance.md` is generated from those three sources and
+records the selected guide revision. CI verifies that identifiers are unique,
+that every referenced requirement exists in the inventory, that every
+requirement has exactly one status and that generated documentation is current.
 
 Requirements that need human judgment are listed as manual in the conformance
 documentation. ConClear MUST NOT claim that a mechanical check implements them.
@@ -1241,10 +1245,11 @@ matching `IPnnnn` promise in `src/conclear/data/implementation.json` whenever
 current behavior, its implementation ownership or its verification changes, then
 regenerate the versioned implementation matrix.
 
-A guide revision update requires reviewing every changed normative rule,
-updating the embedded guide identity, check catalog, generated conformance
-document, affected schemas and tests. ConClear must not advertise the new guide
-revision until its automatable rules are implemented and passing.
+A guide revision update requires reviewing every added, removed or reworded
+requirement, updating the embedded guide identity, requirement inventory, check
+catalog, coverage file, generated conformance document, affected schemas and
+tests. ConClear must not advertise the new guide revision until its automatable
+rules are implemented and passing.
 
 Public command behavior and record schemas change deliberately. Each JSON schema
 has its own integer version; incompatible field or meaning changes increment its
