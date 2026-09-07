@@ -552,7 +552,7 @@ the repository.
 |      Command       | Responsibility |
 | ------------------ | -------------- |
 | `version`          | Report ConClear and implemented-guide identity in human-readable or JSON form. |
-| `doctor`           | Validate the environment for one scope without publishing content: `check` resolves the static toolchain, `qualify` adds run-owned rootless storage and an execution mode for every configured platform, and `release` adds trust inputs, selected registry access and public Sigstore transparency-service access. Every missing or unsupported tool of the scope is reported at once. |
+| `doctor`           | Validate the environment for one scope without publishing content: `check` resolves the static toolchain, `qualify` adds run-owned rootless storage and an execution mode for every configured platform, and `release` adds trust inputs, selected registry access and public Sigstore transparency-service access. A profile is accepted for a scope only when it names every input the scope's commands use, so the release scope requires registry write authentication, the control-plane token and signing authority without performing a write or signature. Every missing or unsupported tool of the scope is reported at once. |
 | `check`            | Run static Containerfile, context, metadata, pin-declaration and repository-hygiene checks. |
 | `pins check`       | Resolve declared image references, update durable observations, report freshness and divergence, and never edit project files. |
 | `pins propose`     | Resolve each declared readable tag once, bind the observed digest to every configuration declaration and Containerfile occurrence, and write one schema-validated non-mutating proposal. |
@@ -570,6 +570,9 @@ the repository.
 | `release`          | Create an isolated checkout and execute the complete workflow through promotion, locally or in CI. |
 | `rescan`           | Re-evaluate a released digest from retained SBOMs or immutable image content and emit a new linked rescan result. |
 | `cleanup`          | Resume cleanup of resources recorded as owned by one release run. |
+
+A command that writes to the registry or signs refuses a release profile that
+lacks the auth file or the signing key before it creates or reopens a run.
 
 `release` selects an image and a Git revision, resolves that selector to a
 complete commit ID, creates a detached worktree and derives all source facts
