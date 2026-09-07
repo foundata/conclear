@@ -21,7 +21,6 @@ The terms MUST, SHOULD and MAY are used as defined in
 [RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 
 
-
 ## Table of contents<a id="table-of-contents"></a>
 
 - [Product contract](#product-contract)
@@ -43,7 +42,6 @@ The terms MUST, SHOULD and MAY are used as defined in
 - [Implementation structure](#implementation-structure)
 - [Testing](#testing)
 - [Maintaining this document](#maintaining-this-document)
-
 
 
 ## Product contract<a id="product-contract"></a>
@@ -73,7 +71,6 @@ local maintainer workflow. Docker, Windows containers and GitHub container
 actions are outside the supported and tested surface.
 
 
-
 ## Goals<a id="goals"></a>
 
 - Provide one fail-closed release workflow from a reviewed source commit through
@@ -92,7 +89,6 @@ actions are outside the supported and tested surface.
   unconditional guide requirements.
 - Fail without promotion when a required fact, test, signature, attestation or
   remote digest cannot be established.
-
 
 
 ## Terminology<a id="terminology"></a>
@@ -129,7 +125,6 @@ actions are outside the supported and tested surface.
   effective repository configuration. An **operational failure** means that
   ConClear could not establish a result, for example because a tool, network
   operation or registry comparison failed.
-
 
 
 ## Core model<a id="core-model"></a>
@@ -173,7 +168,6 @@ network operation may resume the same state only when all immutable inputs and
 expected digests still match.
 
 
-
 ## Invariants<a id="invariants"></a>
 
 <a id="promise-ip0006"></a>
@@ -207,7 +201,6 @@ expected digests still match.
     output, JSON output and process exit status.
 
 
-
 ## Guide identity and conformance<a id="guide-identity-and-conformance"></a>
 
 <a id="promise-ip0007"></a>
@@ -237,7 +230,6 @@ Requirements that need human judgment are listed as manual in the conformance
 documentation. ConClear MUST NOT claim that a mechanical check implements them.
 Built-in defaults and maximums are listed in the same document so a tool release
 completely identifies the rules it applies.
-
 
 
 ## Configuration and trust inputs<a id="configuration-and-trust-inputs"></a>
@@ -446,7 +438,6 @@ logs and evidence. Secret values are never inherited from ordinary project
 environment configuration.
 
 
-
 ## Built-in limits<a id="built-in-limits"></a>
 
 <a id="promise-ip0011"></a>
@@ -477,7 +468,6 @@ Changing a built-in limit changes release behavior and therefore requires a
 reviewed code change, conformance update and ordinary ConClear release. Evidence
 identifies the exact ConClear and guide revisions that supplied the effective
 limit.
-
 
 
 ## Pin updates<a id="pin-updates"></a>
@@ -554,7 +544,6 @@ builds, qualifies, publishes, signs or promotes, and it names the follow-up
 application are not release evidence.
 
 
-
 ## Command model<a id="command-model"></a>
 
 <a id="promise-ip0014"></a>
@@ -629,7 +618,6 @@ its failure result and diagnostics and leaves the run in the `rejected` or
 and removed with `cleanup`. Exit statuses are `0` for success, `1` for
 operational failure, `2` for rule rejection and `64` for invalid invocation or
 configuration.
-
 
 
 ## Records and workspaces<a id="records-and-workspaces"></a>
@@ -721,7 +709,6 @@ retained, but ConClear never presents its local state directory as an archive or
 registry backup.
 
 
-
 ## Tool execution<a id="tool-execution"></a>
 
 <a id="promise-ip0017"></a>
@@ -765,7 +752,6 @@ content digest constant across every platform scan in the release. Distributed
 workers receive or resolve that exact snapshot by digest. A stale or corrupt
 cache triggers one bounded refresh and never falls back silently to unvalidated
 data.
-
 
 
 ## Build and qualification<a id="build-and-qualification"></a>
@@ -962,7 +948,6 @@ incomplete or rejected verdict can enter a candidate, and copying workspaces or
 records outside a transport is not a supported path.
 
 
-
 ## Publication and promotion<a id="publication-and-promotion"></a>
 
 <a id="promise-ip0028"></a>
@@ -1033,7 +1018,6 @@ removal. An abandoned or rejected candidate may be deleted with `cleanup` or
 left to its recorded expiration. Failure to delete after successful promotion is
 reported as cleanup failure without changing the release digest's verified
 status.
-
 
 
 ## Provenance, signing and verification<a id="provenance-signing-and-verification"></a>
@@ -1138,7 +1122,6 @@ and log inclusion. Only that post-attachment success advances the run to
 log inclusion and the subject digest.
 
 
-
 ## Rescans<a id="rescans"></a>
 
 <a id="promise-ip0034"></a>
@@ -1181,7 +1164,6 @@ advance the history. Scheduling, the supported-release inventory, triage,
 advisory publication and rebuilds remain external responsibilities.
 
 
-
 ## Implementation structure<a id="implementation-structure"></a>
 
 <a id="promise-ip0035"></a>
@@ -1216,7 +1198,6 @@ Network operations are bounded and classified by idempotency. Reads may retry. A
 write retries only when the remote state can be checked first and the ownership
 journal makes the result unambiguous. Errors retain tool output after redaction
 and add actionable context without converting an unknown state into success.
-
 
 
 ## Testing<a id="testing"></a>
@@ -1274,7 +1255,6 @@ wheel, and makes the artifact directory visible only after every gate succeeds.
 It never rebuilds retained artifacts, derives identity from an application
 repository, follows a symbolic-link destination or overwrites a pre-existing
 output.
-
 
 
 ## Maintaining this document<a id="maintaining-this-document"></a>
