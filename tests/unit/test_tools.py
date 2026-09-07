@@ -10,6 +10,7 @@ from conclear.tools import (
     SUPPORTED_TOOLS,
     ToolName,
     ToolResolver,
+    ToolSpec,
     ToolVersion,
     VersionPolicy,
 )
@@ -100,13 +101,13 @@ def test_every_production_policy_is_bounded_and_its_tested_versions_accepted() -
 
 
 def test_production_policies_pin_the_documented_floors_and_ceilings() -> None:
-    expected = {
+    expected: dict[ToolName, tuple[str, str, set[str]]] = {
         ToolName.GIT: ("2.43.0", "3.0.0", set()),
         ToolName.BUILDAH: ("1.39.0", "1.44.0", set()),
         ToolName.PODMAN: ("5.8.4", "6.0.0", set()),
         ToolName.SKOPEO: ("1.14.0", "2.0.0", set()),
         ToolName.HADOLINT: ("2.12.0", "3.0.0", set()),
-        ToolName.TRIVY: ("0.69.0", "0.70.0", {"0.69.4"}),
+        ToolName.TRIVY: ("0.74.0", "0.75.0", set()),
         ToolName.COSIGN: ("3.1.3", "4.0.0", set()),
     }
     for name, (minimum, maximum, excluded) in expected.items():
@@ -165,18 +166,34 @@ def test_resolver_applies_the_bounded_policy(
 
 
 def test_resolver_reports_an_excluded_version_with_its_exclusion(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    spec = SUPPORTED_TOOLS[ToolName.TRIVY]
+    monkeypatch.setitem(
+        SUPPORTED_TOOLS,
+        ToolName.TRIVY,
+        ToolSpec(
+            spec.version_arguments,
+            spec.version_pattern,
+            VersionPolicy(
+                _version("0.74.0"),
+                _version("0.75.0"),
+                frozenset({_version("0.74.0")}),
+                excluded=frozenset({_version("0.74.2")}),
+            ),
+        ),
+    )
     executable = tmp_path / "trivy"
     executable.write_bytes(b"executable")
     executable.chmod(0o700)
     resolver = ToolResolver(
-        runner=_Runner("Version: 0.69.4"), locator=lambda _name, _path: str(executable)
+        runner=_Runner("Version: 0.74.2"), locator=lambda _name, _path: str(executable)
     )
 
-    with pytest.raises(RuleRejectionError, match=r"excluded: 0\.69\.4") as failure:
+    with pytest.raises(RuleRejectionError, match=r"excluded: 0\.74\.2") as failure:
         resolver.resolve(ToolName.TRIVY, environment={"PATH": "/usr/bin"})
-    assert "Unsupported trivy version 0.69.4" in str(failure.value)
+    assert "Unsupported trivy version 0.74.2" in str(failure.value)
+    assert "accepted 0.74.0 <= version < 0.75.0" in str(failure.value)
 
 
 @pytest.mark.parametrize(

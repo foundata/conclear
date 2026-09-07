@@ -50,7 +50,10 @@ Qualification and release also need the rootless container toolchain. ConClear
 accepts each tool within the accepted version interval listed under
 [Supported tools](../README.md#supported-tools) in the README, rejects the
 listed excluded versions, and records the exact version it used; the table
-also names the versions the real-tool tests exercised. Use rootless
+also names the versions the real-tool tests exercised. A distribution package
+may lag behind an accepted line, Trivy in particular: install an official
+release build on the sanitized search path after verifying its checksum and
+Sigstore signature. Use rootless
 Buildah and Podman; ConClear creates isolated storage for each run and does not
 use the workstation's existing containers or images.
 

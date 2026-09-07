@@ -2244,14 +2244,12 @@
       ]
     },
     {
-      "excluded": [
-        "0.69.4"
-      ],
-      "maximumExclusive": "0.70.0",
-      "minimum": "0.69.0",
+      "excluded": [],
+      "maximumExclusive": "0.75.0",
+      "minimum": "0.74.0",
       "name": "trivy",
       "tested": [
-        "0.69.3"
+        "0.74.0"
       ]
     },
     {

@@ -304,17 +304,20 @@ qualification never needs Cosign, and a publication never needs Buildah,
 Podman, Hadolint or Trivy. `doctor --scope check|qualify|release` reports every
 missing or unsupported tool of a scope in one pass.
 
-A tool may start a run when its version lies in the tool's accepted interval
-and is not an excluded version. The interval is a compatibility statement based
-on the flags, output fields and behaviors ConClear uses and on published
-advisories; it does not claim that every version in it was tested. The
-real-tool tested versions are the exact versions the local integration tier and
-the external release drill exercised, and the tier fails on a host whose
-version is not yet listed, so that column grows only with evidence. A version
-outside the interval or in the exclusion list is rejected with the observed
-version, the interval, the exclusions and the tested versions. Every run still
-records the exact version and executable digest of each tool it used, and
-distributed qualifications of one release must report identical versions.
+A tool may start a run when its version lies in the tool's accepted interval and
+is not an excluded version. The interval is a compatibility statement based on
+the flags, output fields and behaviors ConClear uses and on published
+advisories; it does not claim that every version in it was tested. The real-tool
+tested versions are the exact versions the local integration tier and the
+external release drill exercised, and the tier fails on a host whose version is
+not yet listed, so that column grows only with evidence. A version outside the
+interval or in the exclusion list is rejected with the observed version, the
+interval, the exclusions and the tested versions. Every run still records the
+exact version and executable digest of each tool it used, and distributed
+qualifications of one release must report identical versions. The Trivy floor
+lies above 0.71.1, the release that fixed the path traversal through a crafted
+vulnerability database (GHSA-mcj4-mphf-j9ff), so accepted Trivy versions carry
+no exposure to that advisory.
 
 <!-- supported-tools:begin -->
 
@@ -325,7 +328,7 @@ distributed qualifications of one release must report identical versions.
 | Podman   | 5.8.4 <= version < 6.0.0   | none              | 5.8.4                     |
 | Skopeo   | 1.14.0 <= version < 2.0.0  | none              | 1.22.2                    |
 | Hadolint | 2.12.0 <= version < 3.0.0  | none              | 2.14.0                    |
-| Trivy    | 0.69.0 <= version < 0.70.0 | 0.69.4            | 0.69.3                    |
+| Trivy    | 0.74.0 <= version < 0.75.0 | none              | 0.74.0                    |
 | Cosign   | 3.1.3 <= version < 4.0.0   | none              | 3.1.3                     |
 
 <!-- supported-tools:end -->

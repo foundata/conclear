@@ -180,16 +180,15 @@ SUPPORTED_TOOLS: Mapping[ToolName, ToolSpec] = {
         ),
     ),
     # Trivy: 0.x minor lines change scanners and report schemas, so only the
-    # tested 0.69 line is accepted; 0.69.4 was the withdrawn release of the
-    # supply-chain compromise (GHSA-69fq-xp46-6x23).
+    # tested 0.74 line is accepted. Its floor lies above 0.71.1, the release that
+    # fixed the path traversal through a crafted vulnerability database
+    # (GHSA-mcj4-mphf-j9ff), so ConClear no longer relies on its sanitized
+    # invocation to stay clear of that advisory.
     ToolName.TRIVY: ToolSpec(
         ("--version",),
         _pattern(r"Version:\s*"),
         VersionPolicy(
-            _version("0.69.0"),
-            _version("0.70.0"),
-            frozenset({_version("0.69.3")}),
-            excluded=frozenset({_version("0.69.4")}),
+            _version("0.74.0"), _version("0.75.0"), frozenset({_version("0.74.0")})
         ),
     ),
     # Cosign: every 3.x release below 3.1.3 has a verification bypass
