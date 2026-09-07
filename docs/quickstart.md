@@ -279,8 +279,10 @@ The test model supports:
 - Reviewed repository fixtures, always mounted read-only. Fixtures must be
   ordinary source-tree files or directories with no symbolic links or unsafe
   permissions.
-- Run-owned generated outputs. They exist only below the run workspace and only
-  at destinations already declared by the selected image's runtime contract.
+- Run-owned generated outputs. They exist only below the run workspace. An
+  output mounted writable must target a path the selected image declares in
+  `runtime.writable_mounts`; a read-only mount of an output may target any
+  path.
 - Secret outputs. An output marked `secret = true` has no path, value or content
   digest in public evidence, is unavailable to repository hooks and is destroyed
   before a hook runs.
