@@ -293,7 +293,7 @@
     {
       "id": "IP0030",
       "summary": "Promote only the verified digest, verify every tag and remove the owned candidate reference",
-      "implementation": ["src/conclear/services/publication.py", "src/conclear/services/cleanup.py"],
+      "implementation": ["src/conclear/services/promotion.py", "src/conclear/services/cleanup.py"],
       "tests": [
         {"path": "tests/unit/test_publication.py", "tier": "unit"},
         {"path": "tests/unit/test_cleanup.py", "tier": "unit"},

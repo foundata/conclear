@@ -10,6 +10,7 @@ import pytest
 
 import conclear.provenance as provenance_module
 import conclear.records as records_module
+import conclear.services.promotion as promotion_module
 import conclear.services.publication as publication_module
 from conclear.adapters.cosign import (
     SignatureObservation,
@@ -50,11 +51,11 @@ from conclear.release_profile import (
 )
 from conclear.services.assembly import CandidateResult
 from conclear.services.ci_context import PublicCIContext
+from conclear.services.promotion import promote_candidate
 from conclear.services.publication import (
     ReleaseEvidence,
     VerificationResult,
     attest_candidate,
-    promote_candidate,
     publish_candidate,
     validate_release_provenance,
     verify_candidate,
@@ -824,7 +825,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
 
     registry.resolution_overrides["race"] = Digest("sha256:" + "9" * 64)
     with pytest.raises(OperationalError, match="did not resolve"):
-        publication_module._write_release_tag(
+        promotion_module._write_release_tag(
             "race",
             observation.graph.digest,
             image,
@@ -850,7 +851,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         ) -> TagObservation:
             raise UnsupportedOperationError("not enforced")
 
-    protected = publication_module._write_release_tag(
+    protected = promotion_module._write_release_tag(
         "unprotected",
         observation.graph.digest,
         image,
