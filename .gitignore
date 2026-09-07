@@ -393,4 +393,5 @@ $RECYCLE.BIN/
 
 ### Repository-specific files
 
-# none right now
+# rumdl Markdown check cache
+.rumdl_cache/

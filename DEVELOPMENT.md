@@ -603,11 +603,20 @@ uv run python -m conclear.guide_requirements --check \
 Moving to a newer guide revision:
 
 1. List the requirements of the new revision from its checkout:
-   `python3 ../guidelines/scripts/check-requirement-identifiers.py --list > /tmp/guide-requirements.json`.
+
+   ```sh
+   python3 ../guidelines/scripts/check-requirement-identifiers.py --list \
+     > /tmp/guide-requirements.json
+   ```
+
 2. Review what changed and what it touches:
-   `uv run python -m conclear.guide_requirements --diff /tmp/guide-requirements.json`
-   prints the added, removed and reworded requirements together with the
-   checks, guide options and coverage entries that reference each one.
+
+   ```sh
+   uv run python -m conclear.guide_requirements --diff /tmp/guide-requirements.json
+   ```
+
+   The command prints the added, removed and reworded requirements together
+   with the checks, guide options and coverage entries that reference each one.
 3. Replace the embedded revision in `src/conclear/identity.py`, in the three
    data files and in the `guideRevision` constants of the record and proposal
    schemas.
@@ -831,7 +840,12 @@ result:
 
 1. The distribution gate on all supported interpreters, retaining its artifacts
    under a directory named for the full revision:
-   `uv run python -m conclear.release_check --output-directory "${HOME}/.local/share/conclear/distributions/$(git rev-parse HEAD)"`.
+
+   ```sh
+   uv run python -m conclear.release_check \
+     --output-directory "${HOME}/.local/share/conclear/distributions/$(git rev-parse HEAD)"
+   ```
+
 2. The complete local tier from an external run manifest,
    `uv run pytest -m "local_integration or emulation"` with manifest-owned
    identifiers as described under
