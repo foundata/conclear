@@ -106,11 +106,11 @@ build context, `conclear.toml`, runtime test inputs, the local checks, a first
 qualification and candidate, pin updates, the release profile and the release
 itself.
 
-An existing repository can start with `conclear adopt`, which observes its
-conventional Containerfiles and Git origin read-only, separates what it saw
-from what it suggests and from what only a maintainer can decide, and with
-`--output` writes a draft that stays deliberately invalid until every `DECIDE`
-value is resolved and its `[adopt]` table is removed.
+An existing repository can start with the `conclear adopt` command, which
+observes its conventional Containerfiles and Git origin read-only, separates
+what it saw from what it suggests and from what only a maintainer can decide,
+and with `--output` writes a draft that stays deliberately invalid until every
+`DECIDE` value is resolved and its `[adopt]` table is removed.
 
 In short: repository behavior is declared in a reviewed `conclear.toml` at the
 selected source revision, which holds project facts and the exceptions the guide

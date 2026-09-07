@@ -147,12 +147,23 @@ including nested variants.
 facts and the exceptions the guide permits, never credentials. Unknown keys are
 errors, so a misspelled security setting cannot be silently ignored.
 
-An existing repository can start from `conclear adopt`. It reads the
-conventional Containerfiles and the Git origin, changes nothing, and prints what
-it observed, what it suggests and what only you can decide. With `--output` it
+An existing repository can start by using the `conclear adopt` command. It reads
+the conventional Containerfiles and the Git origin, changes nothing, and prints
+what it observed, what it suggests and what only you can decide. The
+Containerfile's entrypoint selects the proposed runtime profile before the
+checks run, so a systemd image is held to `USER 0`, a root requirement and
+`STOPSIGNAL SIGRTMIN+3` while every other image is held to a numeric non-root
+user. A conventional root Containerfile gets the repository root as a suggested
+build context, and the draft omits `context` because `.` is the default; a
+nested or explicitly selected Containerfile leaves the context a decision with a
+`DECIDE` placeholder. Every image carries a decision whether it is released or
+exists only as a test dependency, and a project with several images carries a
+decision about which image depends on which; the draft explains that a test-only
+image drops `repository` and `[images.release]` and must be listed in a
+depending image's `[images.test]` dependencies. With `--output` the command
 writes a draft that stays deliberately invalid until every `DECIDE` value is
-resolved and its `[adopt]` table is removed, so the draft cannot pass `check`
-or `qualify` before you reviewed it.
+resolved and its `[adopt]` table is removed, so the draft cannot pass `check` or
+`qualify` before you reviewed it.
 
 This example declares one `linux/amd64` service image:
 
