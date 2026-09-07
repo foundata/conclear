@@ -22,7 +22,6 @@ from conclear.adapters.podman import (
     RuntimeControlObservation,
 )
 from conclear.config import (
-    ImageConfig,
     RuntimeConfig,
     TestMountConfig,
 )
@@ -42,6 +41,7 @@ from conclear.services.qualification_inputs import (
     execution_observation,
     require_execution_mode,
 )
+from conclear.services.runtime_controls import control_findings, controls_dict
 from conclear.test_inputs import (
     MaterializedTestInputs,
     destroy_secret_test_outputs,
@@ -555,8 +555,8 @@ def _run_preparations(
             controls = runtime.inspect_controls(
                 root=storage_root, runroot=runroot, name=container_name
             )
-            control_findings = _control_findings(selected, controls)
-            findings.extend(control_findings)
+            control_mismatches = control_findings(selected, controls)
+            findings.extend(control_mismatches)
             exit_status = runtime.wait(
                 root=storage_root,
                 runroot=runroot,
@@ -585,7 +585,7 @@ def _run_preparations(
             preserve_failure=False,
         )
         passed = (
-            not control_findings and exit_status == preparation.expected_exit_status
+            not control_mismatches and exit_status == preparation.expected_exit_status
         )
         if exit_status != preparation.expected_exit_status:
             findings.append(
@@ -880,12 +880,12 @@ def _exercise_container(
     controls = runtime.inspect_controls(
         root=storage_root, runroot=runroot, name=container_name
     )
-    findings.extend(_control_findings(inputs.image, controls))
+    findings.extend(control_findings(inputs.image, controls))
     results.append(
         {
             "name": "runtimeControls",
             "status": "passed" if not findings else "failed",
-            "observed": _controls_dict(controls),
+            "observed": controls_dict(controls),
         }
     )
     native = (
@@ -1314,93 +1314,6 @@ def _remove_test_container(
         inputs.workspace.journal.update(resource_id, ResourceStatus.REMOVED)
 
 
-def _control_findings(
-    image: ImageConfig, observed: RuntimeControlObservation
-) -> tuple[Finding, ...]:
-    expected = image.runtime
-    mismatches: list[str] = []
-    messages: dict[str, str] = {}
-    if observed.user.split(":", maxsplit=1)[0] != str(expected.user):
-        mismatches.append("user")
-    if observed.read_only is not expected.read_only:
-        mismatches.append("read-only root")
-    if observed.writable_mounts != tuple(sorted(expected.writable_mounts)):
-        mismatches.append("writable mounts")
-        unexpected = sorted(
-            set(observed.writable_mounts) - set(expected.writable_mounts)
-        )
-        missing = sorted(set(expected.writable_mounts) - set(observed.writable_mounts))
-        messages["writable mounts"] = (
-            "Effective runtime writable mounts do not match configuration "
-            f"(unexpected: {', '.join(unexpected) or 'none'}; "
-            f"missing: {', '.join(missing) or 'none'})"
-        )
-    if observed.memory_bytes != _memory_bytes(expected.memory):
-        mismatches.append("memory")
-    if observed.nano_cpus != round(expected.cpus * 1_000_000_000):
-        mismatches.append("CPU")
-    if observed.pids_limit != expected.pids:
-        mismatches.append("PID")
-    if (
-        observed.nofile_soft != expected.nofile
-        or observed.nofile_hard != expected.nofile
-    ):
-        mismatches.append("nofile")
-    if not any(
-        value.lower().replace("_", "-") == "no-new-privileges"
-        for value in observed.security_options
-    ):
-        mismatches.append("no-new-privileges")
-    if observed.user_namespace != "private":
-        mismatches.append("user namespace")
-    if observed.cgroup_namespace != "private":
-        mismatches.append("cgroup namespace")
-    if observed.privileged:
-        mismatches.append("privileged mode")
-    if expected.systemd is not None and _normalized_signal(
-        observed.stop_signal
-    ) != _normalized_signal(expected.systemd.stop_signal):
-        mismatches.append("stop signal")
-    # Podman reports CapAdd and CapDrop relative to its own default set, so an
-    # explicitly added default capability is invisible there; the bounding set
-    # is the authoritative statement of what the container may ever hold.
-    expected_add = {item.removeprefix("CAP_") for item in expected.capabilities}
-    bounding = {
-        item.removeprefix("CAP_").upper() for item in observed.bounding_capabilities
-    }
-    effective = {
-        item.removeprefix("CAP_").upper() for item in observed.effective_capabilities
-    }
-    if not effective.issubset(expected_add):
-        mismatches.append("capability drop")
-    if bounding != expected_add:
-        mismatches.append("added capabilities")
-    return tuple(
-        Finding(
-            "CC0401"
-            if name
-            in {
-                "user",
-                "read-only root",
-                "writable mounts",
-                "no-new-privileges",
-                "capability drop",
-                "added capabilities",
-                "user namespace",
-                "cgroup namespace",
-                "privileged mode",
-                "stop signal",
-            }
-            else "CC0402",
-            "error",
-            messages.get(
-                name, f"Effective runtime {name} control does not match configuration"
-            ),
-        )
-        for name in mismatches
-    )
-
-
 def _check_immutable_paths(
     inputs: QualificationInputs,
     runtime: RuntimeAdapter,
@@ -1444,38 +1357,5 @@ def _check_immutable_paths(
             )
 
 
-def _controls_dict(value: RuntimeControlObservation) -> dict[str, object]:
-    return {
-        "user": value.user,
-        "readOnly": value.read_only,
-        "writableMounts": list(value.writable_mounts),
-        "memoryBytes": value.memory_bytes,
-        "nanoCpus": value.nano_cpus,
-        "pidsLimit": value.pids_limit,
-        "nofile": [value.nofile_soft, value.nofile_hard],
-        "capAdd": list(value.cap_add),
-        "capDrop": list(value.cap_drop),
-        "boundingCapabilities": list(value.bounding_capabilities),
-        "effectiveCapabilities": list(value.effective_capabilities),
-        "securityOptions": list(value.security_options),
-        "userNamespace": value.user_namespace,
-        "cgroupNamespace": value.cgroup_namespace,
-        "privileged": value.privileged,
-        "stopSignal": value.stop_signal,
-    }
-
-
-def _memory_bytes(value: str) -> int:
-    units = {"KiB": 1024, "MiB": 1024**2, "GiB": 1024**3}
-    for suffix, multiplier in units.items():
-        if value.endswith(suffix):
-            return int(value.removesuffix(suffix)) * multiplier
-    raise OperationalError(f"Unsupported memory value: {value}")
-
-
 def _normalized_architecture(value: str) -> str:
     return {"x86_64": "amd64", "aarch64": "arm64"}.get(value, value)
-
-
-def _normalized_signal(value: str) -> str:
-    return value if value.startswith("SIG") else f"SIG{value}"
