@@ -10,8 +10,8 @@ import pytest
 
 import conclear.provenance as provenance_module
 import conclear.records as records_module
+import conclear.services.attestation as attestation_module
 import conclear.services.promotion as promotion_module
-import conclear.services.publication as publication_module
 from conclear.adapters.cosign import (
     SignatureObservation,
     VerificationObservation,
@@ -50,14 +50,14 @@ from conclear.release_profile import (
     ReleaseProfile,
 )
 from conclear.services.assembly import CandidateResult
-from conclear.services.ci_context import PublicCIContext
-from conclear.services.promotion import promote_candidate
-from conclear.services.publication import (
+from conclear.services.attestation import (
     ReleaseEvidence,
     attest_candidate,
-    publish_candidate,
     validate_release_provenance,
 )
+from conclear.services.ci_context import PublicCIContext
+from conclear.services.promotion import promote_candidate
+from conclear.services.publication import publish_candidate
 from conclear.services.verification import VerificationResult, verify_candidate
 from conclear.values import Digest, OCIReference, Platform, candidate_tag
 from conclear.workspace import (
@@ -410,7 +410,7 @@ def test_signature_coverage_failure_uses_stable_check_identifier(
     )
 
     with pytest.raises(OperationalError, match="coverage") as caught:
-        publication_module.verify_image_signature(
+        attestation_module.verify_image_signature(
             FailingSignatureSigner(), subject, tmp_path / "cosign.pub"
         )
 
@@ -501,7 +501,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
     identity = ApplicationIdentity(source_revision="c" * 40)
     monkeypatch.setattr(records_module, "IDENTITY", identity)
     monkeypatch.setattr(provenance_module, "IDENTITY", identity)
-    monkeypatch.setattr(publication_module, "IDENTITY", identity)
+    monkeypatch.setattr(attestation_module, "IDENTITY", identity)
     repository = load_repository_config(repository_factory() / "conclear.toml")
     image = repository.image("app")
     workspace = RunWorkspace.create(

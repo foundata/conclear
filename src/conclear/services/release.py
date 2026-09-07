@@ -40,11 +40,12 @@ from conclear.records import SourceIdentity, Verdict, parse_timestamp, utc_now
 from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
 from conclear.services.assembly import assemble_candidate
+from conclear.services.attestation import attest_candidate
 from conclear.services.checking import check_image
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.cleanup import cleanup_run
 from conclear.services.promotion import PromotionResult, promote_candidate
-from conclear.services.publication import attest_candidate, publish_candidate
+from conclear.services.publication import publish_candidate
 from conclear.services.qualification import qualify_platform
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.run_context import (

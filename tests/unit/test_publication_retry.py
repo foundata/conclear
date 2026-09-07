@@ -11,7 +11,7 @@ from conclear.attestations import SPDX_DOCUMENT_TYPE
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.provenance import SLSA_PROVENANCE_TYPE
 from conclear.services import release
-from conclear.services.publication import attest_candidate
+from conclear.services.attestation import attest_candidate
 from conclear.services.verification import verify_candidate
 from conclear.workspace import ResourceStatus, RunState
 from tests.unit.test_release_workflow import NOW, Harness

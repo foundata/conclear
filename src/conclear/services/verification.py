@@ -29,20 +29,22 @@ from conclear.provenance import SLSA_PROVENANCE_TYPE
 from conclear.records import RecordEnvelope, Verdict, validate_record
 from conclear.release_profile import CIContextPolicy, ReleaseProfile
 from conclear.services.assembly import CandidateResult
-from conclear.services.ci_context import PublicCIContext
-from conclear.services.publication import (
-    PublishedCandidate,
-    Registry,
+from conclear.services.attestation import (
     ReleaseEvidence,
     Signer,
     has_downloaded_statement,
     provenance_subjects,
     require_downloaded_predicate,
     require_downloaded_statement,
-    require_remote_graph_unchanged,
-    retry_entry,
     validate_release_provenance,
     verify_image_signature,
+)
+from conclear.services.ci_context import PublicCIContext
+from conclear.services.publication import (
+    PublishedCandidate,
+    Registry,
+    require_remote_graph_unchanged,
+    retry_entry,
 )
 from conclear.spdx import validate_spdx_document
 from conclear.values import Digest, OCIReference

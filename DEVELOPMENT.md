@@ -140,8 +140,9 @@ conclear/
 │   │   ├── quay.py               # Quay tag API
 │   │   └── git.py                # Source selection and worktrees
 │   ├── commands/                 # CLI surface, grouped by scope (transport.py: worker exports)
-│   ├── services/                 # Workflow decisions (qualification,
-│   │                             # assembly, publication, rescan, cleanup)
+│   ├── services/                 # Workflow decisions (qualification, runtime
+│   │                             # tests, assembly, publication, attestation,
+│   │                             # verification, promotion, rescan, cleanup)
 │   ├── schemas/                  # Shipped JSON Schemas
 │   ├── data/checks.json          # Check catalog source of truth
 │   ├── data/guide-options.json   # Guide-option support source of truth

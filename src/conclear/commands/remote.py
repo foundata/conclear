@@ -22,9 +22,10 @@ from conclear.errors import InvalidInvocationError
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import format_timestamp, utc_now
 from conclear.release_profile import ReleaseProfile
+from conclear.services.attestation import attest_candidate
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.promotion import promote_candidate
-from conclear.services.publication import attest_candidate, publish_candidate
+from conclear.services.publication import publish_candidate
 from conclear.services.release import (
     ReleaseRequest,
     execute_release,

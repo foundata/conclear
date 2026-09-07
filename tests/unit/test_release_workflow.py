@@ -13,7 +13,7 @@ import pytest
 import conclear.provenance as provenance_module
 import conclear.records as records_module
 import conclear.services.assembly as assembly_module
-import conclear.services.publication as publication_module
+import conclear.services.attestation as attestation_module
 from conclear.artifacts import (
     load_candidate,
     load_published,
@@ -85,7 +85,7 @@ class Harness:
             records_module,
             provenance_module,
             assembly_module,
-            publication_module,
+            attestation_module,
         ):
             monkeypatch.setattr(module, "IDENTITY", identity)
         self.tmp_path = tmp_path

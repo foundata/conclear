@@ -17,11 +17,8 @@ from conclear.records import (
     validate_record,
 )
 from conclear.services.assembly import CandidateResult, QualificationTransport
-from conclear.services.publication import (
-    PublishedCandidate,
-    ReleaseEvidence,
-    validate_release_provenance,
-)
+from conclear.services.attestation import ReleaseEvidence, validate_release_provenance
+from conclear.services.publication import PublishedCandidate
 from conclear.services.verification import VerificationResult
 from conclear.values import (
     Digest,

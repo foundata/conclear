@@ -10,7 +10,7 @@ import pytest
 import conclear.provenance as provenance_module
 import conclear.records as records_module
 import conclear.services.assembly as assembly_module
-import conclear.services.publication as publication_module
+import conclear.services.attestation as attestation_module
 from conclear.config import load_repository_config
 from conclear.errors import (
     InvalidInvocationError,
@@ -251,7 +251,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
     monkeypatch.setattr(records_module, "IDENTITY", identity)
     monkeypatch.setattr(provenance_module, "IDENTITY", identity)
     monkeypatch.setattr(assembly_module, "IDENTITY", identity)
-    monkeypatch.setattr(publication_module, "IDENTITY", identity)
+    monkeypatch.setattr(attestation_module, "IDENTITY", identity)
     source_root = repository_factory()
     repository = load_repository_config(source_root / "conclear.toml")
     profile_value = profile(tmp_path)

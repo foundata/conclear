@@ -23,13 +23,8 @@ from conclear.jsonutil import load_json
 from conclear.parsing import object_value
 from conclear.presentation import Finding
 from conclear.registry_control import RegistryControl
-from conclear.services.publication import (
-    PublishedCandidate,
-    Registry,
-    Signer,
-    require_downloaded_statement,
-    retry_entry,
-)
+from conclear.services.attestation import Signer, require_downloaded_statement
+from conclear.services.publication import PublishedCandidate, Registry, retry_entry
 from conclear.services.verification import VerificationResult
 from conclear.values import Digest, OCIReference
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
