@@ -1532,6 +1532,44 @@ def test_one_shot_launch_uses_arguments_and_expected_exit_contract(
     assert runtime.created[-1]["arguments"][0] == "serve"
 
 
+def test_launch_written_output_needs_no_preparation_and_may_stay_empty(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        .replace("user = 10001\n", 'user = 10001\nwritable_mounts = ["/state"]\n')
+        .replace(
+            "[images.release]",
+            """[[images.test.outputs]]
+name = "state"
+
+[images.test.launch]
+mounts = [{ name = "state", target = "/state", read_only = false }]
+
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+    value = inputs(root, tmp_path)
+    runtime = Runtime()
+
+    evidence = run_platform_tests(
+        value, build_platform(value, Builder()), runtime, hook_runner(value)
+    )
+
+    assert evidence.findings == ()
+    assert [call.get("entrypoint", ()) for call in runtime.created] == [()]
+    launch_mounts = runtime.created[0]["mounts"]
+    assert [(mount.target, mount.read_only) for mount in launch_mounts] == [
+        ("/state", False)
+    ]
+    outputs = evidence.test_inputs["outputs"]
+    assert isinstance(outputs, list)
+    assert [(item["name"], item["files"]) for item in outputs] == [("state", 0)]
+
+
 def test_partial_preparation_rejects_before_repository_hook(
     repository_factory: Any, tmp_path: Path
 ) -> None:

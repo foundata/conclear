@@ -203,18 +203,6 @@ def test_platform(
         input_observation = _complete_test_input_observation(
             inputs, materialized, input_observation
         )
-        output_values = input_observation.get("outputs")
-        if not isinstance(output_values, list):
-            raise OperationalError("Test output observations are malformed")
-        for value in output_values:
-            if isinstance(value, dict) and value.get("files") == 0:
-                findings.append(
-                    Finding(
-                        "CC0403",
-                        "error",
-                        f"Declared test output is empty: {value.get('name', 'unknown')}",
-                    )
-                )
         manifest_path = _write_test_input_manifest(
             inputs,
             build,
