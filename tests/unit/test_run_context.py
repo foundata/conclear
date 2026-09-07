@@ -195,9 +195,7 @@ def test_checked_out_configuration_must_match_the_git_object(
     source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
 ) -> None:
     root, git, _ = source
-    git.config_override = (root / "conclear.toml").read_text(
-        encoding="utf-8"
-    ) + "\from tests.unit.test_config import _image_text\nn"
+    git.config_override = (root / "conclear.toml").read_text(encoding="utf-8") + "\n"
 
     with pytest.raises(OperationalError, match="differs from Git object") as caught:
         create(root, tmp_path)
