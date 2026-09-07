@@ -6,6 +6,7 @@ import re
 import stat
 import sys
 import textwrap
+from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -161,23 +162,78 @@ def render_implementation_matrix(
             break_on_hyphens=False,
         ),
         "",
-        "| Promise | Current behavior | Architecture | Implementation | Verification |",
-        "|---|---|---|---|---|",
     ]
-    for promise in selected.promises:
-        implementation = "<br>".join(
-            _markdown_link(reference) for reference in promise.implementation
+    rows = [
+        (
+            f"`{promise.promise_id}`",
+            _escape(promise.summary),
+            f"[contract](../ARCHITECTURE.md#{promise.anchor})",
+            "<br>".join(
+                _markdown_link(reference) for reference in promise.implementation
+            ),
+            "<br>".join(
+                f"`{reference.tier}`: {_markdown_link(reference.path)}"
+                for reference in promise.tests
+            ),
         )
-        tests = "<br>".join(
-            f"`{reference.tier}`: {_markdown_link(reference.path)}"
-            for reference in promise.tests
+        for promise in selected.promises
+    ]
+    lines.extend(
+        _aligned_table(
+            (
+                "Promise",
+                "Current behavior",
+                "Architecture",
+                "Implementation",
+                "Verification",
+            ),
+            rows,
         )
-        lines.append(
-            f"| `{promise.promise_id}` | {_escape(promise.summary)} | "
-            f"[contract](../ARCHITECTURE.md#{promise.anchor}) | "
-            f"{implementation} | {tests} |"
-        )
+    )
     return "\n".join(lines) + "\n"
+
+
+def _aligned_table(
+    headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]
+) -> list[str]:
+    """Render a table in the Markdown guide's aligned style.
+
+    Every column but the last is padded to its widest cell, header text is
+    centered with any odd space on the right, body cells are left-aligned and
+    the last column is padded only up to its header width.
+    """
+    last = len(headers) - 1
+    widths = [
+        len(header)
+        if index == last
+        else max(len(header), *(len(row[index]) for row in rows))
+        for index, header in enumerate(headers)
+    ]
+
+    def centered(cell: str, width: int) -> str:
+        padding = max(width - len(cell), 0)
+        left = padding // 2
+        return " " * left + cell + " " * (padding - left)
+
+    def render(cells: tuple[str, ...]) -> str:
+        return (
+            "| "
+            + " | ".join(
+                cell.ljust(width) for cell, width in zip(cells, widths, strict=True)
+            )
+            + " |"
+        )
+
+    return [
+        "| "
+        + " | ".join(
+            centered(header, width)
+            for header, width in zip(headers, widths, strict=True)
+        )
+        + " |",
+        "| " + " | ".join("-" * width for width in widths) + " |",
+        *(render(row) for row in rows),
+    ]
 
 
 def write_implementation_matrix(path: Path) -> None:
