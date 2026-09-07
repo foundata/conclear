@@ -251,16 +251,17 @@ The configuration declares image definitions, Containerfile and context paths, a
 fully qualified release destination for every releasable image, required
 platforms, native-testing requirements, runtime expectations, resource limits,
 typed test inputs, test-image dependencies, test hooks, image-pin intent,
-candidate lifetime reductions and permitted exceptions. Paths resolve below the isolated source
-root and cannot escape through `..`, symlinks or archive entries. The configured
-source is always a credential-free canonical HTTPS repository identity. An
-observed Git remote may use that HTTPS form or an equivalent
-`git@host:owner/repository.git` or `ssh://git@host/owner/repository.git`
-transport form. ConClear converts a supported observed remote to the canonical
-HTTPS identity before comparison and records only that identity in evidence. It
-rejects arbitrary SSH users, host aliases, local paths and other remote forms
-whose equivalence cannot be established from their syntax alone; it never
-requires a maintainer to change an equivalent local SSH remote.
+candidate lifetime reductions and permitted exceptions. Paths resolve below the
+isolated source root and cannot escape through `..`, symlinks or archive
+entries. The configured source is always a credential-free canonical HTTPS
+repository identity. An observed Git remote may use that HTTPS form or an
+equivalent `git@host:owner/repository.git` or
+`ssh://git@host/owner/repository.git` transport form. ConClear converts a
+supported observed remote to the canonical HTTPS identity before comparison and
+records only that identity in evidence. It rejects arbitrary SSH users, host
+aliases, local paths and other remote forms whose equivalence cannot be
+established from their syntax alone; it never requires a maintainer to change an
+equivalent local SSH remote.
 
 An illustrative configuration is:
 
@@ -851,13 +852,13 @@ bounding and effective sets. These constraints apply equally to the systemd
 profile.
 
 For a systemd image, ConClear explicitly enables Podman's systemd mode and
-applies the `SIGRTMIN+3` stop signal. It verifies that PID 1 is `systemd`, that a
-`systemctl` manager query succeeds and that every configured required unit
+applies the `SIGRTMIN+3` stop signal. It verifies that PID 1 is `systemd`, that
+a `systemctl` manager query succeeds and that every configured required unit
 becomes active. Required-unit probes and an optional application health command
-share the one monotonic startup budget. The profile then sends `SIGRTMIN+3` and applies the ordinary bounded shutdown and exit-status
-checks. Failure of PID 1, manager, unit, health or shutdown expectations
-produces a `CC0403` rejection; an inability to invoke or observe Podman remains
-an operational failure.
+share the one monotonic startup budget. The profile then sends `SIGRTMIN+3` and
+applies the ordinary bounded shutdown and exit-status checks. Failure of PID 1,
+manager, unit, health or shutdown expectations produces a `CC0403` rejection; an
+inability to invoke or observe Podman remains an operational failure.
 
 For a service health command, a nonzero application status means not ready and
 is retried at a bounded implementation-owned interval until success or the

@@ -256,9 +256,9 @@ The systemd profile provisions `/run`, `/run/lock`, `/tmp` and
 paths normally, including additional destinations declared by the image's
 `VOLUME` metadata. Do not repeat the four profile-provided paths. Qualification
 verifies systemd as PID 1, contacts the manager, waits for every required unit
-and the optional health command within one startup deadline, sends `SIGRTMIN+3` and verifies bounded shutdown and the expected exit
-status. The other runtime profiles explicitly disable Podman's automatic
-systemd mode.
+and the optional health command within one startup deadline, sends `SIGRTMIN+3`
+and verifies bounded shutdown and the expected exit status. The other runtime
+profiles explicitly disable Podman's automatic systemd mode.
 
 
 ## 6. Describe application test inputs when needed
@@ -333,15 +333,15 @@ mounts = [{ name = "generated", target = "/run/generated" }]
 ```
 
 A mount names a declared fixture or output and is read-only unless it sets
-`read_only = false`. ConClear creates every output as an empty private
-directory before the first preparation runs. A read-only mount may name only an
-output that an earlier preparation wrote, and every output must be mounted
-writable by at least one preparation or by the launch. An output that only the
-launched container writes, such as a state or work directory, therefore needs
-no preparation: declare it, mount it with `read_only = false` at a destination
-the runtime contract lists in `writable_mounts`, and ConClear records what the
-container left there. The `generator` image must be another `[[images]]` entry in the same
-file, cover every tested platform and declare `/output` in its own
+`read_only = false`. ConClear creates every output as an empty private directory
+before the first preparation runs. A read-only mount may name only an output
+that an earlier preparation wrote, and every output must be mounted writable by
+at least one preparation or by the launch. An output that only the launched
+container writes, such as a state or work directory, therefore needs no
+preparation: declare it, mount it with `read_only = false` at a destination the
+runtime contract lists in `writable_mounts`, and ConClear records what the
+container left there. The `generator` image must be another `[[images]]` entry
+in the same file, cover every tested platform and declare `/output` in its own
 `images.runtime.writable_mounts`. An image that exists only for tests omits
 `repository` and `[images.release]`: ConClear builds it as a dependency under
 its runtime contract but refuses to select it for a build, qualification,
