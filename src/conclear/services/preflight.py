@@ -1,15 +1,16 @@
 """Static and pin gates for the complete test-image closure of one image.
 
 Nothing is built before every image a qualification builds has passed the
-same source checks and the same pin gate. The closure is the selected image
-plus its transitive test dependencies in dependency-first order; each image is
-checked under its own Containerfile, context, pins and pin limits, and every
-distinct readable tag is resolved once for the whole closure. Static findings
-reject the closure before any registry is contacted or durable pin state is
-updated.
+same source checks and the same pin gate. The closure is the transitive test
+dependencies in stable dependency-first order followed by the selected image;
+each image is checked under its own Containerfile, context, pins and pin
+limits at one instant, and every distinct readable tag is resolved once for
+the whole closure. Static findings reject the closure before any registry is
+contacted or durable pin state is updated. Every finding names the image it
+concerns so a rejection is attributable.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from conclear.adapters.hadolint import HadolintAdapter
@@ -40,6 +41,20 @@ class ImagePreflight:
             item.accepted for item in self.pin_observations
         )
 
+    @property
+    def static_findings(self) -> tuple[Finding, ...]:
+        """Return the source-check findings, each naming this image."""
+        return tuple(replace(item, image=self.image.image_id) for item in self.findings)
+
+    @property
+    def pin_findings(self) -> tuple[Finding, ...]:
+        """Return the pin-gate findings, each naming this image."""
+        return tuple(
+            replace(item, image=self.image.image_id)
+            for observation in self.pin_observations
+            for item in observation.findings
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ClosurePreflight:
@@ -50,23 +65,18 @@ class ClosurePreflight:
 
     @property
     def images(self) -> tuple[ImagePreflight, ...]:
-        """Return the primary image followed by its dependencies."""
-        return (self.primary, *self.dependencies)
+        """Return the closure in dependency-first order, the primary image last."""
+        return (*self.dependencies, self.primary)
 
     @property
     def static_findings(self) -> tuple[Finding, ...]:
-        """Return every source-check finding across the closure."""
-        return tuple(item for image in self.images for item in image.findings)
+        """Return every attributed source-check finding across the closure."""
+        return tuple(item for image in self.images for item in image.static_findings)
 
     @property
     def pin_findings(self) -> tuple[Finding, ...]:
-        """Return every pin-gate finding across the closure."""
-        return tuple(
-            item
-            for image in self.images
-            for observation in image.pin_observations
-            for item in observation.findings
-        )
+        """Return every attributed pin-gate finding across the closure."""
+        return tuple(item for image in self.images for item in image.pin_findings)
 
     @property
     def findings(self) -> tuple[Finding, ...]:
@@ -89,7 +99,7 @@ def preflight_image_closure(
     now: datetime,
 ) -> ClosurePreflight:
     """Run the source checks and the pin gate for an image and its dependencies."""
-    closure = (image, *repository.test_dependencies(image.image_id))
+    closure = (*repository.test_dependencies(image.image_id), image)
     outcomes = tuple(check_image(selected, hadolint).findings for selected in closure)
     if any(item.severity == "error" for findings in outcomes for item in findings):
         observations: tuple[tuple[PinObservation, ...], ...] = tuple(
@@ -107,4 +117,4 @@ def preflight_image_closure(
             closure, outcomes, observations, strict=True
         )
     )
-    return ClosurePreflight(primary=preflights[0], dependencies=preflights[1:])
+    return ClosurePreflight(primary=preflights[-1], dependencies=preflights[:-1])

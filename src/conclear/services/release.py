@@ -399,14 +399,15 @@ def _qualify_release(
     )
     if static_rejection is not None:
         raise RuleRejectionError(
-            "Static image checks rejected the release", code=static_rejection.check_id
+            f"Static image checks rejected the release: {static_rejection.image}",
+            code=static_rejection.check_id,
         )
     pin_rejection = next(
         (item for item in preflight.pin_findings if item.severity == "error"), None
     )
     if pin_rejection is not None:
         raise RuleRejectionError(
-            "External image pin checks rejected the release",
+            f"External image pin checks rejected the release: {pin_rejection.image}",
             code=pin_rejection.check_id,
         )
     database = select_fresh_database(

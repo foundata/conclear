@@ -402,7 +402,8 @@
         "checkId": {"type": "string", "pattern": "^CC[0-9]{4}$"},
         "severity": {"enum": ["error", "warning", "info"]},
         "message": {"type": "string", "minLength": 1},
-        "location": {"type": "string"}
+        "location": {"type": "string"},
+        "image": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"}
       }
     },
     "pinObservation": {

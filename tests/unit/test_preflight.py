@@ -97,7 +97,7 @@ def test_closure_preflight_gates_every_dependency_and_resolves_a_shared_tag_once
 
     assert preflight.accepted
     assert preflight.findings == ()
-    assert [item.image.image_id for item in preflight.images] == ["app", "helper"]
+    assert [item.image.image_id for item in preflight.images] == ["helper", "app"]
     assert resolver.requests == ["quay.io/example/base:1"]
     assert [
         (str(item.reference), str(item.observed_digest))
@@ -123,6 +123,9 @@ def test_closure_preflight_rejects_an_undeclared_dependency_input_before_resolvi
     ]
     assert [item.check_id for item in errors] == ["CC0203"]
     assert HELPER_BASE in errors[0].message
+    assert [item.image for item in preflight.findings if item.severity == "error"] == [
+        "helper"
+    ]
     assert resolver.requests == []
     assert all(item.pin_observations == () for item in preflight.images)
 
@@ -196,8 +199,95 @@ def test_closure_preflight_applies_each_dependency_pin_limit(
     [error] = [item for item in preflight.pin_findings if item.severity == "error"]
     assert error.check_id == "CC0204"
     assert error.location == HELPER_BASE
+    assert error.image == "helper"
     assert "1:00:00" in error.message
     assert sorted(resolver.requests[1:]) == [
         "quay.io/example/base:1",
         "quay.io/example/helper-base:2",
     ]
+
+
+def test_closure_preflight_checks_transitive_dependencies_dependency_first(
+    repository_factory: Callable[..., Path], tmp_path: Path
+) -> None:
+    root = repository_factory()
+    (root / "Containerfile.helper").write_text(_containerfile(BASE), encoding="utf-8")
+    (root / "Containerfile.tool").write_text(
+        _containerfile(HELPER_BASE), encoding="utf-8"
+    )
+    path = root / "conclear.toml"
+    content = path.read_text(encoding="utf-8").replace(
+        "[images.release]",
+        '[images.test]\ndependencies = ["helper"]\n\n[images.release]',
+    )
+    path.write_text(
+        content
+        + _image_text(
+            "helper",
+            releasable=True,
+            dependencies=("tool",),
+            keys='containerfile = "Containerfile.helper"\n',
+            tables=(
+                f'\n[[images.pins]]\nreference = "{BASE}"\n'
+                'tag_intent = "immutable-version"\n'
+            ),
+        )
+        + _image_text(
+            "tool",
+            releasable=False,
+            keys='containerfile = "Containerfile.tool"\n',
+            tables=(
+                f'\n[[images.pins]]\nreference = "{HELPER_BASE}"\n'
+                'tag_intent = "immutable-version"\n'
+                '\n[images.limits]\npin_divergence = "1h"\n'
+            ),
+        ),
+        encoding="utf-8",
+    )
+    repository = load_repository_config(path)
+    assert repository.image("helper").releasable
+    store = PinStore(tmp_path / "state")
+    resolver = Resolver(
+        {
+            "quay.io/example/base:1": "sha256:" + "a" * 64,
+            "quay.io/example/helper-base:2": "sha256:" + "c" * 64,
+        }
+    )
+    store.check(
+        repository.image("tool").pins[0],
+        resolver=resolver,
+        maximum_divergence=timedelta(hours=1),
+        now=NOW - timedelta(hours=2),
+    )
+    resolver.requests.clear()
+
+    preflight = preflight_image_closure(
+        repository,
+        repository.release_image("app"),
+        hadolint=cast(Any, Hadolint()),
+        store=store,
+        resolver=resolver,
+        now=NOW,
+    )
+
+    assert [item.image.image_id for item in preflight.images] == [
+        "tool",
+        "helper",
+        "app",
+    ]
+    assert resolver.requests == [
+        "quay.io/example/helper-base:2",
+        "quay.io/example/base:1",
+    ]
+    assert [item.accepted for item in preflight.images] == [False, True, True]
+    [error] = [item for item in preflight.findings if item.severity == "error"]
+    assert (error.check_id, error.image, error.location) == (
+        "CC0204",
+        "tool",
+        HELPER_BASE,
+    )
+    assert all(
+        observation.checked_at == NOW
+        for image in preflight.images
+        for observation in image.pin_observations
+    )

@@ -26,6 +26,7 @@ class Finding:
     severity: str
     message: str
     location: str | None = None
+    image: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return the public finding object."""
@@ -36,6 +37,8 @@ class Finding:
         }
         if self.location is not None:
             value["location"] = self.location
+        if self.image is not None:
+            value["image"] = self.image
         return value
 
 
@@ -91,6 +94,8 @@ def present_human(result: CommandResult, stream: TextIO) -> None:
         stream.write(f"  {detail}\n")
     for finding in result.findings:
         location = f" ({finding.location})" if finding.location else ""
+        image = f" [{finding.image}]" if finding.image else ""
         stream.write(
-            f"{finding.check_id} {finding.severity}: {finding.message}{location}\n"
+            f"{finding.check_id} {finding.severity}: "
+            f"{finding.message}{location}{image}\n"
         )

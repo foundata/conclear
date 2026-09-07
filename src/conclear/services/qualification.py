@@ -315,7 +315,7 @@ def qualify_platform(
         inputs, build, scanner, database, today=now.date()
     )
     pin_findings = tuple(
-        finding
+        replace(finding, image=item.image.image_id)
         for item in preflight.images
         for finding in _pin_findings(item.image, item.pin_observations, now=now)
     )
@@ -327,7 +327,7 @@ def qualify_platform(
                     *pin_findings,
                     *build.findings,
                     *(
-                        finding
+                        replace(finding, image=dependency.image.image_id)
                         for dependency in dependency_builds
                         for finding in dependency.build.findings
                     ),
@@ -420,8 +420,8 @@ def _require_closure_preflight(
     inputs: QualificationInputs, preflight: ClosurePreflight
 ) -> None:
     expected = (
-        inputs.image,
         *inputs.repository.test_dependencies(inputs.image.image_id),
+        inputs.image,
     )
     supplied = tuple(item.image for item in preflight.images)
     if supplied != expected:

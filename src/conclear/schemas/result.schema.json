@@ -53,6 +53,10 @@
           },
           "location": {
             "type": "string"
+          },
+          "image": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
           }
         },
         "required": [

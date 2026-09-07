@@ -15,7 +15,7 @@ from conclear.adapters.podman import (
     RuntimeControlObservation,
 )
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
-from conclear.artifacts import qualification_transport
+from conclear.artifacts import qualification_materials, qualification_transport
 from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig, load_repository_config
 from conclear.errors import CommandTimeoutError, OperationalError, RuleRejectionError
 from conclear.hooks import HookRunner
@@ -47,6 +47,7 @@ from conclear.services.runtime_lifecycle import ReadinessTiming
 from conclear.services.runtime_tests import test_platform as run_platform_tests
 from conclear.values import Digest, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
+from tests.unit.test_config import _image_text
 
 
 class IdFactory:
@@ -1737,7 +1738,7 @@ pin_freshness = "1h"
 
     assert result.verdict is Verdict.REJECTED
     stale = [item for item in result.findings if item.check_id == "CC0204"]
-    assert [item.location for item in stale] == [reference]
+    assert [(item.location, item.image) for item in stale] == [(reference, "generator")]
     payload = json.loads(result.record_path.read_text(encoding="utf-8"))["payload"]
     assert payload["effectiveLimits"]["pinFreshnessSeconds"] == 86400
     dependency = payload["testImageDependencies"][0]
@@ -1745,6 +1746,56 @@ pin_freshness = "1h"
     assert dependency["effectiveLimits"]["pinFreshnessSeconds"] == 3600
     assert dependency["externalImages"] == [reference]
     assert dependency["pinObservations"][0]["reference"] == reference
+
+
+def test_qualification_records_transitive_dependencies_dependency_first(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + '\n[images.test]\ndependencies = ["tool"]\n'
+        + _image_text("tool", releasable=False),
+        encoding="utf-8",
+    )
+    value = inputs(root, tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=configured_hook_runner(value, CapturingRunner()),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        preflight=closure_preflight(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert result.verdict is Verdict.ACCEPTED
+    record = json.loads(result.record_path.read_text(encoding="utf-8"))
+    validate_record(record)
+    payload = record["payload"]
+    dependencies = payload["testImageDependencies"]
+    assert [item["imageId"] for item in dependencies] == ["tool", "generator"]
+    for item in dependencies:
+        assert item["containerfileDigest"] == payload["containerfileDigest"]
+        assert item["effectiveLimits"] == payload["effectiveLimits"]
+        assert item["testResultDigest"] in payload["payloadDigests"]
+    materials = dict(
+        qualification_materials(payload, image_id="app", platform=value.platform)
+    )
+    assert {
+        "conclear:test-image/tool/linux/amd64",
+        "conclear:test-image/generator/linux/amd64",
+        "conclear:containerfile/tool/linux/amd64",
+        "conclear:context/generator/linux/amd64",
+    } <= materials.keys()
 
 
 def test_incomplete_dependency_build_set_fails_before_runtime_mutation(
