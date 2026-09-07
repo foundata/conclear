@@ -19,6 +19,7 @@ from conclear.adapters.podman import (
     ImportObservation,
 )
 from conclear.config import (
+    ImageConfig,
     TestMountConfig,
 )
 from conclear.errors import InvalidInvocationError, OperationalError
@@ -338,7 +339,7 @@ def _run_preparations(
 ) -> tuple[list[Finding], list[dict[str, object]], dict[str, object]]:
     findings: list[Finding] = []
     results: list[dict[str, object]] = []
-    images = {inputs.image.image_id: inputs.image}
+    images: dict[str, ImageConfig] = {inputs.image.image_id: inputs.image}
     images.update({item.image.image_id: item.image for item in dependencies})
     manifest_digests = {
         inputs.image.image_id: str(

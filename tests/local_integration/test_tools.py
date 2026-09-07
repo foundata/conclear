@@ -411,7 +411,7 @@ def test_real_exact_image_preparation_and_launch_inputs(
     )
     inputs = QualificationInputs(
         repository=repository,
-        image=repository.image("runtime"),
+        image=repository.release_image("runtime"),
         workspace=workspace,
         source=SourceIdentity(repository.project.source, "a" * 40),
         source_time=datetime(2000, 1, 1, tzinfo=UTC),

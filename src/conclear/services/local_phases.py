@@ -9,12 +9,12 @@ from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import atomic_write_json, load_json, sha256_file
 from conclear.oci import validate_layout
 from conclear.parsing import Narrower
-from conclear.services.qualification_inputs import BuildEvidence, QualificationInputs
+from conclear.services.qualification_inputs import BuildEvidence, BuildInputs
 
 _narrow = Narrower(InvalidInvocationError)
 
 
-def write_build_evidence(inputs: QualificationInputs, build: BuildEvidence) -> Path:
+def write_build_evidence(inputs: BuildInputs, build: BuildEvidence) -> Path:
     """Persist adapter-independent build observations for test and evidence commands."""
     path = (
         inputs.workspace.root
@@ -41,7 +41,7 @@ def write_build_evidence(inputs: QualificationInputs, build: BuildEvidence) -> P
     return path
 
 
-def load_build_evidence(inputs: QualificationInputs) -> BuildEvidence:
+def load_build_evidence(inputs: BuildInputs) -> BuildEvidence:
     """Revalidate a persisted build against current source and OCI layout bytes."""
     path = (
         inputs.workspace.root

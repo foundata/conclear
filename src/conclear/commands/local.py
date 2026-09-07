@@ -2,7 +2,6 @@
 
 import platform as host_platform
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -131,7 +130,7 @@ def build_command(
         build_path = write_build_evidence(inputs, build)
         dependencies = build_test_dependencies(inputs, source_run.runtime.buildah())
         dependency_paths = [
-            write_build_evidence(replace(inputs, image=item.image), item.build)
+            write_build_evidence(inputs.dependency_inputs(item.image), item.build)
             for item in dependencies
         ]
         build_findings = build.findings + tuple(
@@ -178,7 +177,7 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
     dependencies = tuple(
         TestDependencyBuild(
             image=dependency,
-            build=load_build_evidence(replace(inputs, image=dependency)),
+            build=load_build_evidence(inputs.dependency_inputs(dependency)),
             source_revision=inputs.source.revision,
             platform=inputs.platform,
         )
@@ -448,7 +447,7 @@ def _inputs(
     snapshot = source_run.workspace.load()
     image_id = snapshot.immutable_inputs["image"]
     platform = Platform.parse(platform_text)
-    image = source_run.repository.image(image_id)
+    image = source_run.repository.release_image(image_id)
     if platform not in image.platforms:
         raise click.UsageError(f"Platform is not configured for {image_id}: {platform}")
     version = snapshot.immutable_inputs.get("version") or None

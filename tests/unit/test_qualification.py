@@ -42,7 +42,7 @@ from conclear.services.qualification import (
     build_test_dependencies,
     qualify_platform,
 )
-from conclear.services.qualification_inputs import QualificationInputs
+from conclear.services.qualification_inputs import BuildInputs, QualificationInputs
 from conclear.services.runtime_lifecycle import ReadinessTiming
 from conclear.services.runtime_tests import test_platform as run_platform_tests
 from conclear.values import Digest, Platform
@@ -1640,6 +1640,34 @@ def test_preparation_timeout_preserves_failure_and_cleans_private_inputs(
 class RefusingBuilder:
     def build(self, **values: Any) -> BuildObservation:
         raise AssertionError("a build started without an accepted closure preflight")
+
+
+def test_dependency_inputs_bind_the_same_run_facts_to_the_dependency(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    [generator] = value.repository.test_dependencies("app")
+
+    bound = value.dependency_inputs(generator)
+
+    assert type(bound) is BuildInputs
+    assert bound.image is generator
+    assert (bound.repository, bound.workspace, bound.source, bound.platform) == (
+        value.repository,
+        value.workspace,
+        value.source,
+        value.platform,
+    )
+    assert (bound.source_time, bound.version, bound.tools, bound.auth_file) == (
+        value.source_time,
+        value.version,
+        value.tools,
+        value.auth_file,
+    )
+    assert bound.host_architecture == value.host_architecture
+    assert bound.binfmt_root == value.binfmt_root
 
 
 def test_qualification_requires_a_preflight_covering_the_test_dependencies(

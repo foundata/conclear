@@ -36,6 +36,7 @@ from conclear.scan_policy import AppliedException, evaluate_trivy_report
 from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification_inputs import (
     BuildEvidence,
+    BuildInputs,
     QualificationInputs,
     TestDependencyBuild,
     execution_observation,
@@ -129,7 +130,7 @@ class QualificationResult:
     findings: tuple[Finding, ...]
 
 
-def build_platform(inputs: QualificationInputs, builder: Builder) -> BuildEvidence:
+def build_platform(inputs: BuildInputs, builder: Builder) -> BuildEvidence:
     """Build one isolated platform layout and verify its labels and platform."""
     require_execution_mode(inputs)
     workspace = inputs.workspace
@@ -215,7 +216,7 @@ def build_test_dependencies(
     return tuple(
         TestDependencyBuild(
             image=dependency,
-            build=build_platform(replace(inputs, image=dependency), builder),
+            build=build_platform(inputs.dependency_inputs(dependency), builder),
             source_revision=inputs.source.revision,
             platform=inputs.platform,
         )
