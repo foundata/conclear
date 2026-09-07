@@ -18,7 +18,12 @@ from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import sha256_bytes, sha256_file
 from conclear.oci import validate_layout
 from conclear.records import RecordEnvelope, SourceIdentity, ToolIdentity, Verdict
-from conclear.services.assembly import QualificationTransport, assemble_candidate
+from conclear.services.assembly import (
+    QualificationTransport,
+    assemble_candidate,
+    verify_dependency_evidence,
+)
+from conclear.services.qualification_inputs import canonical_build_arguments
 from conclear.values import OCIReference, Platform
 from conclear.workspace import RunState, RunWorkspace
 from tests.unit.test_assembly import IdFactory, platform_layout
@@ -195,6 +200,7 @@ class Scenario:
             image=image or self.image,
             workspace=workspace or self.workspace,
             version=version,
+            source_time=NOW,
             tools=(self.tool,),
             now=NOW + timedelta(minutes=1),
         )
@@ -632,6 +638,7 @@ def test_assembly_requires_identical_dependency_inputs_across_platforms(
             image=image,
             workspace=scenario.workspace,
             version="1.2.3",
+            source_time=NOW,
             tools=(scenario.tool,),
             now=NOW + timedelta(minutes=1),
         )
@@ -661,57 +668,110 @@ def test_qualification_materials_name_every_test_dependency_input(
     }
 
 
-def test_assembly_verifies_build_arguments_of_the_image_and_its_dependencies(
+def test_assembly_requires_build_arguments_derived_from_the_selected_commit(
     dependency_scenario: Scenario,
 ) -> None:
     scenario = dependency_scenario
+    consistent_but_wrong = {
+        **BUILD_ARGUMENTS,
+        "IMAGE_CREATED": "2026-01-01T00:01:00Z",
+        "SOURCE_DATE_EPOCH": str(int((NOW + timedelta(seconds=60)).timestamp())),
+    }
 
-    def rejects(message: str, **overrides: Any) -> None:
+    def rejects(
+        message: str,
+        *,
+        primary: dict[str, str] | None = None,
+        dependency: dict[str, str] | None = None,
+    ) -> None:
+        entry = _dependency_entry(
+            scenario, **({} if dependency is None else {"buildArguments": dependency})
+        )
         payload = scenario.payload(
-            testImageDependencies=[_dependency_entry(scenario, **overrides)]
+            **({} if primary is None else {"buildArguments": primary}),
+            testImageDependencies=[entry],
         )
         with pytest.raises(InvalidInvocationError, match=message):
             scenario.assemble(scenario.transport(payload))
 
     rejects(
-        "other build arguments than the qualified image",
-        buildArguments={**BUILD_ARGUMENTS, "EXTRA": "1"},
+        "Qualification build arguments differ from the selected commit: "
+        "IMAGE_CREATED, SOURCE_DATE_EPOCH",
+        primary=consistent_but_wrong,
     )
     rejects(
-        "Test dependency helper build arguments name another source revision",
-        buildArguments={**BUILD_ARGUMENTS, "IMAGE_REVISION": "c" * 40},
+        "Test dependency helper build arguments differ from the selected commit: "
+        "IMAGE_CREATED, SOURCE_DATE_EPOCH",
+        dependency=consistent_but_wrong,
     )
     rejects(
-        "IMAGE_CREATED does not match SOURCE_DATE_EPOCH",
-        buildArguments={**BUILD_ARGUMENTS, "IMAGE_CREATED": "2026-01-02T00:00:00Z"},
+        "differ from the selected commit: IMAGE_REVISION",
+        dependency={**BUILD_ARGUMENTS, "IMAGE_REVISION": "c" * 40},
     )
     rejects(
-        "no valid SOURCE_DATE_EPOCH",
-        buildArguments={
+        "Additional properties are not allowed",
+        primary={**BUILD_ARGUMENTS, "EXTRA": "1"},
+        dependency={**BUILD_ARGUMENTS, "EXTRA": "1"},
+    )
+    rejects(
+        "does not match",
+        primary={**BUILD_ARGUMENTS, "SOURCE_DATE_EPOCH": "01767225600"},
+    )
+    rejects(
+        "'SOURCE_DATE_EPOCH' is a required property",
+        dependency={
             key: value
             for key, value in BUILD_ARGUMENTS.items()
             if key != "SOURCE_DATE_EPOCH"
         },
     )
-    for arguments, message in (
-        (
-            {**BUILD_ARGUMENTS, "IMAGE_REVISION": "c" * 40},
-            "Qualification build arguments name another source revision",
-        ),
-        (
-            {**BUILD_ARGUMENTS, "SOURCE_DATE_EPOCH": "1767225601"},
-            "IMAGE_CREATED does not match",
-        ),
+
+
+def test_build_arguments_follow_the_run_version(dependency_scenario: Scenario) -> None:
+    scenario = dependency_scenario
+    common: dict[str, Any] = {
+        "repository": scenario.repository,
+        "image": scenario.image,
+        "platform": Platform.parse("linux/amd64"),
+        "source_revision": "b" * 40,
+        "record_created_at": NOW,
+        "payload_digests": (scenario.payload_digest,),
+    }
+    versioned = tuple(
+        sorted(
+            canonical_build_arguments(
+                source_revision="b" * 40, source_time=NOW, version="1.2.3"
+            ).items()
+        )
+    )
+    unversioned = tuple(
+        sorted(
+            canonical_build_arguments(
+                source_revision="b" * 40, source_time=NOW, version=None
+            ).items()
+        )
+    )
+    payload = scenario.payload(testImageDependencies=[_dependency_entry(scenario)])
+
+    evidence = verify_dependency_evidence(
+        payload, expected_arguments=versioned, **common
+    )
+    assert [item.image_id for item in evidence] == ["helper"]
+    with pytest.raises(
+        InvalidInvocationError, match="differ from the selected commit: IMAGE_VERSION"
     ):
-        with pytest.raises(InvalidInvocationError, match=message):
-            scenario.assemble(
-                scenario.transport(
-                    scenario.payload(
-                        buildArguments=arguments,
-                        testImageDependencies=[_dependency_entry(scenario)],
-                    )
-                )
-            )
+        verify_dependency_evidence(payload, expected_arguments=unversioned, **common)
+
+    stripped = {
+        key: value for key, value in BUILD_ARGUMENTS.items() if key != "IMAGE_VERSION"
+    }
+    payload = scenario.payload(
+        buildArguments=stripped,
+        testImageDependencies=[_dependency_entry(scenario, buildArguments=stripped)],
+    )
+    verify_dependency_evidence(payload, expected_arguments=unversioned, **common)
+    with pytest.raises(InvalidInvocationError, match="IMAGE_VERSION"):
+        verify_dependency_evidence(payload, expected_arguments=versioned, **common)
 
 
 def test_assembly_requires_identical_build_arguments_across_platforms(
@@ -747,5 +807,5 @@ def test_assembly_requires_identical_build_arguments_across_platforms(
         arm64_record.record_path, arm64_layout, "qualified", (scenario.payload_file,)
     )
 
-    with pytest.raises(InvalidInvocationError, match="different build arguments"):
+    with pytest.raises(InvalidInvocationError, match="differ from the selected commit"):
         scenario.assemble(scenario.transport(), arm64_transport, image=image)

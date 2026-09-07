@@ -391,6 +391,7 @@ def assemble_command(
                 workspace=workspace,
                 image=image,
                 repository=source_run.repository,
+                source_time=source_run.source_time,
             )
             for path, digest in transports
         )
@@ -403,6 +404,7 @@ def assemble_command(
             version=version,
             tools=source_run.runtime.identities,
             now=utc_now(),
+            source_time=source_run.source_time,
         )
     emit(
         CommandResult(

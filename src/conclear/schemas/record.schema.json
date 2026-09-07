@@ -367,7 +367,7 @@
         "sourceRevision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
         "containerfileDigest": {"$ref": "#/$defs/digest"},
         "contextDigest": {"$ref": "#/$defs/digest"},
-        "buildArguments": {"type": "object", "additionalProperties": {"type": "string"}},
+        "buildArguments": {"$ref": "#/$defs/buildArguments"},
         "externalImages": {"type": "array", "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}},
         "pinObservations": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/pinObservation"}},
         "effectiveLimits": {"$ref": "#/$defs/effectiveLimits"},
@@ -404,6 +404,17 @@
         "message": {"type": "string", "minLength": 1},
         "location": {"type": "string"},
         "image": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"}
+      }
+    },
+    "buildArguments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["IMAGE_REVISION", "IMAGE_CREATED", "SOURCE_DATE_EPOCH"],
+      "properties": {
+        "IMAGE_REVISION": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "IMAGE_CREATED": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+        "SOURCE_DATE_EPOCH": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "IMAGE_VERSION": {"type": "string", "minLength": 1}
       }
     },
     "pinObservation": {
@@ -460,7 +471,7 @@
         "manifestDigest": {"$ref": "#/$defs/digest"},
         "containerfileDigest": {"$ref": "#/$defs/digest"},
         "contextDigest": {"$ref": "#/$defs/digest"},
-        "buildArguments": {"type": "object", "additionalProperties": {"type": "string"}},
+        "buildArguments": {"$ref": "#/$defs/buildArguments"},
         "externalImages": {"type": "array", "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}},
         "pinObservations": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/pinObservation"}},
         "effectiveLimits": {"$ref": "#/$defs/effectiveLimits"},

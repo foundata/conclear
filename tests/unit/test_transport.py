@@ -15,7 +15,7 @@ import re
 import tarfile
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -240,6 +240,7 @@ def assemble(
             workspace=workspace,
             image=selected,
             repository=repository,
+            source_time=NOW,
         )
         for path, digest in transports
     )
@@ -250,6 +251,7 @@ def assemble(
         image=selected,
         workspace=workspace,
         version=version,
+        source_time=NOW,
         tools=(tool(),),
         now=NOW,
     )
@@ -500,9 +502,27 @@ def test_import_rejects_dependency_evidence_the_configuration_does_not_declare(
             workspace=workspace,
             image=setup.amd64.image,
             repository=setup.amd64.inputs.repository,
+            source_time=NOW,
         )
     assert workspace.load().state is RunState.CREATED
     assert not list((workspace.root / "records").glob("platform-qualification-*"))
+
+
+def test_import_rejects_build_arguments_that_differ_from_the_selected_commit(
+    tmp_path: Path, setup: Setup
+) -> None:
+    workspace = coordinator_workspace(tmp_path, setup.source_root)
+
+    with pytest.raises(RuleRejectionError, match="differ from the selected commit"):
+        import_transport(
+            setup.amd64_transport.path,
+            expected_digest=setup.amd64_transport.transport_digest,
+            workspace=workspace,
+            image=setup.amd64.image,
+            repository=setup.amd64.inputs.repository,
+            source_time=NOW + timedelta(seconds=60),
+        )
+    assert workspace.load().state is RunState.CREATED
 
 
 def test_import_requires_the_caller_supplied_transport_digest(
@@ -517,6 +537,7 @@ def test_import_requires_the_caller_supplied_transport_digest(
             workspace=workspace,
             image=setup.amd64.image,
             repository=setup.amd64.inputs.repository,
+            source_time=NOW,
         )
     assert caught.value.code == "CC0306"
     entries = {entry.resource_id: entry for entry in workspace.journal.entries()}
@@ -535,6 +556,7 @@ def test_import_requires_the_caller_supplied_transport_digest(
             workspace=workspace,
             image=setup.amd64.image,
             repository=setup.amd64.inputs.repository,
+            source_time=NOW,
         )
     with pytest.raises(InvalidInvocationError, match="lowercase sha256"):
         import_transport(
@@ -543,6 +565,7 @@ def test_import_requires_the_caller_supplied_transport_digest(
             workspace=workspace,
             image=setup.amd64.image,
             repository=setup.amd64.inputs.repository,
+            source_time=NOW,
         )
 
 
@@ -608,6 +631,7 @@ def _import(tmp_path: Path, setup: Setup, path: Path, digest: str) -> Any:
         workspace=workspace,
         image=setup.amd64.image,
         repository=setup.amd64.inputs.repository,
+        source_time=NOW,
     )
 
 
@@ -828,6 +852,7 @@ def test_directory_import_rejects_links_extra_and_missing_files(
         workspace=workspace,
         image=setup.amd64.image,
         repository=setup.amd64.inputs.repository,
+        source_time=NOW,
     )
     assert not (
         workspace.root / "reports" / "app" / "linux-amd64" / "secret-output"
@@ -982,7 +1007,7 @@ def _ulid(index: int) -> str:
             lambda value: value["payload"]["buildArguments"].update(
                 IMAGE_VERSION="9.9.9"
             ),
-            "another release version",
+            "differ from the selected commit",
         ),
         (
             lambda value: value["ruleset"].update(guideRevision="1" * 40),
@@ -1038,13 +1063,17 @@ def test_assembly_rejects_a_coordinator_on_another_revision_or_version(
     other_revision = coordinator_workspace(
         tmp_path, setup.source_root, run_id=_ulid(5), source_revision="e" * 40
     )
-    with pytest.raises(InvalidInvocationError, match="source revision"):
+    with pytest.raises(
+        RuleRejectionError, match="differ from the selected commit: IMAGE_REVISION"
+    ):
         assemble(other_revision, setup.source_root, transports)
 
     other_version = coordinator_workspace(
         tmp_path, setup.source_root, run_id=_ulid(6), version="2.0.0"
     )
-    with pytest.raises(InvalidInvocationError, match="another release version"):
+    with pytest.raises(
+        RuleRejectionError, match="differ from the selected commit: IMAGE_VERSION"
+    ):
         assemble(other_version, setup.source_root, transports, version="2.0.0")
 
 
@@ -1079,6 +1108,7 @@ def test_owned_and_imported_records_are_validated_differently(
             image=replace(repository.release_image("app"), platforms=(AMD64,)),
             workspace=workspace,
             version="1.2.3",
+            source_time=NOW,
             tools=(tool(),),
             now=NOW,
         )
@@ -1152,6 +1182,7 @@ def test_failed_import_retains_staging_under_a_failed_entry_for_cleanup(
             workspace=workspace,
             image=setup.amd64.image,
             repository=setup.amd64.inputs.repository,
+            source_time=NOW,
         )
     entry = next(
         item

@@ -50,6 +50,7 @@ from conclear.records import (
 )
 from conclear.services.assembly import (
     QualificationTransport,
+    expected_build_arguments,
     verify_dependency_evidence,
 )
 from conclear.values import Digest, Platform
@@ -249,6 +250,7 @@ def import_transport(
     workspace: RunWorkspace,
     image: ReleaseImageConfig,
     repository: RepositoryConfig,
+    source_time: datetime,
 ) -> ImportedTransport:
     """Verify one transport against a caller-supplied digest and install it.
 
@@ -280,7 +282,13 @@ def import_transport(
         else:
             manifest_bytes = _stage_directory(source, digest, staging)
         workspace.journal.update(resource_id, ResourceStatus.CREATED)
-        verified = _verify_staging(staging, manifest_bytes, image, repository)
+        verified = _verify_staging(
+            staging,
+            manifest_bytes,
+            image,
+            repository,
+            expected_build_arguments(workspace, source_time=source_time),
+        )
         transport = _install(workspace, image, verified, transport_digest=str(digest))
         shutil.rmtree(staging)
         workspace.journal.update(resource_id, ResourceStatus.REMOVED)
@@ -360,6 +368,7 @@ def _verify_staging(
     manifest_bytes: bytes,
     image: ReleaseImageConfig,
     repository: RepositoryConfig,
+    expected_arguments: tuple[tuple[str, str], ...],
 ) -> _VerifiedStaging:
     manifest = _parse_manifest(manifest_bytes)
     ruleset = _narrow.object_value(manifest.get("ruleset"), "transport ruleset")
@@ -433,7 +442,11 @@ def _verify_staging(
             code=TRANSPORT_CHECK,
         )
     _verify_dependency_evidence(
-        record, record_payload, image=image, repository=repository
+        record,
+        record_payload,
+        image=image,
+        repository=repository,
+        expected_arguments=expected_arguments,
     )
     graph = validate_layout(staging / "layouts" / key, reference="qualified")
     if payload.get("layoutDescriptor") != graph.root.to_dict():
@@ -489,6 +502,7 @@ def _verify_dependency_evidence(
     *,
     image: ReleaseImageConfig,
     repository: RepositoryConfig,
+    expected_arguments: tuple[tuple[str, str], ...],
 ) -> None:
     source = _narrow.object_value(record.get("source"), "qualification source")
     try:
@@ -512,6 +526,7 @@ def _verify_dependency_evidence(
                     payload.get("payloadDigests"), "payload digests"
                 )
             ),
+            expected_arguments=expected_arguments,
         )
     except InvalidInvocationError as exc:
         raise RuleRejectionError(

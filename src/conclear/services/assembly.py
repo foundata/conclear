@@ -2,7 +2,7 @@
 
 import stat
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from conclear.config import ImageConfig, ReleaseImageConfig, RepositoryConfig
@@ -22,10 +22,10 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
-    format_timestamp,
     parse_timestamp,
     validate_record,
 )
+from conclear.services.qualification_inputs import canonical_build_arguments
 from conclear.values import (
     Digest,
     OCIReference,
@@ -113,15 +113,20 @@ def assemble_candidate(
     image: ReleaseImageConfig,
     workspace: RunWorkspace,
     version: str | None,
+    source_time: datetime,
     tools: tuple[ToolIdentity, ...],
     now: datetime,
 ) -> CandidateResult:
     """Verify every transported byte and assemble exact required platform coverage."""
-    qualifications = tuple(_read_qualification(item) for item in transports)
     snapshot = workspace.load()
     recorded_version = snapshot.immutable_inputs.get("version") or None
     if version != recorded_version:
         raise InvalidInvocationError("Assembly version differs from the release run")
+    expected_arguments = expected_build_arguments(workspace, source_time=source_time)
+    qualifications = tuple(
+        _read_qualification(item, expected_arguments=expected_arguments)
+        for item in transports
+    )
     accepted_platforms = {item.platform for item in qualifications}
     required_platforms = set(image.platforms)
     if accepted_platforms != required_platforms:
@@ -145,13 +150,6 @@ def assemble_candidate(
         raise InvalidInvocationError("Qualifications belong to another release run")
     if any(item.image_id != image.image_id for item in qualifications):
         raise InvalidInvocationError("Qualifications do not match the selected image")
-    if any(
-        dict(item.build_arguments).get("IMAGE_VERSION") != version
-        for item in qualifications
-    ):
-        raise InvalidInvocationError(
-            "Qualifications were built for another release version"
-        )
     expected_pins = tuple(sorted(str(item.reference) for item in image.pins))
     if any(item.pin_references != expected_pins for item in qualifications):
         raise InvalidInvocationError(
@@ -305,7 +303,34 @@ def _qualification_entry(item: _Qualification) -> dict[str, object]:
     return entry
 
 
-def _read_qualification(transport: QualificationTransport) -> _Qualification:
+def expected_build_arguments(
+    workspace: RunWorkspace, *, source_time: datetime
+) -> tuple[tuple[str, str], ...]:
+    """Derive the build arguments every record of this run must carry exactly.
+
+    The selected revision and release version come from the run's immutable
+    inputs and the commit time from the caller's Git observation of that
+    revision; nothing in a record establishes its own build arguments.
+    """
+    inputs = workspace.load().immutable_inputs
+    revision = _narrow.string_value(inputs.get("sourceRevision"), "run source revision")
+    version = inputs.get("version") or None
+    if version is not None and not isinstance(version, str):
+        raise InvalidInvocationError("Run version is malformed")
+    return tuple(
+        sorted(
+            canonical_build_arguments(
+                source_revision=revision, source_time=source_time, version=version
+            ).items()
+        )
+    )
+
+
+def _read_qualification(
+    transport: QualificationTransport,
+    *,
+    expected_arguments: tuple[tuple[str, str], ...],
+) -> _Qualification:
     value = load_json(transport.record_path)
     validate_record(value)
     record = _narrow.object_value(value, "qualification")
@@ -402,7 +427,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         _narrow.string_value(source_value.get("revision"), "source revision")
     )
     build_arguments = _read_build_arguments(
-        payload, subject="Qualification", source_revision=source_revision
+        payload, subject="Qualification", expected=expected_arguments
     )
     dependencies = _read_dependencies(
         payload,
@@ -410,7 +435,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         source_revision=source_revision,
         record_created_at=record_created_at,
         payload_digests=payload_digests,
-        build_arguments=build_arguments,
+        expected_arguments=expected_arguments,
     )
     return _Qualification(
         run_id=_narrow.string_value(record.get("runId"), "qualification run id"),
@@ -462,6 +487,7 @@ def verify_dependency_evidence(
     source_revision: str,
     record_created_at: datetime,
     payload_digests: tuple[str, ...],
+    expected_arguments: tuple[tuple[str, str], ...],
 ) -> tuple[DependencyEvidence, ...]:
     """Read one qualification's dependency evidence and check it against configuration.
 
@@ -469,17 +495,16 @@ def verify_dependency_evidence(
     must be exactly the configured closure of the qualified image in
     dependency-first order, and each entry must carry that dependency's
     configured pins, its effective pin limits, accepted observations and the
-    same validated build arguments as the qualified image.
+    exact build arguments derived for the run.
     """
+    _read_build_arguments(payload, subject="Qualification", expected=expected_arguments)
     evidence = _read_dependencies(
         payload,
         platform=platform,
         source_revision=source_revision,
         record_created_at=record_created_at,
         payload_digests=payload_digests,
-        build_arguments=_read_build_arguments(
-            payload, subject="Qualification", source_revision=source_revision
-        ),
+        expected_arguments=expected_arguments,
     )
     _require_dependency_evidence(evidence, repository.test_dependencies(image.image_id))
     return evidence
@@ -515,7 +540,7 @@ def _read_dependencies(
     source_revision: str,
     record_created_at: datetime,
     payload_digests: tuple[str, ...],
-    build_arguments: tuple[tuple[str, str], ...],
+    expected_arguments: tuple[tuple[str, str], ...],
 ) -> tuple[DependencyEvidence, ...]:
     raw_entries = payload.get("testImageDependencies")
     if not isinstance(raw_entries, list):
@@ -544,12 +569,8 @@ def _read_dependencies(
         Digest(containerfile_digest)
         Digest(context_digest)
         entry_arguments = _read_build_arguments(
-            entry, subject=subject, source_revision=source_revision
+            entry, subject=subject, expected=expected_arguments
         )
-        if entry_arguments != build_arguments:
-            raise InvalidInvocationError(
-                f"{subject} was built with other build arguments than the qualified image"
-            )
         references, resolutions, limits = _read_pin_evidence(
             entry, record_created_at=record_created_at, subject=subject
         )
@@ -570,14 +591,16 @@ def _read_dependencies(
 
 
 def _read_build_arguments(
-    value: dict[str, object], *, subject: str, source_revision: str
+    value: dict[str, object],
+    *,
+    subject: str,
+    expected: tuple[tuple[str, str], ...],
 ) -> tuple[tuple[str, str], ...]:
-    """Validate the recorded build arguments against the run facts they encode.
+    """Require the recorded build arguments to equal the run's derived map exactly.
 
-    `build_platform` always passes the source revision, the source timestamp
-    as `IMAGE_CREATED` and `SOURCE_DATE_EPOCH`, and the release version when
-    one exists; a record whose arguments disagree with its own source revision
-    or with each other was not produced from the isolated checkout it names.
+    Any missing, additional or differing key rejects the record: the map is
+    derived from the coordinator's selected revision, observed commit time and
+    release version, never from what a record claims about itself.
     """
     raw = _narrow.object_value(
         value.get("buildArguments"), f"{subject} build arguments"
@@ -586,24 +609,16 @@ def _read_build_arguments(
         key: _narrow.string_value(item, f"{subject} build argument {key}")
         for key, item in raw.items()
     }
-    if arguments.get("IMAGE_REVISION") != source_revision:
-        raise InvalidInvocationError(
-            f"{subject} build arguments name another source revision"
+    expected_map = dict(expected)
+    if arguments != expected_map:
+        differing = sorted(
+            key
+            for key in {*arguments, *expected_map}
+            if arguments.get(key) != expected_map.get(key)
         )
-    epoch = arguments.get("SOURCE_DATE_EPOCH")
-    if epoch is None or not epoch.isdecimal():
         raise InvalidInvocationError(
-            f"{subject} has no valid SOURCE_DATE_EPOCH build argument"
-        )
-    try:
-        created = format_timestamp(datetime.fromtimestamp(int(epoch), tz=UTC))
-    except (OverflowError, OSError, ValueError) as exc:
-        raise InvalidInvocationError(
-            f"{subject} has an unrepresentable SOURCE_DATE_EPOCH build argument"
-        ) from exc
-    if arguments.get("IMAGE_CREATED") != created:
-        raise InvalidInvocationError(
-            f"{subject} IMAGE_CREATED does not match SOURCE_DATE_EPOCH"
+            f"{subject} build arguments differ from the selected commit: "
+            + ", ".join(differing)
         )
     return tuple(sorted(arguments.items()))
 

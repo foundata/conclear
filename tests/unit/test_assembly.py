@@ -309,6 +309,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
         image=repository.release_image("app"),
         workspace=workspace,
         version="1.2.3",
+        source_time=datetime(2026, 1, 1, tzinfo=UTC),
         tools=(tool,),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
@@ -350,6 +351,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             image=repository.release_image("app"),
             workspace=second_workspace,
             version="1.2.3",
+            source_time=datetime(2026, 1, 1, tzinfo=UTC),
             tools=(tool,),
             now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
         )

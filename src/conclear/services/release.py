@@ -280,6 +280,7 @@ def _continue_release(
     if workspace.load().state is RunState.QUALIFIED:
         candidate = assemble_candidate(
             qualification_transports(workspace, image),
+            source_time=source_time,
             repository=repository,
             image=image,
             workspace=workspace,
