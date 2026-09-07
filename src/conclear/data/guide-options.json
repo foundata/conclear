@@ -6,7 +6,7 @@
     {
       "id": "GO0001",
       "summary": "Reviewed container UID 0 requirement",
-      "anchor": "users-and-runtime-filesystem",
+      "requirements": ["IG0207", "IG0211", "IG0219"],
       "status": "supported",
       "rationale": "ConClear requires a source-reviewed rationale, owner and review trigger, matches the final numeric USER, and retains rootless runtime hardening.",
       "reconsiderWhen": "Reconsider if the guide removes its documented root exception.",
@@ -15,7 +15,7 @@
     {
       "id": "GO0002",
       "summary": "Systemd as the declared container supervisor",
-      "anchor": "entrypoint-command-and-signal-handling",
+      "requirements": ["IG0223", "IG0224", "IG0229"],
       "status": "supported",
       "rationale": "The systemd profile verifies PID 1, manager access, required units, the baked stop signal, bounded readiness and graceful shutdown without privileged execution.",
       "reconsiderWhen": "Reconsider the profile when Podman or systemd changes its rootless container contract.",
@@ -24,7 +24,7 @@
     {
       "id": "GO0003",
       "summary": "Docker daemon, BuildKit and Docker compatibility",
-      "anchor": "supported-tools-syntax-and-platforms",
+      "requirements": ["IG0030", "IG0031", "IG0032", "IG0057"],
       "status": "out-of-scope",
       "rationale": "ConClear implements the guide's OCI, Buildah and rootless Podman workflow and makes no Docker compatibility claim.",
       "reconsiderWhen": "Reconsider only if the guide adopts a separately versioned Docker compatibility profile.",
@@ -33,7 +33,7 @@
     {
       "id": "GO0004",
       "summary": "Release registries other than Quay",
-      "anchor": "registries-and-image-names",
+      "requirements": ["IG0061", "IG0067"],
       "status": "unsupported",
       "rationale": "Provider-neutral checks and qualification work for other repositories, but complete publication requires provider-specific controls and only the Quay backend is implemented.",
       "reconsiderWhen": "Add a backend after it passes the published digest-preservation, ambiguity, immutability, retention and deletion contract.",
@@ -42,7 +42,7 @@
     {
       "id": "GO0005",
       "summary": "Privileged and host-integrated containers",
-      "anchor": "users-and-runtime-filesystem",
+      "requirements": ["IG0211"],
       "status": "unsupported",
       "rationale": "These controls exceed ConClear's rootless qualification boundary; reviewed capabilities and run-owned test-output mounts are the narrow supported mechanisms.",
       "reconsiderWhen": "Reconsider only with a separate isolation model that can test each resource without weakening ordinary qualification.",
@@ -51,7 +51,7 @@
     {
       "id": "GO0006",
       "summary": "Scanner stacks other than Trivy",
-      "anchor": "vulnerability-and-configuration-scanning",
+      "requirements": ["IG0304", "IG0307", "IG0308"],
       "status": "unsupported",
       "rationale": "One Trivy result and its validated database snapshot are the authoritative release gate in 1.0.0.",
       "reconsiderWhen": "Add a scanner only after defining equivalent findings, database identity, SBOM and rescan semantics.",
@@ -60,7 +60,7 @@
     {
       "id": "GO0007",
       "summary": "Finalized SPDX versions newer than SPDX 2.3",
-      "anchor": "sboms",
+      "requirements": ["IG0324", "IG0334"],
       "status": "unsupported",
       "rationale": "ConClear 1.0.0 generates, validates, records, rescans and attests SPDX 2.3 JSON only.",
       "reconsiderWhen": "Add a version after every producer, validator, consumer, attestation and rescan path supports it without conversion.",
@@ -69,7 +69,7 @@
     {
       "id": "GO0008",
       "summary": "KMS or HSM signing keys",
-      "anchor": "signing-and-verification",
+      "requirements": ["IG0363", "IG0367"],
       "status": "unsupported",
       "rationale": "The 1.0.0 release profile supports an approved encrypted Cosign key pair and public-key verification, not managed-key URIs.",
       "reconsiderWhen": "Add a mode after its non-exportable key identity, authentication, signing and verification behavior is implemented and tested end to end.",
@@ -78,7 +78,7 @@
     {
       "id": "GO0009",
       "summary": "Deployment admission and containers-policy configuration",
-      "anchor": "signing-and-verification",
+      "requirements": ["IG0088", "IG0365", "IG0366", "IG0375"],
       "status": "out-of-scope",
       "rationale": "ConClear produces and verifies release evidence; deployment owners configure and test admission policy in their target environment.",
       "reconsiderWhen": "Reconsider only if ConClear gains an explicit deployment-policy validation scope.",
@@ -87,7 +87,7 @@
     {
       "id": "GO0010",
       "summary": "Rootful build or runtime execution",
-      "anchor": "linting-and-testing",
+      "requirements": ["IG0020", "IG0401"],
       "status": "unsupported",
       "rationale": "Buildah and Podman must report rootless execution; container UID 0 remains mapped through the invoking user's namespace.",
       "reconsiderWhen": "Reconsider only with a separate threat model and release profile that does not weaken the rootless default.",
@@ -96,7 +96,7 @@
     {
       "id": "GO0011",
       "summary": "Base-image lifecycle suitability",
-      "anchor": "choosing-a-base-image",
+      "requirements": ["IG0098", "IG0100"],
       "status": "manual",
       "rationale": "ConClear verifies exact image references and observations but cannot decide whether an upstream lifecycle, publisher or dependency set fits the application.",
       "reconsiderWhen": "Keep this manual unless an authoritative project policy can express the decision without pretending judgment is mechanical.",

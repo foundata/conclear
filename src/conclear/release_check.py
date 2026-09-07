@@ -298,7 +298,9 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
             "conclear/_embedded_identity.py",
             "conclear/data/checks.json",
             "conclear/data/guide-options.json",
+            "conclear/data/guide-requirements.json",
             "conclear/data/implementation.json",
+            "conclear/data/requirement-coverage.json",
             "conclear/schemas/config.schema.json",
             "conclear/schemas/profile.schema.json",
             "conclear/schemas/proposal.schema.json",
@@ -348,6 +350,10 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
         (
             "check guide-option support inventory",
             ("python", "-m", "conclear.guide_options", "--check"),
+        ),
+        (
+            "check guide requirement inventory and coverage",
+            ("python", "-m", "conclear.guide_requirements", "--check"),
         ),
         (
             "check internal compatibility inventory",

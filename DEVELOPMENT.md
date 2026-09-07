@@ -22,6 +22,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Network tests](#network-tests)
 - [Generated conformance catalog](#conformance-catalog)
 - [Generated guide-option support inventory](#guide-option-inventory)
+- [Generated guide requirement inventory](#guide-requirement-inventory)
 - [Generated compatibility inventory](#compatibility-inventory)
 - [Generated implementation matrix](#implementation-matrix)
 - [CI context observation](#ci-context-observation)
@@ -111,6 +112,7 @@ conclear/
 │   ├── checks.py                 # Static Containerfile and context checks
 │   ├── conformance.py            # docs/conformance.md generator
 │   ├── guide_options.py          # Guide-option support inventory generator
+│   ├── guide_requirements.py     # Guide requirement inventory, coverage and revision diffs
 │   ├── compatibility_inventory.py # Internal compatibility inventory generator
 │   ├── implementation.py         # Release-specific implementation matrix generator
 │   ├── emulation.py              # binfmt handler detection and execution-mode facts
@@ -142,10 +144,11 @@ conclear/
 │   ├── schemas/                  # Shipped JSON Schemas
 │   ├── data/checks.json          # Check catalog source of truth
 │   ├── data/guide-options.json   # Guide-option support source of truth
+│   ├── data/guide-requirements.json # Imported guide requirement inventory
+│   ├── data/requirement-coverage.json # Status of every requirement no check covers
 │   └── data/implementation.json  # Current promise-to-code-and-test mappings
 └── tests/
     ├── conftest.py               # Marker auto-assignment and shared fixtures
-    ├── fixtures/                 # Test data
     ├── release_fakes.py          # Stateful adapter fakes
     ├── unit/                     # Hermetic tests (default tier)
     ├── local_integration/        # Opt-in, real local tools; fixtures.py compiles the shared Go fixture
@@ -277,10 +280,14 @@ promise, a shipped schema, an exit status, a record layout or a `CCnnnn`
 identifier is incomplete.
 
 The guide that `ARCHITECTURE.md` implements is normative and lives outside this
-repository. Each build embeds one exact guide revision. Moving to a newer
-revision means reviewing every changed rule, updating the embedded identity,
-catalog, generated conformance document, schemas and tests together; ConClear
-must not advertise a revision whose automatable rules it does not implement.
+repository. Each build embeds one exact guide revision together with that
+revision's requirement inventory. Moving to a newer revision means reviewing
+every added, removed or reworded requirement and updating the embedded identity,
+inventory, catalog, coverage file, generated documents, schemas and tests
+together (see
+[Generated guide requirement inventory](#guide-requirement-inventory));
+ConClear must not advertise a revision whose automatable rules it does not
+implement.
 
 
 ### Compatibility<a id="compatibility"></a>
@@ -361,8 +368,6 @@ factories rather than reading the current time.
 - **Network tests**: `tests/network/` - Exercise real external services. These
   cover the behavior that fakes cannot model, such as the predicate URI Cosign
   really writes and Quay's real tag-immutability semantics.
-- **Fixtures**: `tests/fixtures/` - Sample data. Files here must never be
-  modified by a test.
 - **Adapter fakes**: `tests/release_fakes.py` - Stateful fakes used by workflow
   tests.
 
@@ -515,8 +520,11 @@ least once before trusting a production-signed release.
 
 ## Generated conformance catalog<a id="conformance-catalog"></a>
 
-`docs/conformance.md` is generated from `src/conclear/data/checks.json` and the
-embedded guide identity. Never edit it by hand.
+`docs/conformance.md` is generated from `src/conclear/data/checks.json`, the
+guide requirement inventory, the requirement coverage file and the embedded
+guide identity. Never edit it by hand. Every check names the `IGnnnn` guide
+requirements it covers, and the document ends with the status of every
+requirement of the embedded revision.
 
 ```sh
 # Regenerate the catalog
@@ -524,12 +532,17 @@ uv run python -m conclear.conformance
 
 # Verify the committed catalog is current
 uv run python -m conclear.conformance --check
+
+# Also verify every requirement and section anchor against the guide checkout
+uv run python -m conclear.conformance --check \
+  --guide ../guidelines/oci-container-image-guide.md
 ```
 
 Commit a catalog change together with the check definition, implementation,
 tests and affected documentation. Continuous integration verifies that
-identifiers are unique and well formed, that every claimed guide anchor exists
-at the embedded revision and that the committed document matches the generator.
+identifiers are unique and well formed, that every referenced requirement exists
+in the inventory, that every requirement has exactly one status and that the
+committed document matches the generator.
 
 
 ## Generated guide-option support inventory<a id="guide-option-inventory"></a>
@@ -537,8 +550,9 @@ at the embedded revision and that the committed document matches the generator.
 `docs/guide-options-1.0.0.md` is generated from
 `src/conclear/data/guide-options.json`. It records guide choices whose support
 cannot be inferred from the check catalog, including supported exceptions and
-deliberately unsupported or out-of-scope behavior. Every entry names its guide
-anchor, rationale, related checks and condition for reconsideration.
+deliberately unsupported or out-of-scope behavior. Every entry names the guide
+requirements it concerns, its rationale, related checks and condition for
+reconsideration.
 
 ```sh
 # Regenerate the inventory
@@ -557,6 +571,46 @@ changes the option. The loader rejects stale product or guide versions,
 malformed or duplicate identifiers, unknown check references and unsupported
 status values. The release gate verifies the generated document and its
 distribution contents.
+
+
+## Generated guide requirement inventory<a id="guide-requirement-inventory"></a>
+
+The implemented guide gives every normative statement a stable `IGnnnn`
+identifier. `src/conclear/data/guide-requirements.json` is that inventory,
+imported from the `--list` output of the guide repository's
+`scripts/check-requirement-identifiers.py` for the embedded revision.
+`src/conclear/data/checks.json` maps every check to the identifiers it covers,
+and `src/conclear/data/requirement-coverage.json` gives every identifier no
+check covers one status with a rationale: `automated`, `manual`, `external` or
+`unsupported`. The generated conformance document renders the result. The check
+fails while any requirement lacks a status, has both a check and a coverage
+entry, or is referenced but unknown.
+
+```sh
+# Verify the shipped inventory, catalog mapping and coverage
+uv run python -m conclear.guide_requirements --check
+
+# Also verify every requirement and section anchor against the guide checkout
+uv run python -m conclear.guide_requirements --check \
+  --guide ../guidelines/oci-container-image-guide.md
+```
+
+Moving to a newer guide revision:
+
+1. List the requirements of the new revision from its checkout:
+   `python3 ../guidelines/scripts/check-requirement-identifiers.py --list > /tmp/guide-requirements.json`.
+2. Review what changed and what it touches:
+   `uv run python -m conclear.guide_requirements --diff /tmp/guide-requirements.json`
+   prints the added, removed and reworded requirements together with the
+   checks, guide options and coverage entries that reference each one.
+3. Replace the embedded revision in `src/conclear/identity.py`, in the three
+   data files and in the `guideRevision` constants of the record and proposal
+   schemas.
+4. Import the inventory:
+   `uv run python -m conclear.guide_requirements --import /tmp/guide-requirements.json`.
+5. Update the affected checks, guide options and coverage entries, regenerate
+   the conformance and guide-option documents, then run the checklist under
+   [Before committing](#before-committing) and the `--guide` verification above.
 
 
 ## Generated compatibility inventory<a id="compatibility-inventory"></a>
@@ -704,10 +758,13 @@ uv run python -m conclear.conformance --check
 # 6. Verify the generated guide-option inventory is current
 uv run python -m conclear.guide_options --check
 
-# 7. Verify the generated compatibility inventory is current
+# 7. Verify the guide requirement inventory and coverage are complete
+uv run python -m conclear.guide_requirements --check
+
+# 8. Verify the generated compatibility inventory is current
 uv run python -m conclear.compatibility_inventory --check
 
-# 8. Verify the release-specific implementation matrix is current
+# 9. Verify the release-specific implementation matrix is current
 uv run python -m conclear.implementation --check
 ```
 
@@ -722,8 +779,9 @@ uv run python -m conclear.release_check
 ```
 
 The command checks formatting, linting, strict typing, the generated conformance
-documentation, the guide-option support inventory, the generated compatibility
-inventory, the release-specific implementation matrix and the unit-test matrix
+documentation, the guide-option support inventory, the guide requirement
+inventory and coverage, the generated compatibility inventory, the
+release-specific implementation matrix and the unit-test matrix
 on every supported interpreter, enforcing the branch-coverage floor on the
 first interpreter. It then creates a temporary clean source archive, embeds the
 committed source revision, builds a source distribution, builds a wheel from
@@ -830,6 +888,11 @@ Keep validation and test isolation intact when resolving the following failures.
   The release gate never merges with or overwrites prior output.
 - **Conformance check fails after editing `docs/conformance.md`**: The file is
   generated. Change `src/conclear/data/checks.json` and regenerate.
+- **Requirement coverage check reports requirements without a status**: The
+  guide revision gained requirements no check covers. Map them in
+  `src/conclear/data/checks.json` or classify them in
+  `src/conclear/data/requirement-coverage.json`, then regenerate the
+  conformance document.
 - **Implementation-matrix check fails after a contract or version change**:
   Update `src/conclear/data/implementation.json`, the matching `IPnnnn` anchor
   or the versioned documentation link, then regenerate the matrix.

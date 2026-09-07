@@ -6,9 +6,10 @@ from conclear.catalog import (
     RetiredCheckDefinition,
     load_catalog,
     render_conformance,
+    requirement_statuses,
     write_conformance,
 )
-from conclear.conformance import validate_guide_anchors
+from conclear.guide_requirements import load_requirements
 
 
 def test_catalog_identifiers_are_unique_and_stable() -> None:
@@ -34,6 +35,14 @@ def test_every_automated_identifier_is_attached_in_production_code() -> None:
     assert missing == []
 
 
+def test_every_check_names_known_requirements() -> None:
+    known = set(load_requirements().by_id())
+    for check in load_catalog().checks:
+        assert check.requirements
+        assert list(check.requirements) == sorted(set(check.requirements))
+        assert set(check.requirements) <= known
+
+
 def test_conformance_renders_retired_identifiers_separately() -> None:
     current = load_catalog()
     catalog = CheckCatalog(
@@ -48,11 +57,18 @@ def test_conformance_renders_retired_identifiers_separately() -> None:
     assert "CC0999" not in rendered.split("## Check catalog", maxsplit=1)[1]
 
 
-def test_catalog_anchors_exist_in_selected_guide_snapshot() -> None:
-    guide = (
-        Path(__file__).parents[1] / "fixtures" / "oci-container-image-guide-headings.md"
-    )
-    validate_guide_anchors(guide)
+def test_conformance_lists_every_requirement_with_its_status() -> None:
+    rendered = render_conformance()
+    coverage = rendered.split("## Requirement coverage", maxsplit=1)[1]
+
+    for status in requirement_statuses():
+        identifier = status.requirement.requirement_id
+        assert f"[`{identifier}`](" in coverage
+        assert f"#{identifier.lower()})" in coverage
+    for check in load_catalog().checks:
+        assert f"`{check.check_id}`" in coverage
+    assert "| automated" in coverage
+    assert "| manual" in coverage
 
 
 def test_conformance_generation_is_deterministic(tmp_path: Path) -> None:

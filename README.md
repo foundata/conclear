@@ -323,9 +323,11 @@ retained evidence; workspace files are convenience copies.
 ## Conformance<a id="conformance"></a>
 
 The generated [conformance catalog](./docs/conformance.md) maps stable `CCnnnn`
-identifiers to guide requirements, records which requirements need human review
-rather than a mechanical check, and states the built-in limits that repository
-configuration may narrow but never disable. The generated
+identifiers to the guide's `IGnnnn` requirement identifiers, states for every
+requirement of the embedded guide revision whether ConClear automates it, leaves
+it to human review, leaves it to an external control or does not support it, and
+lists the built-in limits that repository configuration may narrow but never
+disable. The generated
 [guide-option support inventory](./docs/guide-options-1.0.0.md) records
 supported exceptions and deliberately unsupported or out-of-scope guide choices
 with a rationale and reconsideration condition.

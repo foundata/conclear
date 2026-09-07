@@ -1,0 +1,2940 @@
+{
+ "schemaVersion": 1,
+ "guideRevision": "39c0a4c6105dc1af5c3f86ee28ef2051f294c240",
+ "requirements": [
+  {
+   "id": "IG0001",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Every image repository owner MUST automate the repository's release-security controls; a release assembled by hand is not a release."
+  },
+  {
+   "id": "IG0002",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "A release MUST run through ConClear in an authorized release environment, using a clean release checkout of a reviewed, committed source revision."
+  },
+  {
+   "id": "IG0003",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "The complete release workflow through promotion MUST be runnable on a secure, maintainer-controlled Linux workstation. CI MAY invoke the same workflow but MUST NOT be the only implementation of release logic."
+  },
+  {
+   "id": "IG0004",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "For every release, ConClear MUST build from an isolated checkout or detached worktree of the selected application commit. This repository contains the Containerfile, `conclear.toml`, build scripts and dependency declarations. The ordinary worktree may be dirty, but uncommitted or untracked files MUST NOT enter the release."
+  },
+  {
+   "id": "IG0005",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Run source, dependency-lock, [Containerfile](#linting-and-testing), [context](#build-context) and repository checks."
+  },
+  {
+   "id": "IG0006",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Validate declared container-image dependency and [base-image pins](#pinning-image-references)."
+  },
+  {
+   "id": "IG0007",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "First build, import, re-verify and [test](#linting-and-testing) `linux/amd64` in a [recorded execution mode](#multi-platform-images); every release requires this platform."
+  },
+  {
+   "id": "IG0008",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Repeat the build, import, re-verification and test sequence on every other required platform worker."
+  },
+  {
+   "id": "IG0009",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Generate each platform [SBOM](#sboms), run the local [release scan gate](#vulnerability-and-configuration-scanning), and emit a platform qualification binding the layout, SBOM, scan results and verdict by digest."
+  },
+  {
+   "id": "IG0010",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "When transport is needed, [verify the recorded digests](#multi-platform-images) of layouts, evidence and qualifications before assembly. Assemble an OCI image index for a multi-platform release."
+  },
+  {
+   "id": "IG0011",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Aggregate the accepted platform qualifications into one release-candidate record and generate the [SLSA provenance predicate](#provenance) in the authorized release environment."
+  },
+  {
+   "id": "IG0012",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Publish the exact accepted manifest or index to a unique [candidate reference](#registries-and-image-names) in the final release repository."
+  },
+  {
+   "id": "IG0013",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Resolve the remote reference and compare its digest with the accepted local digest."
+  },
+  {
+   "id": "IG0014",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Attach [SBOM](#sboms) and [provenance](#provenance) attestations and [sign](#signing-and-verification) the index digest and every platform-manifest digest."
+  },
+  {
+   "id": "IG0015",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Verify digest coverage, signatures, attestations, identities and guide compliance, then retain a signed [release-verification result](#release-evidence-and-retention)."
+  },
+  {
+   "id": "IG0016",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Promote only the verified digest according to the [release-tag model](#registries-and-image-names)."
+  },
+  {
+   "id": "IG0017",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "Retain verifiable [evidence](#release-evidence-and-retention) and arrange the organization's scheduled [rescans](#rescans-and-remediation) and [rebuilds](#rebuildability-and-reproducibility)."
+  },
+  {
+   "id": "IG0018",
+   "modality": "MUST NOT",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "The release workflow MUST NOT sign before the image has its final registry digest. ConClear refuses subjects not resolved and digest-checked at the registry."
+  },
+  {
+   "id": "IG0019",
+   "modality": "MUST NOT",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "The release workflow MUST NOT promote by rebuilding; promotion copies or retags the already verified digest so the artifact that passed policy remains the artifact consumers receive, enforced by ConClear."
+  },
+  {
+   "id": "IG0020",
+   "modality": "MUST",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Make the Containerfile build successfully with a Buildah version supported by the selected ConClear release in rootless mode."
+  },
+  {
+   "id": "IG0021",
+   "modality": "MUST",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Produce OCI image format. This is Buildah and Podman's default; specify `--format oci` when a surrounding tool or configuration could change the default."
+  },
+  {
+   "id": "IG0022",
+   "modality": "MUST",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Test the image with Podman."
+  },
+  {
+   "id": "IG0023",
+   "modality": "MUST",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Build and publish `linux/amd64` images."
+  },
+  {
+   "id": "IG0024",
+   "modality": "MUST",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Use syntax documented by the [Containerfile manual](https://github.com/containers/common/blob/main/docs/Containerfile.5.md)."
+  },
+  {
+   "id": "IG0025",
+   "modality": "MUST",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Use a ConClear release that implements the selected guide revision. At release start, it resolves and records host-tool versions and tool-image digests, rejects unsupported versions and holds the toolchain constant."
+  },
+  {
+   "id": "IG0026",
+   "modality": "SHOULD",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Build and test each platform natively or under [QEMU user-mode emulation](https://www.qemu.org/docs/master/user/). Prefer a native worker when the image compiles or ships architecture-specific native code or depends on kernel or CPU features that emulation does not reproduce."
+  },
+  {
+   "id": "IG0027",
+   "modality": "SHOULD",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Keep local and continuous-integration tool versions aligned."
+  },
+  {
+   "id": "IG0028",
+   "modality": "SHOULD",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Pin supporting tools when predictable upgrades or reconstruction justify it. Supported, recorded tool upgrades between releases are permitted."
+  },
+  {
+   "id": "IG0029",
+   "modality": "MAY",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Build and publish `linux/arm64` images."
+  },
+  {
+   "id": "IG0030",
+   "modality": "MUST NOT",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Require a Docker daemon or Docker BuildKit to build, test or release the image."
+  },
+  {
+   "id": "IG0031",
+   "modality": "MUST NOT",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Add Docker BuildKit parser directives or Docker-only Containerfile extensions."
+  },
+  {
+   "id": "IG0032",
+   "modality": "MUST NOT",
+   "section": "Supported tools, syntax and platforms",
+   "anchor": "supported-tools-syntax-and-platforms",
+   "text": "Claim Docker compatibility unless a project separately builds and tests the image with explicitly supported Docker versions."
+  },
+  {
+   "id": "IG0033",
+   "modality": "MUST",
+   "section": "ConClear version identity",
+   "anchor": "conclear-version-identity",
+   "text": "Expose human-readable and machine-readable version information that includes the tool version, its full source revision, and the title, repository, path and full revision of the implemented guide."
+  },
+  {
+   "id": "IG0034",
+   "modality": "MUST",
+   "section": "ConClear version identity",
+   "anchor": "conclear-version-identity",
+   "text": "Embed these values at build time, not read them from the repository under test."
+  },
+  {
+   "id": "IG0035",
+   "modality": "MUST",
+   "section": "ConClear version identity",
+   "anchor": "conclear-version-identity",
+   "text": "Expose the machine-readable identity through stable fields defined by ConClear's record schemas, so release evidence names the implemented ruleset."
+  },
+  {
+   "id": "IG0036",
+   "modality": "MUST",
+   "section": "ConClear version identity",
+   "anchor": "conclear-version-identity",
+   "text": "Map every check to the requirement identifiers it covers and state, for every identifier of the implemented guide revision, whether it is automated, needs human review, is left to an external control or is unsupported."
+  },
+  {
+   "id": "IG0037",
+   "modality": "MUST",
+   "section": "ConClear version identity",
+   "anchor": "conclear-version-identity",
+   "text": "State the release's built-in limits and defaults in its conformance documentation."
+  },
+  {
+   "id": "IG0038",
+   "modality": "MUST NOT",
+   "section": "ConClear version identity",
+   "anchor": "conclear-version-identity",
+   "text": "Claim to implement a rule that requires human review."
+  },
+  {
+   "id": "IG0039",
+   "modality": "SHOULD",
+   "section": "When to create a container image",
+   "anchor": "when-to-create-a-container-image",
+   "text": "The application and its runtime dependencies need to be released and promoted as one content-addressed artifact."
+  },
+  {
+   "id": "IG0040",
+   "modality": "SHOULD",
+   "section": "When to create a container image",
+   "anchor": "when-to-create-a-container-image",
+   "text": "The target platform runs OCI containers and benefits from an explicit filesystem, user and process contract."
+  },
+  {
+   "id": "IG0041",
+   "modality": "SHOULD",
+   "section": "When to create a container image",
+   "anchor": "when-to-create-a-container-image",
+   "text": "The release pipeline can rebuild, scan, sign and maintain the image for its supported lifetime."
+  },
+  {
+   "id": "IG0042",
+   "modality": "SHOULD NOT",
+   "section": "When to create a container image",
+   "anchor": "when-to-create-a-container-image",
+   "text": "A native package, static executable, library or archive is the actual interface consumers require."
+  },
+  {
+   "id": "IG0043",
+   "modality": "SHOULD NOT",
+   "section": "When to create a container image",
+   "anchor": "when-to-create-a-container-image",
+   "text": "Containerization would conceal unsupported host dependencies or privileged behavior instead of removing them."
+  },
+  {
+   "id": "IG0044",
+   "modality": "SHOULD NOT",
+   "section": "When to create a container image",
+   "anchor": "when-to-create-a-container-image",
+   "text": "No owner can maintain the base image, dependencies and vulnerability response after initial publication."
+  },
+  {
+   "id": "IG0045",
+   "modality": "MUST",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Name a new build recipe `Containerfile`."
+  },
+  {
+   "id": "IG0046",
+   "modality": "MUST",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Store the Containerfile in the smallest directory that contains its intended build context, or pass an explicit narrower context from automation."
+  },
+  {
+   "id": "IG0047",
+   "modality": "MUST",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Use UTF-8 without a [BOM](https://en.wikipedia.org/wiki/Byte_order_mark), Unix line endings and one final newline."
+  },
+  {
+   "id": "IG0048",
+   "modality": "MUST",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Write instruction keywords in uppercase."
+  },
+  {
+   "id": "IG0049",
+   "modality": "MUST",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Give every named stage a short lowercase name that describes its purpose, such as `build`, `test` or `runtime`."
+  },
+  {
+   "id": "IG0050",
+   "modality": "MUST",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Keep comments focused on constraints and non-obvious decisions."
+  },
+  {
+   "id": "IG0051",
+   "modality": "SHOULD",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Order instructions from relatively stable inputs to frequently changing inputs so that local caching remains useful."
+  },
+  {
+   "id": "IG0052",
+   "modality": "SHOULD",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Put one logical operation in each instruction while combining commands that must share a layer, such as package installation and cache cleanup."
+  },
+  {
+   "id": "IG0053",
+   "modality": "SHOULD",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Put small supporting scripts in a version-controlled `scripts/` directory beside the Containerfile and `COPY` them instead of embedding large shell programs in `RUN`. Another documented location is permitted when the repository layout requires it."
+  },
+  {
+   "id": "IG0054",
+   "modality": "SHOULD",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Follow the [shell scripting style guide](./shell-scripting-style-guide.md) for non-trivial shell code executed during a build or used as an entrypoint."
+  },
+  {
+   "id": "IG0055",
+   "modality": "MAY",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Retain the conventional `Dockerfile` filename in an inherited repository when renaming it would cause disproportionate disruption."
+  },
+  {
+   "id": "IG0056",
+   "modality": "MAY",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Use a dedicated filename such as `Containerfile.integration` for a genuinely different build purpose."
+  },
+  {
+   "id": "IG0057",
+   "modality": "MUST NOT",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Add a `# syntax=...` directive that requires Docker BuildKit."
+  },
+  {
+   "id": "IG0058",
+   "modality": "MUST NOT",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Generate a Containerfile dynamically when ordinary build arguments or separate explicit Containerfiles express the variants clearly."
+  },
+  {
+   "id": "IG0059",
+   "modality": "MUST NOT",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Hide release behavior in undocumented wrapper scripts."
+  },
+  {
+   "id": "IG0060",
+   "modality": "MUST NOT",
+   "section": "Files and layout",
+   "anchor": "files-and-layout",
+   "text": "Create Containerfile suffix variants for differences that belong in runtime configuration."
+  },
+  {
+   "id": "IG0061",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Publish public images under the organization's approved `quay.io` organization and repository. ConClear verifies the registry and configured release repository."
+  },
+  {
+   "id": "IG0062",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Use fully qualified registry and repository names for every image reference."
+  },
+  {
+   "id": "IG0063",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Verify the publisher and pin every external image input by digest as described in [Pinning image references](#pinning-image-references)."
+  },
+  {
+   "id": "IG0064",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Use lowercase repository names consisting of stable product or component names."
+  },
+  {
+   "id": "IG0065",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Treat repository deletion, renaming and tag mutation as controlled operations because consumers may depend on them."
+  },
+  {
+   "id": "IG0066",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Configure automated registry retention so it does not delete release digests, signatures, SBOMs or attestations that remain supported; the organization owns registry retention configuration."
+  },
+  {
+   "id": "IG0067",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Use a release-registry backend supported by the selected ConClear release for `publish` through `promote`. ConClear MUST reject an unsupported destination before remote mutation. Checks, builds, tests, qualification, evidence generation, assembly and provenance generation remain available for other fully qualified repositories."
+  },
+  {
+   "id": "IG0068",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "A mirror owner MUST record the upstream repository and digest, preserve required index membership, scan the content, apply the organization's trust policy and automate reviewed refreshes."
+  },
+  {
+   "id": "IG0069",
+   "modality": "SHOULD",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Prefer an equivalent image on Quay over Docker Hub when the same trusted publisher maintains both with the required platforms, lifecycle and update cadence."
+  },
+  {
+   "id": "IG0070",
+   "modality": "SHOULD",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Consume an image from its authoritative upstream registry when no equivalent Quay source exists. This includes fully qualified Docker Official Image references such as `docker.io/library/debian`."
+  },
+  {
+   "id": "IG0071",
+   "modality": "SHOULD",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Mirror an upstream image when the organization needs additional availability, retention or policy control."
+  },
+  {
+   "id": "IG0072",
+   "modality": "MUST NOT",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Use short names such as `fedora`, `alpine` or `my-image` in a Containerfile or release command."
+  },
+  {
+   "id": "IG0073",
+   "modality": "MUST NOT",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Substitute an unrelated Quay repackaging solely to avoid an authoritative upstream registry."
+  },
+  {
+   "id": "IG0074",
+   "modality": "MUST NOT",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Depend on an engineer's local `registries.conf` search list or short-name alias resolution."
+  },
+  {
+   "id": "IG0075",
+   "modality": "MUST NOT",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Publish credentials, private source references or internal hostnames in public labels or attestations."
+  },
+  {
+   "id": "IG0076",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Preserve the complete OCI manifest, index, configuration and blob graph without digest transformation."
+  },
+  {
+   "id": "IG0077",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Resolve exact tags and digests without treating ambiguous remote state as absence."
+  },
+  {
+   "id": "IG0078",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Store and retrieve Cosign signatures and attestations for image indexes and platform manifests in the released subject's repository."
+  },
+  {
+   "id": "IG0079",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Enforce and verify a bounded candidate lifetime independently of the ConClear process that published it."
+  },
+  {
+   "id": "IG0080",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Prevent immutable release tags from being repointed while permitting declared moving tags."
+  },
+  {
+   "id": "IG0081",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Assign release tags only to the verified digest and permit an exact post-write observation."
+  },
+  {
+   "id": "IG0082",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Delete an owned candidate reference and permit conclusive verification of its removal."
+  },
+  {
+   "id": "IG0083",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Expose enough remote state for ConClear to recover safely from interrupted or ambiguous writes."
+  },
+  {
+   "id": "IG0084",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Use externally supplied, narrowly scoped credentials without placing secret values in repository configuration or release evidence."
+  },
+  {
+   "id": "IG0085",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Enforce the candidate lifetime through a native per-tag expiration, a verified retention rule restricted to ConClear candidate names or another provider control that remains effective if the releasing process never resumes; a local timestamp or best-effort cleanup attempt is not sufficient."
+  },
+  {
+   "id": "IG0086",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "A project with versions MUST publish an immutable version tag such as `:1.8.2`."
+  },
+  {
+   "id": "IG0087",
+   "modality": "MAY",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Moving convenience tags such as `:1`, `:stable` or `:latest` MAY exist."
+  },
+  {
+   "id": "IG0088",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Deployment environment owners MUST configure digest-only admission and deployment controls so every moving convenience tag is resolved to a digest and authorization operates on that digest."
+  },
+  {
+   "id": "IG0089",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "By default, a publication attempt MUST use a version-first candidate tag in the final repository. A versioned release uses `<version>-candidate.<run-id>.g<source-revision-short>`, for example `1.8.2-candidate.01k3z8h6v4n7c2m9p5q1r0s8tx.g7ac94d12`. An unversioned project uses `g<source-revision-short>-candidate.<run-id>`. ConClear generates and validates the tag."
+  },
+  {
+   "id": "IG0090",
+   "modality": "MUST NOT",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "A candidate reference MUST NOT be intentionally reused for a different publication attempt; every attempt, including a rebuild of the same source revision, uses a new reference."
+  },
+  {
+   "id": "IG0091",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Candidate content and evidence MUST be safe to disclose publicly. Deleting or expiring a tag may leave unreferenced manifests and blobs until registry garbage collection."
+  },
+  {
+   "id": "IG0092",
+   "modality": "SHOULD",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "Where the registry supports tag immutability, the release workflow SHOULD enable it for candidate and release tags."
+  },
+  {
+   "id": "IG0093",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "ConClear MUST set a bounded default candidate lifetime through the selected registry-control backend and refuse promotion after expiry. Repository configuration MAY shorten but MUST NOT extend or disable it. The backend MUST verify that the provider retained or otherwise enforces the requested deadline."
+  },
+  {
+   "id": "IG0094",
+   "modality": "MUST NOT",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "A workflow MUST NOT use a separate candidate repository unless it copies or recreates every signature and attestation in the final repository, then verifies the subjects and identities before promotion. [OCI referrers](https://github.com/opencontainers/distribution-spec/blob/main/spec.md#listing-referrers), Cosign signatures and attestations are repository-scoped; `skopeo copy --all` does not move them."
+  },
+  {
+   "id": "IG0095",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "The run identifier MUST be a lowercase [ULID](https://github.com/ulid/spec) generated by ConClear as its release-run identity. It sorts by time and prevents reference collisions. Each rebuild gets a new identifier, locally or in CI."
+  },
+  {
+   "id": "IG0096",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "After writing a release or convenience tag, promotion MUST compare it with the verified digest and record the result. A missing or different tag is an operational failure."
+  },
+  {
+   "id": "IG0097",
+   "modality": "MUST",
+   "section": "Registries and image names",
+   "anchor": "registries-and-image-names",
+   "text": "After successful promotion, ConClear MUST delete the temporary candidate tag. A rejected or abandoned candidate MUST be deleted explicitly or left to its configured expiration. Delayed removal of unreferenced manifests and blobs by registry garbage collection is not a release failure."
+  },
+  {
+   "id": "IG0098",
+   "modality": "MUST",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Publisher and registry trust; whether upstream support covers the application's release lifetime; `linux/amd64` and any required `linux/arm64`; compatibility with the runtime, native libraries and C library; required certificate, timezone, locale and user lookup data; the quality and timeliness of advisories, package metadata and scanner support; tools needed to build, operate and diagnose; upstream rebuild cadence; and the project's ability to update promptly."
+  },
+  {
+   "id": "IG0099",
+   "modality": "SHOULD",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Start evaluation with an [official Fedora Minimal image](https://fedoraproject.org/everything/download/) from Quay for a general-purpose Linux runtime when Fedora's lifecycle and update cadence suit the application."
+  },
+  {
+   "id": "IG0100",
+   "modality": "SHOULD",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Prefer a base already maintained and understood by the operating team when it satisfies the preceding criteria."
+  },
+  {
+   "id": "IG0101",
+   "modality": "SHOULD",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Remove unused packages, files and privileges based on measured runtime requirements."
+  },
+  {
+   "id": "IG0102",
+   "modality": "SHOULD",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Use `scratch` only for a genuinely static executable after testing certificate, timezone, user lookup and diagnostic requirements."
+  },
+  {
+   "id": "IG0103",
+   "modality": "MUST NOT",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Choose Alpine, a distroless image or `scratch` solely because it has fewer bytes."
+  },
+  {
+   "id": "IG0104",
+   "modality": "MUST NOT",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Assume a smaller image has fewer exploitable vulnerabilities."
+  },
+  {
+   "id": "IG0105",
+   "modality": "MUST NOT",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Introduce a musl-based runtime without testing software that was developed or distributed for glibc."
+  },
+  {
+   "id": "IG0106",
+   "modality": "MUST NOT",
+   "section": "Choosing a base image",
+   "anchor": "choosing-a-base-image",
+   "text": "Use an unsupported distribution release merely to avoid an upgrade."
+  },
+  {
+   "id": "IG0107",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "All external image inputs to a release build MUST be pinned by digest. This includes production and build stages: a compromised or unexpectedly changed builder can alter the final artifact even when the final base is pinned."
+  },
+  {
+   "id": "IG0108",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Every external `FROM` reference."
+  },
+  {
+   "id": "IG0109",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Every external image used by `COPY --from`."
+  },
+  {
+   "id": "IG0110",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Every external image used by a `RUN --mount=from` build mount."
+  },
+  {
+   "id": "IG0111",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Tool or helper images invoked around the build, scan, signing or release process."
+  },
+  {
+   "id": "IG0112",
+   "modality": "MUST NOT",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Pin only a mutable tag for a release build."
+  },
+  {
+   "id": "IG0113",
+   "modality": "MUST NOT",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Remove the tag and leave an unexplained bare digest when a meaningful upstream tag exists."
+  },
+  {
+   "id": "IG0114",
+   "modality": "MUST NOT",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Resolve a tag to a digest in one job and silently use a later tag resolution in another job."
+  },
+  {
+   "id": "IG0115",
+   "modality": "MUST NOT",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Assume digest pinning alone makes a build reproducible."
+  },
+  {
+   "id": "IG0116",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Every pinned reference declared in `conclear.toml` MUST declare `tag_intent = \"immutable-version\"` or `tag_intent = \"moving-release-line\"`; ConClear's pin gate rejects a declaration without a valid intent."
+  },
+  {
+   "id": "IG0117",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Evidence MUST record, for every pinned reference, the tag, the pinned digest, the resolved digest, the resolution time and the first-observed divergence time."
+  },
+  {
+   "id": "IG0118",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "ConClear MUST define and enforce both the maximum permitted time since successful resolution and the maximum permitted divergence interval for pinned references; repository configuration MAY shorten but MUST NOT extend or disable these limits."
+  },
+  {
+   "id": "IG0119",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "The `pins check` operation MUST apply the effective freshness and divergence limits and emit a result; it MUST NOT edit files. Pin proposal and application are separate, explicit operations."
+  },
+  {
+   "id": "IG0120",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "The `pins check` operation MUST fail when the declared `tag_intent` set and the Containerfile's actual pinned references diverge; an undeclared pin and an orphaned declaration are both policy failures."
+  },
+  {
+   "id": "IG0121",
+   "modality": "MUST",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "A digest change under an `immutable-version` tag MUST be reviewed by the repository owner as a supply-chain event."
+  },
+  {
+   "id": "IG0122",
+   "modality": "MUST NOT",
+   "section": "Pinning image references",
+   "anchor": "pinning-image-references",
+   "text": "Pin-update and repository merge controls MUST NOT automatically accept a digest change under an `immutable-version` tag into a protected branch; the proposal remains blocked until the required human review of the supply-chain event completes."
+  },
+  {
+   "id": "IG0123",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Generate a machine-readable, non-mutating pin proposal with ConClear or a version- or digest-pinned updater that implements the same contract."
+  },
+  {
+   "id": "IG0124",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Record in the proposal the updater name and version or artifact digest; the repository source revision and configuration digest; the image declaration, tag intent, old digest, resolved digest and resolution time; and every exact repository path, input-file digest, old bytes and occurrence expected to change."
+  },
+  {
+   "id": "IG0125",
+   "modality": "MUST NOT",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Resolve one digest for each proposed tag and use that result for every bound occurrence. Preserve the declared tag, registry and repository spelling; a digest refresh MUST NOT silently change image-selection intent."
+  },
+  {
+   "id": "IG0126",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Apply a proposal only through ConClear or an updater that first verifies the proposal against the current repository state, including its expected old bytes, input-file digests, complete path set and exact occurrence count. On any detected error, application MUST leave every file unchanged."
+  },
+  {
+   "id": "IG0127",
+   "modality": "MUST NOT",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Keep proposal generation, application and acceptance distinct. Proposal generation MUST NOT edit files. Application MAY edit the local worktree or an updater-owned review branch but MUST NOT commit to a protected branch, merge, or publish a release. A repository owner reviews the complete resulting diff before acceptance."
+  },
+  {
+   "id": "IG0128",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Run `conclear pins check` after application and reject a result that does not exactly match the proposal. A proposal or application is not release evidence."
+  },
+  {
+   "id": "IG0129",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Rebuild, test, scan and sign after an image input changes."
+  },
+  {
+   "id": "IG0130",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Review an unexpected digest change under an unchanged immutable-version tag as a supply-chain event."
+  },
+  {
+   "id": "IG0131",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Keep supported release branches receiving relevant base-image and toolchain updates."
+  },
+  {
+   "id": "IG0132",
+   "modality": "MUST",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Pin and verify any external updater used to generate or apply proposals. Do not grant a hosted update service write access to the organization's repositories."
+  },
+  {
+   "id": "IG0133",
+   "modality": "MUST NOT",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "When an updater opens branches or pull requests, give it credentials that can create only those review resources and cannot merge or push to protected branches. Branch and pull-request delivery MUST NOT be required for an authorized local maintainer workflow."
+  },
+  {
+   "id": "IG0134",
+   "modality": "SHOULD",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Use a pinned, self-hosted updater such as Renovate for scheduled branch and pull-request delivery when the organization operates the required runner and least-privileged credentials."
+  },
+  {
+   "id": "IG0135",
+   "modality": "SHOULD",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Configure an external updater's Containerfile digest behavior and custom managers so its proposal covers every declaration and bound occurrence."
+  },
+  {
+   "id": "IG0136",
+   "modality": "SHOULD",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Group routine digest refreshes where this does not obscure a high-risk or breaking update."
+  },
+  {
+   "id": "IG0137",
+   "modality": "SHOULD",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Set a repository-specific update schedule that is shorter than the effective vulnerability remediation deadline enforced by ConClear."
+  },
+  {
+   "id": "IG0138",
+   "modality": "SHOULD",
+   "section": "Updating pinned references",
+   "anchor": "updating-pinned-references",
+   "text": "Maintain one organization-level updater policy that repositories extend, so schedule, grouping and digest policy are decided once instead of per repository."
+  },
+  {
+   "id": "IG0139",
+   "modality": "MUST",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Add a [`.containerignore`](https://github.com/containers/common/blob/main/docs/containerignore.5.md) file at the root of the build context."
+  },
+  {
+   "id": "IG0140",
+   "modality": "MUST",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Exclude `.git`, editor state, test output, local caches, credentials, environment files, private keys, signing material and unrelated build artifacts."
+  },
+  {
+   "id": "IG0141",
+   "modality": "MUST",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Pass the narrowest practical directory as the build context."
+  },
+  {
+   "id": "IG0142",
+   "modality": "MUST",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Review negated ignore patterns because the last matching pattern determines inclusion."
+  },
+  {
+   "id": "IG0143",
+   "modality": "MUST",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Keep all required build input in version control or fetch it through an authenticated, integrity-checked dependency mechanism."
+  },
+  {
+   "id": "IG0144",
+   "modality": "SHOULD",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Start from excluding broadly and add back only the files required by the build."
+  },
+  {
+   "id": "IG0145",
+   "modality": "SHOULD",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Give dependency manifests their own early `COPY` instruction when the package manager can cache dependency resolution independently of source changes."
+  },
+  {
+   "id": "IG0146",
+   "modality": "SHOULD",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Inspect the effective context when adding a broad `COPY . ...` instruction."
+  },
+  {
+   "id": "IG0147",
+   "modality": "MUST NOT",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Rely on `.gitignore` to define the build context."
+  },
+  {
+   "id": "IG0148",
+   "modality": "MUST NOT",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Include a secret and assume it is safe because no final `COPY` references it."
+  },
+  {
+   "id": "IG0149",
+   "modality": "MUST NOT",
+   "section": "Build context",
+   "anchor": "build-context",
+   "text": "Use the filesystem root or a developer's home directory as the build context."
+  },
+  {
+   "id": "IG0150",
+   "modality": "MUST",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Name every stage referenced by another instruction."
+  },
+  {
+   "id": "IG0151",
+   "modality": "MUST",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Copy artifacts from an explicit named stage, not a numeric stage position."
+  },
+  {
+   "id": "IG0152",
+   "modality": "MUST",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Keep compilers, package managers, source trees and test data out of the final stage unless they are runtime requirements."
+  },
+  {
+   "id": "IG0153",
+   "modality": "MUST",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Verify artifacts fetched from outside the package manager or source repository with a cryptographic digest or signature."
+  },
+  {
+   "id": "IG0154",
+   "modality": "MUST",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Pin external stage images as described in [Pinning image references](#pinning-image-references)."
+  },
+  {
+   "id": "IG0155",
+   "modality": "SHOULD",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Use separate `build`, `test` and `runtime` stages when doing so makes promotion boundaries clear."
+  },
+  {
+   "id": "IG0156",
+   "modality": "SHOULD",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Make a target used by CI fail unless its test stage completes."
+  },
+  {
+   "id": "IG0157",
+   "modality": "SHOULD",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Copy a small, explicit artifact set into the runtime stage."
+  },
+  {
+   "id": "IG0158",
+   "modality": "SHOULD",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Keep build dependency declarations close to the application dependency manifests they consume."
+  },
+  {
+   "id": "IG0159",
+   "modality": "MAY",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Use build mounts for transient caches and secrets when supported by the documented Buildah version."
+  },
+  {
+   "id": "IG0160",
+   "modality": "MUST NOT",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Copy an entire build stage filesystem into the runtime stage."
+  },
+  {
+   "id": "IG0161",
+   "modality": "MUST NOT",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Fetch an executable through `curl | sh`, an unauthenticated URL or a mutable latest-release URL."
+  },
+  {
+   "id": "IG0162",
+   "modality": "MUST NOT",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Assume that deleting a secret or large file in a later instruction removes it from an earlier layer."
+  },
+  {
+   "id": "IG0163",
+   "modality": "MUST NOT",
+   "section": "Stages and dependencies",
+   "anchor": "stages-and-dependencies",
+   "text": "Require a cache mount for correctness; a cache improves speed but is not an input identity."
+  },
+  {
+   "id": "IG0164",
+   "modality": "MUST",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Use non-interactive package-manager options."
+  },
+  {
+   "id": "IG0165",
+   "modality": "MUST",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Install only packages required by that stage."
+  },
+  {
+   "id": "IG0166",
+   "modality": "MUST",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Refresh package metadata, install packages and remove package-manager caches in the same `RUN` instruction when the package manager stores them in the layer."
+  },
+  {
+   "id": "IG0167",
+   "modality": "MUST",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Make shell command failures stop the build."
+  },
+  {
+   "id": "IG0168",
+   "modality": "MUST",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Use HTTPS and verify an expected digest or signature when downloading a file outside a package manager."
+  },
+  {
+   "id": "IG0169",
+   "modality": "MUST",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Keep repository trust configuration explicit and scoped."
+  },
+  {
+   "id": "IG0170",
+   "modality": "SHOULD",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Use the base distribution's package manager instead of downloading manually assembled filesystem archives."
+  },
+  {
+   "id": "IG0171",
+   "modality": "SHOULD",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Sort package names lexicographically when installing several packages."
+  },
+  {
+   "id": "IG0172",
+   "modality": "SHOULD",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Use `RUN --mount=type=cache` for disposable package or compiler caches where it measurably improves build time."
+  },
+  {
+   "id": "IG0173",
+   "modality": "SHOULD",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Use `RUN --network=none` for steps that should be independent of the network."
+  },
+  {
+   "id": "IG0174",
+   "modality": "SHOULD",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Move non-trivial shell logic to a checked and linted script."
+  },
+  {
+   "id": "IG0175",
+   "modality": "MAY",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Add an exact package version constraint when compatibility requires it; document how the version remains available and receives security maintenance."
+  },
+  {
+   "id": "IG0176",
+   "modality": "MUST NOT",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Use `curl ... | sh` or an equivalent network-to-interpreter pipeline."
+  },
+  {
+   "id": "IG0177",
+   "modality": "MUST NOT",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Disable TLS certificate validation or package signature verification."
+  },
+  {
+   "id": "IG0178",
+   "modality": "MUST NOT",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Run a full distribution upgrade as a substitute for updating the pinned base image."
+  },
+  {
+   "id": "IG0179",
+   "modality": "MUST NOT",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Keep package indexes, compiler caches or downloaded archives in the final filesystem without a runtime need."
+  },
+  {
+   "id": "IG0180",
+   "modality": "MUST NOT",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Put a long application installer into a quoted `RUN` string when it can be a tested source file."
+  },
+  {
+   "id": "IG0181",
+   "modality": "MUST NOT",
+   "section": "RUN instructions and package installation",
+   "anchor": "run-instructions-and-package-installation",
+   "text": "Require exact distribution package versions by default."
+  },
+  {
+   "id": "IG0182",
+   "modality": "MUST",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Use `COPY` for local files."
+  },
+  {
+   "id": "IG0183",
+   "modality": "MUST",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Copy only the files needed by the stage."
+  },
+  {
+   "id": "IG0184",
+   "modality": "MUST",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Set ownership during `COPY` with `--chown` when the builder supports the required semantics."
+  },
+  {
+   "id": "IG0185",
+   "modality": "MUST",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Make executables, configuration and data no more permissive than their runtime use requires."
+  },
+  {
+   "id": "IG0186",
+   "modality": "MUST",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Ensure the runtime identity cannot change executable code or immutable configuration, including by changing their permission modes."
+  },
+  {
+   "id": "IG0187",
+   "modality": "MUST",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Preserve executable bits in version control for source-controlled executable files."
+  },
+  {
+   "id": "IG0188",
+   "modality": "SHOULD",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Use absolute destination paths."
+  },
+  {
+   "id": "IG0189",
+   "modality": "SHOULD",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Use `COPY --from=<stage>` for build outputs."
+  },
+  {
+   "id": "IG0190",
+   "modality": "SHOULD",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Separate stable dependency input from frequently changing source input to preserve useful build cache entries."
+  },
+  {
+   "id": "IG0191",
+   "modality": "SHOULD",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Keep executable code and immutable configuration owned by container UID/GID 0 and non-writable by the runtime identity. Use mode `0555` for executables and `0444` for non-secret data readable by every runtime user."
+  },
+  {
+   "id": "IG0192",
+   "modality": "SHOULD",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Give the runtime identity ownership only of explicitly mutable directories and files, with the narrowest required modes."
+  },
+  {
+   "id": "IG0193",
+   "modality": "MUST NOT",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Use remote-URL `ADD`."
+  },
+  {
+   "id": "IG0194",
+   "modality": "MUST NOT",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Depend on `ADD` archive auto-extraction when an explicit extraction command would make validation and ownership clearer."
+  },
+  {
+   "id": "IG0195",
+   "modality": "MUST NOT",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Use `chmod -R 777`, world-writable application directories or setuid/setgid executables."
+  },
+  {
+   "id": "IG0196",
+   "modality": "MUST NOT",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Copy a complete repository merely for convenience."
+  },
+  {
+   "id": "IG0197",
+   "modality": "MUST NOT",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Change ownership recursively in a later layer when ownership can be assigned during `COPY`."
+  },
+  {
+   "id": "IG0198",
+   "modality": "MUST",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Declare every build argument with `ARG` before use."
+  },
+  {
+   "id": "IG0199",
+   "modality": "MUST",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Give a non-secret build argument a safe default or require and validate it explicitly in the build automation."
+  },
+  {
+   "id": "IG0200",
+   "modality": "MUST",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Use `ENV` only for values that are appropriate defaults in every container created from the image."
+  },
+  {
+   "id": "IG0201",
+   "modality": "MUST",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Supply build secrets with Buildah's secret mechanism and consume them through `RUN --mount=type=secret`."
+  },
+  {
+   "id": "IG0202",
+   "modality": "MUST",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Supply runtime secrets at runtime through the deployment platform."
+  },
+  {
+   "id": "IG0203",
+   "modality": "MUST NOT",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Pass passwords, tokens, private keys or signing material through `ARG`, `ENV`, labels, command-line literals or ordinary `COPY`."
+  },
+  {
+   "id": "IG0204",
+   "modality": "MUST NOT",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Bake environment-specific service addresses, credentials or deployment configuration into a reusable release image."
+  },
+  {
+   "id": "IG0205",
+   "modality": "MUST NOT",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Assume that an unset build argument reliably fails without explicit validation."
+  },
+  {
+   "id": "IG0206",
+   "modality": "MUST NOT",
+   "section": "Build arguments, configuration and secrets",
+   "anchor": "build-arguments-configuration-and-secrets",
+   "text": "Log secret values or commands that expand them."
+  },
+  {
+   "id": "IG0207",
+   "modality": "MUST",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Set `USER` to a numeric, non-zero UID in the final stage unless the application has a documented, reviewed requirement for root."
+  },
+  {
+   "id": "IG0208",
+   "modality": "MUST",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Use a stable UID and GID that do not collide with identities already defined by the selected base."
+  },
+  {
+   "id": "IG0209",
+   "modality": "MUST",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Make required writable paths explicit."
+  },
+  {
+   "id": "IG0210",
+   "modality": "MUST",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Ensure application startup does not need to change file ownership, install packages or rewrite its executable or static configuration."
+  },
+  {
+   "id": "IG0211",
+   "modality": "MUST",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Document and review every required Linux capability, device, host namespace, privileged mode or writable host path."
+  },
+  {
+   "id": "IG0212",
+   "modality": "SHOULD",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Use a dedicated identity per application image."
+  },
+  {
+   "id": "IG0213",
+   "modality": "SHOULD",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Make the root filesystem read-only in runtime tests."
+  },
+  {
+   "id": "IG0214",
+   "modality": "SHOULD",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Mount an explicit temporary filesystem for `/tmp` or another required scratch path."
+  },
+  {
+   "id": "IG0215",
+   "modality": "SHOULD",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Drop all capabilities and enable `no-new-privileges` in smoke tests, adding back only a documented capability when required."
+  },
+  {
+   "id": "IG0216",
+   "modality": "SHOULD",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Define and test memory, CPU, PID and `nofile` limits in deployment configuration, using per-image measured values from representative startup and load tests recorded in repository configuration; runtime evidence records the limits actually applied."
+  },
+  {
+   "id": "IG0217",
+   "modality": "SHOULD",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Listen on an unprivileged port greater than or equal to 1024."
+  },
+  {
+   "id": "IG0218",
+   "modality": "MUST NOT",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Install or use `sudo` in the final image."
+  },
+  {
+   "id": "IG0219",
+   "modality": "MUST NOT",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Run as root merely to bind a low port, write application files or avoid setting ownership during the build."
+  },
+  {
+   "id": "IG0220",
+   "modality": "MUST NOT",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Declare a broad writable directory when one narrow cache or temporary path is sufficient."
+  },
+  {
+   "id": "IG0221",
+   "modality": "MUST NOT",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Assume a named user resolves in a `scratch` image without supplying the required user database files."
+  },
+  {
+   "id": "IG0222",
+   "modality": "MUST",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Use JSON exec form for `ENTRYPOINT` and `CMD`."
+  },
+  {
+   "id": "IG0223",
+   "modality": "MUST",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Make the long-running application process become PID 1 by using `exec` in an entrypoint script, unless a documented supervisor is part of the product's lifecycle contract."
+  },
+  {
+   "id": "IG0224",
+   "modality": "MUST",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "When a supervisor is PID 1, require it to forward relevant signals, reap child processes, terminate managed processes within the deployment grace period, and propagate or deliberately map their exit statuses according to the documented contract."
+  },
+  {
+   "id": "IG0225",
+   "modality": "MUST",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Ensure the application handles signals received directly or forwarded by its supervisor and exits within the deployment grace period."
+  },
+  {
+   "id": "IG0226",
+   "modality": "MUST",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Propagate the application exit status from a wrapper unless the documented lifecycle contract defines a deliberate status mapping."
+  },
+  {
+   "id": "IG0227",
+   "modality": "MUST",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Keep deployment-specific flags outside the immutable entrypoint."
+  },
+  {
+   "id": "IG0228",
+   "modality": "SHOULD",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Use `ENTRYPOINT` for the stable executable and `CMD` for overridable default arguments."
+  },
+  {
+   "id": "IG0229",
+   "modality": "SHOULD",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Run exactly one service process and avoid a supervisor unless the product contract requires supervision, child-process management or another explicit lifecycle policy."
+  },
+  {
+   "id": "IG0230",
+   "modality": "SHOULD",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Test termination and child-process reaping behavior."
+  },
+  {
+   "id": "IG0231",
+   "modality": "SHOULD",
+   "section": "Entrypoint, command and signal handling",
+   "anchor": "entrypoint-command-and-signal-handling",
+   "text": "Set `STOPSIGNAL` only when the application requires a signal other than the runtime default."
+  },
+  {
+   "id": "IG0232",
+   "modality": "MUST",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.source` with the canonical source repository URL."
+  },
+  {
+   "id": "IG0233",
+   "modality": "MUST",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.revision` with the complete source revision used for the build."
+  },
+  {
+   "id": "IG0234",
+   "modality": "MUST",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.licenses` with an SPDX license expression for the packaged project."
+  },
+  {
+   "id": "IG0235",
+   "modality": "MUST",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.title` with a concise human-readable name."
+  },
+  {
+   "id": "IG0236",
+   "modality": "MUST",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.version` when the project has a release version."
+  },
+  {
+   "id": "IG0237",
+   "modality": "SHOULD",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.description`."
+  },
+  {
+   "id": "IG0238",
+   "modality": "SHOULD",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.documentation`."
+  },
+  {
+   "id": "IG0239",
+   "modality": "SHOULD",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.url`."
+  },
+  {
+   "id": "IG0240",
+   "modality": "SHOULD",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.vendor`."
+  },
+  {
+   "id": "IG0241",
+   "modality": "SHOULD",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "`org.opencontainers.image.created` as an RFC 3339 timestamp when the build system supplies a controlled value."
+  },
+  {
+   "id": "IG0242",
+   "modality": "MUST NOT",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "Put credentials, internal infrastructure names or personal data in labels."
+  },
+  {
+   "id": "IG0243",
+   "modality": "MUST NOT",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "Claim a source revision, version or creation time that the release pipeline did not verify."
+  },
+  {
+   "id": "IG0244",
+   "modality": "MUST NOT",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "Use a changing build timestamp when a reproducible build is required; derive it from controlled source metadata instead."
+  },
+  {
+   "id": "IG0245",
+   "modality": "MUST NOT",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "Invent project-specific labels when a standard OCI annotation has the required meaning."
+  },
+  {
+   "id": "IG0246",
+   "modality": "SHOULD",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Use `EXPOSE` to document each stable network port and transport expected by the application."
+  },
+  {
+   "id": "IG0247",
+   "modality": "SHOULD",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Prefer an unprivileged port."
+  },
+  {
+   "id": "IG0248",
+   "modality": "SHOULD",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Keep durable data and mutable configuration outside the image."
+  },
+  {
+   "id": "IG0249",
+   "modality": "SHOULD",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Implement a lightweight application health endpoint when service health cannot be established from process state."
+  },
+  {
+   "id": "IG0250",
+   "modality": "SHOULD",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Put the health command, timing, thresholds and failure action in deployment configuration for OCI images."
+  },
+  {
+   "id": "IG0251",
+   "modality": "SHOULD",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Keep a lightweight health command in the image when deployment configuration invokes it, and make it run successfully as the configured runtime user."
+  },
+  {
+   "id": "IG0252",
+   "modality": "MUST NOT",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Assume `EXPOSE` publishes a port or creates a firewall rule."
+  },
+  {
+   "id": "IG0253",
+   "modality": "MUST NOT",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Declare `VOLUME` without a stable data contract and a documented reason it belongs in the image."
+  },
+  {
+   "id": "IG0254",
+   "modality": "MUST NOT",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Store durable state in an anonymous runtime layer."
+  },
+  {
+   "id": "IG0255",
+   "modality": "MUST NOT",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Add a health check that requires a large diagnostic client solely for the check."
+  },
+  {
+   "id": "IG0256",
+   "modality": "MUST NOT",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Make a liveness check depend on an unrelated external service."
+  },
+  {
+   "id": "IG0257",
+   "modality": "MUST NOT",
+   "section": "Ports, volumes and health checks",
+   "anchor": "ports-volumes-and-health-checks",
+   "text": "Add or rely on a Containerfile `HEALTHCHECK` instruction in an OCI-format image."
+  },
+  {
+   "id": "IG0258",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Every public release MUST include a `linux/amd64` image."
+  },
+  {
+   "id": "IG0259",
+   "modality": "MAY",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Public releases MAY include `linux/arm64`."
+  },
+  {
+   "id": "IG0260",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Publish one image index when a release supports more than one platform."
+  },
+  {
+   "id": "IG0261",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Build every platform from the same reviewed source revision and release configuration."
+  },
+  {
+   "id": "IG0262",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Test each platform-specific image, not only the index name on one build host."
+  },
+  {
+   "id": "IG0263",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Inspect the published index and verify the expected operating system, architecture and digest entries."
+  },
+  {
+   "id": "IG0264",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Generate and scan the SBOM for each platform-specific manifest."
+  },
+  {
+   "id": "IG0265",
+   "modality": "SHOULD",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Use the same execution mode to build and test one platform."
+  },
+  {
+   "id": "IG0266",
+   "modality": "SHOULD",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Keep platform-independent build steps identical."
+  },
+  {
+   "id": "IG0267",
+   "modality": "SHOULD",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Test the index through Podman's normal platform selection after publication."
+  },
+  {
+   "id": "IG0268",
+   "modality": "MUST NOT",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Label an `amd64` filesystem as `arm64` or otherwise override platform metadata to conceal a cross-build failure."
+  },
+  {
+   "id": "IG0269",
+   "modality": "MUST NOT",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Download an architecture-specific artifact based only on the build host's `uname -m`."
+  },
+  {
+   "id": "IG0270",
+   "modality": "MUST NOT",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Publish an index entry that has not passed the platform's required tests."
+  },
+  {
+   "id": "IG0271",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Each build execution MUST record the digest of every exported layout, evidence payload and platform-qualification record in its output."
+  },
+  {
+   "id": "IG0272",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "The platform qualification MUST include the target platform, manifest digest, OCI layout descriptor, SBOM digest and scan-result digest."
+  },
+  {
+   "id": "IG0273",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Before use, assembly MUST verify every transported layout, evidence payload and record by digest, reject unsafe archive paths and compare the imported manifest digest with the recorded digest."
+  },
+  {
+   "id": "IG0274",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Index assembly MUST use only verified platform layouts and MUST record every platform-manifest digest and the index digest."
+  },
+  {
+   "id": "IG0275",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Before producing a candidate, assembly MUST have exactly one accepted qualification per required platform, reject missing, duplicate or unexpected records, and match each target to its OCI descriptor and image-configuration metadata."
+  },
+  {
+   "id": "IG0276",
+   "modality": "MUST",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Per-platform evidence and provenance MUST record the target, host and execution architectures, plus any emulation or cross-build mechanism, for both build and test. A single `uname` value is insufficient."
+  },
+  {
+   "id": "IG0277",
+   "modality": "MAY",
+   "section": "Multi-platform images",
+   "anchor": "multi-platform-images",
+   "text": "Native and QEMU-emulated build and runtime tests both satisfy the platform requirement when the execution mode is recorded. Repository configuration MAY require native execution for a platform."
+  },
+  {
+   "id": "IG0278",
+   "modality": "MUST",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Rebuildability is mandatory: the project MUST be able to create a working replacement from documented inputs."
+  },
+  {
+   "id": "IG0279",
+   "modality": "MUST",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Bit-for-bit reproducibility is strongly desirable, but it MUST be measured and claimed precisely rather than assumed."
+  },
+  {
+   "id": "IG0280",
+   "modality": "MUST",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Record the source revision, Containerfile, build arguments, builder identity, builder version and resolved external materials in provenance."
+  },
+  {
+   "id": "IG0281",
+   "modality": "MUST",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Use lock files and checksum verification provided by the application language's dependency system."
+  },
+  {
+   "id": "IG0282",
+   "modality": "MUST",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Record the ConClear version, host-tool versions and tool-image digests, and keep them unchanged until the release completes."
+  },
+  {
+   "id": "IG0283",
+   "modality": "MUST",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Make release builds independent of a developer's local image store, environment and uncommitted files."
+  },
+  {
+   "id": "IG0284",
+   "modality": "MUST",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Pull and verify required external images instead of accepting an unreviewed local substitute."
+  },
+  {
+   "id": "IG0285",
+   "modality": "SHOULD",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Set `SOURCE_DATE_EPOCH` from the source revision when supported by the build system."
+  },
+  {
+   "id": "IG0286",
+   "modality": "SHOULD",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Use Buildah timestamp controls such as `--source-date-epoch` or `--rewrite-timestamp` only after testing the resolved version. Apply them during the build, never after runtime tests."
+  },
+  {
+   "id": "IG0287",
+   "modality": "SHOULD",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Normalize generated archive metadata and application build identifiers."
+  },
+  {
+   "id": "IG0288",
+   "modality": "SHOULD",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Test whether two clean builds from the same declared input produce the same platform manifest digest."
+  },
+  {
+   "id": "IG0289",
+   "modality": "SHOULD",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Document remaining sources of nondeterminism."
+  },
+  {
+   "id": "IG0290",
+   "modality": "MUST NOT",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Describe an image as reproducible merely because it can be rebuilt successfully."
+  },
+  {
+   "id": "IG0291",
+   "modality": "MUST NOT",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Depend on a warm build cache for correctness."
+  },
+  {
+   "id": "IG0292",
+   "modality": "MUST NOT",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Embed an uncontrolled current timestamp, random identifier or host path in release output."
+  },
+  {
+   "id": "IG0293",
+   "modality": "MUST NOT",
+   "section": "Rebuildability and reproducibility",
+   "anchor": "rebuildability-and-reproducibility",
+   "text": "Weaken update policy solely to preserve an old digest; a secure rebuild may intentionally produce new content."
+  },
+  {
+   "id": "IG0294",
+   "modality": "MUST",
+   "section": "Security, SBOMs, provenance and signing",
+   "anchor": "security-sboms-provenance-and-signing",
+   "text": "The release pipeline MUST evaluate, scan, attest and sign the exact digests it publishes. A local-tag scan, source-directory SBOM or moving-tag signature does not describe the released image."
+  },
+  {
+   "id": "IG0295",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Before public upload, the release pipeline MUST scan each final platform image from a local OCI layout with a recorded manifest digest, or an equivalently digest-addressed private location. Every rejecting content gate must run without public disclosure."
+  },
+  {
+   "id": "IG0296",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "After these gates pass, the workflow MUST copy the scanned artifact with unchanged manifest and blob digests. Use Skopeo `--preserve-digests`, plus `--all` for an index, and compare every registry digest with its local digest. Failure to preserve or match a digest fails the release. Signature and attestation verification remain publication steps because they use registry objects."
+  },
+  {
+   "id": "IG0297",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Scan operating-system and application packages in every platform-specific image."
+  },
+  {
+   "id": "IG0298",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Scan the Containerfile and image configuration for insecure settings."
+  },
+  {
+   "id": "IG0299",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Enable secret scanning for the build context and final image."
+  },
+  {
+   "id": "IG0300",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Fail a release for a fixable `HIGH` or `CRITICAL` vulnerability unless an approved, unexpired exception exists in repository configuration; this guide owns the authoritative severity threshold."
+  },
+  {
+   "id": "IG0301",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Store the scanner version, vulnerability database version or timestamp, image digest and result with the release evidence."
+  },
+  {
+   "id": "IG0302",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Record the local manifest digest before scanning and verify the same digest after upload."
+  },
+  {
+   "id": "IG0303",
+   "modality": "MUST NOT",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Arrange scheduled organization rescans from a digest-bound inventory of supported releases because vulnerability data changes without image changes. Mutable tags MUST NOT define this inventory. Scheduling and remediation ownership are external; [Rescans and remediation](#rescans-and-remediation) defines the procedure."
+  },
+  {
+   "id": "IG0304",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Use exactly one scanner stack as the authoritative release gate."
+  },
+  {
+   "id": "IG0305",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Cache the vulnerability database between runs, record the database version or timestamp with each scan result, and refresh a stale or corrupted cache instead of trusting it."
+  },
+  {
+   "id": "IG0306",
+   "modality": "SHOULD",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Scan the digest pulled from the registry after upload as a non-gating defense-in-depth check."
+  },
+  {
+   "id": "IG0307",
+   "modality": "MAY",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Run a non-gating second-opinion scan for audits."
+  },
+  {
+   "id": "IG0308",
+   "modality": "MUST NOT",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Run two scanners as parallel release gates."
+  },
+  {
+   "id": "IG0309",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Be stored in `conclear.toml` on the protected, reviewed source revision and receive the required security-owner review before merge."
+  },
+  {
+   "id": "IG0310",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Identify the image, component and advisory; explain the lack of remediation; assess reachability and exposure; list compensating controls; and name the accountable owner, expiry and review trigger."
+  },
+  {
+   "id": "IG0311",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "Be rejected by ConClear when it is malformed, expired or does not match the finding; ConClear records every applied exception in evidence."
+  },
+  {
+   "id": "IG0312",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "The remediation clock MUST start when the authoritative rescan result is recorded; it MUST NOT start from an informal local scanner invocation."
+  },
+  {
+   "id": "IG0313",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "A finding MUST be treated as fixable when the scanner reports a fixed version or other concrete remediation, unless triage shows it does not apply."
+  },
+  {
+   "id": "IG0314",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "ConClear MUST define and enforce a non-disableable maximum remediation deadline; repository configuration MAY shorten but MUST NOT extend it."
+  },
+  {
+   "id": "IG0315",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "Within the effective remediation deadline, the project owner MUST either release a newly qualified remediated digest or obtain and record an approved exception as defined above."
+  },
+  {
+   "id": "IG0316",
+   "modality": "MUST NOT",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "Immutable version and release tags MUST NOT be repointed for remediation. The registry owner enforces immutability; ConClear refuses a different existing digest and reports observed repointing as a policy failure."
+  },
+  {
+   "id": "IG0317",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "A convenience tag MUST advance only through ConClear's verified promotion, never as an unrecorded scan response."
+  },
+  {
+   "id": "IG0318",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "Evidence MUST identify the affected digest and the remediating digest or the applied exception."
+  },
+  {
+   "id": "IG0319",
+   "modality": "SHOULD",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "The project owner SHOULD publish an advisory when consumers are affected, identifying the affected digest and the remediating digest or exception."
+  },
+  {
+   "id": "IG0320",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "An SBOM-based rescan MUST be recorded as covering vulnerability matching against the retained package inventory only; it does not repeat the image filesystem's secret and configuration scans."
+  },
+  {
+   "id": "IG0321",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "When rescan configuration requires new secret or configuration scans, the rescan MUST fetch the image by digest and scan its content. An SBOM rescan is insufficient."
+  },
+  {
+   "id": "IG0322",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "The project triage owner MUST record each triage decision with the affected subject, the decision, its rationale, the accountable owner and the decision time."
+  },
+  {
+   "id": "IG0323",
+   "modality": "MUST",
+   "section": "Rescans and remediation",
+   "anchor": "rescans-and-remediation",
+   "text": "A changed triage state, remediating digest or approved exception MUST be recorded as a new rescan result that references the previous one; earlier results are never rewritten."
+  },
+  {
+   "id": "IG0324",
+   "modality": "MUST",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Each platform release manifest MUST have an SBOM in a finalized SPDX JSON format supported by the release toolchain. SPDX 2.3 JSON is the interoperability baseline. Generate it from the final local OCI layout so it describes the published filesystem and packages."
+  },
+  {
+   "id": "IG0325",
+   "modality": "MUST",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Generate one SBOM for each platform-specific manifest digest."
+  },
+  {
+   "id": "IG0326",
+   "modality": "MUST",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Record the actual SPDX specification version in the SBOM and release evidence."
+  },
+  {
+   "id": "IG0327",
+   "modality": "MUST",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Validate that the SBOM names or associates the exact subject digest."
+  },
+  {
+   "id": "IG0328",
+   "modality": "MUST",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Retain the SBOM for the supported lifetime of the release; the organization owns the retention configuration described in [Release evidence and retention](#release-evidence-and-retention)."
+  },
+  {
+   "id": "IG0329",
+   "modality": "MUST",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Attach the SBOM to the registry as a signed Cosign attestation."
+  },
+  {
+   "id": "IG0330",
+   "modality": "MUST",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Make the SBOM available to consumers without requiring access to the build workspace."
+  },
+  {
+   "id": "IG0331",
+   "modality": "SHOULD",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Also publish the raw SPDX JSON as a release artifact for tools that do not discover registry attestations."
+  },
+  {
+   "id": "IG0332",
+   "modality": "SHOULD",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Include application-language dependencies and files not owned by a distribution package."
+  },
+  {
+   "id": "IG0333",
+   "modality": "SHOULD",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Compare SBOM coverage with application dependency lock files."
+  },
+  {
+   "id": "IG0334",
+   "modality": "MAY",
+   "section": "SBOMs",
+   "anchor": "sboms",
+   "text": "Use a later finalized SPDX version when all release tools and required consumers support it. The workflow must generate, validate, rescan, attach, retrieve and interpret it without lossy conversion."
+  },
+  {
+   "id": "IG0335",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "[Release provenance](#release-provenance) MUST use an in-toto Statement with a SLSA Provenance v1 predicate."
+  },
+  {
+   "id": "IG0336",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "The authorized release environment MUST generate provenance from observed build data, not unchecked caller input. A qualification or release tool there MAY generate the predicate from the accepted candidate record."
+  },
+  {
+   "id": "IG0337",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Provenance MUST be generated from the accepted candidate record before publication, then validated and attached when the registry subject digest is known."
+  },
+  {
+   "id": "IG0338",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "A project MUST document its provenance generator integration. The trust root comes from maintainer-controlled release configuration and protected deployment configuration, not the project repository."
+  },
+  {
+   "id": "IG0339",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Every platform-specific subject digest and, where supported by the generator, the image-index digest."
+  },
+  {
+   "id": "IG0340",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "The canonical source repository and complete source revision."
+  },
+  {
+   "id": "IG0341",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "The Containerfile and relevant build configuration."
+  },
+  {
+   "id": "IG0342",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "External image materials by digest."
+  },
+  {
+   "id": "IG0343",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "The release-profile-selected builder identity, the embedded ConClear version and source revision, and the release-run identity."
+  },
+  {
+   "id": "IG0344",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Relevant build parameters without secret values."
+  },
+  {
+   "id": "IG0345",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "The reviewed source revision."
+  },
+  {
+   "id": "IG0346",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "The SLSA `runDetails.builder.id` identifies the complete build-platform trust domain and comes from maintainer-controlled release configuration. It MUST be a public, credential-free HTTPS URI without a query or fragment."
+  },
+  {
+   "id": "IG0347",
+   "modality": "SHOULD",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "The builder URI SHOULD resolve to documentation defining its scope, claimed SLSA Build level, provenance accuracy and completeness guarantees, tenant-controlled fields and any extension fields."
+  },
+  {
+   "id": "IG0348",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Security-significant execution modes with different trust boundaries or SLSA Build levels MUST use different builder identities. Ordinary CI environment variables MUST NOT select or override the builder identity."
+  },
+  {
+   "id": "IG0349",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Builder, signer and source or release-event identities MUST remain distinct and come from their authoritative sources; ConClear refuses to conflate them."
+  },
+  {
+   "id": "IG0350",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "ConClear MUST reject these identities when supplied by repository configuration, arbitrary command-line flags or ordinary environment overrides."
+  },
+  {
+   "id": "IG0351",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Consumers MUST accept only explicitly trusted signer and builder identity pairs."
+  },
+  {
+   "id": "IG0352",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Attach provenance to the registry as a signed Cosign attestation."
+  },
+  {
+   "id": "IG0353",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Verify subject digests and trusted builder identity before deployment or promotion."
+  },
+  {
+   "id": "IG0354",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Keep secret values out of provenance parameters and environment data."
+  },
+  {
+   "id": "IG0355",
+   "modality": "MUST",
+   "section": "Provenance",
+   "anchor": "provenance",
+   "text": "Describe the actual build; do not claim a SLSA build level unless every requirement of that level is implemented and audited."
+  },
+  {
+   "id": "IG0356",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Release signatures and signed attestations MUST use Cosign's supported default public [Sigstore transparency service](https://docs.sigstore.dev/logging/overview/) (Rekor)."
+  },
+  {
+   "id": "IG0357",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Signing MUST fail if log inclusion cannot be obtained, and release verification MUST verify that inclusion."
+  },
+  {
+   "id": "IG0358",
+   "modality": "MUST NOT",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Release commands MUST NOT disable transparency-log upload, use a no-log signing configuration or ignore transparency-log verification."
+  },
+  {
+   "id": "IG0359",
+   "modality": "MUST NOT",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "ConClear MUST NOT sign during checks, builds, tests, evidence generation or qualification; a workflow that does not publish a candidate therefore creates no transparency-log entry."
+  },
+  {
+   "id": "IG0360",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Sign the image-index digest and every platform-manifest digest in a multi-platform release."
+  },
+  {
+   "id": "IG0361",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Sign attestations and associate them with the exact subject digest."
+  },
+  {
+   "id": "IG0362",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Encrypt the private key at rest, restrict access to the authorized release process and maintain a tested backup, rotation and revocation procedure."
+  },
+  {
+   "id": "IG0363",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Verify signatures and attestations against the exact approved public key or managed-key identity."
+  },
+  {
+   "id": "IG0364",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Verify the signature, SBOM attestation, provenance attestation and their transparency-log inclusion before promotion or deployment."
+  },
+  {
+   "id": "IG0365",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Configure `containers-policy.json` or an equivalent admission policy to reject unsigned or untrusted production images; deployment environment owners enforce it."
+  },
+  {
+   "id": "IG0366",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Test trust-policy changes with both a trusted image and an intentionally untrusted image."
+  },
+  {
+   "id": "IG0367",
+   "modality": "SHOULD",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Move private-key operations to a KMS or HSM when that infrastructure is operationally available, so the release process receives permission to sign without receiving exportable private-key material."
+  },
+  {
+   "id": "IG0368",
+   "modality": "MUST NOT",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Sign a tag as though the tag were immutable."
+  },
+  {
+   "id": "IG0369",
+   "modality": "MUST NOT",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Treat successful cryptographic verification as authorization without checking repository, digest, signer identity and attestation predicate."
+  },
+  {
+   "id": "IG0370",
+   "modality": "MUST NOT",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Use the same long-lived signing key across unrelated trust domains."
+  },
+  {
+   "id": "IG0371",
+   "modality": "SHOULD",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Manual signing experiments are outside ConClear and SHOULD use a disposable test key, never the release key, and SHOULD stay out of the public log."
+  },
+  {
+   "id": "IG0372",
+   "modality": "MUST NOT",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "These opt-outs are test-only and MUST NOT be used for a release."
+  },
+  {
+   "id": "IG0373",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "The approved public key or KMS/HSM identity MUST come from maintainer-controlled release configuration for release verification and protected deployment configuration for admission. It MUST NOT come from the signature or repository under review."
+  },
+  {
+   "id": "IG0374",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "The private key or KMS/HSM signing permission MUST be available only to the authorized release process through a protected secret facility. Signing credentials MUST NOT be stored in repository files or ordinary environment configuration."
+  },
+  {
+   "id": "IG0375",
+   "modality": "MUST",
+   "section": "Signing and verification",
+   "anchor": "signing-and-verification",
+   "text": "Registry and deployment policy MUST reject a candidate until its signatures and required attestations have been verified; deployment environment owners enforce admission."
+  },
+  {
+   "id": "IG0376",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "After final verification, ConClear MUST generate a release-verification predicate for the signed release-verification attestation; it is not a source comment or committed file."
+  },
+  {
+   "id": "IG0377",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Released repository, digest and verdict."
+  },
+  {
+   "id": "IG0378",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "ConClear version and source revision."
+  },
+  {
+   "id": "IG0379",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Guide title, repository, path and revision."
+  },
+  {
+   "id": "IG0380",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "SHA-256 digest of `conclear.toml`."
+  },
+  {
+   "id": "IG0381",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Host architecture, ConClear run identity, builder identity and optional observed CI context."
+  },
+  {
+   "id": "IG0382",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Signer mode and identity."
+  },
+  {
+   "id": "IG0383",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Digests of verified evidence."
+  },
+  {
+   "id": "IG0384",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Identities MUST come from protected release configuration, embedded ConClear data and observations by the authorized release environment, not caller-supplied values."
+  },
+  {
+   "id": "IG0385",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "ConClear's release behavior MUST be independent of the command's caller."
+  },
+  {
+   "id": "IG0386",
+   "modality": "MAY",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "A protected release profile MAY configure CI context handling as `omit`, `observe` or `require`. `omit` does not inspect CI environment metadata. `observe` records context from a recognized provider when the observation is complete and agrees with the isolated checkout, but absence, malformed values or disagreement only produce a local diagnostic. `require` treats those conditions as an operational failure."
+  },
+  {
+   "id": "IG0387",
+   "modality": "MUST NOT",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Observed CI context MUST NOT override the isolated source repository or revision, ConClear run identity, builder identity, signing authority, artifact digest or release verdict."
+  },
+  {
+   "id": "IG0388",
+   "modality": "MUST NOT",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Repository configuration and arbitrary command-line input MUST NOT supply CI context."
+  },
+  {
+   "id": "IG0389",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Provider environment variables are ordinary process inputs and MUST be identified as such in public evidence."
+  },
+  {
+   "id": "IG0390",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "When present, public CI context MUST contain only a normalized provider identifier, `provider-environment` as its source, repository name, full source revision and provider run identifier."
+  },
+  {
+   "id": "IG0391",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "ConClear MUST verify that the repository and revision agree with the isolated checkout before including the context."
+  },
+  {
+   "id": "IG0392",
+   "modality": "MUST NOT",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Internal service origins and provider-specific details MAY appear in local diagnostics but MUST NOT enter signed public evidence."
+  },
+  {
+   "id": "IG0393",
+   "modality": "MAY",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "The release environment MAY retain the predicate file for diagnostics, but the registry attestation is authoritative."
+  },
+  {
+   "id": "IG0394",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "Release-time verification MUST retain the signed release-verification attestation before promotion."
+  },
+  {
+   "id": "IG0395",
+   "modality": "SHOULD",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "The organization SHOULD export or back up release evidence so it survives registry migration or loss for the supported release lifetime."
+  },
+  {
+   "id": "IG0396",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "A scheduled rescan MUST resolve the subject by digest, enumerate every platform in an index, retrieve each SBOM attestation from the registry and verify its subject, signer and transparency-log inclusion against the trust root before scanning."
+  },
+  {
+   "id": "IG0397",
+   "modality": "MUST",
+   "section": "Release evidence and retention",
+   "anchor": "release-evidence-and-retention",
+   "text": "An authoritative rescan result MUST record the scanner version; vulnerability database version or timestamp; guide revision; ConClear version and source revision; repository-configuration digest; rescan-job identity; subject digest; per-platform findings; triage state; and verdict."
+  },
+  {
+   "id": "IG0398",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Every image repository owner MUST automate linting, clean builds and runtime tests. A locally successful build is not release evidence."
+  },
+  {
+   "id": "IG0399",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Run Hadolint against every maintained Containerfile."
+  },
+  {
+   "id": "IG0400",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Document each disabled Hadolint rule next to the narrowest applicable configuration or suppression."
+  },
+  {
+   "id": "IG0401",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Build with a clean, rootless Buildah environment and pull the declared inputs."
+  },
+  {
+   "id": "IG0402",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Run application tests before constructing a release image."
+  },
+  {
+   "id": "IG0403",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Run a container smoke test as the configured user for every supported platform."
+  },
+  {
+   "id": "IG0404",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Test startup, readiness where applicable, graceful termination and expected exit status."
+  },
+  {
+   "id": "IG0405",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Run with a read-only root filesystem, all capabilities dropped and `no-new-privileges` during a hardening test."
+  },
+  {
+   "id": "IG0406",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Run with measured memory, CPU, PID and `nofile` limits during a resource-control test."
+  },
+  {
+   "id": "IG0407",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Inspect the final image configuration, layers, labels, user, entrypoint and platform metadata."
+  },
+  {
+   "id": "IG0408",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Runtime tests MUST use the manifest imported from the gated OCI layout through a digest-preserving path."
+  },
+  {
+   "id": "IG0409",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Before tests, the harness MUST recursively validate the layout's OCI descriptors and blobs, resolve the manifest from the runtime's containers-storage and compare it with the accepted layout digest."
+  },
+  {
+   "id": "IG0410",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Any digest mismatch during test preparation MUST be treated as an operational failure, never as a policy pass or a skipped check."
+  },
+  {
+   "id": "IG0411",
+   "modality": "SHOULD",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Use a dedicated smoke and structure test harness instead of unstructured shell. [Testinfra](https://testinfra.readthedocs.io/) is the default; [Goss](https://github.com/goss-org/goss) suits projects that prefer one Go binary and YAML over Python."
+  },
+  {
+   "id": "IG0412",
+   "modality": "SHOULD",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Test a clean no-cache build periodically in addition to ordinary cached builds."
+  },
+  {
+   "id": "IG0413",
+   "modality": "SHOULD",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Enforce a maximum image-size or layer regression threshold derived from the application, not a universal byte limit."
+  },
+  {
+   "id": "IG0414",
+   "modality": "SHOULD",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Test the published digest after pulling it from the registry."
+  },
+  {
+   "id": "IG0415",
+   "modality": "SHOULD",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Run scheduled rebuilds even when application source has not changed so base and package security updates are consumed; the organization owns the scheduling."
+  },
+  {
+   "id": "IG0416",
+   "modality": "MUST NOT",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "Add a Containerfile formatting tool to the pipeline."
+  },
+  {
+   "id": "IG0417",
+   "modality": "SHOULD",
+   "section": "Reference Containerfile",
+   "anchor": "reference-containerfile",
+   "text": "An application that compiles inside the Containerfile SHOULD add a pinned, approved `build` stage and copy only its verified output into this runtime stage."
+  },
+  {
+   "id": "IG0418",
+   "modality": "MUST",
+   "section": "Reference Containerfile",
+   "anchor": "reference-containerfile",
+   "text": "A dynamically linked application MUST instead use a compatible runtime base containing its required loader, libraries and runtime data."
+  },
+  {
+   "id": "IG0419",
+   "modality": "MUST",
+   "section": "Reference Containerfile",
+   "anchor": "reference-containerfile",
+   "text": "The repository owner MUST document how `build/example` is produced, tested and associated with the source revision recorded in the labels and provenance."
+  }
+ ],
+ "retired": []
+}

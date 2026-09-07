@@ -10,18 +10,16 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any, cast
 
-from conclear.catalog import load_catalog
-from conclear.conformance import MAX_GUIDE_BYTES
+from conclear.catalog import GUIDE_URL, load_catalog
 from conclear.errors import ConClearError, OperationalError
-from conclear.fileio import read_regular_file
+from conclear.guide_requirements import load_requirements, validate_guide_anchors
 from conclear.identity import GUIDE_REVISION, GUIDE_TITLE, VERSION
 from conclear.jsonutil import atomic_write_bytes, structure_depth_is_bounded
 
 INVENTORY_SCHEMA_VERSION = 1
 INVENTORY_PATH = Path(f"docs/guide-options-{VERSION}.md")
 _OPTION_ID = re.compile(r"GO[0-9]{4}")
-_ANCHOR = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-_EXPLICIT_ANCHOR = re.compile(r'<a id="([a-z0-9-]+)"></a>')
+_REQUIREMENT_ID = re.compile(r"IG[0-9]{4}")
 _STATUSES = frozenset({"supported", "manual", "unsupported", "out-of-scope"})
 
 
@@ -31,7 +29,7 @@ class GuideOption:
 
     option_id: str
     summary: str
-    anchor: str
+    requirements: tuple[str, ...]
     status: str
     rationale: str
     reconsider_when: str
@@ -45,7 +43,7 @@ class GuideOptionInventory:
     options: tuple[GuideOption, ...]
 
 
-def load_guide_options() -> GuideOptionInventory:
+def load_guide_options(*, enforce_revision: bool = True) -> GuideOptionInventory:
     """Load and validate the shipped guide-option inventory."""
     resource = files("conclear.data").joinpath("guide-options.json")
     try:
@@ -65,7 +63,7 @@ def load_guide_options() -> GuideOptionInventory:
         raise OperationalError("Unsupported guide-option inventory schema")
     if untrusted.get("productVersion") != VERSION:
         raise OperationalError("Guide-option product version does not match the build")
-    if untrusted.get("guideRevision") != GUIDE_REVISION:
+    if enforce_revision and untrusted.get("guideRevision") != GUIDE_REVISION:
         raise OperationalError("Guide-option revision does not match the build")
     raw_options = untrusted.get("options")
     if not isinstance(raw_options, list) or not raw_options:
@@ -76,43 +74,29 @@ def load_guide_options() -> GuideOptionInventory:
         raise OperationalError("Guide options must be ordered by identifier")
     if len(identifiers) != len(set(identifiers)):
         raise OperationalError("Guide-option identifiers must be unique")
-    active_checks = {item.check_id for item in load_catalog().checks}
-    unknown_checks = sorted(
-        {check for option in options for check in option.checks} - active_checks
-    )
-    if unknown_checks:
-        raise OperationalError(
-            "Guide options reference unknown checks: " + ", ".join(unknown_checks)
+    if enforce_revision:
+        active_checks = {item.check_id for item in load_catalog().checks}
+        unknown_checks = sorted(
+            {check for option in options for check in option.checks} - active_checks
         )
+        if unknown_checks:
+            raise OperationalError(
+                "Guide options reference unknown checks: " + ", ".join(unknown_checks)
+            )
+        known = set(load_requirements().by_id())
+        unknown = sorted(
+            {item for option in options for item in option.requirements} - known
+        )
+        if unknown:
+            raise OperationalError(
+                "Guide options reference unknown requirements: " + ", ".join(unknown)
+            )
     return GuideOptionInventory(options)
-
-
-def validate_guide_option_anchors(
-    path: Path, inventory: GuideOptionInventory | None = None
-) -> None:
-    """Require every option anchor in the exact selected guide file."""
-    try:
-        guide = read_regular_file(
-            path, maximum_bytes=MAX_GUIDE_BYTES, label="OCI guide"
-        ).decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise OperationalError("OCI guide is not UTF-8") from exc
-    anchors = frozenset(_EXPLICIT_ANCHOR.findall(guide))
-    selected = inventory or load_guide_options()
-    missing = sorted({item.anchor for item in selected.options} - anchors)
-    if missing:
-        raise OperationalError(
-            "Guide options reference missing OCI guide anchors: " + ", ".join(missing)
-        )
 
 
 def render_guide_options(inventory: GuideOptionInventory | None = None) -> str:
     """Render deterministic guide-option documentation."""
     selected = inventory or load_guide_options()
-    guide_url = (
-        "https://github.com/foundata/guidelines/blob/"
-        f"{GUIDE_REVISION}/oci-container-image-guide.md"
-    )
     lines = [
         f"# ConClear {VERSION} guide-option support",
         "",
@@ -121,18 +105,20 @@ def render_guide_options(inventory: GuideOptionInventory | None = None) -> str:
         *_wrap(
             "This inventory records guide choices whose availability is not fully "
             f"visible from the check catalog. It is pinned to [{GUIDE_TITLE}]"
-            f"({guide_url}) at revision `{GUIDE_REVISION}`."
+            f"({GUIDE_URL}) at revision `{GUIDE_REVISION}`. Each entry names the "
+            "guide requirements it concerns; the conformance document links every "
+            "requirement identifier to the guide."
         ),
     ]
     for option in selected.options:
         checks = ", ".join(f"`{item}`" for item in option.checks) or "None"
+        requirements = ", ".join(f"`{item}`" for item in option.requirements)
         lines.extend(
             [
                 "",
                 f"## {option.option_id}: {option.summary}",
                 "",
-                "- **Guide section:**",
-                f"  [{option.anchor}]({guide_url}#{option.anchor})",
+                *_field("Guide requirements", requirements),
                 *_field("Status", f"`{option.status}`"),
                 *_field("Checks", checks),
                 *_field("Rationale", option.rationale),
@@ -155,7 +141,7 @@ def main() -> int:
     try:
         inventory = load_guide_options()
         if arguments.guide is not None:
-            validate_guide_option_anchors(arguments.guide, inventory)
+            validate_guide_anchors(arguments.guide)
         expected = render_guide_options(inventory)
     except ConClearError as exc:
         print(str(exc), file=sys.stderr)
@@ -174,7 +160,7 @@ def _option(value: object) -> GuideOption:
     fields = {
         "id",
         "summary",
-        "anchor",
+        "requirements",
         "status",
         "rationale",
         "reconsiderWhen",
@@ -184,19 +170,23 @@ def _option(value: object) -> GuideOption:
         raise OperationalError("Guide-option inventory contains a malformed entry")
     item = cast(dict[str, object], value)
     option_id = _string(item, "id")
-    anchor = _string(item, "anchor")
     status = _string(item, "status")
     if _OPTION_ID.fullmatch(option_id) is None:
         raise OperationalError("Guide-option identifiers must match GOnnnn")
-    if _ANCHOR.fullmatch(anchor) is None:
-        raise OperationalError("Guide-option anchor is malformed")
     if status not in _STATUSES:
         raise OperationalError("Guide-option status is unsupported")
+    requirements = _strings(item.get("requirements"))
+    if not requirements or any(
+        _REQUIREMENT_ID.fullmatch(entry) is None for entry in requirements
+    ):
+        raise OperationalError("Guide-option requirements must match IGnnnn")
+    if list(requirements) != sorted(requirements):
+        raise OperationalError("Guide-option requirements must be sorted")
     checks = _strings(item.get("checks"))
     return GuideOption(
         option_id=option_id,
         summary=_string(item, "summary"),
-        anchor=anchor,
+        requirements=requirements,
         status=status,
         rationale=_string(item, "rationale"),
         reconsider_when=_string(item, "reconsiderWhen"),
@@ -213,10 +203,10 @@ def _string(value: dict[str, object], key: str) -> str:
 
 def _strings(value: object) -> tuple[str, ...]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise OperationalError("Guide-option checks are malformed")
+        raise OperationalError("Guide-option lists are malformed")
     result = tuple(cast(str, item) for item in value)
     if len(result) != len(set(result)):
-        raise OperationalError("Guide-option checks contain duplicates")
+        raise OperationalError("Guide-option lists contain duplicates")
     return result
 
 

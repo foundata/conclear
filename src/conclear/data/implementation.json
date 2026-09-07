@@ -61,12 +61,13 @@
     },
     {
       "id": "IP0007",
-      "summary": "Embed exact ConClear and guide identities and maintain stable guide-mapped check identifiers",
-      "implementation": ["src/conclear/identity.py", "src/conclear/catalog.py", "src/conclear/conformance.py"],
+      "summary": "Embed exact ConClear and guide identities, map stable check identifiers to guide requirements and state a status for every requirement",
+      "implementation": ["src/conclear/identity.py", "src/conclear/catalog.py", "src/conclear/conformance.py", "src/conclear/guide_requirements.py"],
       "tests": [
         {"path": "tests/unit/test_identity.py", "tier": "unit"},
         {"path": "tests/unit/test_catalog.py", "tier": "unit"},
-        {"path": "tests/unit/test_catalog_loading.py", "tier": "unit"}
+        {"path": "tests/unit/test_catalog_loading.py", "tier": "unit"},
+        {"path": "tests/unit/test_guide_requirements.py", "tier": "unit"}
       ]
     },
     {

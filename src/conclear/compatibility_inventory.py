@@ -88,7 +88,7 @@ def render_inventory() -> dict[str, object]:
                     "id": check.check_id,
                     "behavior": check.behavior,
                     "severity": check.severity,
-                    "anchor": check.anchor,
+                    "requirements": list(check.requirements),
                 }
                 for check in catalog.checks
             ],

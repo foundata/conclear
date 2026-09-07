@@ -5,12 +5,13 @@
 This inventory records guide choices whose availability is not fully visible
 from the check catalog. It is pinned to
 [OCI container image build and release guide](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md)
-at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
+at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`. Each entry names the
+guide requirements it concerns; the conformance document links every requirement
+identifier to the guide.
 
 ## GO0001: Reviewed container UID 0 requirement
 
-- **Guide section:**
-  [users-and-runtime-filesystem](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#users-and-runtime-filesystem)
+- **Guide requirements:** `IG0207`, `IG0211`, `IG0219`
 - **Status:** `supported`
 - **Checks:** `CC0110`, `CC0401`
 - **Rationale:** ConClear requires a source-reviewed rationale, owner and review
@@ -21,8 +22,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0002: Systemd as the declared container supervisor
 
-- **Guide section:**
-  [entrypoint-command-and-signal-handling](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#entrypoint-command-and-signal-handling)
+- **Guide requirements:** `IG0223`, `IG0224`, `IG0229`
 - **Status:** `supported`
 - **Checks:** `CC0115`, `CC0403`
 - **Rationale:** The systemd profile verifies PID 1, manager access, required
@@ -33,8 +33,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0003: Docker daemon, BuildKit and Docker compatibility
 
-- **Guide section:**
-  [supported-tools-syntax-and-platforms](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#supported-tools-syntax-and-platforms)
+- **Guide requirements:** `IG0030`, `IG0031`, `IG0032`, `IG0057`
 - **Status:** `out-of-scope`
 - **Checks:** `CC0103`
 - **Rationale:** ConClear implements the guide's OCI, Buildah and rootless
@@ -44,8 +43,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0004: Release registries other than Quay
 
-- **Guide section:**
-  [registries-and-image-names](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#registries-and-image-names)
+- **Guide requirements:** `IG0061`, `IG0067`
 - **Status:** `unsupported`
 - **Checks:** None
 - **Rationale:** Provider-neutral checks and qualification work for other
@@ -56,8 +54,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0005: Privileged and host-integrated containers
 
-- **Guide section:**
-  [users-and-runtime-filesystem](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#users-and-runtime-filesystem)
+- **Guide requirements:** `IG0211`
 - **Status:** `unsupported`
 - **Checks:** `CC0401`
 - **Rationale:** These controls exceed ConClear's rootless qualification
@@ -68,8 +65,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0006: Scanner stacks other than Trivy
 
-- **Guide section:**
-  [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#vulnerability-and-configuration-scanning)
+- **Guide requirements:** `IG0304`, `IG0307`, `IG0308`
 - **Status:** `unsupported`
 - **Checks:** `CC0501`, `CC0505`
 - **Rationale:** One Trivy result and its validated database snapshot are the
@@ -79,8 +75,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0007: Finalized SPDX versions newer than SPDX 2.3
 
-- **Guide section:**
-  [sboms](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#sboms)
+- **Guide requirements:** `IG0324`, `IG0334`
 - **Status:** `unsupported`
 - **Checks:** `CC0504`
 - **Rationale:** ConClear 1.0.0 generates, validates, records, rescans and
@@ -90,8 +85,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0008: KMS or HSM signing keys
 
-- **Guide section:**
-  [signing-and-verification](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#signing-and-verification)
+- **Guide requirements:** `IG0363`, `IG0367`
 - **Status:** `unsupported`
 - **Checks:** None
 - **Rationale:** The 1.0.0 release profile supports an approved encrypted Cosign
@@ -102,8 +96,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0009: Deployment admission and containers-policy configuration
 
-- **Guide section:**
-  [signing-and-verification](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#signing-and-verification)
+- **Guide requirements:** `IG0088`, `IG0365`, `IG0366`, `IG0375`
 - **Status:** `out-of-scope`
 - **Checks:** `CC9005`
 - **Rationale:** ConClear produces and verifies release evidence; deployment
@@ -113,8 +106,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0010: Rootful build or runtime execution
 
-- **Guide section:**
-  [linting-and-testing](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#linting-and-testing)
+- **Guide requirements:** `IG0020`, `IG0401`
 - **Status:** `unsupported`
 - **Checks:** `CC0301`, `CC0401`
 - **Rationale:** Buildah and Podman must report rootless execution; container
@@ -124,8 +116,7 @@ at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`.
 
 ## GO0011: Base-image lifecycle suitability
 
-- **Guide section:**
-  [choosing-a-base-image](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md#choosing-a-base-image)
+- **Guide requirements:** `IG0098`, `IG0100`
 - **Status:** `manual`
 - **Checks:** `CC9001`
 - **Rationale:** ConClear verifies exact image references and observations but

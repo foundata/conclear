@@ -8,10 +8,10 @@ from typing import Any
 import pytest
 
 import conclear.catalog as catalog_module
-import conclear.conformance as conformance_module
 from conclear.catalog import load_catalog, render_conformance
-from conclear.conformance import main, validate_guide_anchors
+from conclear.conformance import main
 from conclear.errors import OperationalError
+from conclear.guide_requirements import validate_guide_anchors
 from conclear.identity import GUIDE_REVISION
 
 
@@ -38,12 +38,16 @@ def _catalog(**changes: Any) -> dict[str, Any]:
                 "summary": "Validate configuration",
                 "severity": "error",
                 "behavior": "automated",
-                "anchor": "build-context",
+                "requirements": ["IG0139"],
             }
         ],
     }
     value.update(changes)
     return value
+
+
+def _check(**changes: Any) -> dict[str, Any]:
+    return {**_catalog()["checks"][0], **changes}
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, value: object) -> None:
@@ -61,9 +65,17 @@ def _install(monkeypatch: pytest.MonkeyPatch, value: object) -> None:
         (_catalog(checks={}), "arrays are malformed"),
         (_catalog(checks=[1]), "malformed check"),
         (_catalog(checks=[{"id": "CC0001"}]), "incomplete check"),
+        (_catalog(checks=[_check(summary="")]), "non-empty string"),
+        (_catalog(checks=[_check(requirements=[])]), "must be a non-empty list"),
+        (_catalog(checks=[_check(requirements="IG0139")]), "must be a non-empty list"),
+        (_catalog(checks=[_check(requirements=["ig1"])]), "must match IGnnnn"),
         (
-            _catalog(checks=[{**_catalog()["checks"][0], "summary": ""}]),
-            "non-empty string",
+            _catalog(checks=[_check(requirements=["IG0140", "IG0139"])]),
+            "unique and sorted",
+        ),
+        (
+            _catalog(checks=[_check(requirements=["IG9999"])]),
+            "references unknown requirements: IG9999",
         ),
         (_catalog(retired=[1]), "malformed retired check"),
         (_catalog(retired=[{"id": "cc1", "summary": "x"}]), "must match CCnnnn"),
@@ -83,6 +95,17 @@ def test_catalog_corruption_is_an_operational_failure(
         load_catalog()
 
 
+def test_lenient_loading_skips_revision_and_requirement_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install(
+        monkeypatch,
+        _catalog(guideRevision="a" * 40, checks=[_check(requirements=["IG9999"])]),
+    )
+
+    assert load_catalog(enforce_revision=False).checks[0].requirements == ("IG9999",)
+
+
 def test_valid_catalog_renders_retired_and_limit_sections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -92,11 +115,24 @@ def test_valid_catalog_renders_retired_and_limit_sections(
     )
 
     catalog = load_catalog()
-    rendered = render_conformance(catalog)
+    rendered = render_conformance(catalog, statuses=())
 
     assert catalog.retired[0].check_id == "CC0999"
     assert "| `CC0999` | Retired rule       |" in rendered
     assert "| Pin divergence |  7 days |" in rendered
+    assert (
+        "| `CC0001` | automated | error    | Validate configuration | `IG0139`           |"
+        in rendered
+    )
+
+
+def test_partial_catalog_cannot_render_complete_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install(monkeypatch, _catalog())
+
+    with pytest.raises(OperationalError, match="without a coverage status"):
+        render_conformance(load_catalog())
 
 
 def test_guide_anchor_validation_reports_missing_anchors(tmp_path: Path) -> None:
@@ -140,4 +176,3 @@ def test_conformance_entry_point_generates_checks_and_reports_failures(
         ["conformance", "--guide", str(guide), "--output", str(output)],
     )
     assert main() == 1
-    assert conformance_module.MAX_GUIDE_BYTES > 0
