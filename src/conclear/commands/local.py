@@ -15,7 +15,7 @@ from conclear.database import (
     trivy_cache_root,
 )
 from conclear.dependencies import command_tools
-from conclear.pins import PinStore, check_image_pins
+from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import utc_now
 from conclear.release_profile import ReleaseProfile
@@ -25,6 +25,7 @@ from conclear.services.local_phases import (
     load_build_evidence,
     write_build_evidence,
 )
+from conclear.services.preflight import preflight_image_closure
 from conclear.services.qualification import (
     build_platform,
     build_test_dependencies,
@@ -258,26 +259,24 @@ def qualify_command(
     with owned_run(source_run.workspace):
         image = source_run.repository.release_image(image_id)
         inputs = _inputs(source_run, platform_text, selected)
-        preflight = check_image(image, source_run.runtime.hadolint())
-        resolver = AuthenticatedPinResolver(
-            source_run.runtime, None if selected is None else selected.auth_file
+        preflight = preflight_image_closure(
+            source_run.repository,
+            image,
+            hadolint=source_run.runtime.hadolint(),
+            store=PinStore(state_home()),
+            resolver=AuthenticatedPinResolver(
+                source_run.runtime, None if selected is None else selected.auth_file
+            ),
+            now=utc_now(),
         )
-        pin_observations = check_image_pins(
-            PinStore(state_home()), image, resolver=resolver, now=utc_now()
-        )
-        if not preflight.accepted or any(
-            not item.accepted for item in pin_observations
-        ):
+        if not preflight.accepted:
             source_run.workspace.transition(RunState.REJECTED)
-            findings = preflight.findings + tuple(
-                finding for item in pin_observations for finding in item.findings
-            )
             emit(
                 CommandResult(
                     "qualify",
                     ResultStatus.RULE_REJECTION,
                     "Qualification preflight was rejected",
-                    findings=findings,
+                    findings=preflight.findings,
                     data={"runId": source_run.workspace.run_id},
                 ),
                 output_format,
@@ -307,8 +306,7 @@ def qualify_command(
             hooks=hooks,
             scanner=source_run.runtime.trivy(),
             database=database,
-            pin_observations=pin_observations,
-            preflight_findings=preflight.findings,
+            preflight=preflight,
             now=utc_now(),
         )
         target = {

@@ -18,6 +18,7 @@ import conclear.commands.local as local_commands
 import conclear.commands.maintenance as maintenance_commands
 import conclear.commands.remote as remote_commands
 import conclear.commands.transport as transport_commands
+import conclear.services.preflight as preflight_module
 import conclear.services.release as release_module
 from conclear.cli import main
 from conclear.config import load_repository_config
@@ -245,7 +246,7 @@ def test_build_rejects_platform_that_the_image_does_not_declare(
 
 @pytest.mark.parametrize(
     ("command", "fake"),
-    [("build", "build_platform"), ("qualify", "check_image")],
+    [("build", "build_platform"), ("qualify", "preflight_image_closure")],
 )
 def test_run_creating_commands_name_their_run_when_a_phase_fails(
     repository_factory: Callable[..., Path],
@@ -359,13 +360,17 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
         selected_databases.append(str(expected_digest))
         return SimpleNamespace(digest=str(expected_digest))
 
-    _local(
-        monkeypatch,
-        run,
-        check_image=lambda image, hadolint: SimpleNamespace(
+    monkeypatch.setattr(
+        preflight_module,
+        "check_image",
+        lambda image, hadolint: SimpleNamespace(
             accepted=preflight_accepted,
             findings=() if preflight_accepted else (ERROR,),
         ),
+    )
+    _local(
+        monkeypatch,
+        run,
         PinStore=lambda home: _PinStore(accepted=pins_accepted),
         AuthenticatedPinResolver=lambda runtime, auth_file: object(),
         select_database_by_digest=by_digest,

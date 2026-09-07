@@ -83,9 +83,10 @@
     {
       "id": "IP0009",
       "summary": "Materialize typed fixtures, generated outputs, preparation steps and exact same-revision test-image dependencies",
-      "implementation": ["src/conclear/test_inputs.py", "src/conclear/services/qualification_inputs.py", "src/conclear/services/runtime_tests.py"],
+      "implementation": ["src/conclear/test_inputs.py", "src/conclear/services/qualification_inputs.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/preflight.py"],
       "tests": [
         {"path": "tests/unit/test_test_inputs.py", "tier": "unit"},
+        {"path": "tests/unit/test_preflight.py", "tier": "unit"},
         {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
         {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}
       ]

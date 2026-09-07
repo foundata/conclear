@@ -33,7 +33,7 @@ from conclear.errors import (
     bind_failed_run,
 )
 from conclear.jsonutil import atomic_write_json, sha256_bytes
-from conclear.pins import PinResolver, PinStore, check_image_pins
+from conclear.pins import PinResolver, PinStore
 from conclear.presentation import Finding
 from conclear.provenance import ProvenanceInput, generate_provenance
 from conclear.records import SourceIdentity, Verdict, parse_timestamp, utc_now
@@ -41,9 +41,9 @@ from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
 from conclear.services.assembly import assemble_candidate
 from conclear.services.attestation import attest_candidate
-from conclear.services.checking import check_image
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.cleanup import cleanup_run
+from conclear.services.preflight import preflight_image_closure
 from conclear.services.promotion import PromotionResult, promote_candidate
 from conclear.services.publication import publish_candidate
 from conclear.services.qualification import qualify_platform
@@ -385,28 +385,29 @@ def _qualify_release(
     now_factory: Callable[[], datetime],
 ) -> None:
     image = repository.release_image(request.image_id)
-    preflight = check_image(image, runtime.hadolint())
-    if not preflight.accepted:
-        raise RuleRejectionError(
-            "Static image checks rejected the release",
-            code=next(
-                item.check_id for item in preflight.findings if item.severity == "error"
-            ),
-        )
-    pin_resolver = AuthenticatedPinResolver(runtime, request.profile.auth_file)
-    pin_observations = check_image_pins(
-        PinStore(request.state_home), image, resolver=pin_resolver, now=now_factory()
+    preflight = preflight_image_closure(
+        repository,
+        image,
+        hadolint=runtime.hadolint(),
+        store=PinStore(request.state_home),
+        resolver=AuthenticatedPinResolver(runtime, request.profile.auth_file),
+        now=now_factory(),
     )
-    if any(not item.accepted for item in pin_observations):
-        rejecting_pin = next(
-            finding
-            for observation in pin_observations
-            for finding in observation.findings
-            if finding.severity == "error"
+    static_rejection = next(
+        (item for item in preflight.static_findings if item.severity == "error"),
+        None,
+    )
+    if static_rejection is not None:
+        raise RuleRejectionError(
+            "Static image checks rejected the release", code=static_rejection.check_id
         )
+    pin_rejection = next(
+        (item for item in preflight.pin_findings if item.severity == "error"), None
+    )
+    if pin_rejection is not None:
         raise RuleRejectionError(
             "External image pin checks rejected the release",
-            code=rejecting_pin.check_id,
+            code=pin_rejection.check_id,
         )
     database = select_fresh_database(
         runtime.trivy(),
@@ -446,8 +447,7 @@ def _qualify_release(
             hooks=hooks,
             scanner=runtime.trivy(),
             database=database,
-            pin_observations=pin_observations,
-            preflight_findings=preflight.findings,
+            preflight=preflight,
             now=now_factory(),
         )
         if result.verdict is Verdict.REJECTED:

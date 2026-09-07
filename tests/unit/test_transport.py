@@ -55,8 +55,8 @@ from tests.unit.test_qualification import (
     Runtime,
     Scanner,
     _register_arm64_handler,
+    closure_preflight,
     hook_runner,
-    pin_observations,
 )
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -171,7 +171,7 @@ def qualify_worker(
         hooks=hook_runner(inputs),
         scanner=Scanner(),
         database=DatabaseObservation(database_path, database_digest, DATABASE_METADATA),
-        pin_observations=pin_observations(inputs),
+        preflight=closure_preflight(inputs),
         now=NOW,
     )
     workspace.transition(

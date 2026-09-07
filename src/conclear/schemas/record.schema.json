@@ -358,13 +358,19 @@
     "testImageDependency": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageId", "platform", "manifestDigest", "layoutDescriptor", "sourceRevision", "testResultDigest"],
+      "required": ["imageId", "platform", "manifestDigest", "layoutDescriptor", "sourceRevision", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "testResultDigest"],
       "properties": {
         "imageId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
         "platform": {"$ref": "#/$defs/platform"},
         "manifestDigest": {"$ref": "#/$defs/digest"},
         "layoutDescriptor": {"$ref": "#/$defs/descriptor"},
         "sourceRevision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "containerfileDigest": {"$ref": "#/$defs/digest"},
+        "contextDigest": {"$ref": "#/$defs/digest"},
+        "buildArguments": {"type": "object", "additionalProperties": {"type": "string"}},
+        "externalImages": {"type": "array", "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}},
+        "pinObservations": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/pinObservation"}},
+        "effectiveLimits": {"$ref": "#/$defs/effectiveLimits"},
         "testResultDigest": {"$ref": "#/$defs/digest"}
       }
     },

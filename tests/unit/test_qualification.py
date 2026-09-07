@@ -16,7 +16,7 @@ from conclear.adapters.podman import (
 )
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.artifacts import qualification_transport
-from conclear.config import SYSTEMD_STOP_SIGNAL, load_repository_config
+from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig, load_repository_config
 from conclear.errors import CommandTimeoutError, OperationalError, RuleRejectionError
 from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
@@ -28,6 +28,7 @@ from conclear.jsonutil import (
 )
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, validate_layout
 from conclear.pins import PinObservation
+from conclear.presentation import Finding
 from conclear.process import CommandRequest, ProcessResult
 from conclear.records import (
     SourceIdentity,
@@ -35,6 +36,7 @@ from conclear.records import (
     Verdict,
     validate_record,
 )
+from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification import (
     build_platform,
     build_test_dependencies,
@@ -544,22 +546,33 @@ nofile = 1024
     path.write_text(content, encoding="utf-8")
 
 
-def pin_observations(
+def closure_preflight(
     value: QualificationInputs,
     *,
     checked_at: datetime = datetime(2026, 1, 1, tzinfo=UTC),
-) -> tuple[PinObservation, ...]:
-    reference = value.image.pins[0].reference
-    assert reference.digest is not None
-    return (
-        PinObservation(
-            reference=reference,
-            pinned_digest=reference.digest,
-            observed_digest=reference.digest,
-            checked_at=checked_at,
-            divergence_since=None,
-            history_initialized=True,
-            findings=(),
+) -> ClosurePreflight:
+    def preflight(image: ImageConfig) -> ImagePreflight:
+        observations: list[PinObservation] = []
+        for pin in image.pins:
+            assert pin.reference.digest is not None
+            observations.append(
+                PinObservation(
+                    reference=pin.reference,
+                    pinned_digest=pin.reference.digest,
+                    observed_digest=pin.reference.digest,
+                    checked_at=checked_at,
+                    divergence_since=None,
+                    history_initialized=True,
+                    findings=(),
+                )
+            )
+        return ImagePreflight(image, (), tuple(observations))
+
+    return ClosurePreflight(
+        primary=preflight(value.image),
+        dependencies=tuple(
+            preflight(item)
+            for item in value.repository.test_dependencies(value.image.image_id)
         ),
     )
 
@@ -610,7 +623,7 @@ def test_qualification_writes_accepted_digest_bound_record(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
@@ -619,7 +632,7 @@ def test_qualification_writes_accepted_digest_bound_record(
     record = json.loads(result.record_path.read_text(encoding="utf-8"))
     validate_record(record)
     assert record["payload"]["pinObservations"] == [
-        pin_observations(value)[0].to_dict()
+        closure_preflight(value).primary.pin_observations[0].to_dict()
     ]
     transport = qualification_transport(value.workspace, value.image, value.platform)
     assert transport.payload_paths[0] == (
@@ -680,7 +693,7 @@ def test_foreign_platform_without_binfmt_handler_is_not_qualified(
             database=DatabaseObservation(
                 database_path, "sha256:" + "e" * 64, DATABASE_METADATA
             ),
-            pin_observations=pin_observations(value),
+            preflight=closure_preflight(value),
             now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
         )
 
@@ -718,7 +731,7 @@ def test_foreign_build_and_test_record_the_same_qemu_execution_mode(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
@@ -761,7 +774,7 @@ def test_emulated_qualification_is_accepted_without_justification(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
@@ -803,7 +816,7 @@ def test_configured_native_platform_rejects_emulated_runtime_tests(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
@@ -829,7 +842,7 @@ def test_qualification_payload_tampering_is_a_catalogued_rule_rejection(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
     sbom_path = value.workspace.root / "exports" / "sbom" / "linux-amd64.spdx.json"
@@ -857,7 +870,7 @@ def test_qualification_records_label_rule_rejection(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
@@ -1141,7 +1154,7 @@ def test_systemd_qualification_records_review_and_lifecycle_contract(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
@@ -1396,7 +1409,7 @@ def test_qualification_rejects_stale_pin_resolution(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value, checked_at=checked_at),
+        preflight=closure_preflight(value, checked_at=checked_at),
         now=checked_at + timedelta(hours=25),
     )
 
@@ -1485,7 +1498,7 @@ def test_qualification_record_binds_test_inputs_and_sibling_result(
         database=DatabaseObservation(
             database_path, "sha256:" + "e" * 64, DATABASE_METADATA
         ),
-        pin_observations=pin_observations(value),
+        preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
@@ -1497,6 +1510,12 @@ def test_qualification_record_binds_test_inputs_and_sibling_result(
     assert dependency["imageId"] == "generator"
     assert dependency["sourceRevision"] == value.source.revision
     assert dependency["testResultDigest"] in payload["payloadDigests"]
+    assert dependency["containerfileDigest"] == payload["containerfileDigest"]
+    assert dependency["contextDigest"] == payload["contextDigest"]
+    assert dependency["buildArguments"]["IMAGE_REVISION"] == value.source.revision
+    assert dependency["externalImages"] == []
+    assert dependency["pinObservations"] == []
+    assert dependency["effectiveLimits"] == payload["effectiveLimits"]
     secret = next(item for item in payload["testInputs"]["outputs"] if item["secret"])
     assert "digest" not in secret
 
@@ -1615,6 +1634,117 @@ def test_preparation_timeout_preserves_failure_and_cleans_private_inputs(
     assert statuses["podman-preparation-app-linux-amd64-1"] is ResourceStatus.REMOVED
     assert statuses["podman-app-linux-amd64"] is ResourceStatus.REMOVED
     assert statuses["test-inputs-app-linux-amd64"] is ResourceStatus.REMOVED
+
+
+class RefusingBuilder:
+    def build(self, **values: Any) -> BuildObservation:
+        raise AssertionError("a build started without an accepted closure preflight")
+
+
+def test_qualification_requires_a_preflight_covering_the_test_dependencies(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+    complete = closure_preflight(value)
+
+    with pytest.raises(OperationalError, match="test dependencies"):
+        qualify_platform(
+            value,
+            builder=RefusingBuilder(),
+            runtime=Runtime(),
+            hooks=hook_runner(value),
+            scanner=Scanner(),
+            database=DatabaseObservation(
+                database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+            ),
+            preflight=ClosurePreflight(primary=complete.primary, dependencies=()),
+            now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        )
+
+
+def test_rejected_dependency_preflight_starts_no_build(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+    complete = closure_preflight(value)
+    rejected = replace(
+        complete.dependencies[0],
+        findings=(Finding("CC0203", "error", "Declared pin is not used: x"),),
+    )
+
+    with pytest.raises(OperationalError, match="rejected preflight"):
+        qualify_platform(
+            value,
+            builder=RefusingBuilder(),
+            runtime=Runtime(),
+            hooks=hook_runner(value),
+            scanner=Scanner(),
+            database=DatabaseObservation(
+                database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+            ),
+            preflight=ClosurePreflight(
+                primary=complete.primary, dependencies=(rejected,)
+            ),
+            now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        )
+    assert not list((value.workspace.root / "records").glob("platform-qualification-*"))
+
+
+def test_dependency_pins_are_evaluated_under_their_own_freshness_limit(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    reference = "quay.io/example/base:1@sha256:" + "a" * 64
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + f"""
+[[images.pins]]
+reference = "{reference}"
+tag_intent = "immutable-version"
+
+[images.limits]
+pin_freshness = "1h"
+""",
+        encoding="utf-8",
+    )
+    value = inputs(root, tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+    checked_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=configured_hook_runner(value, CapturingRunner()),
+        scanner=Scanner(),
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        preflight=closure_preflight(value, checked_at=checked_at),
+        now=checked_at + timedelta(hours=2),
+    )
+
+    assert result.verdict is Verdict.REJECTED
+    stale = [item for item in result.findings if item.check_id == "CC0204"]
+    assert [item.location for item in stale] == [reference]
+    payload = json.loads(result.record_path.read_text(encoding="utf-8"))["payload"]
+    assert payload["effectiveLimits"]["pinFreshnessSeconds"] == 86400
+    dependency = payload["testImageDependencies"][0]
+    assert dependency["imageId"] == "generator"
+    assert dependency["effectiveLimits"]["pinFreshnessSeconds"] == 3600
+    assert dependency["externalImages"] == [reference]
+    assert dependency["pinObservations"][0]["reference"] == reference
 
 
 def test_incomplete_dependency_build_set_fails_before_runtime_mutation(

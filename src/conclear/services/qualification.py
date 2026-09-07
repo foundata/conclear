@@ -1,10 +1,12 @@
 """Build, evidence and platform qualification pipeline.
 
-`qualify_platform` runs the local gates for one platform in order: build the
-layout, build any sibling test dependencies, hand the result to the runtime
-test session in `conclear.services.runtime_tests`, generate scans and the
-SPDX inventory, then write one public platform qualification record whose
-verdict follows from every collected finding.
+`qualify_platform` runs the local gates for one platform in order: require an
+accepted `ClosurePreflight` that covers the image and every test dependency,
+build the layout, build any sibling test dependencies, hand the result to the
+runtime test session in `conclear.services.runtime_tests`, generate scans and
+the SPDX inventory, then write one public platform qualification record whose
+verdict follows from every collected finding, including those of the
+dependency closure.
 """
 
 from dataclasses import dataclass, replace
@@ -31,6 +33,7 @@ from conclear.records import (
     format_timestamp,
 )
 from conclear.scan_policy import AppliedException, evaluate_trivy_report
+from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification_inputs import (
     BuildEvidence,
     QualificationInputs,
@@ -296,12 +299,12 @@ def qualify_platform(
     hooks: HookRunner,
     scanner: Scanner,
     database: DatabaseObservation,
-    pin_observations: tuple[PinObservation, ...],
-    preflight_findings: tuple[Finding, ...] = (),
+    preflight: ClosurePreflight,
     now: datetime,
 ) -> QualificationResult:
     """Execute the local platform pipeline and store one public qualification."""
-    if any(finding.severity == "error" for finding in preflight_findings):
+    _require_closure_preflight(inputs, preflight)
+    if not preflight.accepted:
         raise OperationalError("Qualification cannot build after rejected preflight")
     build = build_platform(inputs, builder)
     dependency_builds = build_test_dependencies(inputs, builder)
@@ -311,25 +314,26 @@ def qualify_platform(
     scan_evidence = generate_evidence(
         inputs, build, scanner, database, today=now.date()
     )
-    pin_findings = _pin_findings(inputs.image, pin_observations, now=now)
+    pin_findings = tuple(
+        finding
+        for item in preflight.images
+        for finding in _pin_findings(item.image, item.pin_observations, now=now)
+    )
     findings = tuple(
         sorted(
-            (
-                *preflight_findings,
-                *(
-                    finding
-                    for observation in pin_observations
-                    for finding in observation.findings
-                ),
-                *pin_findings,
-                *build.findings,
-                *(
-                    finding
-                    for dependency in dependency_builds
-                    for finding in dependency.build.findings
-                ),
-                *runtime_evidence.findings,
-                *scan_evidence.findings,
+            dict.fromkeys(
+                (
+                    *preflight.findings,
+                    *pin_findings,
+                    *build.findings,
+                    *(
+                        finding
+                        for dependency in dependency_builds
+                        for finding in dependency.build.findings
+                    ),
+                    *runtime_evidence.findings,
+                    *scan_evidence.findings,
+                )
             ),
             key=lambda finding: (
                 finding.check_id,
@@ -363,25 +367,15 @@ def qualify_platform(
         "contextDigest": build.context.digest,
         "buildArguments": dict(sorted(build.build_arguments.items())),
         "externalImages": [str(pin.reference) for pin in inputs.image.pins],
-        "pinObservations": [
-            observation.to_dict()
-            for observation in sorted(
-                pin_observations, key=lambda item: str(item.reference)
-            )
-        ],
-        "effectiveLimits": {
-            "pinFreshnessSeconds": int(
-                inputs.image.limits.pin_freshness.total_seconds()
-            ),
-            "pinDivergenceSeconds": int(
-                inputs.image.limits.pin_divergence.total_seconds()
-            ),
-        },
+        "pinObservations": _pin_observation_values(preflight.primary),
+        "effectiveLimits": _effective_limits(inputs.image),
         "buildExecution": execution_observation(inputs),
         "testExecution": runtime_evidence.execution,
         "runtimeConstraints": _runtime_constraints(inputs.image),
         "testInputs": runtime_evidence.test_inputs,
-        "testImageDependencies": list(runtime_evidence.dependencies),
+        "testImageDependencies": _dependency_evidence(
+            dependency_builds, preflight.dependencies, runtime_evidence.dependencies
+        ),
         "testResults": list(runtime_evidence.test_results),
         "sbom": {"digest": scan_evidence.sbom.digest, "spdxVersion": "SPDX-2.3"},
         "scans": [
@@ -420,6 +414,67 @@ def qualify_platform(
         verdict=verdict,
         findings=findings,
     )
+
+
+def _require_closure_preflight(
+    inputs: QualificationInputs, preflight: ClosurePreflight
+) -> None:
+    expected = (
+        inputs.image,
+        *inputs.repository.test_dependencies(inputs.image.image_id),
+    )
+    supplied = tuple(item.image for item in preflight.images)
+    if supplied != expected:
+        raise OperationalError(
+            "Preflight does not cover the qualified image and its test dependencies"
+        )
+
+
+def _pin_observation_values(item: ImagePreflight) -> list[dict[str, object]]:
+    return [
+        observation.to_dict()
+        for observation in sorted(
+            item.pin_observations, key=lambda value: str(value.reference)
+        )
+    ]
+
+
+def _effective_limits(image: ImageConfig) -> dict[str, object]:
+    return {
+        "pinFreshnessSeconds": int(image.limits.pin_freshness.total_seconds()),
+        "pinDivergenceSeconds": int(image.limits.pin_divergence.total_seconds()),
+    }
+
+
+def _dependency_evidence(
+    builds: tuple[TestDependencyBuild, ...],
+    preflights: tuple[ImagePreflight, ...],
+    observations: tuple[dict[str, object], ...],
+) -> list[dict[str, object]]:
+    if not len(builds) == len(preflights) == len(observations):
+        raise OperationalError("Test dependency evidence is incomplete")
+    values: list[dict[str, object]] = []
+    for build, preflight, observation in zip(
+        builds, preflights, observations, strict=True
+    ):
+        image = build.image
+        if (
+            preflight.image.image_id != image.image_id
+            or observation.get("imageId") != image.image_id
+        ):
+            raise OperationalError("Test dependency evidence is out of order")
+        values.append(
+            {
+                **observation,
+                "containerfileDigest": build.build.containerfile_digest,
+                "contextDigest": build.build.context.digest,
+                "buildArguments": dict(sorted(build.build.build_arguments.items())),
+                "externalImages": [str(pin.reference) for pin in image.pins],
+                "pinObservations": _pin_observation_values(preflight),
+                "effectiveLimits": _effective_limits(image),
+            }
+        )
+    return values
 
 
 def _pin_findings(

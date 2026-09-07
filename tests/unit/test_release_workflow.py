@@ -14,6 +14,7 @@ import conclear.provenance as provenance_module
 import conclear.records as records_module
 import conclear.services.assembly as assembly_module
 import conclear.services.attestation as attestation_module
+import conclear.services.preflight as preflight_module
 from conclear.artifacts import (
     load_candidate,
     load_published,
@@ -476,7 +477,9 @@ def test_qualification_phase_rejects_before_later_state_changes(
         )
 
     monkeypatch = harness.monkeypatch
-    monkeypatch.setattr(release, "check_image", lambda *a, **k: state["preflight"])
+    monkeypatch.setattr(
+        preflight_module, "check_image", lambda *a, **k: state["preflight"]
+    )
     monkeypatch.setattr(release, "PinStore", Store)
     monkeypatch.setattr(release, "select_fresh_database", lambda *a, **k: object())
     monkeypatch.setattr(release, "hook_runner", lambda *a, **k: object())

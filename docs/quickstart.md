@@ -283,8 +283,10 @@ The test model supports:
 - Launch arguments and non-secret environment values that keep the primary
   image's original entrypoint.
 - Sibling image dependencies built from the same isolated source revision,
-  timestamp, platform, version input and Buildah toolchain. ConClear imports
-  each validated layout by digest before preparation starts.
+  timestamp, platform, version input and Buildah toolchain. Every dependency
+  passes the same static checks and the same pin gate as the qualified image
+  before anything is built, under its own pins and pin limits, and ConClear
+  imports each validated layout by digest before preparation starts.
 
 Commands are arrays and are never interpreted by a shell.
 
