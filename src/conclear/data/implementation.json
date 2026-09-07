@@ -362,6 +362,14 @@
         {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"},
         {"path": "tests/network/test_quay_candidate.py", "tier": "network"}
       ]
+    },
+    {
+      "id": "IP0037",
+      "summary": "Assess an existing repository read-only and draft a deliberately invalid configuration that separates facts, suggestions and decisions",
+      "implementation": ["src/conclear/services/adoption.py", "src/conclear/commands/adopt.py", "src/conclear/fileio.py"],
+      "tests": [
+        {"path": "tests/unit/test_adoption.py", "tier": "unit"}
+      ]
     }
   ]
 }

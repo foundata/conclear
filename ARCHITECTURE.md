@@ -576,6 +576,7 @@ the repository.
 |      Command       | Responsibility |
 | ------------------ | -------------- |
 | `version`          | Report ConClear and implemented-guide identity in human-readable or JSON form. |
+| `adopt`            | Assess an existing repository read-only: observe its conventional Containerfiles, source identity, external inputs and runtime facts, suggest conservative values, list the decisions only a maintainer can make, and render a deliberately invalid draft `conclear.toml`. |
 | `doctor`           | Validate the environment for one scope without publishing content: `check` resolves the static toolchain, `qualify` adds run-owned rootless storage and an execution mode for every configured platform, and `release` adds trust inputs, selected registry access and public Sigstore transparency-service access. A profile is accepted for a scope only when it names every input the scope's commands use, so the release scope requires registry write authentication, the control-plane token and signing authority without performing a write or signature. Every missing or unsupported tool of the scope is reported at once. |
 | `check`            | Run static Containerfile, context, metadata, pin-declaration and repository-hygiene checks. |
 | `pins check`       | Resolve declared image references, update durable observations, report freshness and divergence, and never edit project files. |
@@ -1262,6 +1263,34 @@ wheel, and makes the artifact directory visible only after every gate succeeds.
 It never rebuilds retained artifacts, derives identity from an application
 repository, follows a symbolic-link destination or overwrites a pre-existing
 output.
+
+
+## Adopting an existing repository<a id="adopting-an-existing-repository"></a>
+
+<a id="promise-ip0037"></a>
+`adopt` assesses an existing repository before it has a `conclear.toml`. It is
+read-only and hermetic: it executes only Git to observe the origin URL and
+revision, contacts no registry, resolves no pin and writes nothing except an
+explicitly requested draft, which it creates atomically and refuses to
+overwrite. It discovers only the conventional `Containerfile`,
+`Containerfile.<name>`, `Dockerfile` and `Dockerfile.<name>` files at the
+repository root, refuses a root that mixes both families or has none unless
+paths are given, and confines explicit paths below the root. Through the same
+structural parsers `check` uses, it observes build paths, the canonical source
+identity, every external image input and its pin quality, the final `USER`,
+`VOLUME` destinations, `STOPSIGNAL`, static labels and a recognizable systemd
+entrypoint. Every result separates observed facts from suggestions and from
+required decisions. Suggestions are limited to image ids derived from file
+names, conservative resource limits, release tag templates, the runtime profile
+the entrypoint implies, the numeric user the Containerfile states and writable
+mounts equal to observed `VOLUME` destinations. It never invents a release
+destination, platforms, a root justification, application writable paths, health
+behavior, test inputs, dependencies, hooks, exceptions or credentials; each of
+those is a listed decision. The draft names every unresolved value with a
+`DECIDE` placeholder that fails the configuration schema and carries an
+`[adopt]` table the schema rejects, so an incomplete draft cannot pass `check`
+or `qualify`. The JSON result is a closed schema of observations, suggestions,
+required decisions, findings and the draft text.
 
 
 ## Maintaining this document<a id="maintaining-this-document"></a>
