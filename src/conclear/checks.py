@@ -230,8 +230,8 @@ def analyze_containerfile(
         )
     if expected_stop_signal is not None and (
         final_stop_signal is None
-        or _normalized_signal(final_stop_signal.argument.strip())
-        != _normalized_signal(expected_stop_signal)
+        or normalized_signal(final_stop_signal.argument.strip())
+        != normalized_signal(expected_stop_signal)
     ):
         stop_location = (
             f"{path}:{final_stop_signal.line_number}"
@@ -272,6 +272,20 @@ def analyze_containerfile(
         external_references=tuple(sorted(set(external_references))),
         findings=tuple(findings),
     )
+
+
+def parse_containerfile(path: Path) -> tuple[Instruction, ...]:
+    """Return the logical instructions of a Containerfile without policy checks."""
+    content = read_regular_file(
+        path,
+        maximum_bytes=MAX_CONTAINERFILE_BYTES,
+        label="Containerfile",
+    )
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise InvalidInvocationError(f"Containerfile is not UTF-8: {path}") from exc
+    return _logical_instructions(text, path)
 
 
 def external_reference_occurrences(path: Path) -> tuple[ReferenceOccurrence, ...]:
@@ -417,7 +431,8 @@ def _has_unsafe_chmod(argument: str) -> bool:
     return False
 
 
-def _normalized_signal(value: str) -> str:
+def normalized_signal(value: str) -> str:
+    """Return a signal name with its `SIG` prefix, the form every check compares."""
     return value if value.startswith("SIG") else f"SIG{value}"
 
 
