@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from conclear.config import ReleaseImageConfig, RepositoryConfig
+from conclear.config import ImageConfig, ReleaseImageConfig, RepositoryConfig
 from conclear.emulation import validate_execution_observation
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import IDENTITY
@@ -72,6 +72,18 @@ class CandidateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class _DependencyEvidence:
+    """Platform-independent inputs one qualification recorded for a dependency."""
+
+    image_id: str
+    containerfile_digest: str
+    context_digest: str
+    pin_references: tuple[str, ...]
+    pin_resolutions: tuple[tuple[str, str], ...]
+    effective_limits: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class _Qualification:
     run_id: str
     image_id: str
@@ -86,6 +98,7 @@ class _Qualification:
     pin_references: tuple[str, ...]
     pin_resolutions: tuple[tuple[str, str], ...]
     effective_limits: tuple[tuple[str, int], ...]
+    dependencies: tuple[_DependencyEvidence, ...]
     image_version: str | None
     manifest_digest: Digest
     transport: QualificationTransport
@@ -139,18 +152,12 @@ def assemble_candidate(
         raise InvalidInvocationError(
             "Qualifications do not match configured external image pins"
         )
-    expected_limits = tuple(
-        sorted(
-            {
-                "pinFreshnessSeconds": int(image.limits.pin_freshness.total_seconds()),
-                "pinDivergenceSeconds": int(
-                    image.limits.pin_divergence.total_seconds()
-                ),
-            }.items()
-        )
-    )
+    expected_limits = _expected_limits(image)
     if any(item.effective_limits != expected_limits for item in qualifications):
         raise InvalidInvocationError("Qualifications do not match effective pin limits")
+    expected_dependencies = repository.test_dependencies(image.image_id)
+    for item in qualifications:
+        _require_dependency_evidence(item, expected_dependencies)
     if first.source.repository != repository.project.source:
         raise InvalidInvocationError(
             "Qualifications do not match the selected source repository"
@@ -186,6 +193,10 @@ def assemble_candidate(
         if item.pin_resolutions != first.pin_resolutions:
             raise InvalidInvocationError(
                 "Qualifications observed different external image digests"
+            )
+        if item.dependencies != first.dependencies:
+            raise InvalidInvocationError(
+                "Qualifications identify different test dependency inputs"
             )
     tag = candidate_tag(
         version=version,
@@ -362,13 +373,163 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
     record_created_at = parse_timestamp(
         record.get("createdAt"), "record creation time", error=InvalidInvocationError
     )
+    pin_references, pin_resolutions, effective_limits = _read_pin_evidence(
+        payload, record_created_at=record_created_at, subject="Qualification"
+    )
+    findings = payload.get("findings")
+    if not isinstance(findings, list) or any(
+        not isinstance(item, dict) for item in findings
+    ):
+        raise InvalidInvocationError("Qualification findings are malformed")
+    if any(item.get("severity") == "error" for item in findings):
+        raise InvalidInvocationError(
+            "Accepted qualification contains a rejecting finding"
+        )
+    configuration_digest = _narrow.string_value(
+        configuration.get("sha256"), "configuration digest"
+    )
+    Digest(configuration_digest)
+    source_revision = validate_source_revision(
+        _narrow.string_value(source_value.get("revision"), "source revision")
+    )
+    dependencies = _read_dependencies(
+        payload,
+        platform=platform,
+        source_revision=source_revision,
+        record_created_at=record_created_at,
+        payload_digests=payload_digests,
+    )
+    build_arguments = _narrow.object_value(
+        payload.get("buildArguments"), "build arguments"
+    )
+    image_version = build_arguments.get("IMAGE_VERSION")
+    if image_version is not None and not isinstance(image_version, str):
+        raise InvalidInvocationError("Qualification image version is malformed")
+    return _Qualification(
+        run_id=_narrow.string_value(record.get("runId"), "qualification run id"),
+        image_id=_narrow.string_value(payload.get("imageId"), "image id"),
+        platform=platform,
+        record_digest=sha256_file(transport.record_path),
+        payload_digests=payload_digests,
+        source=SourceIdentity(
+            repository=_narrow.string_value(
+                source_value.get("repository"), "source repository"
+            ),
+            revision=source_revision,
+        ),
+        configuration_digest=configuration_digest,
+        ruleset=ruleset,
+        tools=tuple(sorted(normalized_tools)),
+        database_digest=database_digest,
+        pin_references=pin_references,
+        pin_resolutions=tuple(sorted(pin_resolutions)),
+        effective_limits=tuple(sorted(effective_limits)),
+        dependencies=dependencies,
+        image_version=image_version,
+        manifest_digest=manifest_digest,
+        transport=transport,
+    )
+
+
+def _expected_limits(image: ImageConfig) -> tuple[tuple[str, int], ...]:
+    return tuple(
+        sorted(
+            {
+                "pinFreshnessSeconds": int(image.limits.pin_freshness.total_seconds()),
+                "pinDivergenceSeconds": int(
+                    image.limits.pin_divergence.total_seconds()
+                ),
+            }.items()
+        )
+    )
+
+
+def _require_dependency_evidence(
+    item: _Qualification, expected: tuple[ImageConfig, ...]
+) -> None:
+    if tuple(value.image_id for value in item.dependencies) != tuple(
+        image.image_id for image in expected
+    ):
+        raise InvalidInvocationError(
+            "Qualifications do not match the configured test dependencies"
+        )
+    for evidence, configured in zip(item.dependencies, expected, strict=True):
+        if evidence.pin_references != tuple(
+            sorted(str(pin.reference) for pin in configured.pins)
+        ):
+            raise InvalidInvocationError(
+                "Qualifications do not match configured external image pins of "
+                f"{configured.image_id}"
+            )
+        if evidence.effective_limits != _expected_limits(configured):
+            raise InvalidInvocationError(
+                f"Qualifications do not match effective pin limits of {configured.image_id}"
+            )
+
+
+def _read_dependencies(
+    payload: dict[str, object],
+    *,
+    platform: Platform,
+    source_revision: str,
+    record_created_at: datetime,
+    payload_digests: tuple[str, ...],
+) -> tuple[_DependencyEvidence, ...]:
+    raw_entries = payload.get("testImageDependencies")
+    if not isinstance(raw_entries, list):
+        raise InvalidInvocationError("Qualification test dependencies are malformed")
+    values: list[_DependencyEvidence] = []
+    for raw_entry in raw_entries:
+        entry = _narrow.object_value(raw_entry, "test dependency")
+        image_id = _narrow.string_value(entry.get("imageId"), "test dependency image")
+        subject = f"Test dependency {image_id}"
+        if entry.get("platform") != str(platform):
+            raise InvalidInvocationError(f"{subject} was built for another platform")
+        if entry.get("sourceRevision") != source_revision:
+            raise InvalidInvocationError(
+                f"{subject} was built from another source revision"
+            )
+        if entry.get("testResultDigest") not in payload_digests:
+            raise InvalidInvocationError(
+                f"{subject} test result is not a bound payload"
+            )
+        containerfile_digest = _narrow.string_value(
+            entry.get("containerfileDigest"), "test dependency Containerfile digest"
+        )
+        context_digest = _narrow.string_value(
+            entry.get("contextDigest"), "test dependency context digest"
+        )
+        Digest(containerfile_digest)
+        Digest(context_digest)
+        references, resolutions, limits = _read_pin_evidence(
+            entry, record_created_at=record_created_at, subject=subject
+        )
+        values.append(
+            _DependencyEvidence(
+                image_id=image_id,
+                containerfile_digest=containerfile_digest,
+                context_digest=context_digest,
+                pin_references=references,
+                pin_resolutions=resolutions,
+                effective_limits=limits,
+            )
+        )
+    if len({item.image_id for item in values}) != len(values):
+        raise InvalidInvocationError("Qualification repeats a test dependency")
+    return tuple(values)
+
+
+def _read_pin_evidence(
+    value: dict[str, object], *, record_created_at: datetime, subject: str
+) -> tuple[tuple[str, ...], tuple[tuple[str, str], ...], tuple[tuple[str, int], ...]]:
+    """Validate the external images, limits and observations of one payload."""
     pin_references = tuple(
         sorted(
-            _narrow.string_array_value(payload.get("externalImages"), "external images")
+            _narrow.string_array_value(value.get("externalImages"), "external images")
         )
     )
     if len(pin_references) != len(set(pin_references)):
-        raise InvalidInvocationError("Qualification repeats an external image")
+        raise InvalidInvocationError(f"{subject} repeats an external image")
     parsed_references = {
         OCIReference.parse(
             reference,
@@ -379,18 +540,18 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         for reference in pin_references
     }
     limits_value = _narrow.object_value(
-        payload.get("effectiveLimits"), "effective limits"
+        value.get("effectiveLimits"), "effective limits"
     )
     effective_limits: list[tuple[str, int]] = []
     for name in ("pinFreshnessSeconds", "pinDivergenceSeconds"):
         item = limits_value.get(name)
         if not isinstance(item, int) or isinstance(item, bool):
-            raise InvalidInvocationError("Qualification effective limits are malformed")
+            raise InvalidInvocationError(f"{subject} effective limits are malformed")
         effective_limits.append((name, item))
     limit_map = dict(effective_limits)
-    raw_observations = payload.get("pinObservations")
+    raw_observations = value.get("pinObservations")
     if not isinstance(raw_observations, list):
-        raise InvalidInvocationError("Qualification pin observations are malformed")
+        raise InvalidInvocationError(f"{subject} pin observations are malformed")
     observation_references: set[str] = set()
     pin_resolutions: list[tuple[str, str]] = []
     for raw_observation in raw_observations:
@@ -406,11 +567,11 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         )
         if reference not in parsed_references:
             raise InvalidInvocationError(
-                "Qualification observes an undeclared external image"
+                f"{subject} observes an undeclared external image"
             )
         if observation.get("pinnedDigest") != str(reference.digest):
             raise InvalidInvocationError(
-                "Qualification pin observation has another pinned digest"
+                f"{subject} pin observation has another pinned digest"
             )
         pinned_digest = reference.digest
         if pinned_digest is None:  # parser invariant
@@ -431,7 +592,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
             seconds=limit_map["pinFreshnessSeconds"]
         ):
             raise InvalidInvocationError(
-                "Qualification pin observation exceeds its freshness limit"
+                f"{subject} pin observation exceeds its freshness limit"
             )
         divergence_value = observation.get("divergenceSince")
         if observed_digest == pinned_digest:
@@ -448,13 +609,13 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
                 seconds=limit_map["pinDivergenceSeconds"]
             ):
                 raise InvalidInvocationError(
-                    "Qualification pin divergence exceeds its effective limit"
+                    f"{subject} pin divergence exceeds its effective limit"
                 )
         observation_findings = observation.get("findings")
         if not isinstance(observation_findings, list) or any(
             not isinstance(item, dict) for item in observation_findings
         ):
-            raise InvalidInvocationError("Qualification pin findings are malformed")
+            raise InvalidInvocationError(f"{subject} pin findings are malformed")
         if any(item.get("severity") == "error" for item in observation_findings):
             raise InvalidInvocationError(
                 "Accepted qualification contains a rejecting pin finding"
@@ -464,51 +625,12 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         observation_references
     ):
         raise InvalidInvocationError(
-            "Qualification pin observations do not exactly cover external images"
+            f"{subject} pin observations do not exactly cover external images"
         )
-    findings = payload.get("findings")
-    if not isinstance(findings, list) or any(
-        not isinstance(item, dict) for item in findings
-    ):
-        raise InvalidInvocationError("Qualification findings are malformed")
-    if any(item.get("severity") == "error" for item in findings):
-        raise InvalidInvocationError(
-            "Accepted qualification contains a rejecting finding"
-        )
-    configuration_digest = _narrow.string_value(
-        configuration.get("sha256"), "configuration digest"
-    )
-    Digest(configuration_digest)
-    build_arguments = _narrow.object_value(
-        payload.get("buildArguments"), "build arguments"
-    )
-    image_version = build_arguments.get("IMAGE_VERSION")
-    if image_version is not None and not isinstance(image_version, str):
-        raise InvalidInvocationError("Qualification image version is malformed")
-    return _Qualification(
-        run_id=_narrow.string_value(record.get("runId"), "qualification run id"),
-        image_id=_narrow.string_value(payload.get("imageId"), "image id"),
-        platform=platform,
-        record_digest=sha256_file(transport.record_path),
-        payload_digests=payload_digests,
-        source=SourceIdentity(
-            repository=_narrow.string_value(
-                source_value.get("repository"), "source repository"
-            ),
-            revision=validate_source_revision(
-                _narrow.string_value(source_value.get("revision"), "source revision")
-            ),
-        ),
-        configuration_digest=configuration_digest,
-        ruleset=ruleset,
-        tools=tuple(sorted(normalized_tools)),
-        database_digest=database_digest,
-        pin_references=pin_references,
-        pin_resolutions=tuple(sorted(pin_resolutions)),
-        effective_limits=tuple(sorted(effective_limits)),
-        image_version=image_version,
-        manifest_digest=manifest_digest,
-        transport=transport,
+    return (
+        pin_references,
+        tuple(sorted(pin_resolutions)),
+        tuple(sorted(effective_limits)),
     )
 
 

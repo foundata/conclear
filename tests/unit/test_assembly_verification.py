@@ -21,6 +21,7 @@ from conclear.services.assembly import QualificationTransport, assemble_candidat
 from conclear.values import OCIReference, Platform
 from conclear.workspace import RunState, RunWorkspace
 from tests.unit.test_assembly import IdFactory, platform_layout
+from tests.unit.test_config import _image_text
 
 DIGEST = "sha256:" + "d" * 64
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -456,3 +457,175 @@ def test_assembly_requires_identical_records_across_platforms(
     )
     with pytest.raises(InvalidInvocationError, match="different normalized tool"):
         scenario.assemble(scenario.transport(), arm64_transport, image=image)
+
+
+def _with_helper(repository_factory: Callable[..., Path]) -> Callable[..., Path]:
+    def create(**kwargs: Any) -> Path:
+        root = repository_factory(**kwargs)
+        path = root / "conclear.toml"
+        pin = "quay.io/example/base:1@sha256:" + "a" * 64
+        content = path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            '[images.test]\ndependencies = ["helper"]\n\n[images.release]',
+        )
+        path.write_text(
+            content
+            + _image_text(
+                "helper",
+                releasable=False,
+                tables=(
+                    f'\n[[images.pins]]\nreference = "{pin}"\n'
+                    'tag_intent = "immutable-version"\n'
+                ),
+            ),
+            encoding="utf-8",
+        )
+        return root
+
+    return create
+
+
+def _dependency_entry(scenario: Scenario, **overrides: Any) -> dict[str, Any]:
+    base = scenario.payload()
+    entry: dict[str, Any] = {
+        "imageId": "helper",
+        "platform": "linux/amd64",
+        "manifestDigest": base["manifestDigest"],
+        "layoutDescriptor": base["layoutDescriptor"],
+        "sourceRevision": "b" * 40,
+        "containerfileDigest": "sha256:" + "5" * 64,
+        "contextDigest": DIGEST,
+        "buildArguments": {"IMAGE_VERSION": "1.2.3"},
+        "externalImages": base["externalImages"],
+        "pinObservations": base["pinObservations"],
+        "effectiveLimits": base["effectiveLimits"],
+        "testResultDigest": scenario.payload_digest,
+    }
+    entry.update(overrides)
+    return entry
+
+
+@pytest.fixture
+def dependency_scenario(
+    tmp_path: Path,
+    repository_factory: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> Scenario:
+    return Scenario(tmp_path, _with_helper(repository_factory), monkeypatch)
+
+
+def test_assembly_verifies_test_dependency_evidence_against_configuration(
+    dependency_scenario: Scenario,
+) -> None:
+    scenario = dependency_scenario
+
+    def rejects(message: str, **overrides: Any) -> None:
+        payload = scenario.payload(
+            testImageDependencies=[_dependency_entry(scenario, **overrides)]
+        )
+        with pytest.raises(InvalidInvocationError, match=message):
+            scenario.assemble(scenario.transport(payload))
+
+    with pytest.raises(InvalidInvocationError, match="configured test dependencies"):
+        scenario.assemble(scenario.transport(scenario.payload()))
+    rejects(
+        "configured external image pins of helper",
+        externalImages=[],
+        pinObservations=[],
+    )
+    rejects(
+        "effective pin limits of helper",
+        effectiveLimits={"pinFreshnessSeconds": 3600, "pinDivergenceSeconds": 604800},
+    )
+    observation = dict(scenario.payload()["pinObservations"][0])
+    observation["findings"] = [
+        {"checkId": "CC0204", "severity": "error", "message": "diverged"}
+    ]
+    rejects("rejecting pin finding", pinObservations=[observation])
+    rejects(
+        "Test dependency helper observes an undeclared",
+        pinObservations=[
+            {
+                **scenario.payload()["pinObservations"][0],
+                "reference": "quay.io/example/other:1@sha256:" + "9" * 64,
+                "pinnedDigest": "sha256:" + "9" * 64,
+                "observedDigest": "sha256:" + "9" * 64,
+            }
+        ],
+    )
+    rejects("another source revision", sourceRevision="c" * 40)
+    rejects("another platform", platform="linux/arm64")
+    rejects("not a bound payload", testResultDigest="sha256:" + "8" * 64)
+
+    result = scenario.assemble(
+        scenario.transport(
+            scenario.payload(testImageDependencies=[_dependency_entry(scenario)])
+        )
+    )
+    assert result.record_path.is_file()
+
+
+def test_assembly_requires_identical_dependency_inputs_across_platforms(
+    dependency_scenario: Scenario, tmp_path: Path
+) -> None:
+    scenario = dependency_scenario
+    arm64_layout = platform_layout(tmp_path / "qualified-arm64", "arm64")
+    arm64_graph = validate_layout(arm64_layout, reference="qualified")
+    image = replace(
+        scenario.image,
+        platforms=(Platform.parse("linux/amd64"), Platform.parse("linux/arm64")),
+    )
+    helper = scenario.repository.image("helper")
+    repository = replace(
+        scenario.repository,
+        images=tuple(
+            image
+            if item.image_id == "app"
+            else replace(item, platforms=image.platforms)
+            for item in scenario.repository.images
+        ),
+    )
+    assert helper.image_id == "helper"
+    execution = {
+        "targetPlatform": "linux/arm64",
+        "hostArchitecture": "x86_64",
+        "executionArchitecture": "arm64",
+        "mechanism": "qemu-user",
+    }
+    amd64_transport = scenario.transport(
+        scenario.payload(testImageDependencies=[_dependency_entry(scenario)])
+    )
+    arm64_payload = scenario.payload(
+        platform="linux/arm64",
+        layoutDescriptor=arm64_graph.root.to_dict(),
+        manifestDigest=str(arm64_graph.manifests[0].descriptor.digest),
+        buildExecution=execution,
+        testExecution=execution,
+        testImageDependencies=[
+            _dependency_entry(
+                scenario,
+                platform="linux/arm64",
+                manifestDigest=str(arm64_graph.manifests[0].descriptor.digest),
+                layoutDescriptor=arm64_graph.root.to_dict(),
+                containerfileDigest="sha256:" + "7" * 64,
+            )
+        ],
+    )
+    arm64_record = scenario.transport(arm64_payload)
+    arm64_transport = QualificationTransport(
+        arm64_record.record_path, arm64_layout, "qualified", (scenario.payload_file,)
+    )
+
+    with pytest.raises(
+        InvalidInvocationError, match="different test dependency inputs"
+    ):
+        assemble_candidate(
+            (amd64_transport, arm64_transport),
+            repository=repository,
+            image=image,
+            workspace=scenario.workspace,
+            version="1.2.3",
+            tools=(scenario.tool,),
+            now=NOW + timedelta(minutes=1),
+        )
+
