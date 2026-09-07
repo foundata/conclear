@@ -46,6 +46,52 @@ _FORBIDDEN_PARTS = frozenset(
 )
 
 
+MARKDOWN_RULE_ARGUMENTS: tuple[str, ...] = (
+    # The Markdown style guide's exact invocation: options only, so no local
+    # configuration can alter the result.
+    "--no-config",
+    "--deny-config-warnings",
+    "--extend-enable",
+    "MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088",
+    "--config",
+    'MD003.style="atx"',
+    "--config",
+    'MD004.style="dash"',
+    "--config",
+    "MD007.indent=2",
+    "--config",
+    "MD012.maximum=3",
+    "--config",
+    "MD013.line-length=80",
+    "--config",
+    "MD013.reflow=true",
+    "--config",
+    'MD013.reflow-mode="default"',
+    "--config",
+    "MD013.code-blocks=false",
+    "--config",
+    "MD013.code-spans=false",
+    "--config",
+    "MD013.tables=false",
+    "--config",
+    "MD024.siblings-only=true",
+    "--config",
+    'MD029.style="ordered"',
+    "--config",
+    'MD033.allowed-elements=["a","br"]',
+    "--config",
+    'MD046.style="fenced"',
+    "--config",
+    'MD060.style="aligned"',
+    "--config",
+    'MD060.column-align-header="center"',
+    "--config",
+    "MD060.loose-last-column=true",
+    "--config",
+    "MD082.allow-parent-headings=true",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class GateRuntime:
     """Resolved tools and sanitized environment for one release-check run."""
@@ -149,6 +195,7 @@ def run_release_check(
         root = _repository_root(runtime, selected)
         _require_clean(runtime, root)
         revision = _revision(runtime, root)
+        _require_clean_whitespace(runtime, root, revision)
         archive = temporary_root / "source.tar"
         runtime.run(
             "create clean source archive",
@@ -342,7 +389,10 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
     for label, arguments in (
         ("check formatting", ("ruff", "format", "--check", ".")),
         ("lint", ("ruff", "check", ".")),
-        ("check Markdown", ("rumdl", "check", "--no-cache", ".")),
+        (
+            "check Markdown",
+            ("rumdl", "check", *MARKDOWN_RULE_ARGUMENTS, "--no-cache", "."),
+        ),
         ("strict type check", ("mypy", "--strict", "src", "tests")),
         (
             "check generated conformance documentation",
@@ -488,6 +538,22 @@ def _require_clean(runtime: GateRuntime, root: Path) -> None:
     )
     if result.stdout:
         raise OperationalError("Release check requires a clean checkout")
+
+
+def _require_clean_whitespace(runtime: GateRuntime, root: Path, revision: str) -> None:
+    """Reject trailing whitespace and whitespace errors in the committed tree.
+
+    The Markdown style guide needs `git diff --check` beside `rumdl`; diffing
+    the empty tree against the revision checks every committed file.
+    """
+    empty_tree = runtime.run(
+        "hash the empty tree",
+        (str(runtime.git), "hash-object", "-t", "tree", os.devnull),
+    ).stdout.strip()
+    runtime.run(
+        "check whitespace",
+        (str(runtime.git), "-C", str(root), "diff", "--check", empty_tree, revision),
+    )
 
 
 def _revision(runtime: GateRuntime, root: Path) -> str:

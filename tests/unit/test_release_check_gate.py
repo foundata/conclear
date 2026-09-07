@@ -2,6 +2,7 @@
 
 import io
 import os
+import shlex
 import shutil
 import stat
 import tarfile
@@ -297,7 +298,16 @@ def test_source_gates_check_the_generated_inventories(
     ) in recorder.calls
     assert (
         "check Markdown",
-        (str(recorder.uv), "run", "--frozen", "rumdl", "check", "--no-cache", "."),
+        (
+            str(recorder.uv),
+            "run",
+            "--frozen",
+            "rumdl",
+            "check",
+            *release_check_module.MARKDOWN_RULE_ARGUMENTS,
+            "--no-cache",
+            ".",
+        ),
     ) in recorder.calls
 
 
@@ -338,3 +348,65 @@ def test_module_entry_point_reports_gate_failures(
     monkeypatch.setattr(release_check_module, "run_release_check", passing)
     assert main(["--output-directory", "/tmp/x"]) == 0
     assert seen == [Path("/tmp/x")]
+
+
+def test_markdown_invocation_matches_the_documented_check_command() -> None:
+    text = Path("DEVELOPMENT.md").read_text(encoding="utf-8")
+    start = text.index("uv run rumdl check \\\n")
+    end = text.index("\n  .\n", start)
+    lines = text[start:end].splitlines()[1:]
+    documented = tuple(
+        token for line in lines for token in shlex.split(line.rstrip("\\").strip())
+    )
+
+    assert documented == release_check_module.MARKDOWN_RULE_ARGUMENTS
+    assert "--no-config" in documented and "--deny-config-warnings" in documented
+
+
+def test_whitespace_check_diffs_the_empty_tree_against_the_revision(
+    tmp_path: Path,
+) -> None:
+    class RecordingRuntime:
+        def __init__(self) -> None:
+            self.git = tmp_path / "git"
+            self.calls: list[tuple[str, tuple[str, ...]]] = []
+
+        def run(
+            self,
+            label: str,
+            argv: tuple[str, ...],
+            **values: object,
+        ) -> ProcessResult:
+            del values
+            self.calls.append((label, argv))
+            stdout = (
+                "4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
+                if "hash-object" in argv
+                else ""
+            )
+            return ProcessResult(argv, 0, stdout, "", 0.0, 0, False, False)
+
+    recorder = RecordingRuntime()
+
+    release_check_module._require_clean_whitespace(
+        cast(GateRuntime, recorder), tmp_path, "c" * 40
+    )
+
+    assert recorder.calls == [
+        (
+            "hash the empty tree",
+            (str(recorder.git), "hash-object", "-t", "tree", os.devnull),
+        ),
+        (
+            "check whitespace",
+            (
+                str(recorder.git),
+                "-C",
+                str(tmp_path),
+                "diff",
+                "--check",
+                "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "c" * 40,
+            ),
+        ),
+    ]
