@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from conclear.attestations import RELEASE_VERIFICATION_TYPE
-from conclear.config import ImageConfig, ReleaseImageConfig
+from conclear.config import ReleaseImageConfig
 from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.jsonutil import load_json, sha256_file
 from conclear.layout_assembly import AssemblyObservation
@@ -186,7 +186,7 @@ def load_candidate(
 
 
 def qualification_transports(
-    workspace: RunWorkspace, image: ImageConfig
+    workspace: RunWorkspace, image: ReleaseImageConfig
 ) -> tuple[QualificationTransport, ...]:
     """Load standard platform qualification transports from a workspace."""
     return tuple(
@@ -196,7 +196,7 @@ def qualification_transports(
 
 
 def qualification_transport(
-    workspace: RunWorkspace, image: ImageConfig, platform: Platform
+    workspace: RunWorkspace, image: ReleaseImageConfig, platform: Platform
 ) -> QualificationTransport:
     """Load and validate one completed platform qualification transport."""
     record_path = (
@@ -578,7 +578,7 @@ def load_verification(
 
 def _qualification_payload_paths(
     workspace: RunWorkspace,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     platform: Platform,
     payload: dict[str, object],
 ) -> tuple[Path, ...]:
@@ -599,7 +599,9 @@ def _qualification_payload_paths(
     return tuple(paths)
 
 
-def _bound_runs(candidate: CandidateResult, image: ImageConfig) -> dict[Platform, str]:
+def _bound_runs(
+    candidate: CandidateResult, image: ReleaseImageConfig
+) -> dict[Platform, str]:
     """Map each required platform to the worker run the candidate binds."""
     runs = dict(candidate.qualification_runs)
     bound: dict[Platform, str] = {}

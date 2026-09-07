@@ -50,7 +50,7 @@ def export_command(
         state_home=state_home(), run_id=run_id, names=command_tools("transport export")
     )
     snapshot = source_run.workspace.load()
-    image = source_run.repository.image(snapshot.immutable_inputs["image"])
+    image = source_run.repository.release_image(snapshot.immutable_inputs["image"])
     platform = Platform.parse(platform_text)
     if platform not in image.platforms:
         raise click.UsageError(

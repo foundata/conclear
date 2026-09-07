@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from conclear.adapters.hadolint import HadolintAdapter
-from conclear.config import ImageConfig, RepositoryConfig
+from conclear.config import ImageConfig, ReleaseImageConfig, RepositoryConfig
 from conclear.pins import (
     MemoizedPinResolver,
     PinObservation,
@@ -91,7 +91,7 @@ class ClosurePreflight:
 
 def preflight_image_closure(
     repository: RepositoryConfig,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     *,
     hadolint: HadolintAdapter,
     store: PinStore,

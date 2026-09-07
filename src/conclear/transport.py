@@ -23,7 +23,7 @@ from types import TracebackType
 from typing import BinaryIO
 
 from conclear.artifacts import qualification_transport
-from conclear.config import ImageConfig, RepositoryConfig
+from conclear.config import ReleaseImageConfig, RepositoryConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -122,7 +122,7 @@ class ImportedTransport:
 
 def export_transport(
     workspace: RunWorkspace,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     platform: Platform,
     *,
     destination: Path,
@@ -247,7 +247,7 @@ def import_transport(
     *,
     expected_digest: str,
     workspace: RunWorkspace,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     repository: RepositoryConfig,
 ) -> ImportedTransport:
     """Verify one transport against a caller-supplied digest and install it.
@@ -358,7 +358,7 @@ def _stage_directory(source: Path, digest: Digest, staging: Path) -> bytes:
 def _verify_staging(
     staging: Path,
     manifest_bytes: bytes,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     repository: RepositoryConfig,
 ) -> _VerifiedStaging:
     manifest = _parse_manifest(manifest_bytes)
@@ -487,7 +487,7 @@ def _verify_dependency_evidence(
     record: dict[str, object],
     payload: dict[str, object],
     *,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     repository: RepositoryConfig,
 ) -> None:
     source = _narrow.object_value(record.get("source"), "qualification source")
@@ -522,7 +522,7 @@ def _verify_dependency_evidence(
 
 def _install(
     workspace: RunWorkspace,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     verified: _VerifiedStaging,
     *,
     transport_digest: str,

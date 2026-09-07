@@ -450,7 +450,7 @@ def verify_dependency_evidence(
     payload: dict[str, object],
     *,
     repository: RepositoryConfig,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     platform: Platform,
     source_revision: str,
     record_created_at: datetime,

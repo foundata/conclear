@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from conclear.adapters.skopeo import RegistryCopyObservation
-from conclear.config import ImageConfig, ReleaseImageConfig
+from conclear.config import ReleaseImageConfig
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -266,7 +266,7 @@ def require_remote_graph_unchanged(
     auth_file: Path | None,
     *,
     workspace: RunWorkspace,
-    image: ImageConfig,
+    image: ReleaseImageConfig,
     phase: str,
 ) -> None:
     """Fail unless the candidate tag and its complete remote graph are unchanged."""
