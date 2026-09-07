@@ -552,7 +552,7 @@ the repository.
 |      Command       | Responsibility |
 | ------------------ | -------------- |
 | `version`          | Report ConClear and implemented-guide identity in human-readable or JSON form. |
-| `doctor`           | Validate configuration, rootless tools, supported versions, storage, target-platform execution, trust inputs, selected registry access and public Sigstore transparency-service access without publishing content. |
+| `doctor`           | Validate the environment for one scope without publishing content: `check` resolves the static toolchain, `qualify` adds run-owned rootless storage and an execution mode for every configured platform, and `release` adds trust inputs, selected registry access and public Sigstore transparency-service access. Every missing or unsupported tool of the scope is reported at once. |
 | `check`            | Run static Containerfile, context, metadata, pin-declaration and repository-hygiene checks. |
 | `pins check`       | Resolve declared image references, update durable observations, report freshness and divergence, and never edit project files. |
 | `pins propose`     | Resolve each declared readable tag once, bind the observed digest to every configuration declaration and Containerfile occurrence, and write one schema-validated non-mutating proposal. |
@@ -698,12 +698,21 @@ outside ConClear as optional review delivery, while Testinfra may be invoked
 through a declared repository hook whose interpreter and dependency lock are
 recorded.
 
-Each ConClear release contains a supported-version matrix. At release start,
-ConClear resolves every executable to an absolute path, records its reported
-version and executable digest, and rejects unsupported combinations. It rechecks
-those identities before later use so a package upgrade during a run cannot
-silently change the toolchain. A later release run may use newer supported
-tools.
+Each ConClear release contains a supported-version matrix that lists exactly
+the versions its real-tool test tiers exercised; a version outside the matrix
+is rejected rather than assumed compatible. Every command declares the host
+tools its call path executes and resolves only those: it resolves each
+executable to an absolute path, records its reported version and executable
+digest, and rejects an unsupported version. A run pins a tool's identity from
+the first phase that resolves it. A later phase that resolves the same tool
+must observe the identical executable, a phase that first uses a tool binds it
+then, and a promoted or rejected run records nothing further. `release`
+resolves the complete toolchain at start and holds it constant; ConClear
+rechecks every recorded identity before later use so a package upgrade during
+a run cannot silently change the toolchain. A later release run may use newer
+supported tools. `doctor` validates one scope, `check`, `qualify` or `release`,
+by resolving the union of the tools those commands declare and reporting every
+failure instead of the first.
 
 All external commands use argument arrays, sanitized environments, explicit
 timeouts, bounded retries and captured logs. ConClear never constructs a shell
