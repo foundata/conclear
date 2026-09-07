@@ -5,7 +5,7 @@ import pytest
 
 from conclear.config import PinConfig, PinIntent
 from conclear.errors import OperationalError
-from conclear.pins import PinStore
+from conclear.pins import MemoizedPinResolver, PinStore
 from conclear.values import Digest, OCIReference
 
 
@@ -103,3 +103,22 @@ def test_pin_store_refuses_stale_observation(tmp_path: Path) -> None:
         store.load_fresh(
             pin(), maximum_age=timedelta(hours=24), now=checked + timedelta(days=2)
         )
+
+
+def test_memoized_resolver_resolves_each_readable_tag_once() -> None:
+    class Counting:
+        def __init__(self) -> None:
+            self.requests: list[str] = []
+
+        def resolve_digest(self, reference: OCIReference) -> Digest:
+            self.requests.append(str(reference))
+            return Digest("sha256:" + str(len(self.requests)) * 64)
+
+    inner = Counting()
+    resolver = MemoizedPinResolver(inner)
+    first = OCIReference.parse("quay.io/example/base:1")
+    second = OCIReference.parse("quay.io/example/base:2")
+
+    assert resolver.resolve_digest(first) == resolver.resolve_digest(first)
+    assert resolver.resolve_digest(second) != resolver.resolve_digest(first)
+    assert inner.requests == [str(first), str(second)]

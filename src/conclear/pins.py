@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, override
 
 from conclear.config import ImageConfig, PinConfig, PinIntent
 from conclear.errors import InvalidInvocationError, OperationalError
@@ -21,6 +21,30 @@ class PinResolver(Protocol):
     def resolve_digest(self, reference: OCIReference) -> Digest:
         """Return the current immutable manifest digest."""
         ...
+
+
+class MemoizedPinResolver(PinResolver):
+    """Resolve each distinct readable tag once and reuse the observed digest.
+
+    One preflight evaluates every pin of the selected image and of its test
+    dependencies at one instant. Images that share a readable tag must observe
+    the same digest, so the first resolution of a tag answers every later
+    request within the same preflight.
+    """
+
+    def __init__(self, resolver: PinResolver) -> None:
+        """Wrap the adapter-backed resolver for one preflight."""
+        self._resolver = resolver
+        self._observed: dict[str, Digest] = {}
+
+    @override
+    def resolve_digest(self, reference: OCIReference) -> Digest:
+        key = str(reference)
+        digest = self._observed.get(key)
+        if digest is None:
+            digest = self._resolver.resolve_digest(reference)
+            self._observed[key] = digest
+        return digest
 
 
 @dataclass(frozen=True, slots=True)
