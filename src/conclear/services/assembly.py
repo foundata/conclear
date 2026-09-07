@@ -435,9 +435,11 @@ def _expected_limits(image: ImageConfig) -> tuple[tuple[str, int], ...]:
     return tuple(
         sorted(
             {
-                "pinFreshnessSeconds": int(image.limits.pin_freshness.total_seconds()),
+                "pinFreshnessSeconds": int(
+                    image.pin_limits.pin_freshness.total_seconds()
+                ),
                 "pinDivergenceSeconds": int(
-                    image.limits.pin_divergence.total_seconds()
+                    image.pin_limits.pin_divergence.total_seconds()
                 ),
             }.items()
         )

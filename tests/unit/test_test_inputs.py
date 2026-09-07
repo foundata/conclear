@@ -80,7 +80,6 @@ def test_materialized_secret_outputs_are_removed_before_whole_tree(
     tmp_path: Path,
 ) -> None:
     test = RuntimeTestConfig(
-        dependencies=(),
         fixtures=(),
         outputs=(RuntimeTestOutputConfig("secret", True),),
         preparations=(),
@@ -105,7 +104,6 @@ def test_partial_materialization_removes_the_new_run_owned_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     test = RuntimeTestConfig(
-        dependencies=(),
         fixtures=(),
         outputs=(RuntimeTestOutputConfig("result", False),),
         preparations=(),

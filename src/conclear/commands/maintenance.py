@@ -514,7 +514,7 @@ def rescan_command(
             exceptions=image.vulnerability_exceptions,
             triage=triage,
             previous_result_digest=previous_result,
-            remediation_limit=image.limits.remediation,
+            remediation_limit=image.release_limits.remediation,
             remediation_history=remediation_history,
             signing=signing,
             now=utc_now(),

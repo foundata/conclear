@@ -127,7 +127,7 @@ def publish_candidate(
         )
     if registry.resolve_optional(tagged, auth_file=auth_file) is not None:
         raise OperationalError(f"Generated candidate tag is already in use: {tagged}")
-    expiration = now.astimezone(UTC) + image.limits.candidate_lifetime
+    expiration = now.astimezone(UTC) + image.release_limits.candidate_lifetime
     workspace.journal.plan(
         resource_id="candidate",
         kind=ResourceKind.CANDIDATE_REFERENCE,

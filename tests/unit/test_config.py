@@ -1,5 +1,6 @@
 import tomllib
 from collections.abc import Callable
+from dataclasses import fields
 from datetime import timedelta
 from pathlib import Path
 
@@ -22,7 +23,7 @@ def test_repository_configuration_is_validated_and_narrowed(
     config = load_repository_config(root / "conclear.toml")
     image = config.release_image("app")
     assert config.project.source == "https://github.com/example/app"
-    assert image.limits.candidate_lifetime == timedelta(days=7)
+    assert image.release_limits.candidate_lifetime == timedelta(days=7)
     assert str(image.platforms[0]) == "linux/amd64"
     assert image.containerfile == (root / "Containerfile").resolve()
     assert image.context == root.resolve()
@@ -662,7 +663,7 @@ def test_candidate_lifetime_is_accepted_only_in_limits(
     path.write_text(nested, encoding="utf-8")
     assert load_repository_config(path).release_image(
         "app"
-    ).limits.candidate_lifetime == (timedelta(hours=24))
+    ).release_limits.candidate_lifetime == (timedelta(hours=24))
 
     direct = (
         path.read_text(encoding="utf-8")
@@ -965,8 +966,20 @@ def test_test_only_image_omits_the_release_destination_and_cannot_be_selected(
     assert not helper.releasable
     assert not isinstance(helper, config_module.ReleaseImageConfig)
     assert helper.platforms == (Platform.parse("linux/amd64"),)
-    assert helper.hooks == () and helper.vulnerability_exceptions == ()
-    assert helper.test.preparations == () and helper.test.launch.arguments == ()
+    assert helper.test_dependencies == ()
+    assert helper.pin_limits == config_module.PinLimits()
+    for name in (
+        "repository",
+        "release",
+        "native_test_platforms",
+        "scanner",
+        "rescan_scope",
+        "test",
+        "hooks",
+        "vulnerability_exceptions",
+        "release_limits",
+    ):
+        assert not hasattr(helper, name), name
     assert [item.image_id for item in config.test_dependencies("app")] == ["helper"]
     assert [item.image_id for item in config.release_images] == ["app"]
     assert config.release_image("app").releasable
@@ -1003,6 +1016,74 @@ mounts = [{ name = "state", target = "/state", read_only = false }]
     assert [(item.name, item.read_only) for item in test.launch.mounts] == [
         ("state", False)
     ]
+
+
+def test_common_model_holds_only_build_facts() -> None:
+    common = {item.name for item in fields(config_module.ImageConfig)}
+    release_only = {
+        item.name for item in fields(config_module.ReleaseImageConfig)
+    } - common
+
+    assert common == {
+        "image_id",
+        "containerfile",
+        "context",
+        "platforms",
+        "runtime",
+        "pins",
+        "pin_limits",
+        "test_dependencies",
+    }
+    assert release_only == {
+        "repository",
+        "release",
+        "native_test_platforms",
+        "scanner",
+        "rescan_scope",
+        "test",
+        "hooks",
+        "vulnerability_exceptions",
+        "release_limits",
+    }
+    assert {item.name for item in fields(config_module.TestConfig)} == {
+        "fixtures",
+        "outputs",
+        "preparations",
+        "launch",
+    }
+
+
+def test_test_only_image_parses_dependencies_and_pin_limits_only(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = _depending_on(
+        root,
+        _image_text(
+            "helper",
+            releasable=False,
+            dependencies=("tool",),
+            tables='\n[images.limits]\npin_freshness = "1h"\npin_divergence = "2d"\n',
+        ),
+        _image_text("tool", releasable=False),
+    )
+
+    config = load_repository_config(path)
+    helper = config.image("helper")
+    app = config.release_image("app")
+
+    assert type(helper) is config_module.ImageConfig
+    assert helper.test_dependencies == ("tool",)
+    assert helper.pin_limits == config_module.PinLimits(
+        pin_freshness=timedelta(hours=1), pin_divergence=timedelta(days=2)
+    )
+    assert [item.image_id for item in config.test_dependencies("app")] == [
+        "tool",
+        "helper",
+    ]
+    assert app.test_dependencies == ("helper",)
+    assert app.release_limits == config_module.ReleaseLimits()
+    assert app.pin_limits == config_module.PinLimits()
 
 
 def test_released_image_also_serves_as_a_test_dependency(

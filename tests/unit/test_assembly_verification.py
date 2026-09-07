@@ -247,7 +247,7 @@ def test_assembly_rejects_records_bound_to_another_run_image_or_pin_set(
 
     narrowed = replace(
         scenario.image,
-        limits=replace(scenario.image.limits, pin_freshness=timedelta(hours=1)),
+        pin_limits=replace(scenario.image.pin_limits, pin_freshness=timedelta(hours=1)),
     )
     with pytest.raises(InvalidInvocationError, match="effective pin limits"):
         scenario.assemble(image=narrowed)

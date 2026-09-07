@@ -241,7 +241,7 @@ def check_image_pins(
         store.check(
             pin,
             resolver=resolver,
-            maximum_divergence=image.limits.pin_divergence,
+            maximum_divergence=image.pin_limits.pin_divergence,
             now=now,
         )
         for pin in image.pins

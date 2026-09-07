@@ -442,8 +442,8 @@ def _pin_observation_values(item: ImagePreflight) -> list[dict[str, object]]:
 
 def _effective_limits(image: ImageConfig) -> dict[str, object]:
     return {
-        "pinFreshnessSeconds": int(image.limits.pin_freshness.total_seconds()),
-        "pinDivergenceSeconds": int(image.limits.pin_divergence.total_seconds()),
+        "pinFreshnessSeconds": int(image.pin_limits.pin_freshness.total_seconds()),
+        "pinDivergenceSeconds": int(image.pin_limits.pin_divergence.total_seconds()),
     }
 
 
@@ -497,7 +497,7 @@ def _pin_findings(
         age = now.astimezone(UTC) - observation.checked_at.astimezone(UTC)
         if age.total_seconds() < 0:
             raise OperationalError("Pin resolution time is in the future")
-        if age > image.limits.pin_freshness:
+        if age > image.pin_limits.pin_freshness:
             findings.append(
                 Finding(
                     "CC0204",

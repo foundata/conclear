@@ -182,7 +182,6 @@ def test_cleanup_requires_run_marker_for_test_input_tree(tmp_path: Path) -> None
     run = workspace(tmp_path)
     root = run.root / "reports" / "test-inputs"
     test = RuntimeTestConfig(
-        dependencies=(),
         fixtures=(),
         outputs=(),
         preparations=(),

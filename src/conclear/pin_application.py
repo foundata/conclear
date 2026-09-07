@@ -207,7 +207,9 @@ def _reject_stale(
             "Proposal names images that no longer exist: " + ", ".join(missing),
             code="CC0207",
         )
-    limit = min(known[image_id].limits.pin_freshness for image_id in proposal.image_ids)
+    limit = min(
+        known[image_id].pin_limits.pin_freshness for image_id in proposal.image_ids
+    )
     for lookup in proposal.lookups:
         age = now.astimezone(UTC) - lookup.resolved_at.astimezone(UTC)
         if age < timedelta(0):

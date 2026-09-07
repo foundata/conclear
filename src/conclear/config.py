@@ -52,11 +52,17 @@ class PinIntent(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class EffectiveLimits:
-    """Effective intervals after repository narrowing."""
+class PinLimits:
+    """Effective pin intervals after repository narrowing; every image has them."""
 
     pin_freshness: timedelta = MAX_PIN_FRESHNESS
     pin_divergence: timedelta = MAX_PIN_DIVERGENCE
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseLimits:
+    """Effective candidate and remediation intervals of a releasable image."""
+
     candidate_lifetime: timedelta = MAX_CANDIDATE_LIFETIME
     remediation: timedelta = MAX_REMEDIATION
 
@@ -145,9 +151,8 @@ class TestLaunchConfig:
 
 @dataclass(frozen=True, slots=True)
 class TestConfig:
-    """Typed runtime preparation and exact sibling-image dependencies."""
+    """Typed test inputs of a qualified image: fixtures, outputs, steps and launch."""
 
-    dependencies: tuple[str, ...]
     fixtures: tuple[TestFixtureConfig, ...]
     outputs: tuple[TestOutputConfig, ...]
     preparations: tuple[TestPreparationConfig, ...]
@@ -221,31 +226,24 @@ class VulnerabilityException:
 
 @dataclass(frozen=True, slots=True)
 class ImageConfig:
-    """One image definition after schema and semantic validation.
+    """The common build-image model after schema and semantic validation.
 
-    Every image is built from the repository under its runtime contract and
-    may serve as an exact test dependency of another image. Only a
-    `ReleaseImageConfig` names a release destination and can be selected for
-    a build, qualification, release or rescan. An image without a repository
-    is test-only: the schema rejects the keys that only a qualified image uses
-    there, so `native_test_platforms`, `hooks`, `vulnerability_exceptions`,
-    the scanning keys, the release limits and the test inputs other than
-    `dependencies` keep their defaults.
+    It holds only what building an image and using it as an exact test
+    dependency needs: the identity, build paths, platforms, runtime contract,
+    pins, pin limits and the ids of its own test dependencies. An image
+    without a repository is test-only and is represented by exactly this type,
+    so release-only state cannot exist on it. Only a `ReleaseImageConfig` can
+    be selected for a build, qualification, release or rescan.
     """
 
     image_id: str
     containerfile: Path
     context: Path
     platforms: tuple[Platform, ...]
-    native_test_platforms: tuple[Platform, ...]
-    scanner: str
-    rescan_scope: str
     runtime: RuntimeConfig
-    test: TestConfig
-    hooks: tuple[HookConfig, ...]
     pins: tuple[PinConfig, ...]
-    vulnerability_exceptions: tuple[VulnerabilityException, ...]
-    limits: EffectiveLimits
+    pin_limits: PinLimits
+    test_dependencies: tuple[str, ...]
 
     @property
     def releasable(self) -> bool:
@@ -255,15 +253,24 @@ class ImageConfig:
 
 @dataclass(frozen=True, slots=True)
 class ReleaseImageConfig(ImageConfig):
-    """An image with a release destination and release tags.
+    """A releasable image: the common model plus qualification and release state.
 
-    This is the only kind of image ConClear qualifies, publishes and rescans.
-    It remains an `ImageConfig`, so a released image can also serve as a test
-    dependency of another image.
+    This is the only kind of image ConClear scans, qualifies, assembles,
+    publishes and rescans, so its destination, tags, native-test requirements,
+    scanner and rescan policy, complete test inputs, hooks, vulnerability
+    exceptions and release limits exist only here. It remains an
+    `ImageConfig`, so a released image can also serve as a test dependency.
     """
 
     repository: OCIReference
     release: ReleaseTags
+    native_test_platforms: tuple[Platform, ...]
+    scanner: str
+    rescan_scope: str
+    test: TestConfig
+    hooks: tuple[HookConfig, ...]
+    vulnerability_exceptions: tuple[VulnerabilityException, ...]
+    release_limits: ReleaseLimits
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,6 +457,45 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     amd64 = Platform.parse("linux/amd64")
     if not any(platform.semantically_matches(amd64) for platform in platforms):
         raise InvalidInvocationError("Every image must include linux/amd64")
+    containerfile = contained_path(
+        source_root, toml_string(value.get("containerfile", "Containerfile"))
+    )
+    context = contained_path(source_root, toml_string(value.get("context", ".")))
+    runtime = _parse_runtime(toml_table(value["runtime"]))
+    pins = tuple(_parse_pin(toml_table(item)) for item in _list(value.get("pins", [])))
+    limits_value = toml_table(value.get("limits", {}))
+    pin_limits = PinLimits(
+        pin_freshness=parse_duration(
+            toml_string(limits_value.get("pin_freshness", "24h")),
+            maximum=MAX_PIN_FRESHNESS,
+            field_name="pin_freshness",
+        ),
+        pin_divergence=parse_duration(
+            toml_string(limits_value.get("pin_divergence", "7d")),
+            maximum=MAX_PIN_DIVERGENCE,
+            field_name="pin_divergence",
+        ),
+    )
+    test_value = toml_table(value.get("test", {}))
+    test_dependencies = tuple(_string_list(test_value.get("dependencies", [])))
+    repository_value = value.get("repository")
+    if repository_value is None:
+        return ImageConfig(
+            image_id=image_id,
+            containerfile=containerfile,
+            context=context,
+            platforms=platforms,
+            runtime=runtime,
+            pins=pins,
+            pin_limits=pin_limits,
+            test_dependencies=test_dependencies,
+        )
+    repository = OCIReference.parse(
+        toml_string(repository_value),
+        allow_localhost=False,
+    )
+    if repository.tag or repository.digest:
+        raise InvalidInvocationError("Release repositories must be untagged names")
     native_platforms = tuple(
         Platform.parse(item)
         for item in _string_list(value.get("native_test_platforms", ["linux/amd64"]))
@@ -461,30 +507,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             "native_test_platforms must be a subset of platforms"
         )
-    runtime_value = toml_table(value["runtime"])
-    limits_value = toml_table(value.get("limits", {}))
-    limits = EffectiveLimits(
-        pin_freshness=parse_duration(
-            toml_string(limits_value.get("pin_freshness", "24h")),
-            maximum=MAX_PIN_FRESHNESS,
-            field_name="pin_freshness",
-        ),
-        pin_divergence=parse_duration(
-            toml_string(limits_value.get("pin_divergence", "7d")),
-            maximum=MAX_PIN_DIVERGENCE,
-            field_name="pin_divergence",
-        ),
-        candidate_lifetime=parse_duration(
-            toml_string(limits_value.get("candidate_lifetime", "7d")),
-            maximum=MAX_CANDIDATE_LIFETIME,
-            field_name="candidate_lifetime",
-        ),
-        remediation=parse_duration(
-            toml_string(limits_value.get("remediation", "30d")),
-            maximum=MAX_REMEDIATION,
-            field_name="remediation",
-        ),
-    )
     exceptions = tuple(
         _parse_exception(toml_table(item), image_id)
         for item in _list(value.get("vulnerability_exceptions", []))
@@ -494,40 +516,37 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             f"Vulnerability exceptions for {image_id} must be unique"
         )
-    fields: dict[str, Any] = {
-        "image_id": image_id,
-        "containerfile": contained_path(
-            source_root, toml_string(value.get("containerfile", "Containerfile"))
-        ),
-        "context": contained_path(source_root, toml_string(value.get("context", "."))),
-        "platforms": platforms,
-        "native_test_platforms": native_platforms,
-        "scanner": toml_string(value.get("scanner", "trivy")),
-        "rescan_scope": toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
-        "runtime": _parse_runtime(runtime_value),
-        "test": _parse_test(toml_table(value.get("test", {})), source_root),
-        "hooks": tuple(
-            _parse_hook(toml_table(item)) for item in _list(value.get("hooks", []))
-        ),
-        "pins": tuple(
-            _parse_pin(toml_table(item)) for item in _list(value.get("pins", []))
-        ),
-        "vulnerability_exceptions": exceptions,
-        "limits": limits,
-    }
-    repository_value = value.get("repository")
-    if repository_value is None:
-        return ImageConfig(**fields)
-    repository = OCIReference.parse(
-        toml_string(repository_value),
-        allow_localhost=False,
-    )
-    if repository.tag or repository.digest:
-        raise InvalidInvocationError("Release repositories must be untagged names")
     return ReleaseImageConfig(
-        **fields,
+        image_id=image_id,
+        containerfile=containerfile,
+        context=context,
+        platforms=platforms,
+        runtime=runtime,
+        pins=pins,
+        pin_limits=pin_limits,
+        test_dependencies=test_dependencies,
         repository=repository,
         release=_parse_release_tags(toml_table(value["release"])),
+        native_test_platforms=native_platforms,
+        scanner=toml_string(value.get("scanner", "trivy")),
+        rescan_scope=toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
+        test=_parse_test(test_value, source_root),
+        hooks=tuple(
+            _parse_hook(toml_table(item)) for item in _list(value.get("hooks", []))
+        ),
+        vulnerability_exceptions=exceptions,
+        release_limits=ReleaseLimits(
+            candidate_lifetime=parse_duration(
+                toml_string(limits_value.get("candidate_lifetime", "7d")),
+                maximum=MAX_CANDIDATE_LIFETIME,
+                field_name="candidate_lifetime",
+            ),
+            remediation=parse_duration(
+                toml_string(limits_value.get("remediation", "30d")),
+                maximum=MAX_REMEDIATION,
+                field_name="remediation",
+            ),
+        ),
     )
 
 
@@ -607,7 +626,6 @@ def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
     _require_unique_names(preparations, "test preparations")
     launch = _parse_test_launch(toml_table(value.get("launch", {})), handles)
     test = TestConfig(
-        dependencies=tuple(_string_list(value.get("dependencies", []))),
         fixtures=fixtures,
         outputs=outputs,
         preparations=preparations,
@@ -748,7 +766,7 @@ def _validate_mount_handles(test: TestConfig) -> None:
 def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
     by_id = {image.image_id: image for image in images}
     for image in images:
-        dependencies = image.test.dependencies
+        dependencies = image.test_dependencies
         if len(dependencies) != len(set(dependencies)):
             raise InvalidInvocationError(
                 f"Image {image.image_id} contains duplicate test dependencies"
@@ -775,7 +793,7 @@ def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
                 )
 
     depended = {
-        dependency_id for image in images for dependency_id in image.test.dependencies
+        dependency_id for image in images for dependency_id in image.test_dependencies
     }
     for image in images:
         if not image.releasable and image.image_id not in depended:
@@ -793,7 +811,7 @@ def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
         if image_id in visited:
             return
         visiting.add(image_id)
-        for dependency_id in by_id[image_id].test.dependencies:
+        for dependency_id in by_id[image_id].test_dependencies:
             visit(dependency_id)
         visiting.remove(image_id)
         visited.add(image_id)
@@ -802,6 +820,8 @@ def _validate_test_graph(images: tuple[ImageConfig, ...]) -> None:
         visit(image.image_id)
 
     for image in images:
+        if not isinstance(image, ReleaseImageConfig):
+            continue
         permitted = {item.image_id for item in _dependency_order(image, by_id)} | {
             image.image_id
         }
@@ -822,7 +842,7 @@ def _dependency_order(
     visited: set[str] = set()
 
     def visit(current: ImageConfig) -> None:
-        for dependency_id in current.test.dependencies:
+        for dependency_id in current.test_dependencies:
             if dependency_id in visited:
                 continue
             dependency = by_id[dependency_id]
