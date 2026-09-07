@@ -103,6 +103,7 @@ conclear/
 │   └── quickstart.md             # Project adoption quick start
 ├── pyproject.toml                # Project configuration
 ├── uv.lock                       # Dependency lock file
+├── .rumdl.toml                   # Markdown conventions checked by rumdl
 ├── src/conclear/                 # Main package
 │   ├── cli.py                    # Click entry point and error-to-exit mapping
 │   ├── identity.py               # Embedded tool and guide identity
@@ -205,6 +206,12 @@ uv run ruff check --fix .
 
 # Strict type checking
 uv run mypy --strict src tests
+
+# Check Markdown against the conventions in .rumdl.toml
+uv run rumdl check .
+
+# Apply the automatic Markdown fixes
+uv run rumdl check --fix .
 ```
 
 
@@ -792,15 +799,16 @@ available Python 3.12, 3.13 and 3.14 interpreters:
 uv run python -m conclear.release_check
 ```
 
-The command checks formatting, linting, strict typing, the generated conformance
-documentation, the guide-option support inventory, the guide requirement
-inventory and coverage, the generated compatibility inventory, the
-release-specific implementation matrix and the unit-test matrix
-on every supported interpreter, enforcing the branch-coverage floor on the
-first interpreter. It then creates a temporary clean source archive, embeds the
-committed source revision, builds a source distribution, builds a wheel from
-that source distribution, inspects artifact contents, installs the wheel into a
-clean environment and runs import, `--version` and `--help` smoke tests.
+The command checks formatting, linting, the Markdown conventions in
+`.rumdl.toml`, strict typing, the generated conformance documentation, the
+guide-option support inventory, the guide requirement inventory and coverage,
+the generated compatibility inventory, the release-specific implementation
+matrix and the unit-test matrix on every supported interpreter, enforcing the
+branch-coverage floor on the first interpreter. It then creates a temporary
+clean source archive, embeds the committed source revision, builds a source
+distribution, builds a wheel from that source distribution, inspects artifact
+contents, installs the wheel into a clean environment and runs import,
+`--version` and `--help` smoke tests.
 
 To retain the exact source distribution and wheel that passed the complete gate,
 create a private parent directory and select a new revision-specific output

@@ -342,6 +342,7 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
     for label, arguments in (
         ("check formatting", ("ruff", "format", "--check", ".")),
         ("lint", ("ruff", "check", ".")),
+        ("check Markdown", ("rumdl", "check", "--no-cache", ".")),
         ("strict type check", ("mypy", "--strict", "src", "tests")),
         (
             "check generated conformance documentation",

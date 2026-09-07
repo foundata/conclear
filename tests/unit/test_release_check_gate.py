@@ -295,6 +295,10 @@ def test_source_gates_check_the_generated_inventories(
             "--check",
         ),
     ) in recorder.calls
+    assert (
+        "check Markdown",
+        (str(recorder.uv), "run", "--frozen", "rumdl", "check", "--no-cache", "."),
+    ) in recorder.calls
 
 
 def test_gate_helpers_reject_missing_executables_and_ambiguous_artifacts(
