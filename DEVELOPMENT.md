@@ -554,7 +554,9 @@ case.
 
 `tests/local_integration/test_trivy_database.py` exercises the real
 vulnerability-database snapshot, layout scan, SPDX generation and SBOM rescan
-paths. The session-scoped `trivy_cache` fixture in
+paths, the filesystem secret and configuration scans, and a complete
+two-platform qualification and assembly that shares one database snapshot by
+digest. The session-scoped `trivy_cache` fixture in
 `tests/local_integration/conftest.py` supplies the snapshot to this case and to
 the CLI transport scenario, so one invocation of the complete tier provisions it
 before any dependent case runs, whatever the collection order. The fixture needs
@@ -565,6 +567,21 @@ adapter downloads the current Trivy and Java databases once (about 1.1 GB
 compressed, several GB on disk). Every later run is offline and reuses the
 pinned snapshot, so record the cache directory and its snapshot digest in the
 run manifest and remove it when the run ends.
+
+The workstation's Trivy package may lag behind the accepted line.
+`CONCLEAR_TEST_TRIVY` names the absolute path of a verified official Trivy
+release build inside the run workspace; the tier then resolves Trivy from that
+path instead of the sanitized search path and leaves the host installation
+untouched. Download the release tarball, its checksums file and the checksums'
+Sigstore bundle into the manifest-owned workspace, verify the tarball's SHA-256
+against the checksums file, verify the checksums file with `cosign verify-blob
+--bundle`, the GitHub Actions OIDC issuer and the `aquasecurity/trivy` workflow
+identity, and record the executable path and digest in the manifest. The CLI
+transport scenario cannot use the override, because the installed `conclear`
+entry point resolves Trivy from the sanitized search path; it needs an accepted
+Trivy installed there. `CONCLEAR_TEST_QUALIFICATION_ULID` supplies the
+manifest-owned lowercase ULID of the workspace that the real-Trivy qualification
+case creates.
 
 The emulation case builds the shared `linux/arm64` fixture with Buildah, imports
 it into run-owned Podman storage and runs its architecture self-check through

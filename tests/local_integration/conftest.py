@@ -12,6 +12,7 @@ import pytest
 
 from conclear.runtime import ApplicationRuntime
 from conclear.tools import ToolName
+from tests.local_integration.fixtures import tool_resolver
 
 
 @pytest.fixture(scope="session")
@@ -34,6 +35,7 @@ def trivy_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
         runtime = ApplicationRuntime.create(
             tmp_path_factory.mktemp("trivy-provision") / "environment",
             names=(ToolName.TRIVY,),
+            resolver=tool_resolver(),
         )
         refreshed = runtime.trivy().refresh_database(cache_root)
         assert refreshed.path.parent == cache_root / "snapshots"

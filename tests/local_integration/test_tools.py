@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -36,13 +35,17 @@ from tests.local_integration.fixtures import (
     compile_fixture,
     manifest_run_id,
     runtime_config,
+    tool_locator,
+    tool_resolver,
 )
 
 pytestmark = pytest.mark.local_integration
 
 
 def test_supported_real_tool_matrix_and_read_only_interfaces(tmp_path: Path) -> None:
-    runtime = ApplicationRuntime.create(tmp_path / "environment")
+    runtime = ApplicationRuntime.create(
+        tmp_path / "environment", resolver=tool_resolver()
+    )
 
     for name in ToolName:
         version = ToolVersion.parse(runtime.tools[name].version)
@@ -120,6 +123,7 @@ def test_real_rootless_storage_and_local_analysis_are_run_owned(
             ToolName.HADOLINT,
             ToolName.TRIVY,
         ),
+        resolver=tool_resolver(),
     )
     buildah_root = root / "buildah" / "root"
     buildah_runroot = root / "buildah" / "runroot"
@@ -166,6 +170,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
     runtime = ApplicationRuntime.create(
         root / "environment",
         names=(ToolName.BUILDAH, ToolName.PODMAN, ToolName.SKOPEO),
+        resolver=tool_resolver(),
     )
     buildah_root = root / "buildah" / "root"
     buildah_runroot = root / "buildah" / "runroot"
@@ -395,7 +400,9 @@ def test_real_exact_image_preparation_and_launch_inputs(
         tmp_path, f"{external_run_id}-test-inputs-{profile}", must_exist=False
     )
     runtime = ApplicationRuntime.create(
-        root / "environment", names=(ToolName.BUILDAH, ToolName.PODMAN)
+        root / "environment",
+        names=(ToolName.BUILDAH, ToolName.PODMAN),
+        resolver=tool_resolver(),
     )
     context = compile_fixture(runtime, root=root, architecture="amd64")
     _write_test_input_configuration(
@@ -500,8 +507,7 @@ def test_manual_cosign_no_service_blob_signing(
     run_id = manifest_run_id()
     root = contained_path(tmp_path, run_id, must_exist=False)
     runtime = ApplicationRuntime.create(
-        root / "environment",
-        names=(ToolName.COSIGN,),
+        root / "environment", names=(ToolName.COSIGN,), resolver=tool_resolver()
     )
     cosign = runtime.tools[ToolName.COSIGN].path
     signing_root = root / "manual-signing"
@@ -755,7 +761,7 @@ def test_qualification_scope_resolves_without_cosign_and_release_scope_names_it(
     def hide_cosign(name: str, search_path: str) -> str | None:
         if name == ToolName.COSIGN.value:
             return None
-        return shutil.which(name, path=search_path)
+        return tool_locator(name, search_path)
 
     resolver = ToolResolver(locator=hide_cosign)
     runtime = ApplicationRuntime.create(
