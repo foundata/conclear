@@ -8,7 +8,12 @@ from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.registry_backends import create_registry_control
 from conclear.config import load_repository_config, normalize_observed_source_url
 from conclear.database import select_fresh_database, trivy_cache_root
-from conclear.dependencies import ProfileUse, command_tools, scope_dependencies
+from conclear.dependencies import (
+    ProfileUse,
+    command_tools,
+    require_profile_capabilities,
+    scope_dependencies,
+)
 from conclear.errors import (
     ConClearError,
     InvalidInvocationError,
@@ -88,6 +93,8 @@ def doctor_command(
         )
     repository = load_repository_config(config_path)
     selected = profile(profile_name) if profile_name else None
+    if selected is not None:
+        require_profile_capabilities(selected, dependencies)
     registry_control: RegistryControl | None = None
     if scope is DoctorScope.RELEASE and selected is not None:
         registry_control = create_registry_control(

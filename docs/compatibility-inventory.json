@@ -611,9 +611,9 @@
     {
       "dependencies": {
         "profile": "optional",
+        "registryAccess": "none",
         "registryControl": false,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git"
         ],
@@ -704,9 +704,9 @@
     {
       "dependencies": {
         "profile": "required",
+        "registryAccess": "write",
         "registryControl": false,
-        "registryCredentials": true,
-        "signing": true,
+        "signing": "sign",
         "tools": [
           "git",
           "skopeo",
@@ -768,9 +768,9 @@
     {
       "dependencies": {
         "profile": "optional",
+        "registryAccess": "read",
         "registryControl": false,
-        "registryCredentials": true,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git",
           "buildah"
@@ -862,9 +862,9 @@
     {
       "dependencies": {
         "profile": "none",
+        "registryAccess": "none",
         "registryControl": false,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "hadolint"
         ],
@@ -915,9 +915,9 @@
     {
       "dependencies": {
         "profile": "optional",
+        "registryAccess": "none",
         "registryControl": true,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git",
           "buildah",
@@ -971,9 +971,9 @@
         "scopes": {
           "check": {
             "profile": "none",
+            "registryAccess": "none",
             "registryControl": false,
-            "registryCredentials": false,
-            "signing": false,
+            "signing": "none",
             "tools": [
               "hadolint"
             ],
@@ -981,9 +981,9 @@
           },
           "qualify": {
             "profile": "optional",
+            "registryAccess": "read",
             "registryControl": false,
-            "registryCredentials": true,
-            "signing": false,
+            "signing": "none",
             "tools": [
               "git",
               "buildah",
@@ -996,9 +996,9 @@
           },
           "release": {
             "profile": "required",
+            "registryAccess": "write",
             "registryControl": true,
-            "registryCredentials": true,
-            "signing": true,
+            "signing": "sign",
             "tools": [
               "git",
               "buildah",
@@ -1079,9 +1079,9 @@
     {
       "dependencies": {
         "profile": "none",
+        "registryAccess": "none",
         "registryControl": false,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git"
         ],
@@ -1132,9 +1132,9 @@
     {
       "dependencies": {
         "profile": "optional",
+        "registryAccess": "read",
         "registryControl": false,
-        "registryCredentials": true,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "skopeo"
         ],
@@ -1195,9 +1195,9 @@
     {
       "dependencies": {
         "profile": "optional",
+        "registryAccess": "read",
         "registryControl": false,
-        "registryCredentials": true,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git",
           "skopeo"
@@ -1269,9 +1269,9 @@
     {
       "dependencies": {
         "profile": "required",
+        "registryAccess": "read",
         "registryControl": true,
-        "registryCredentials": true,
-        "signing": false,
+        "signing": "verify",
         "tools": [
           "git",
           "skopeo",
@@ -1333,9 +1333,9 @@
     {
       "dependencies": {
         "profile": "none",
+        "registryAccess": "none",
         "registryControl": false,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git"
         ],
@@ -1375,9 +1375,9 @@
     {
       "dependencies": {
         "profile": "required",
+        "registryAccess": "write",
         "registryControl": true,
-        "registryCredentials": true,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git",
           "skopeo"
@@ -1428,9 +1428,9 @@
     {
       "dependencies": {
         "profile": "optional",
+        "registryAccess": "read",
         "registryControl": false,
-        "registryCredentials": true,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git",
           "buildah",
@@ -1536,9 +1536,9 @@
     {
       "dependencies": {
         "profile": "required",
+        "registryAccess": "write",
         "registryControl": true,
-        "registryCredentials": true,
-        "signing": true,
+        "signing": "sign",
         "tools": [
           "git",
           "buildah",
@@ -1645,9 +1645,9 @@
     {
       "dependencies": {
         "profile": "required",
+        "registryAccess": "read",
         "registryControl": false,
-        "registryCredentials": true,
-        "signing": true,
+        "signing": "verify",
         "tools": [
           "skopeo",
           "trivy",
@@ -1761,9 +1761,9 @@
     {
       "dependencies": {
         "profile": "none",
+        "registryAccess": "none",
         "registryControl": false,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git",
           "podman"
@@ -1820,9 +1820,9 @@
     {
       "dependencies": {
         "profile": "none",
+        "registryAccess": "none",
         "registryControl": false,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [
           "git"
         ],
@@ -1897,9 +1897,9 @@
     {
       "dependencies": {
         "profile": "required",
+        "registryAccess": "write",
         "registryControl": false,
-        "registryCredentials": true,
-        "signing": true,
+        "signing": "sign",
         "tools": [
           "git",
           "skopeo",
@@ -1961,9 +1961,9 @@
     {
       "dependencies": {
         "profile": "none",
+        "registryAccess": "none",
         "registryControl": false,
-        "registryCredentials": false,
-        "signing": false,
+        "signing": "none",
         "tools": [],
         "transparencyLog": false
       },

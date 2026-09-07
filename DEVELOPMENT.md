@@ -858,8 +858,19 @@ disposable Quay repository with dedicated test signing keys, followed by a
 complete `conclear release` of the OpenLDAP compatibility project into a
 disposable repository, including `publish`, `attest`, `verify`, `promote` and
 candidate cleanup, and an arm64 qualification on a host with an enabled handler
-or native hardware. Record its observed results in the release issue. A locally
-validated candidate without that drill stays a candidate.
+or native hardware. The drill must also run the composable remote path once:
+`qualify` and `transport export` per platform, then `assemble`, `provenance`,
+`publish`, `attest`, `verify` and `promote` as separate invocations against the
+same disposable repository, because a monolithic `release` never reopens a run
+and cannot expose a defect in first-use tool binding. Record the observed
+results in the release issue. A locally validated candidate without that drill
+stays a candidate.
+
+Two facts are proven only indirectly by the automated tiers and belong to the
+same gate until they are automated: a complete `conclear qualify` from the
+retained wheel on a host without Cosign installed, which the local tier cannot
+stage because ConClear searches a fixed tool path, and the composable remote
+path above.
 
 CI configuration should delegate project checks to this command and verify the
 catalog against the OCI guide at the exact embedded revision. The provider

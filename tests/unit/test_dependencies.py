@@ -1,6 +1,10 @@
 """Every command declares exactly the tools, profile and credentials it uses."""
 
+from types import SimpleNamespace
+from typing import Any
+
 import click
+import pytest
 
 from conclear.cli import root
 from conclear.dependencies import (
@@ -8,9 +12,13 @@ from conclear.dependencies import (
     DOCTOR_SCOPES,
     CommandDependencies,
     ProfileUse,
+    RegistryAccess,
+    SigningUse,
     command_tools,
+    require_profile_capabilities,
     scope_dependencies,
 )
+from conclear.errors import InvalidInvocationError
 from conclear.tools import ToolName
 
 
@@ -32,13 +40,15 @@ def test_declarations_are_deterministic_and_well_formed() -> None:
     for name, item in COMMAND_DEPENDENCIES.items():
         assert len(item.tools) == len(set(item.tools)), name
         if item.profile is ProfileUse.NONE:
-            assert not item.registry_credentials, name
+            assert item.registry_access is RegistryAccess.NONE, name
             assert not item.registry_control, name
-            assert not item.signing, name
-        if item.signing:
+            assert item.signing is SigningUse.NONE, name
+        if item.signing is not SigningUse.NONE or item.transparency_log:
             assert ToolName.COSIGN in item.tools, name
-        if item.transparency_log:
-            assert ToolName.COSIGN in item.tools, name
+        if item.registry_access is RegistryAccess.WRITE:
+            assert item.profile is ProfileUse.REQUIRED, name
+    assert COMMAND_DEPENDENCIES["promote"].registry_access is RegistryAccess.READ
+    assert COMMAND_DEPENDENCIES["promote"].registry_control
 
 
 def test_qualification_never_needs_cosign_and_static_checks_need_no_profile() -> None:
@@ -66,11 +76,14 @@ def test_doctor_scopes_are_cumulative_unions_of_their_commands() -> None:
     assert check == CommandDependencies(tools=(ToolName.HADOLINT,))
     assert set(qualify.tools) == set(ToolName) - {ToolName.COSIGN}
     assert qualify.profile is ProfileUse.OPTIONAL
-    assert qualify.registry_credentials and not qualify.registry_control
-    assert not qualify.signing and not qualify.transparency_log
+    assert qualify.registry_access is RegistryAccess.READ
+    assert not qualify.registry_control
+    assert qualify.signing is SigningUse.NONE and not qualify.transparency_log
     assert set(release.tools) == set(ToolName)
     assert release.profile is ProfileUse.REQUIRED
-    assert release.registry_control and release.signing and release.transparency_log
+    assert release.registry_access is RegistryAccess.WRITE
+    assert release.registry_control and release.transparency_log
+    assert release.signing is SigningUse.SIGN
     assert set(DOCTOR_SCOPES["check"]) <= set(DOCTOR_SCOPES["qualify"])
     assert set(DOCTOR_SCOPES["qualify"]) <= set(DOCTOR_SCOPES["release"])
     assert set(DOCTOR_SCOPES["release"]) == set(COMMAND_DEPENDENCIES) - {"version"}
@@ -81,8 +94,41 @@ def test_inventory_form_names_every_dependency() -> None:
     assert COMMAND_DEPENDENCIES["rescan"].to_dict() == {
         "tools": ["skopeo", "trivy", "cosign"],
         "profile": "required",
-        "registryCredentials": True,
+        "registryAccess": "read",
         "registryControl": False,
-        "signing": True,
+        "signing": "verify",
         "transparencyLog": True,
     }
+
+
+def _profile(**changes: Any) -> Any:
+    values: dict[str, Any] = {
+        "name": "production",
+        "auth_file": "/secure/auth.json",
+        "cosign_private_key": "/secure/cosign.key",
+    }
+    values.update(changes)
+    return SimpleNamespace(**values)
+
+
+def test_profile_capabilities_fail_closed_for_writes_and_signing() -> None:
+    for name in ("publish", "attest", "verify", "release"):
+        with pytest.raises(InvalidInvocationError, match="no auth_file"):
+            require_profile_capabilities(
+                _profile(auth_file=None), COMMAND_DEPENDENCIES[name]
+            )
+    for name in ("attest", "verify", "release"):
+        with pytest.raises(InvalidInvocationError, match="no Cosign signing key"):
+            require_profile_capabilities(
+                _profile(cosign_private_key=None), COMMAND_DEPENDENCIES[name]
+            )
+    for name in ("pins check", "build", "qualify", "assemble", "promote", "rescan"):
+        require_profile_capabilities(
+            _profile(auth_file=None, cosign_private_key=None),
+            COMMAND_DEPENDENCIES[name],
+        )
+    require_profile_capabilities(_profile(), scope_dependencies("release"))
+    require_profile_capabilities(
+        _profile(auth_file=None, cosign_private_key=None),
+        scope_dependencies("qualify"),
+    )

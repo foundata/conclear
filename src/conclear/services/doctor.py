@@ -6,7 +6,11 @@ from enum import StrEnum
 from typing import Protocol
 
 from conclear.config import RepositoryConfig
-from conclear.dependencies import DOCTOR_SCOPES
+from conclear.dependencies import (
+    DOCTOR_SCOPES,
+    require_profile_capabilities,
+    scope_dependencies,
+)
 from conclear.emulation import binfmt_handler, normalize_architecture
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.registry_control import TagObservation
@@ -64,8 +68,12 @@ def diagnose_environment(
 
     `check` proves the static toolchain. `qualify` adds run-owned rootless
     storage and an execution mode for every configured platform. `release` adds
-    the selected registry backend and the public Sigstore services.
+    the selected registry backend and the public Sigstore services. A profile is
+    first checked for every input the scope's commands will use, so readiness
+    is never reported for a profile that cannot write or sign.
     """
+    if profile is not None:
+        require_profile_capabilities(profile, scope_dependencies(scope.value))
     native = normalize_architecture(host_platform.machine())
     emulated: tuple[str, ...] = ()
     if scope in {DoctorScope.QUALIFY, DoctorScope.RELEASE}:

@@ -8,10 +8,12 @@ of the commands the scope covers, and the compatibility inventory renders the
 declarations so a change is a reviewable diff.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
+from conclear.errors import InvalidInvocationError
+from conclear.release_profile import ReleaseProfile
 from conclear.tools import ToolName
 
 
@@ -23,15 +25,31 @@ class ProfileUse(StrEnum):
     REQUIRED = "required"
 
 
+class RegistryAccess(StrEnum):
+    """How a command uses the release profile's registry authentication."""
+
+    NONE = "none"
+    READ = "read"
+    WRITE = "write"
+
+
+class SigningUse(StrEnum):
+    """Whether a command verifies with the trust root or signs with the key."""
+
+    NONE = "none"
+    VERIFY = "verify"
+    SIGN = "sign"
+
+
 @dataclass(frozen=True, slots=True)
 class CommandDependencies:
     """Host tools, profile use and external trust inputs of one command."""
 
     tools: tuple[ToolName, ...]
     profile: ProfileUse = ProfileUse.NONE
-    registry_credentials: bool = False
+    registry_access: RegistryAccess = RegistryAccess.NONE
     registry_control: bool = False
-    signing: bool = False
+    signing: SigningUse = SigningUse.NONE
     transparency_log: bool = False
 
     def to_dict(self) -> dict[str, object]:
@@ -39,9 +57,9 @@ class CommandDependencies:
         return {
             "tools": [tool.value for tool in self.tools],
             "profile": self.profile.value,
-            "registryCredentials": self.registry_credentials,
+            "registryAccess": self.registry_access.value,
             "registryControl": self.registry_control,
-            "signing": self.signing,
+            "signing": self.signing.value,
             "transparencyLog": self.transparency_log,
         }
 
@@ -54,18 +72,18 @@ COMMAND_DEPENDENCIES: Mapping[str, CommandDependencies] = {
     "pins check": CommandDependencies(
         tools=(ToolName.SKOPEO,),
         profile=ProfileUse.OPTIONAL,
-        registry_credentials=True,
+        registry_access=RegistryAccess.READ,
     ),
     "pins propose": CommandDependencies(
         tools=(ToolName.GIT, ToolName.SKOPEO),
         profile=ProfileUse.OPTIONAL,
-        registry_credentials=True,
+        registry_access=RegistryAccess.READ,
     ),
     "pins apply": CommandDependencies(tools=(ToolName.GIT,)),
     "build": CommandDependencies(
         tools=(ToolName.GIT, ToolName.BUILDAH),
         profile=ProfileUse.OPTIONAL,
-        registry_credentials=True,
+        registry_access=RegistryAccess.READ,
     ),
     "test": CommandDependencies(tools=(ToolName.GIT, ToolName.PODMAN)),
     "qualify": CommandDependencies(
@@ -78,7 +96,7 @@ COMMAND_DEPENDENCIES: Mapping[str, CommandDependencies] = {
             ToolName.TRIVY,
         ),
         profile=ProfileUse.OPTIONAL,
-        registry_credentials=True,
+        registry_access=RegistryAccess.READ,
     ),
     "transport export": CommandDependencies(tools=(ToolName.GIT,)),
     "assemble": CommandDependencies(tools=(ToolName.GIT,), profile=ProfileUse.OPTIONAL),
@@ -86,43 +104,44 @@ COMMAND_DEPENDENCIES: Mapping[str, CommandDependencies] = {
     "publish": CommandDependencies(
         tools=(ToolName.GIT, ToolName.SKOPEO),
         profile=ProfileUse.REQUIRED,
-        registry_credentials=True,
+        registry_access=RegistryAccess.WRITE,
         registry_control=True,
     ),
     "attest": CommandDependencies(
         tools=(ToolName.GIT, ToolName.SKOPEO, ToolName.COSIGN),
         profile=ProfileUse.REQUIRED,
-        registry_credentials=True,
-        signing=True,
+        registry_access=RegistryAccess.WRITE,
+        signing=SigningUse.SIGN,
         transparency_log=True,
     ),
     "verify": CommandDependencies(
         tools=(ToolName.GIT, ToolName.SKOPEO, ToolName.COSIGN),
         profile=ProfileUse.REQUIRED,
-        registry_credentials=True,
-        signing=True,
+        registry_access=RegistryAccess.WRITE,
+        signing=SigningUse.SIGN,
         transparency_log=True,
     ),
     "promote": CommandDependencies(
         tools=(ToolName.GIT, ToolName.SKOPEO, ToolName.COSIGN),
         profile=ProfileUse.REQUIRED,
-        registry_credentials=True,
+        registry_access=RegistryAccess.READ,
         registry_control=True,
+        signing=SigningUse.VERIFY,
         transparency_log=True,
     ),
     "release": CommandDependencies(
         tools=_ALL_TOOLS,
         profile=ProfileUse.REQUIRED,
-        registry_credentials=True,
+        registry_access=RegistryAccess.WRITE,
         registry_control=True,
-        signing=True,
+        signing=SigningUse.SIGN,
         transparency_log=True,
     ),
     "rescan": CommandDependencies(
         tools=(ToolName.SKOPEO, ToolName.TRIVY, ToolName.COSIGN),
         profile=ProfileUse.REQUIRED,
-        registry_credentials=True,
-        signing=True,
+        registry_access=RegistryAccess.READ,
+        signing=SigningUse.VERIFY,
         transparency_log=True,
     ),
     "cleanup": CommandDependencies(
@@ -148,12 +167,38 @@ def scope_dependencies(scope: str) -> CommandDependencies:
     """Return the union of what every command in one doctor scope needs."""
     selected = tuple(COMMAND_DEPENDENCIES[name] for name in DOCTOR_SCOPES[scope])
     used = {tool for item in selected for tool in item.tools}
-    levels = [ProfileUse.NONE, ProfileUse.OPTIONAL, ProfileUse.REQUIRED]
     return CommandDependencies(
         tools=tuple(tool for tool in ToolName if tool in used),
-        profile=max((item.profile for item in selected), key=levels.index),
-        registry_credentials=any(item.registry_credentials for item in selected),
+        profile=_strongest(ProfileUse, (item.profile for item in selected)),
+        registry_access=_strongest(
+            RegistryAccess, (item.registry_access for item in selected)
+        ),
         registry_control=any(item.registry_control for item in selected),
-        signing=any(item.signing for item in selected),
+        signing=_strongest(SigningUse, (item.signing for item in selected)),
         transparency_log=any(item.transparency_log for item in selected),
     )
+
+
+def require_profile_capabilities(
+    profile: ReleaseProfile, dependencies: CommandDependencies
+) -> None:
+    """Fail closed when the profile lacks an input the dependencies will use.
+
+    This checks configuration only: nothing is written, signed or contacted.
+    Registry write access needs the profile's auth file, signing needs its
+    private key; the control-plane token is demanded by the backend selection.
+    """
+    if (
+        dependencies.registry_access is RegistryAccess.WRITE
+        and profile.auth_file is None
+    ):
+        raise InvalidInvocationError(
+            f"Release profile {profile.name} has no auth_file for registry writes"
+        )
+    if dependencies.signing is SigningUse.SIGN and profile.cosign_private_key is None:
+        raise InvalidInvocationError("Release profile has no Cosign signing key")
+
+
+def _strongest[E: StrEnum](kind: type[E], values: Iterable[E]) -> E:
+    order = list(kind)
+    return max(values, key=order.index, default=order[0])

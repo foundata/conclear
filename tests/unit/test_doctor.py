@@ -1,6 +1,7 @@
 import platform
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -69,6 +70,56 @@ class _FakeRegistryControl:
         self.observed += 1
 
 
+def _profile(**changes: Any) -> Any:
+    values: dict[str, Any] = {
+        "name": "production",
+        "auth_file": Path("/secure/auth.json"),
+        "cosign_private_key": "/secure/cosign.key",
+        "registry": SimpleNamespace(token_file=Path("/secure/quay.token")),
+    }
+    values.update(changes)
+    return SimpleNamespace(**values)
+
+
+@pytest.mark.parametrize(
+    ("changes", "expected"),
+    [
+        ({"auth_file": None}, "has no auth_file for registry writes"),
+        ({"cosign_private_key": None}, "has no Cosign signing key"),
+    ],
+)
+def test_release_scope_refuses_a_profile_that_cannot_write_or_sign(
+    repository_factory: Any, tmp_path: Path, changes: dict[str, Any], expected: str
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+    runtime = _FakeRuntime(tmp_path)
+
+    with pytest.raises(InvalidInvocationError, match=expected):
+        diagnose_environment(
+            repository,
+            cast(Any, runtime),
+            scope=DoctorScope.RELEASE,
+            profile=_profile(**changes),
+            registry_control=cast(Any, _UnexpectedRegistryControl()),
+        )
+    assert runtime.calls == []
+
+
+def test_qualify_scope_accepts_a_profile_without_write_or_signing_inputs(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+
+    observation = diagnose_environment(
+        repository,
+        cast(Any, _FakeRuntime(tmp_path)),
+        scope=DoctorScope.QUALIFY,
+        profile=_profile(auth_file=None, cosign_private_key=None),
+    )
+
+    assert observation.scope is DoctorScope.QUALIFY
+
+
 def test_scopes_match_the_declared_doctor_scopes() -> None:
     assert tuple(item.value for item in DoctorScope) == tuple(DOCTOR_SCOPES)
 
@@ -84,7 +135,7 @@ def test_release_scope_probes_registry_and_sigstore(
         repository,
         cast(Any, runtime),
         scope=DoctorScope.RELEASE,
-        profile=cast(Any, object()),
+        profile=_profile(),
         registry_control=cast(Any, registry_control),
     )
 
@@ -179,7 +230,7 @@ def test_missing_binfmt_handler_is_an_operational_failure(
             repository,
             cast(Any, _FakeRuntime(tmp_path)),
             scope=scope,
-            profile=cast(Any, object()),
+            profile=_profile(),
             registry_control=cast(Any, _UnexpectedRegistryControl()),
         )
 

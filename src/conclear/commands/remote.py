@@ -13,7 +13,11 @@ from conclear.artifacts import (
     load_verification,
 )
 from conclear.config import ImageConfig
-from conclear.dependencies import command_tools
+from conclear.dependencies import (
+    COMMAND_DEPENDENCIES,
+    command_tools,
+    require_profile_capabilities,
+)
 from conclear.errors import InvalidInvocationError
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import format_timestamp, utc_now
@@ -316,6 +320,7 @@ def release_command(
 ) -> None:
     """Execute or resume the complete isolated release through promotion."""
     selected = profile(profile_name)
+    require_profile_capabilities(selected, COMMAND_DEPENDENCIES["release"])
     _private_key(selected)
     passphrase = signing_passphrase(selected, passphrase_fd, required=True)
     observed_ci = ci_context(selected)
@@ -376,6 +381,7 @@ def _remote_run(
     run_id: str, profile_name: str, command: str
 ) -> tuple[SourceRun, ReleaseProfile]:
     selected = profile(profile_name)
+    require_profile_capabilities(selected, COMMAND_DEPENDENCIES[command])
     source_run = open_source_run(
         state_home=state_home(), run_id=run_id, names=command_tools(command)
     )

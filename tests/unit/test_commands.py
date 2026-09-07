@@ -53,7 +53,11 @@ class FixedIdFactory:
 
 
 def release_profile(
-    tmp_path: Path, *, key: str | None = "cosign.key"
+    tmp_path: Path,
+    *,
+    key: str | None = "cosign.key",
+    auth: str | None = "auth.json",
+    token: str | None = None,
 ) -> ReleaseProfile:
     public_key = tmp_path / "cosign.pub"
     public_key.write_text("public\n", encoding="utf-8")
@@ -61,9 +65,12 @@ def release_profile(
         name="production",
         ci_context=CIContextPolicy.OMIT,
         builder=BuilderConfig(BUILDER_ID),
-        auth_file=None,
+        auth_file=None if auth is None else tmp_path / auth,
         registry=QuayRegistryConfig(
-            RegistryProvider.QUAY, "quay.io", "https://quay.io/api/v1", None
+            RegistryProvider.QUAY,
+            "quay.io",
+            "https://quay.io/api/v1",
+            None if token is None else tmp_path / token,
         ),
         cosign_private_key=None if key is None else str(tmp_path / key),
         cosign_public_key=public_key,
@@ -1543,3 +1550,125 @@ def test_every_command_resolves_exactly_its_declared_tools(
     assert code == 64, value
     assert "stopped after resolving tools" in value["message"]
     assert recorded == [expected]
+
+
+@pytest.mark.parametrize(
+    ("profile_arguments", "expected"),
+    [
+        ({"auth": None}, "has no auth_file for registry writes"),
+        ({"key": None}, "has no Cosign signing key"),
+        ({"token": None}, "requires an API token"),
+    ],
+)
+def test_doctor_release_scope_refuses_a_profile_that_cannot_write_or_sign(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    profile_arguments: dict[str, Any],
+    expected: str,
+) -> None:
+    """Readiness is never reported without write authentication, token and key."""
+    root = repository_factory()
+    arguments: dict[str, Any] = {"token": "quay.token", **profile_arguments}
+    profile = release_profile(tmp_path, **arguments)
+    monkeypatch.setattr(maintenance_commands, "profile", lambda name: profile)
+    monkeypatch.setattr(
+        maintenance_commands,
+        "diagnostic_runtime",
+        lambda names: pytest.fail("no tool was resolved before the profile check"),
+    )
+
+    code, value, _ = invoke(
+        ["doctor", "--config", str(root / "conclear.toml"), "--profile", "production"]
+    )
+
+    assert code == 64
+    assert expected in value["message"]
+
+
+def test_doctor_qualify_scope_accepts_a_read_only_profile(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+) -> None:
+    root = repository_factory()
+    profile = release_profile(tmp_path, key=None, auth=None)
+    monkeypatch.setattr(maintenance_commands, "profile", lambda name: profile)
+    monkeypatch.setattr(
+        maintenance_commands, "diagnostic_runtime", _recording_runtime([])
+    )
+    monkeypatch.setattr(
+        maintenance_commands,
+        "diagnose_environment",
+        lambda *a, **k: SimpleNamespace(
+            tools=(),
+            native_architecture="amd64",
+            emulated_architectures=(),
+            registry_provider=None,
+            registry_access=False,
+            sigstore_access=False,
+        ),
+    )
+    monkeypatch.setattr(maintenance_commands, "ci_context", lambda selected: None)
+
+    code, value, _ = invoke(
+        [
+            "doctor",
+            "--config",
+            str(root / "conclear.toml"),
+            "--scope",
+            "qualify",
+            "--profile",
+            "production",
+        ]
+    )
+
+    assert code == 0
+    assert value["data"]["profile"] == "production"
+    assert "registryProvider" not in value["data"]
+
+
+@pytest.mark.parametrize(
+    ("command", "profile_arguments", "expected"),
+    [
+        ("publish", {"auth": None}, "has no auth_file for registry writes"),
+        ("attest", {"auth": None}, "has no auth_file for registry writes"),
+        ("attest", {"key": None}, "has no Cosign signing key"),
+        ("verify", {"key": None}, "has no Cosign signing key"),
+        ("release", {"auth": None}, "has no auth_file for registry writes"),
+    ],
+)
+def test_remote_commands_refuse_an_incapable_profile_before_touching_the_run(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    command: str,
+    profile_arguments: dict[str, Any],
+    expected: str,
+) -> None:
+    root = repository_factory()
+    profile = release_profile(tmp_path, **profile_arguments)
+    monkeypatch.setattr(remote_commands, "profile", lambda name: profile)
+    monkeypatch.setattr(
+        remote_commands,
+        "open_source_run",
+        lambda **kwargs: pytest.fail("the run must not be opened"),
+    )
+    monkeypatch.setattr(
+        release_module,
+        "create_source_run",
+        lambda **kwargs: pytest.fail("no run must be created"),
+    )
+    arguments = (
+        ["release", "--source", str(root), "--revision", "v1", "--image", "app"]
+        if command == "release"
+        else [command, RUN_ID]
+    )
+
+    code, value, _ = invoke([*arguments, "--profile", "production"])
+
+    assert code == 64
+    assert expected in value["message"]
