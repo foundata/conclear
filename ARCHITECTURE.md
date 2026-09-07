@@ -374,21 +374,22 @@ share a tag observe one digest, and a static rejection anywhere in the closure
 stops the run before any registry is contacted. Every finding of the closure
 names the image it concerns, so a rejection is attributable. ConClear then
 builds each dependency once from the same isolated revision, source timestamp,
-target platform, version input and resolved Buildah toolchain, validates its
-OCI layout and labels, imports it by its reverified manifest digest, and
-exposes no mutable reference. A dependency participates only in the primary
-image's tests and is not represented as independently qualified or releasable.
-The platform qualification records, for each dependency, its Containerfile and
-context digests, build arguments, external images, pin observations and
-effective pin limits next to its layout and manifest digests. Transport import
-and assembly verify that evidence against the configured dependency set, pins
-and limits, and assembly requires it to agree across platforms. Build arguments
-are validated wherever a record is read: `IMAGE_REVISION` must name the record's
-source revision, `IMAGE_CREATED` must equal the `SOURCE_DATE_EPOCH` instant,
-every dependency must carry the same arguments as the qualified image, and
-assembly requires the arguments to agree across platforms. Release provenance
-names each dependency's Containerfile, context, tested manifest and external
-images as resolved dependencies.
+target platform, version input and resolved Buildah toolchain, validates its OCI
+layout and labels, imports it by its reverified manifest digest, and exposes no
+mutable reference. A dependency participates only in the primary image's tests
+and is not represented as independently qualified or releasable. The platform
+qualification records, for each dependency, its Containerfile and context
+digests, build arguments, external images, pin observations and effective pin
+limits next to its layout and manifest digests. Transport import and assembly
+verify that evidence against the configured dependency set, pins and limits, and
+assembly requires it to agree across platforms. Build arguments are never
+trusted from a record: the `assemble` command derives the one map every build of
+the run received, from the selected source revision, the commit time Git
+observed for it and the release version, when it imports each transport and
+again when it assembles the candidate, and it rejects any qualified image or
+dependency whose recorded map differs from that derived map in any key. Release
+provenance names each dependency's Containerfile, context, tested manifest and
+external images as resolved dependencies.
 
 An image is releasable when it declares a `repository`; it then also declares
 its release tags. An image without a repository is test-only: it declares only
@@ -1280,21 +1281,30 @@ overwrite. It discovers only the conventional `Containerfile`,
 `Containerfile.<name>`, `Dockerfile` and `Dockerfile.<name>` files at the
 repository root, refuses a root that mixes both families or has none unless
 paths are given, and confines explicit paths below the root. Through the same
-structural parsers `check` uses, it observes build paths, the canonical source
-identity, every external image input and its pin quality, the final `USER`,
-`VOLUME` destinations, `STOPSIGNAL`, static labels and a recognizable systemd
-entrypoint. Every result separates observed facts from suggestions and from
+structural parsers `check` uses, it observes the Containerfile path, the
+canonical source identity, every external image input and its pin quality, the
+final `USER`, `VOLUME` destinations, `STOPSIGNAL`, static labels and a
+recognizable systemd entrypoint. The structural facts select the proposed
+runtime profile before the profile-dependent checks run: a systemd entrypoint is
+checked against the numeric `USER 0`, the fixed systemd stop signal and the
+systemd writable mounts that profile requires, every other image against a
+numeric non-root user, so findings, suggestions, decisions and draft values
+agree. A build context is not observable; a conventional root Containerfile
+receives the repository root as a suggestion and any other selection leaves it a
+decision. Every result separates observed facts from suggestions and from
 required decisions. Suggestions are limited to image ids derived from file
 names, conservative resource limits, release tag templates, the runtime profile
 the entrypoint implies, the numeric user the Containerfile states and writable
 mounts equal to observed `VOLUME` destinations. It never invents a release
 destination, platforms, a root justification, application writable paths, health
 behavior, test inputs, dependencies, hooks, exceptions or credentials; each of
-those is a listed decision. The draft names every unresolved value with a
-`DECIDE` placeholder that fails the configuration schema and carries an
-`[adopt]` table the schema rejects, so an incomplete draft cannot pass `check`
-or `qualify`. The JSON result is a closed schema of observations, suggestions,
-required decisions, findings and the draft text.
+those is a listed decision, as is whether an image is released or exists only as
+a test dependency, and the draft states what a test-only image must drop and
+that an image no image depends on is invalid. The draft names every unresolved
+value with a `DECIDE` placeholder that fails the configuration schema and
+carries an `[adopt]` table the schema rejects, so an incomplete draft cannot
+pass `check` or `qualify`. The JSON result is a closed schema of observations,
+suggestions, required decisions, findings and the draft text.
 
 
 ## Maintaining this document<a id="maintaining-this-document"></a>

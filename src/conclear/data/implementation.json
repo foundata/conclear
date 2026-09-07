@@ -366,7 +366,7 @@
     {
       "id": "IP0037",
       "summary": "Assess an existing repository read-only and draft a deliberately invalid configuration that separates facts, suggestions and decisions",
-      "implementation": ["src/conclear/services/adoption.py", "src/conclear/commands/adopt.py", "src/conclear/fileio.py"],
+      "implementation": ["src/conclear/services/adoption.py", "src/conclear/services/adoption_observation.py", "src/conclear/services/adoption_draft.py", "src/conclear/commands/adopt.py", "src/conclear/fileio.py"],
       "tests": [
         {"path": "tests/unit/test_adoption.py", "tier": "unit"}
       ]
