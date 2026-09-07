@@ -18,8 +18,18 @@ from pathlib import Path
 from typing import Protocol
 
 from conclear.adapters.git import SourceObservation
-from conclear.checks import Instruction, analyze_containerfile, volume_paths
-from conclear.config import SYSTEMD_WRITABLE_MOUNTS, normalize_observed_source_url
+from conclear.checks import (
+    Instruction,
+    analyze_containerfile,
+    normalized_signal,
+    parse_containerfile,
+    volume_paths,
+)
+from conclear.config import (
+    SYSTEMD_STOP_SIGNAL,
+    SYSTEMD_WRITABLE_MOUNTS,
+    normalize_observed_source_url,
+)
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.path_safety import contained_path
 from conclear.presentation import Finding
@@ -67,7 +77,11 @@ class PinQuality(StrEnum):
 
 
 class UserKind(StrEnum):
-    """Classification of the final-stage USER instruction."""
+    """Classification of the final-stage USER instruction.
+
+    `ROOT` is the numeric UID 0 the systemd contract requires; `USER root` is a
+    named user like any other and is classified as `NAMED`.
+    """
 
     NUMERIC = "numeric"
     NAMED = "named"
@@ -151,7 +165,15 @@ class ContainerfileObservation:
     stop_signal: str | None
     labels: tuple[tuple[str, str], ...]
     entrypoint: Entrypoint
+    profile: str
     findings: tuple[Finding, ...]
+
+    @property
+    def stop_signal_accepted(self) -> bool:
+        """Return whether the observed STOPSIGNAL is the fixed systemd signal."""
+        return self.stop_signal is not None and normalized_signal(
+            self.stop_signal
+        ) == normalized_signal(SYSTEMD_STOP_SIGNAL)
 
     def to_dict(self) -> dict[str, object]:
         """Return the public observation."""
@@ -367,15 +389,19 @@ def observe_project(root: Path, git: SourceObserver | None) -> ProjectObservatio
 def observe_containerfile(
     root: Path, path: Path, *, image_id: str
 ) -> ContainerfileObservation:
-    """Observe one Containerfile through the structural analysis used by `check`."""
-    analysis = analyze_containerfile(path)
+    """Observe one Containerfile through the structural analysis used by `check`.
+
+    Structural facts come first and select the proposed runtime profile; the
+    profile-dependent checks then run with the expectations that profile sets,
+    so the findings agree with the suggestions, decisions and draft values.
+    """
     user: Instruction | None = None
     stop_signal: Instruction | None = None
     entrypoint: Instruction | None = None
     command: Instruction | None = None
     volumes: list[str] = []
     labels: dict[str, str] = {}
-    for instruction in analysis.instructions:
+    for instruction in parse_containerfile(path):
         keyword = instruction.keyword.upper()
         argument = instruction.argument.strip()
         if keyword == "FROM":
@@ -396,6 +422,28 @@ def observe_containerfile(
             entrypoint = instruction
         elif keyword == "CMD":
             command = instruction
+    final_user = _final_user(user)
+    final_entrypoint = _entrypoint(entrypoint or command)
+    final_volumes = tuple(dict.fromkeys(volumes))
+    profile = "systemd" if final_entrypoint.systemd else "service"
+    if profile == "systemd":
+        expected_user: int | None = 0
+        expected_stop_signal: str | None = SYSTEMD_STOP_SIGNAL
+        expected_writable = tuple(sorted({*final_volumes, *SYSTEMD_WRITABLE_MOUNTS}))
+    else:
+        expected_user = (
+            final_user.uid
+            if final_user.kind in {UserKind.NUMERIC, UserKind.ROOT}
+            else None
+        )
+        expected_stop_signal = None
+        expected_writable = final_volumes
+    analysis = analyze_containerfile(
+        path,
+        expected_user=expected_user,
+        expected_stop_signal=expected_stop_signal,
+        expected_writable_mounts=expected_writable,
+    )
     return ContainerfileObservation(
         image_id=image_id,
         containerfile=path.relative_to(root).as_posix(),
@@ -403,11 +451,12 @@ def observe_containerfile(
         external_references=tuple(
             _external_reference(reference) for reference in analysis.external_references
         ),
-        user=_final_user(user),
-        volumes=tuple(dict.fromkeys(volumes)),
+        user=final_user,
+        volumes=final_volumes,
         stop_signal=None if stop_signal is None else stop_signal.argument.strip(),
         labels=tuple(sorted(labels.items())),
-        entrypoint=_entrypoint(entrypoint or command),
+        entrypoint=final_entrypoint,
+        profile=profile,
         findings=analysis.findings,
     )
 
@@ -457,7 +506,7 @@ def render_draft(
                 'moving_tags = ["stable"]',
             )
         )
-        lines.extend(("", "[images.runtime]", f'profile = "{_profile(image)}"'))
+        lines.extend(("", "[images.runtime]", f'profile = "{image.profile}"'))
         lines.append(f"user = {_user_value(image)}")
         writable = _writable_mounts(image)
         if writable:
@@ -467,7 +516,7 @@ def render_draft(
                 + "]"
             )
         lines.extend(f"{key} = {value}" for key, value in _SUGGESTED_RESOURCES)
-        if image.user.kind is UserKind.ROOT or image.entrypoint.systemd:
+        if image.user.kind is UserKind.ROOT or image.profile == "systemd":
             lines.extend(
                 (
                     "",
@@ -477,7 +526,7 @@ def render_draft(
                     f"review_trigger = {_toml(_decide('what change triggers another review'))}",
                 )
             )
-        if image.entrypoint.systemd:
+        if image.profile == "systemd":
             lines.extend(
                 (
                     "",
@@ -571,14 +620,13 @@ def _notes(
                 'Start with immutable_tags = ["{version}"] and moving_tags = ["stable"]; drop {version} for an unversioned project.',
             )
         )
-        profile = _profile(image)
         suggestions.append(
             Note(
                 image.image_id,
                 "runtime.profile",
                 (
                     "The entrypoint starts systemd, so the systemd profile applies."
-                    if image.entrypoint.systemd
+                    if image.profile == "systemd"
                     else "Start with the service profile; use one-shot for a command that exits."
                 ),
             )
@@ -590,7 +638,7 @@ def _notes(
                 "Start with the conservative limits memory 512MiB, cpus 1.0, pids 256 and nofile 1024.",
             )
         )
-        _user_notes(image, profile, suggestions, decisions)
+        _user_notes(image, suggestions, decisions)
         writable = _writable_mounts(image)
         if writable:
             suggestions.append(
@@ -609,7 +657,7 @@ def _notes(
                 "Confirm the writable paths the application needs; only VOLUME destinations are observed.",
             )
         )
-        if image.entrypoint.systemd:
+        if image.profile == "systemd":
             decisions.append(
                 Note(
                     image.image_id,
@@ -617,10 +665,7 @@ def _notes(
                     "Name the units that must become active.",
                 )
             )
-            if (
-                image.stop_signal is None
-                or image.stop_signal.upper().removeprefix("SIG") != "RTMIN+3"
-            ):
+            if not image.stop_signal_accepted:
                 decisions.append(
                     Note(
                         image.image_id,
@@ -672,11 +717,47 @@ def _notes(
 
 def _user_notes(
     image: ContainerfileObservation,
-    profile: str,
     suggestions: list[Note],
     decisions: list[Note],
 ) -> None:
     user = image.user
+    if image.profile == "systemd":
+        if user.kind is UserKind.ROOT:
+            suggestions.append(
+                Note(
+                    image.image_id,
+                    "runtime.user",
+                    "Keep the numeric `USER 0`; the systemd profile requires UID 0.",
+                )
+            )
+        elif user.kind is UserKind.MISSING:
+            decisions.append(
+                Note(
+                    image.image_id,
+                    "USER",
+                    "Add `USER 0` as the final USER; the systemd profile runs as UID 0 "
+                    "and the contract requires it to be stated numerically.",
+                )
+            )
+        elif user.kind is UserKind.NAMED:
+            decisions.append(
+                Note(
+                    image.image_id,
+                    "USER",
+                    f"Replace the named USER {user.raw!r} with the numeric `USER 0`; "
+                    "the systemd profile requires UID 0 as a number.",
+                )
+            )
+        else:
+            decisions.append(
+                Note(
+                    image.image_id,
+                    "USER",
+                    f"Change USER {user.raw} to `USER 0`; the systemd profile requires UID 0.",
+                )
+            )
+        decisions.append(_root_requirement_decision(image))
+        return
     if user.kind is UserKind.NUMERIC:
         suggestions.append(
             Note(
@@ -685,6 +766,8 @@ def _user_notes(
                 f"Keep the numeric UID {user.uid} from the final USER instruction.",
             )
         )
+    elif user.kind is UserKind.ROOT:
+        decisions.append(_root_requirement_decision(image))
     elif user.kind is UserKind.NAMED:
         decisions.append(
             Note(
@@ -693,7 +776,7 @@ def _user_notes(
                 f"Replace the named USER {user.raw!r} with the numeric UID it maps to; the contract requires a numeric user.",
             )
         )
-    elif user.kind is UserKind.MISSING:
+    else:
         decisions.append(
             Note(
                 image.image_id,
@@ -701,22 +784,23 @@ def _user_notes(
                 "Add a final numeric non-root USER; without one the image runs as root.",
             )
         )
-    if user.kind is UserKind.ROOT or profile == "systemd":
-        decisions.append(
-            Note(
-                image.image_id,
-                "runtime.root_requirement",
-                "Justify UID 0 with a rationale, an owner and a review trigger, or switch to a non-root user.",
-            )
-        )
 
 
-def _profile(image: ContainerfileObservation) -> str:
-    return "systemd" if image.entrypoint.systemd else "service"
+def _root_requirement_decision(image: ContainerfileObservation) -> Note:
+    return Note(
+        image.image_id,
+        "runtime.root_requirement",
+        "Justify UID 0 with a rationale, an owner and a review trigger"
+        + (
+            "; the systemd profile cannot run as another user."
+            if image.profile == "systemd"
+            else ", or switch to a non-root user."
+        ),
+    )
 
 
 def _user_value(image: ContainerfileObservation) -> str:
-    if image.entrypoint.systemd:
+    if image.profile == "systemd":
         return "0"
     if (
         image.user.kind in {UserKind.NUMERIC, UserKind.ROOT}
@@ -727,7 +811,7 @@ def _user_value(image: ContainerfileObservation) -> str:
 
 
 def _writable_mounts(image: ContainerfileObservation) -> tuple[str, ...]:
-    provided = set(SYSTEMD_WRITABLE_MOUNTS) if image.entrypoint.systemd else set()
+    provided = set(SYSTEMD_WRITABLE_MOUNTS) if image.profile == "systemd" else set()
     return tuple(volume for volume in image.volumes if volume not in provided)
 
 
@@ -768,8 +852,6 @@ def _final_user(instruction: Instruction | None) -> FinalUser:
     if user_part.isdecimal():
         uid = int(user_part)
         return FinalUser(raw, uid, UserKind.ROOT if uid == 0 else UserKind.NUMERIC)
-    if user_part == "root":
-        return FinalUser(raw, 0, UserKind.ROOT)
     return FinalUser(raw, None, UserKind.NAMED)
 
 

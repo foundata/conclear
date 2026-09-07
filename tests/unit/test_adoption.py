@@ -255,7 +255,13 @@ def test_pin_quality_is_classified_and_unpinned_inputs_become_decisions(
         ),
         (None, UserKind.MISSING, None, "DECIDE: numeric non-root UID", "runs as root"),
         ("USER 0", UserKind.ROOT, 0, "user = 0", "Justify UID 0"),
-        ("USER root", UserKind.ROOT, 0, "user = 0", "Justify UID 0"),
+        (
+            "USER root",
+            UserKind.NAMED,
+            None,
+            "DECIDE: numeric non-root UID",
+            "numeric UID",
+        ),
     ],
 )
 def test_user_variants(
@@ -281,30 +287,44 @@ def test_user_variants(
         assert "[images.runtime.root_requirement]" not in assessment.draft
     else:
         assert any(decision in text for text in user_decisions)
+    assert ("[images.runtime.root_requirement]" in assessment.draft) == (
+        kind is UserKind.ROOT
+    )
     if kind is UserKind.ROOT:
-        assert "[images.runtime.root_requirement]" in assessment.draft
         assert 'rationale = "DECIDE:' in assessment.draft
+    if kind in {UserKind.NUMERIC, UserKind.ROOT}:
+        assert "CC0110" not in {item.check_id for item in image.findings}
+    else:
+        [finding] = [item for item in image.findings if item.check_id == "CC0110"]
+        assert "numeric non-root UID" in finding.message
 
 
-@pytest.mark.parametrize("stop_signal", [None, "SIGRTMIN+3", "RTMIN+3"])
-def test_systemd_candidate_gets_the_systemd_profile_and_its_decisions(
-    tmp_path: Path, stop_signal: str | None
-) -> None:
-    root = _repository(
+SYSTEMD_VOLUMES = '["/run", "/run/lock", "/tmp", "/var/lib/journal"]'
+
+
+def _systemd_repository(
+    tmp_path: Path, *, user: str | None, stop_signal: str | None = "SIGRTMIN+3"
+) -> Path:
+    return _repository(
         tmp_path,
         {
             "Containerfile": _containerfile(
-                user=None,
-                volumes=('["/run", "/run/lock", "/tmp", "/var/lib/journal"]',),
+                user=user,
+                volumes=(SYSTEMD_VOLUMES,),
                 stop_signal=stop_signal,
                 entrypoint='CMD ["/lib/systemd/systemd"]',
             )
         },
     )
 
-    assessment = _assess(root)
+
+def test_systemd_candidate_gets_the_systemd_profile_and_its_decisions(
+    tmp_path: Path,
+) -> None:
+    assessment = _assess(_systemd_repository(tmp_path, user="USER 0"))
 
     [image] = assessment.images
+    assert image.profile == "systemd"
     assert image.entrypoint.systemd and image.entrypoint.instruction == "CMD"
     assert image.volumes == ("/run", "/run/lock", "/tmp", "/var/lib/journal")
     assert 'profile = "systemd"' in assessment.draft
@@ -314,11 +334,91 @@ def test_systemd_candidate_gets_the_systemd_profile_and_its_decisions(
     assert "[images.runtime.root_requirement]" in assessment.draft
     fields = {note.field for note in assessment.decisions}
     assert {"runtime.systemd.required_units", "runtime.root_requirement"} <= fields
-    assert ("STOPSIGNAL" in fields) == (stop_signal is None)
     assert "runtime.health_command" not in fields
     assert _notes(assessment.suggestions, "runtime.profile") == [
         "The entrypoint starts systemd, so the systemd profile applies."
     ]
+    assert _notes(assessment.suggestions, "runtime.user") == [
+        "Keep the numeric `USER 0`; the systemd profile requires UID 0."
+    ]
+    assert assessment.findings == ()
+
+
+@pytest.mark.parametrize(
+    ("user", "kind", "decision"),
+    [
+        (None, UserKind.MISSING, "Add `USER 0` as the final USER"),
+        (
+            "USER root",
+            UserKind.NAMED,
+            "Replace the named USER 'root' with the numeric `USER 0`",
+        ),
+        (
+            "USER app",
+            UserKind.NAMED,
+            "Replace the named USER 'app' with the numeric `USER 0`",
+        ),
+        ("USER 1001:1001", UserKind.NUMERIC, "Change USER 1001:1001 to `USER 0`"),
+    ],
+)
+def test_systemd_user_guidance_never_asks_for_a_non_root_user(
+    tmp_path: Path, user: str | None, kind: UserKind, decision: str
+) -> None:
+    assessment = _assess(_systemd_repository(tmp_path, user=user))
+
+    [image] = assessment.images
+    assert image.user.kind is kind
+    assert "user = 0" in assessment.draft
+    [text] = _notes(assessment.decisions, "USER")
+    assert decision in text
+    assert _notes(assessment.suggestions, "runtime.user") == []
+    assert "runtime.user" not in {note.field for note in assessment.decisions}
+    [finding] = [item for item in assessment.findings if item.check_id == "CC0110"]
+    assert finding.message == "Final USER must be configured numeric UID 0"
+    texts = [note.text for note in assessment.decisions] + [
+        item.message for item in assessment.findings
+    ]
+    assert not [text for text in texts if "non-root" in text]
+
+
+@pytest.mark.parametrize(
+    ("stop_signal", "accepted"),
+    [
+        ("SIGRTMIN+3", True),
+        ("RTMIN+3", True),
+        (None, False),
+        ("SIGTERM", False),
+        ("sigrtmin+3", False),
+    ],
+)
+def test_systemd_stop_signal_uses_the_production_normalization(
+    tmp_path: Path, stop_signal: str | None, accepted: bool
+) -> None:
+    assessment = _assess(
+        _systemd_repository(tmp_path, user="USER 0", stop_signal=stop_signal)
+    )
+
+    [image] = assessment.images
+    assert image.stop_signal_accepted is accepted
+    assert ("STOPSIGNAL" in {note.field for note in assessment.decisions}) is (
+        not accepted
+    )
+    assert ("CC0115" in {item.check_id for item in assessment.findings}) is (
+        not accepted
+    )
+
+
+def test_service_image_volumes_are_expected_as_writable_mounts(
+    tmp_path: Path,
+) -> None:
+    root = _repository(
+        tmp_path, {"Containerfile": _containerfile(volumes=("/data", "/cache"))}
+    )
+
+    assessment = _assess(root)
+
+    assert assessment.findings == ()
+    assert 'writable_mounts = ["/data", "/cache"]' in assessment.draft
 
 
 @pytest.mark.parametrize(
