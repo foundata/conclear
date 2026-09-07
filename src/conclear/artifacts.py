@@ -347,6 +347,67 @@ def load_release_evidence(
     return evidence
 
 
+def qualification_materials(
+    payload: dict[str, object], *, image_id: str, platform: Platform
+) -> tuple[tuple[str, object], ...]:
+    """Return the source and image inputs one qualification payload names.
+
+    The qualified image contributes its Containerfile, context and external
+    images. Every test dependency contributes the same inputs plus the exact
+    manifest that participated in the tests, so provenance names everything
+    that influenced the verdict.
+    """
+    materials: list[tuple[str, object]] = [
+        (
+            f"conclear:containerfile/{image_id}/{platform}",
+            payload.get("containerfileDigest"),
+        ),
+        (f"conclear:context/{image_id}/{platform}", payload.get("contextDigest")),
+        *_external_image_materials(payload),
+    ]
+    raw_entries = payload.get("testImageDependencies")
+    if not isinstance(raw_entries, list):
+        raise InvalidInvocationError("Qualification test dependencies are malformed")
+    for raw_entry in raw_entries:
+        entry = _narrow.object_value(raw_entry, "test dependency")
+        dependency_id = _narrow.string_value(
+            entry.get("imageId"), "test dependency image"
+        )
+        materials.extend(
+            (
+                (
+                    f"conclear:containerfile/{dependency_id}/{platform}",
+                    entry.get("containerfileDigest"),
+                ),
+                (
+                    f"conclear:context/{dependency_id}/{platform}",
+                    entry.get("contextDigest"),
+                ),
+                (
+                    f"conclear:test-image/{dependency_id}/{platform}",
+                    entry.get("manifestDigest"),
+                ),
+                *_external_image_materials(entry),
+            )
+        )
+    return tuple(materials)
+
+
+def _external_image_materials(value: dict[str, object]) -> list[tuple[str, object]]:
+    external_images = value.get("externalImages")
+    if not isinstance(external_images, list) or any(
+        not isinstance(item, str) for item in external_images
+    ):
+        raise InvalidInvocationError("Qualification external images are malformed")
+    materials: list[tuple[str, object]] = []
+    for external_image in external_images:
+        reference = OCIReference.parse(external_image, require_digest=True)
+        if reference.digest is None:
+            raise InvalidInvocationError("External image is not immutable")
+        materials.append((f"docker://{external_image}", str(reference.digest)))
+    return materials
+
+
 def load_provenance_materials(
     workspace: RunWorkspace, image: ReleaseImageConfig
 ) -> tuple[ProvenanceMaterial, ...]:
@@ -379,25 +440,11 @@ def load_provenance_materials(
         _validate_bound_record(record, workspace, run_id=bound_runs[platform])
         payload = _narrow.object_value(record.get("payload"), "qualification payload")
         add(f"conclear:qualification/{platform}", record_digest)
-        add(
-            f"conclear:containerfile/{image.image_id}/{platform}",
-            payload.get("containerfileDigest"),
-        )
-        add(
-            f"conclear:context/{image.image_id}/{platform}",
-            payload.get("contextDigest"),
-        )
         add("conclear:trivy-database", payload.get("databaseDigest"))
-        external_images = payload.get("externalImages")
-        if not isinstance(external_images, list) or any(
-            not isinstance(item, str) for item in external_images
+        for uri, digest_value in qualification_materials(
+            payload, image_id=image.image_id, platform=platform
         ):
-            raise InvalidInvocationError("Qualification external images are malformed")
-        for external_image in external_images:
-            reference = OCIReference.parse(external_image, require_digest=True)
-            if reference.digest is None:
-                raise InvalidInvocationError("External image is not immutable")
-            add(f"docker://{external_image}", str(reference.digest))
+            add(uri, digest_value)
         for path in _qualification_payload_paths(workspace, image, platform, payload):
             digest = sha256_file(path)
             observed_payloads.add(digest)

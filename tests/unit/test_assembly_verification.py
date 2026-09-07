@@ -11,6 +11,7 @@ import pytest
 
 import conclear.records as records_module
 import conclear.services.assembly as assembly_service_module
+from conclear.artifacts import qualification_materials
 from conclear.config import load_repository_config
 from conclear.errors import InvalidInvocationError
 from conclear.identity import ApplicationIdentity
@@ -629,3 +630,26 @@ def test_assembly_requires_identical_dependency_inputs_across_platforms(
             now=NOW + timedelta(minutes=1),
         )
 
+
+def test_qualification_materials_name_every_test_dependency_input(
+    dependency_scenario: Scenario,
+) -> None:
+    scenario = dependency_scenario
+    entry = _dependency_entry(scenario)
+    payload = scenario.payload(testImageDependencies=[entry])
+    pin = str(scenario.image.pins[0].reference)
+
+    materials = dict(
+        qualification_materials(
+            payload, image_id="app", platform=Platform.parse("linux/amd64")
+        )
+    )
+
+    assert materials == {
+        "conclear:containerfile/app/linux/amd64": DIGEST,
+        "conclear:context/app/linux/amd64": DIGEST,
+        f"docker://{pin}": str(scenario.image.pins[0].reference.digest),
+        "conclear:containerfile/helper/linux/amd64": "sha256:" + "5" * 64,
+        "conclear:context/helper/linux/amd64": DIGEST,
+        "conclear:test-image/helper/linux/amd64": entry["manifestDigest"],
+    }
