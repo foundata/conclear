@@ -481,7 +481,7 @@ def test_import_rejects_dependency_evidence_the_configuration_does_not_declare(
                 "sourceRevision": value["source"]["revision"],
                 "containerfileDigest": payload["containerfileDigest"],
                 "contextDigest": payload["contextDigest"],
-                "buildArguments": {},
+                "buildArguments": payload["buildArguments"],
                 "externalImages": [],
                 "pinObservations": [],
                 "effectiveLimits": payload["effectiveLimits"],

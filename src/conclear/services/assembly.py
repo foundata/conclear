@@ -2,7 +2,7 @@
 
 import stat
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from conclear.config import ImageConfig, ReleaseImageConfig, RepositoryConfig
@@ -22,6 +22,7 @@ from conclear.records import (
     SourceIdentity,
     ToolIdentity,
     Verdict,
+    format_timestamp,
     parse_timestamp,
     validate_record,
 )
@@ -78,6 +79,7 @@ class DependencyEvidence:
     image_id: str
     containerfile_digest: str
     context_digest: str
+    build_arguments: tuple[tuple[str, str], ...]
     pin_references: tuple[str, ...]
     pin_resolutions: tuple[tuple[str, str], ...]
     effective_limits: tuple[tuple[str, int], ...]
@@ -99,7 +101,7 @@ class _Qualification:
     pin_resolutions: tuple[tuple[str, str], ...]
     effective_limits: tuple[tuple[str, int], ...]
     dependencies: tuple[DependencyEvidence, ...]
-    image_version: str | None
+    build_arguments: tuple[tuple[str, str], ...]
     manifest_digest: Digest
     transport: QualificationTransport
 
@@ -143,7 +145,10 @@ def assemble_candidate(
         raise InvalidInvocationError("Qualifications belong to another release run")
     if any(item.image_id != image.image_id for item in qualifications):
         raise InvalidInvocationError("Qualifications do not match the selected image")
-    if any(item.image_version != version for item in qualifications):
+    if any(
+        dict(item.build_arguments).get("IMAGE_VERSION") != version
+        for item in qualifications
+    ):
         raise InvalidInvocationError(
             "Qualifications were built for another release version"
         )
@@ -193,6 +198,10 @@ def assemble_candidate(
         if item.pin_resolutions != first.pin_resolutions:
             raise InvalidInvocationError(
                 "Qualifications observed different external image digests"
+            )
+        if item.build_arguments != first.build_arguments:
+            raise InvalidInvocationError(
+                "Qualifications were built with different build arguments"
             )
         if item.dependencies != first.dependencies:
             raise InvalidInvocationError(
@@ -392,19 +401,17 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
     source_revision = validate_source_revision(
         _narrow.string_value(source_value.get("revision"), "source revision")
     )
+    build_arguments = _read_build_arguments(
+        payload, subject="Qualification", source_revision=source_revision
+    )
     dependencies = _read_dependencies(
         payload,
         platform=platform,
         source_revision=source_revision,
         record_created_at=record_created_at,
         payload_digests=payload_digests,
+        build_arguments=build_arguments,
     )
-    build_arguments = _narrow.object_value(
-        payload.get("buildArguments"), "build arguments"
-    )
-    image_version = build_arguments.get("IMAGE_VERSION")
-    if image_version is not None and not isinstance(image_version, str):
-        raise InvalidInvocationError("Qualification image version is malformed")
     return _Qualification(
         run_id=_narrow.string_value(record.get("runId"), "qualification run id"),
         image_id=_narrow.string_value(payload.get("imageId"), "image id"),
@@ -425,7 +432,7 @@ def _read_qualification(transport: QualificationTransport) -> _Qualification:
         pin_resolutions=tuple(sorted(pin_resolutions)),
         effective_limits=tuple(sorted(effective_limits)),
         dependencies=dependencies,
-        image_version=image_version,
+        build_arguments=build_arguments,
         manifest_digest=manifest_digest,
         transport=transport,
     )
@@ -461,7 +468,8 @@ def verify_dependency_evidence(
     Transport import and assembly share this check: the recorded dependencies
     must be exactly the configured closure of the qualified image in
     dependency-first order, and each entry must carry that dependency's
-    configured pins, its effective pin limits and accepted observations.
+    configured pins, its effective pin limits, accepted observations and the
+    same validated build arguments as the qualified image.
     """
     evidence = _read_dependencies(
         payload,
@@ -469,6 +477,9 @@ def verify_dependency_evidence(
         source_revision=source_revision,
         record_created_at=record_created_at,
         payload_digests=payload_digests,
+        build_arguments=_read_build_arguments(
+            payload, subject="Qualification", source_revision=source_revision
+        ),
     )
     _require_dependency_evidence(evidence, repository.test_dependencies(image.image_id))
     return evidence
@@ -504,6 +515,7 @@ def _read_dependencies(
     source_revision: str,
     record_created_at: datetime,
     payload_digests: tuple[str, ...],
+    build_arguments: tuple[tuple[str, str], ...],
 ) -> tuple[DependencyEvidence, ...]:
     raw_entries = payload.get("testImageDependencies")
     if not isinstance(raw_entries, list):
@@ -531,6 +543,13 @@ def _read_dependencies(
         )
         Digest(containerfile_digest)
         Digest(context_digest)
+        entry_arguments = _read_build_arguments(
+            entry, subject=subject, source_revision=source_revision
+        )
+        if entry_arguments != build_arguments:
+            raise InvalidInvocationError(
+                f"{subject} was built with other build arguments than the qualified image"
+            )
         references, resolutions, limits = _read_pin_evidence(
             entry, record_created_at=record_created_at, subject=subject
         )
@@ -539,6 +558,7 @@ def _read_dependencies(
                 image_id=image_id,
                 containerfile_digest=containerfile_digest,
                 context_digest=context_digest,
+                build_arguments=entry_arguments,
                 pin_references=references,
                 pin_resolutions=resolutions,
                 effective_limits=limits,
@@ -547,6 +567,45 @@ def _read_dependencies(
     if len({item.image_id for item in values}) != len(values):
         raise InvalidInvocationError("Qualification repeats a test dependency")
     return tuple(values)
+
+
+def _read_build_arguments(
+    value: dict[str, object], *, subject: str, source_revision: str
+) -> tuple[tuple[str, str], ...]:
+    """Validate the recorded build arguments against the run facts they encode.
+
+    `build_platform` always passes the source revision, the source timestamp
+    as `IMAGE_CREATED` and `SOURCE_DATE_EPOCH`, and the release version when
+    one exists; a record whose arguments disagree with its own source revision
+    or with each other was not produced from the isolated checkout it names.
+    """
+    raw = _narrow.object_value(
+        value.get("buildArguments"), f"{subject} build arguments"
+    )
+    arguments = {
+        key: _narrow.string_value(item, f"{subject} build argument {key}")
+        for key, item in raw.items()
+    }
+    if arguments.get("IMAGE_REVISION") != source_revision:
+        raise InvalidInvocationError(
+            f"{subject} build arguments name another source revision"
+        )
+    epoch = arguments.get("SOURCE_DATE_EPOCH")
+    if epoch is None or not epoch.isdecimal():
+        raise InvalidInvocationError(
+            f"{subject} has no valid SOURCE_DATE_EPOCH build argument"
+        )
+    try:
+        created = format_timestamp(datetime.fromtimestamp(int(epoch), tz=UTC))
+    except (OverflowError, OSError, ValueError) as exc:
+        raise InvalidInvocationError(
+            f"{subject} has an unrepresentable SOURCE_DATE_EPOCH build argument"
+        ) from exc
+    if arguments.get("IMAGE_CREATED") != created:
+        raise InvalidInvocationError(
+            f"{subject} IMAGE_CREATED does not match SOURCE_DATE_EPOCH"
+        )
+    return tuple(sorted(arguments.items()))
 
 
 def _read_pin_evidence(

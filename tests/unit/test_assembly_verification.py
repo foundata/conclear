@@ -26,6 +26,12 @@ from tests.unit.test_config import _image_text
 
 DIGEST = "sha256:" + "d" * 64
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
+BUILD_ARGUMENTS = {
+    "IMAGE_REVISION": "b" * 40,
+    "IMAGE_CREATED": "2026-01-01T00:00:00Z",
+    "SOURCE_DATE_EPOCH": str(int(NOW.timestamp())),
+    "IMAGE_VERSION": "1.2.3",
+}
 
 
 class Scenario:
@@ -71,7 +77,7 @@ class Scenario:
             "manifestDigest": str(self.graph.manifests[0].descriptor.digest),
             "containerfileDigest": DIGEST,
             "contextDigest": DIGEST,
-            "buildArguments": {"IMAGE_VERSION": "1.2.3"},
+            "buildArguments": dict(BUILD_ARGUMENTS),
             "externalImages": [str(pin)],
             "pinObservations": [
                 {
@@ -496,7 +502,7 @@ def _dependency_entry(scenario: Scenario, **overrides: Any) -> dict[str, Any]:
         "sourceRevision": "b" * 40,
         "containerfileDigest": "sha256:" + "5" * 64,
         "contextDigest": DIGEST,
-        "buildArguments": {"IMAGE_VERSION": "1.2.3"},
+        "buildArguments": dict(BUILD_ARGUMENTS),
         "externalImages": base["externalImages"],
         "pinObservations": base["pinObservations"],
         "effectiveLimits": base["effectiveLimits"],
@@ -653,3 +659,93 @@ def test_qualification_materials_name_every_test_dependency_input(
         "conclear:context/helper/linux/amd64": DIGEST,
         "conclear:test-image/helper/linux/amd64": entry["manifestDigest"],
     }
+
+
+def test_assembly_verifies_build_arguments_of_the_image_and_its_dependencies(
+    dependency_scenario: Scenario,
+) -> None:
+    scenario = dependency_scenario
+
+    def rejects(message: str, **overrides: Any) -> None:
+        payload = scenario.payload(
+            testImageDependencies=[_dependency_entry(scenario, **overrides)]
+        )
+        with pytest.raises(InvalidInvocationError, match=message):
+            scenario.assemble(scenario.transport(payload))
+
+    rejects(
+        "other build arguments than the qualified image",
+        buildArguments={**BUILD_ARGUMENTS, "EXTRA": "1"},
+    )
+    rejects(
+        "Test dependency helper build arguments name another source revision",
+        buildArguments={**BUILD_ARGUMENTS, "IMAGE_REVISION": "c" * 40},
+    )
+    rejects(
+        "IMAGE_CREATED does not match SOURCE_DATE_EPOCH",
+        buildArguments={**BUILD_ARGUMENTS, "IMAGE_CREATED": "2026-01-02T00:00:00Z"},
+    )
+    rejects(
+        "no valid SOURCE_DATE_EPOCH",
+        buildArguments={
+            key: value
+            for key, value in BUILD_ARGUMENTS.items()
+            if key != "SOURCE_DATE_EPOCH"
+        },
+    )
+    for arguments, message in (
+        (
+            {**BUILD_ARGUMENTS, "IMAGE_REVISION": "c" * 40},
+            "Qualification build arguments name another source revision",
+        ),
+        (
+            {**BUILD_ARGUMENTS, "SOURCE_DATE_EPOCH": "1767225601"},
+            "IMAGE_CREATED does not match",
+        ),
+    ):
+        with pytest.raises(InvalidInvocationError, match=message):
+            scenario.assemble(
+                scenario.transport(
+                    scenario.payload(
+                        buildArguments=arguments,
+                        testImageDependencies=[_dependency_entry(scenario)],
+                    )
+                )
+            )
+
+
+def test_assembly_requires_identical_build_arguments_across_platforms(
+    scenario: Scenario, tmp_path: Path
+) -> None:
+    arm64_layout = platform_layout(tmp_path / "qualified-arm64", "arm64")
+    arm64_graph = validate_layout(arm64_layout, reference="qualified")
+    image = replace(
+        scenario.image,
+        platforms=(Platform.parse("linux/amd64"), Platform.parse("linux/arm64")),
+    )
+    execution = {
+        "targetPlatform": "linux/arm64",
+        "hostArchitecture": "x86_64",
+        "executionArchitecture": "arm64",
+        "mechanism": "qemu-user",
+    }
+    later = NOW + timedelta(seconds=60)
+    arm64_payload = scenario.payload(
+        platform="linux/arm64",
+        layoutDescriptor=arm64_graph.root.to_dict(),
+        manifestDigest=str(arm64_graph.manifests[0].descriptor.digest),
+        buildExecution=execution,
+        testExecution=execution,
+        buildArguments={
+            **BUILD_ARGUMENTS,
+            "IMAGE_CREATED": "2026-01-01T00:01:00Z",
+            "SOURCE_DATE_EPOCH": str(int(later.timestamp())),
+        },
+    )
+    arm64_record = scenario.transport(arm64_payload)
+    arm64_transport = QualificationTransport(
+        arm64_record.record_path, arm64_layout, "qualified", (scenario.payload_file,)
+    )
+
+    with pytest.raises(InvalidInvocationError, match="different build arguments"):
+        scenario.assemble(scenario.transport(), arm64_transport, image=image)

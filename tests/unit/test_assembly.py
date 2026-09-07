@@ -214,7 +214,12 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             "manifestDigest": str(graph.manifests[0].descriptor.digest),
             "containerfileDigest": digest,
             "contextDigest": digest,
-            "buildArguments": {"IMAGE_VERSION": "1.2.3"},
+            "buildArguments": {
+                "IMAGE_REVISION": "b" * 40,
+                "IMAGE_CREATED": "2026-01-01T00:00:00Z",
+                "SOURCE_DATE_EPOCH": "1767225600",
+                "IMAGE_VERSION": "1.2.3",
+            },
             "externalImages": [str(repository.release_image("app").pins[0].reference)],
             "pinObservations": [
                 {
