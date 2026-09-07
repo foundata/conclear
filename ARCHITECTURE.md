@@ -346,12 +346,16 @@ An image may declare a `test` table containing repository fixture handles,
 run-owned output handles, ordered preparation steps, launch inputs and
 dependencies on other image IDs from the same configuration. A fixture names an
 immutable source-tree path and is always mounted read-only. An output names a
-newly created run-owned directory and may be mounted writable only at a
-destination already declared by the selected image's runtime profile. Fixture
-and output names share one namespace, so a mount identifies its source by name
-alone and is read-only unless it declares otherwise. An output marked secret is
-never exposed to repository hooks or included by value or content digest in
-public evidence.
+run-owned directory that ConClear creates empty before the first preparation
+runs and that may be mounted writable only at a destination already declared
+by the selected image's runtime profile. A read-only mount may name only an
+output that an earlier preparation wrote, and every output must be mounted
+writable by at least one preparation or by the launch. An output that only the
+launched container writes needs no preparation; its final content is observed
+and recorded, not required. Fixture and output names share one namespace, so a
+mount identifies its source by name alone and is read-only unless it declares
+otherwise. An output marked secret is never exposed to repository hooks or
+included by value or content digest in public evidence.
 
 Each preparation step selects the primary image or one of its declared
 test-image dependencies, replaces that exact image's entrypoint with an argument
