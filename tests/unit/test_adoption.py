@@ -16,10 +16,10 @@ from conclear.adapters.git import SourceObservation
 from conclear.cli import main
 from conclear.config import load_repository_config
 from conclear.errors import ExitStatus, InvalidInvocationError, OperationalError
-from conclear.services.adoption import (
+from conclear.services.adoption import assess_repository
+from conclear.services.adoption_observation import (
     PinQuality,
     UserKind,
-    assess_repository,
     discover_containerfiles,
 )
 
