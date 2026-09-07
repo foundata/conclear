@@ -366,11 +366,13 @@ Test-image dependencies form an acyclic graph of image IDs declared in the same
 `conclear.toml`. ConClear rejects unknown IDs, self-dependencies, duplicates,
 cycles and dependencies that do not cover every platform of the depending image.
 Before a qualification builds anything, the static checks and the pin gate run
-for the complete dependency closure: the selected image and every transitive
-dependency, each under its own Containerfile, context, declared pins and pin
-limits. Every distinct readable tag is resolved once for the whole closure, so
-images that share a tag observe one digest, and a static rejection anywhere in
-the closure stops the run before any registry is contacted. ConClear then
+for the complete dependency closure in stable dependency-first order: every
+transitive dependency, then the selected image, each under its own
+Containerfile, context, declared pins and pin limits at one instant. Every
+distinct readable tag is resolved once for the whole closure, so images that
+share a tag observe one digest, and a static rejection anywhere in the closure
+stops the run before any registry is contacted. Every finding of the closure
+names the image it concerns, so a rejection is attributable. ConClear then
 builds each dependency once from the same isolated revision, source timestamp,
 target platform, version input and resolved Buildah toolchain, validates its
 OCI layout and labels, imports it by its reverified manifest digest, and
@@ -378,11 +380,11 @@ exposes no mutable reference. A dependency participates only in the primary
 image's tests and is not represented as independently qualified or releasable.
 The platform qualification records, for each dependency, its Containerfile and
 context digests, build arguments, external images, pin observations and
-effective pin limits next to its layout and manifest digests. Assembly verifies
-that evidence against the configured dependency set, pins and limits and
-requires it to agree across platforms, and release provenance names each
-dependency's Containerfile, context, tested manifest and external images as
-resolved dependencies.
+effective pin limits next to its layout and manifest digests. Transport import
+and assembly verify that evidence against the configured dependency set, pins
+and limits, assembly requires it to agree across platforms, and release
+provenance names each dependency's Containerfile, context, tested manifest and
+external images as resolved dependencies.
 
 An image is releasable when it declares a `repository`; it then also declares
 its release tags. An image without a repository is test-only: it declares only
