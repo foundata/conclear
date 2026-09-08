@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,29 @@ from conclear.release_profile import (
     RegistryProvider,
     load_release_profile,
 )
+
+
+def test_release_profile_import_does_not_load_repository_configuration(
+    tmp_path: Path,
+) -> None:
+    result = subprocess.run(
+        (
+            sys.executable,
+            "-I",
+            "-B",
+            "-c",
+            "import sys\n"
+            "import conclear.release_profile\n"
+            "assert 'conclear.config' not in sys.modules\n",
+        ),
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def _profile_text(*root_lines: str, api_url: str | None = None) -> str:

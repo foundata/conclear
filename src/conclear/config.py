@@ -2,9 +2,9 @@
 
 Everything here is untrusted repository input: it is schema-validated, then
 narrowed into typed values with the bounds and path confinement the guide
-requires. The maintainer-controlled release profile lives in
-`conclear.release_profile`, which reuses the TOML narrowing helpers and URL
-identity patterns defined here.
+requires. Maintainer-controlled release profiles live in the independent
+`conclear.release_profile` module. Both readers use the shared primitives in
+`conclear.parsing` and `conclear.values`.
 """
 
 import os
@@ -19,9 +19,15 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from conclear.errors import InvalidInvocationError
+from conclear.parsing import toml_integer, toml_string, toml_table
 from conclear.path_safety import contained_path
 from conclear.schema import validate_external
-from conclear.values import OCIReference, Platform
+from conclear.values import (
+    HOST_PATTERN,
+    URL_PATH_COMPONENT_PATTERN,
+    OCIReference,
+    Platform,
+)
 
 MAX_PIN_FRESHNESS = timedelta(hours=24)
 MAX_PIN_DIVERGENCE = timedelta(days=7)
@@ -29,11 +35,6 @@ MAX_CANDIDATE_LIFETIME = timedelta(days=7)
 MAX_REMEDIATION = timedelta(days=30)
 MAX_CONFIG_BYTES = 4 * 1024 * 1024
 _DURATION_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[hHdDwW])$")
-HOST_PATTERN = re.compile(
-    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
-    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
-)
-URL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
 _SCP_GIT_REMOTE_PATTERN = re.compile(r"^git@(?P<host>[^/:@]+):(?P<path>[^?#]+)$")
 _TEST_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _ENVIRONMENT_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]{0,127}$")
@@ -1250,23 +1251,9 @@ def _read_repository_file(path: Path) -> bytes:
         os.close(descriptor)
 
 
-def toml_table(value: object) -> dict[str, Any]:
-    """Narrow one schema-validated TOML value to a string-keyed table."""
-    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
-        raise InvalidInvocationError("Expected a table with string keys")
-    return value
-
-
 def _list(value: object) -> list[Any]:
     if not isinstance(value, list):
         raise InvalidInvocationError("Expected an array")
-    return value
-
-
-def toml_string(value: object) -> str:
-    """Narrow one schema-validated TOML value to a string."""
-    if not isinstance(value, str):
-        raise InvalidInvocationError("Expected a string")
     return value
 
 
@@ -1275,13 +1262,6 @@ def _string_list(value: object) -> list[str]:
     if any(not isinstance(item, str) for item in items):
         raise InvalidInvocationError("Expected an array of strings")
     return items
-
-
-def toml_integer(value: object) -> int:
-    """Narrow one schema-validated TOML value to an integer, rejecting booleans."""
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise InvalidInvocationError("Expected an integer")
-    return value
 
 
 def _number(value: object) -> float:

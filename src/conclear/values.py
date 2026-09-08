@@ -1,4 +1,4 @@
-"""Validated value objects for OCI and release identifiers."""
+"""Shared identifier syntax and validated OCI and release value objects."""
 
 import re
 from dataclasses import dataclass
@@ -6,6 +6,12 @@ from functools import total_ordering
 from typing import override
 
 from conclear.errors import InvalidInvocationError
+
+HOST_PATTERN = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
+URL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9._~-]+$")
 
 _DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _PLATFORM_PATTERN = re.compile(

@@ -6,11 +6,59 @@ from hypothesis import strategies as st
 
 from conclear.errors import InvalidInvocationError
 from conclear.values import (
+    HOST_PATTERN,
+    URL_PATH_COMPONENT_PATTERN,
     Digest,
     OCIReference,
     Platform,
     candidate_tag,
 )
+
+
+@pytest.mark.parametrize(
+    ("host", "accepted"),
+    [
+        ("example.com", True),
+        ("build-host.example.com", True),
+        ("localhost", True),
+        ("a" * 63, True),
+        (".".join(("a" * 63,) * 3 + ("b" * 61,)), True),
+        ("", False),
+        ("Example.com", False),
+        ("example.com.", False),
+        ("-example.com", False),
+        ("example-.com", False),
+        ("build_host.example.com", False),
+        ("example..com", False),
+        ("a" * 64, False),
+        (".".join(("a" * 63,) * 4), False),
+        ("\u00e4.example.com", False),
+        ("example.com:443", False),
+    ],
+)
+def test_shared_host_syntax_preserves_its_limits(host: str, accepted: bool) -> None:
+    assert (HOST_PATTERN.fullmatch(host) is not None) is accepted
+
+
+@pytest.mark.parametrize(
+    ("component", "accepted"),
+    [
+        ("Build_v1.2-~", True),
+        (".", True),
+        ("..", True),
+        ("", False),
+        ("nested/path", False),
+        ("has space", False),
+        ("%2e%2e", False),
+        ("\u00e4", False),
+        ("path?query", False),
+        ("path#fragment", False),
+    ],
+)
+def test_url_component_pattern_leaves_dot_segment_policy_to_consumers(
+    component: str, accepted: bool
+) -> None:
+    assert (URL_PATH_COMPONENT_PATTERN.fullmatch(component) is not None) is accepted
 
 
 def test_reference_requires_fully_qualified_registry() -> None:

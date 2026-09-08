@@ -1359,6 +1359,12 @@ The implementation separates these responsibilities:
   and promotion services.
 - Versioned JSON schemas and deterministic record serialization.
 
+Repository configuration and maintainer-controlled release profiles are
+independent readers. Shared TOML narrowing helpers live in `parsing.py` and
+shared identifier syntax in `values.py`; `release_profile.py` does not import
+`config.py`. Schema rules, credential checks and URL normalization stay with the
+reader responsible for them.
+
 Adapters return typed observations and never decide the release verdict
 themselves. Workflow services apply the guide rules to those observations.
 Presentation consumes the same result objects used for JSON output so human and

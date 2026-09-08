@@ -16,17 +16,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from conclear.config import (
-    HOST_PATTERN,
-    URL_PATH_COMPONENT_PATTERN,
-    toml_integer,
-    toml_string,
-    toml_table,
-)
 from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import sha256_bytes
+from conclear.parsing import toml_integer, toml_string, toml_table
 from conclear.schema import validate_external
 from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
+from conclear.values import HOST_PATTERN, URL_PATH_COMPONENT_PATTERN
 
 
 class CIContextPolicy(StrEnum):

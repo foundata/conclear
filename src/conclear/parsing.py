@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from conclear.errors import ConClearError, OperationalError
+from conclear.errors import ConClearError, InvalidInvocationError, OperationalError
 from conclear.jsonutil import structure_depth_is_bounded
 
 
@@ -63,6 +63,27 @@ array_value = TOOL_OUTPUT.array_value
 string_value = TOOL_OUTPUT.string_value
 string_array_value = TOOL_OUTPUT.string_array_value
 integer_value = TOOL_OUTPUT.integer_value
+
+
+def toml_table(value: object) -> dict[str, Any]:
+    """Narrow one schema-validated TOML value to a string-keyed table."""
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise InvalidInvocationError("Expected a table with string keys")
+    return value
+
+
+def toml_string(value: object) -> str:
+    """Narrow a TOML string without imposing field-specific content constraints."""
+    if not isinstance(value, str):
+        raise InvalidInvocationError("Expected a string")
+    return value
+
+
+def toml_integer(value: object) -> int:
+    """Narrow one schema-validated TOML value to an integer, rejecting booleans."""
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise InvalidInvocationError("Expected an integer")
+    return value
 
 
 def json_value(text: str, *, label: str) -> object:
