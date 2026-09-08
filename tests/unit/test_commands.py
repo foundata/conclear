@@ -32,6 +32,7 @@ from conclear.errors import (
     OperationalError,
     RuleRejectionError,
 )
+from conclear.freshness import QualificationWindow
 from conclear.presentation import Finding
 from conclear.records import SourceIdentity, Verdict
 from conclear.release_profile import (
@@ -329,6 +330,7 @@ class _PinStore:
         (True, False, None, 2, "ruleRejection", RunState.REJECTED),
     ],
 )
+@pytest.mark.parametrize("shared_start", [False, True])
 def test_qualify_command_transitions_state_from_preflight_and_verdict(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
@@ -340,24 +342,32 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
     exit_code: int,
     status: str,
     state: RunState,
+    shared_start: bool,
 ) -> None:
     run = FakeSourceRun(repository_factory(), tmp_path)
     selected_databases: list[str] = []
+    started_at = datetime(2026, 1, 1, tzinfo=UTC) if shared_start else None
 
     def qualify(*args: Any, **kwargs: Any) -> SimpleNamespace:
         assert verdict is not None, "qualification ran after a rejected preflight"
+        assert kwargs["qualification_started_at"] == started_at
+        assert callable(kwargs["record_clock"])
         return SimpleNamespace(
             verdict=verdict,
             findings=() if verdict is Verdict.ACCEPTED else (ERROR,),
             record_path=Path("/record.json"),
             record_digest=DIGEST,
             layout_path=Path("/layout"),
+            qualification_window=QualificationWindow.start(
+                datetime(2026, 1, 1, tzinfo=UTC)
+            ),
         )
 
     def by_digest(
         *args: Any, expected_digest: Digest, **kwargs: Any
     ) -> SimpleNamespace:
         selected_databases.append(str(expected_digest))
+        assert kwargs["qualification_started_at"] == started_at
         return SimpleNamespace(digest=str(expected_digest))
 
     monkeypatch.setattr(
@@ -390,6 +400,11 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
             "linux/amd64",
             "--database-digest",
             DIGEST,
+            *(
+                ["--qualification-started-at", "2026-01-01T00:00:00Z"]
+                if shared_start
+                else []
+            ),
         ]
     )
 
@@ -397,6 +412,50 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
     assert value["data"]["runId"] == run.workspace.run_id
     assert run.workspace.load().state is state
     assert selected_databases == ([DIGEST] if verdict is not None else [])
+    if verdict is not None:
+        assert value["data"]["qualificationWindow"] == {
+            "startedAt": "2026-01-01T00:00:00Z",
+            "expiresAt": "2026-01-02T00:00:00Z",
+        }
+
+
+@pytest.mark.parametrize(
+    ("start", "digest_args", "message"),
+    [
+        ("2026-01-01T00:00:00Z", [], "requires --database-digest"),
+        ("not-a-time", ["--database-digest", DIGEST], "qualification start"),
+        ("2026-01-01T00:00:00", ["--database-digest", DIGEST], "qualification start"),
+    ],
+)
+def test_qualify_rejects_invalid_shared_start_before_creating_a_run(
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    monkeypatch: pytest.MonkeyPatch,
+    start: str,
+    digest_args: list[str],
+    message: str,
+) -> None:
+    monkeypatch.setattr(
+        local_commands,
+        "create_source_run",
+        lambda **kwargs: pytest.fail("Invalid arguments must not create a run"),
+    )
+    code, value, _ = invoke(
+        [
+            "qualify",
+            "--revision",
+            "v1",
+            "--image",
+            "app",
+            "--platform",
+            "linux/amd64",
+            "--qualification-started-at",
+            start,
+            *digest_args,
+        ]
+    )
+    assert code == 64
+    assert value["status"] == "invalidInvocation"
+    assert message in value["message"]
 
 
 def test_assemble_command_imports_transports_into_a_new_coordinator_run(

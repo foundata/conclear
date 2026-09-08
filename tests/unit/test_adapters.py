@@ -756,6 +756,21 @@ def test_trivy_database_refresh_installs_content_addressed_snapshot(
     assert selected.path.parent.name == "snapshots"
     assert (cache_root / "current.json").is_file()
 
+    metadata_path = selected.path / "db" / "metadata.json"
+    original_metadata = metadata_path.read_text(encoding="utf-8")
+    metadata = json.loads(original_metadata)
+    metadata["DownloadedAt"] = "2026-01-01T12:00:00Z"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    assert (
+        adapter.select_database_by_digest(cache_root, Digest(refreshed.digest)).digest
+        == refreshed.digest
+    )
+    metadata["NextUpdate"] = "2026-02-01T00:00:00Z"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(OperationalError, match="differs from the expected digest"):
+        adapter.select_database_by_digest(cache_root, Digest(refreshed.digest))
+    metadata_path.write_text(original_metadata, encoding="utf-8")
+
     (selected.path / "db" / "trivy.db").write_bytes(b"changed")
     with pytest.raises(OperationalError, match="differs from the expected digest"):
         adapter.select_database_by_digest(cache_root, Digest(refreshed.digest))

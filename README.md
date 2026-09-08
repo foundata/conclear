@@ -186,7 +186,8 @@ conclear transport export <worker-run-a> --platform linux/amd64 \
 
 # Worker B (linux/arm64), pinned to the same vulnerability database snapshot
 conclear qualify --source . --revision v1.2.3 --image app --version 1.2.3 \
-  --platform linux/arm64 --database-digest sha256:<database-digest> --format json
+  --platform linux/arm64 --database-digest sha256:<database-digest> \
+  --qualification-started-at "$QUALIFICATION_STARTED_AT" --format json
 conclear transport export <worker-run-b> --platform linux/arm64 \
   --output ./app-linux-arm64.tar --format json
 
@@ -236,9 +237,20 @@ Every worker must scan against the same vulnerability database. The coordinator
 takes `data.databaseDigest` from the first `qualify --format json` result and
 distributes
 `$XDG_CACHE_HOME/conclear/trivy/snapshots/<digest-without-sha256-prefix>`
-unchanged to every later worker, which pins it with `--database-digest`.
-ConClear selects that directory directly, recomputes its content digest and
-fails before building if it differs.
+unchanged to every later worker, which pins it with `--database-digest`. Set
+`QUALIFICATION_STARTED_AT` from the first result's
+`data.qualificationWindow.startedAt`. ConClear selects that directory directly,
+recomputes its content and freshness-metadata digest, and checks the original
+qualification window before building. It never substitutes a newer snapshot
+for an explicit digest.
+
+Qualification approval lasts at most 24 hours from that start; older pin
+evidence or expiring exceptions can shorten it. The JSON result includes the
+effective deadline. Assembly, publication and promotion reject expired approval,
+including on resume. Start a new qualification with a fresh common database
+after expiry. The limit is centralized in `src/conclear/freshness.py` as
+`QUALIFICATION_WINDOW`; repository configuration cannot extend it. Historical
+records remain inspectable and published digests can still be rescanned.
 
 
 ### JSON output and exit codes<a id="usage-json-exit-codes"></a>

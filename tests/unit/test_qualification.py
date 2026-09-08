@@ -632,6 +632,7 @@ def test_qualification_writes_accepted_digest_bound_record(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert result.verdict is Verdict.ACCEPTED
@@ -702,6 +703,7 @@ def test_foreign_platform_without_binfmt_handler_is_not_qualified(
             ),
             preflight=closure_preflight(value),
             now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+            record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
         )
 
     assert caught.value.exit_status == 1
@@ -740,6 +742,7 @@ def test_foreign_build_and_test_record_the_same_qemu_execution_mode(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     payload = json.loads(result.record_path.read_text(encoding="utf-8"))["payload"]
@@ -783,6 +786,7 @@ def test_emulated_qualification_is_accepted_without_justification(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert result.verdict is Verdict.ACCEPTED
@@ -825,6 +829,7 @@ def test_configured_native_platform_rejects_emulated_runtime_tests(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert result.verdict is Verdict.REJECTED
@@ -851,6 +856,7 @@ def test_qualification_payload_tampering_is_a_catalogued_rule_rejection(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
     sbom_path = value.workspace.root / "exports" / "sbom" / "linux-amd64.spdx.json"
     sbom_path.write_text("{}\n", encoding="utf-8")
@@ -879,6 +885,7 @@ def test_qualification_records_label_rule_rejection(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert result.verdict is Verdict.REJECTED
@@ -1163,6 +1170,7 @@ def test_systemd_qualification_records_review_and_lifecycle_contract(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     record = json.loads(result.record_path.read_text(encoding="utf-8"))
@@ -1418,6 +1426,8 @@ def test_qualification_rejects_stale_pin_resolution(
         ),
         preflight=closure_preflight(value, checked_at=checked_at),
         now=checked_at + timedelta(hours=25),
+        record_clock=lambda: checked_at + timedelta(hours=25),
+        qualification_started_at=checked_at + timedelta(hours=23),
     )
 
     assert result.verdict is Verdict.REJECTED
@@ -1507,6 +1517,7 @@ def test_qualification_record_binds_test_inputs_and_sibling_result(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     record = json.loads(result.record_path.read_text(encoding="utf-8"))
@@ -1698,6 +1709,7 @@ def test_qualification_requires_a_preflight_covering_the_test_dependencies(
             ),
             preflight=ClosurePreflight(primary=complete.primary, dependencies=()),
             now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+            record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
         )
 
 
@@ -1729,6 +1741,7 @@ def test_rejected_dependency_preflight_starts_no_build(
                 primary=complete.primary, dependencies=(rejected,)
             ),
             now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+            record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
         )
     assert not list((value.workspace.root / "records").glob("platform-qualification-*"))
 
@@ -1768,6 +1781,7 @@ pin_freshness = "1h"
         ),
         preflight=closure_preflight(value, checked_at=checked_at),
         now=checked_at + timedelta(hours=2),
+        record_clock=lambda: checked_at + timedelta(hours=2),
     )
 
     assert result.verdict is Verdict.REJECTED
@@ -1809,6 +1823,7 @@ def test_qualification_records_transitive_dependencies_dependency_first(
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert result.verdict is Verdict.ACCEPTED

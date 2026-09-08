@@ -421,7 +421,8 @@
         "id": "CC0505",
         "requirements": [
           "IG0301",
-          "IG0305"
+          "IG0305",
+          "IG0423"
         ],
         "severity": "error"
       },
@@ -1584,6 +1585,16 @@
           "kind": "option",
           "multiple": false,
           "name": "database_digest",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--qualification-started-at"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "qualification_start",
           "required": false,
           "type": "text"
         },

@@ -494,7 +494,14 @@ conclear qualify \
 ConClear writes run state below `$XDG_STATE_HOME/conclear/` and keeps Trivy
 database snapshots below `$XDG_CACHE_HOME/conclear/`. Preserve the protected pin
 history and distribute the exact selected Trivy database snapshot when
-qualification runs on more than one worker.
+qualification runs on more than one worker. Also distribute
+`data.qualificationWindow.startedAt` from the first qualification result and
+pass it with `--qualification-started-at` alongside `--database-digest` on later
+workers. Approval expires after at most 24 hours; pin evidence or vulnerability
+exceptions may impose an earlier deadline. Delayed assembly, publication and
+promotion require new qualification once that deadline passes. Candidate
+retention is independent of this approval window. Historical evidence remains
+available for inspection and rescanning.
 
 
 ## 8. Assemble a release candidate

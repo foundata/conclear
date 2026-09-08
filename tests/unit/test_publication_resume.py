@@ -9,6 +9,7 @@ import pytest
 
 from conclear.config import load_repository_config
 from conclear.errors import InvalidInvocationError, OperationalError, RuleRejectionError
+from conclear.freshness import QualificationWindow
 from conclear.jsonutil import atomic_write_json
 from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.registry_control import TagObservation
@@ -50,7 +51,13 @@ class Scenario:
             version="1.2.3", run_id=self.workspace.run_id, source_revision="b" * 40
         )
         self.candidate = CandidateResult(
-            record, digest, self.observation, self.tag, (), ()
+            record,
+            digest,
+            self.observation,
+            self.tag,
+            (),
+            (),
+            QualificationWindow.start(NOW),
         )
         self.tags: dict[str, Digest] = {}
         self.registry = FakeRegistry(self.observation.graph, self.tags)
@@ -79,7 +86,9 @@ class Scenario:
         if status is not ResourceStatus.PLANNED:
             self.workspace.journal.update("candidate", status)
 
-    def publish(self, *, now: datetime = NOW) -> Any:
+    def publish(
+        self, *, now: datetime = NOW, clock: Callable[[], datetime] | None = None
+    ) -> Any:
         return publish_candidate(
             self.candidate,
             image=self.image,
@@ -88,6 +97,7 @@ class Scenario:
             registry_control=self.registry_control,
             auth_file=None,
             now=now,
+            clock=clock or (lambda: now),
         )
 
 
@@ -105,7 +115,7 @@ def test_resume_reuses_only_a_candidate_that_still_names_the_accepted_digest(
         2026, 1, 8, tzinfo=UTC
     )
 
-    published = scenario.publish(now=datetime(2026, 1, 2, tzinfo=UTC))
+    published = scenario.publish(now=NOW + timedelta(hours=1))
 
     assert published.immutable_reference.digest == scenario.observation.graph.digest
     assert published.expiration == datetime(2026, 1, 8, tzinfo=UTC)
@@ -124,7 +134,7 @@ def test_resume_re_enforces_a_missing_expiration_before_continuing(
     scenario.journal_attempt()
     scenario.tags[scenario.tag] = scenario.observation.graph.digest
 
-    scenario.publish(now=datetime(2026, 1, 2, tzinfo=UTC))
+    scenario.publish(now=NOW + timedelta(hours=1))
 
     assert scenario.registry_control.expirations[scenario.tag] == datetime(
         2026, 1, 8, tzinfo=UTC
@@ -170,9 +180,9 @@ def test_resume_rejects_malformed_or_expired_ownership_records(
         scenario.publish()
     scenario.workspace.journal.update("candidate", ResourceStatus.REMOVED)
 
-    scenario.journal_attempt()
+    scenario.journal_attempt(expiration="2026-01-01T12:00:00Z")
     with pytest.raises(RuleRejectionError, match="expired before resume") as caught:
-        scenario.publish(now=datetime(2026, 1, 8, tzinfo=UTC))
+        scenario.publish(now=NOW + timedelta(hours=12))
     assert caught.value.code == "CC0603"
     assert scenario.workspace.load().state is RunState.ASSEMBLED
 

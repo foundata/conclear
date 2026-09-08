@@ -182,9 +182,11 @@
     },
     {
       "id": "IP0018",
-      "summary": "Select one validated immutable Trivy database snapshot and hold its digest across qualification workers",
-      "implementation": ["src/conclear/database.py", "src/conclear/adapters/trivy.py"],
+      "summary": "Hold a fresh immutable database snapshot across workers within the recorded qualification window",
+      "implementation": ["src/conclear/database.py", "src/conclear/freshness.py", "src/conclear/adapters/trivy.py"],
       "tests": [
+        {"path": "tests/unit/test_freshness.py", "tier": "unit"},
+        {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
         {"path": "tests/unit/test_scan_policy.py", "tier": "unit"},
         {"path": "tests/local_integration/test_trivy_database.py", "tier": "local_integration"}
       ]

@@ -149,6 +149,10 @@ class Scenario:
                 }
                 for name, version in (("vulnerability", 2), ("java", 1))
             },
+            "qualificationWindow": {
+                "startedAt": "2026-01-01T00:00:00Z",
+                "expiresAt": "2026-01-02T00:00:00Z",
+            },
             "findings": [],
         }
         value.update(overrides)
@@ -203,6 +207,7 @@ class Scenario:
             source_time=NOW,
             tools=(self.tool,),
             now=NOW + timedelta(minutes=1),
+            clock=lambda: NOW + timedelta(minutes=1),
         )
 
 
@@ -641,6 +646,7 @@ def test_assembly_requires_identical_dependency_inputs_across_platforms(
             source_time=NOW,
             tools=(scenario.tool,),
             now=NOW + timedelta(minutes=1),
+            clock=lambda: NOW + timedelta(minutes=1),
         )
 
 

@@ -483,7 +483,16 @@ def test_qualification_phase_rejects_before_later_state_changes(
         preflight_module, "check_image", lambda *a, **k: state["preflight"]
     )
     monkeypatch.setattr(release, "PinStore", Store)
-    monkeypatch.setattr(release, "select_fresh_database", lambda *a, **k: object())
+    monkeypatch.setattr(
+        release,
+        "select_fresh_database",
+        lambda *a, **k: SimpleNamespace(digest="sha256:" + "e" * 64),
+    )
+    monkeypatch.setattr(
+        release,
+        "select_database_by_digest",
+        lambda *a, **k: SimpleNamespace(digest="sha256:" + "e" * 64),
+    )
     monkeypatch.setattr(release, "hook_runner", lambda *a, **k: object())
     monkeypatch.setattr(release, "qualify_platform", qualify)
     monkeypatch.setattr(

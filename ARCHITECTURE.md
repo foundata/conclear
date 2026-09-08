@@ -475,6 +475,7 @@ intervals but cannot extend or disable them.
 |                                            Limit                                             | Built-in maximum |
 | -------------------------------------------------------------------------------------------- | ---------------: |
 | Age of a successful pin resolution used for qualification                                    |         24 hours |
+| Qualification window from original fresh database selection                                  |         24 hours |
 | Divergence between a declared tag and its pinned digest                                      |           7 days |
 | Candidate lifetime before promotion                                                          |           7 days |
 | Remediation after an authoritative rescan finds a fixable `HIGH` or `CRITICAL` vulnerability |          30 days |
@@ -848,10 +849,35 @@ No command relies on the user's mutable short-name search configuration.
 The Trivy database cache lives under `$XDG_CACHE_HOME/conclear/`. Refresh uses a
 lock, a same-filesystem temporary directory, validation and atomic rename. At
 release start, ConClear selects one validated database snapshot and holds its
-content digest constant across every platform scan in the release. Distributed
-workers receive or resolve that exact snapshot by digest. A stale or corrupt
-cache triggers one bounded refresh and never falls back silently to unvalidated
-data.
+content digest constant across every platform scan in the release. That digest
+binds both database files and their normalized schema versions, update times
+and next-update times. Local download timestamps are recorded but do not change
+snapshot identity. A stale or corrupt cache triggers one bounded refresh and
+never falls back silently to unvalidated data.
+
+`freshness.QUALIFICATION_WINDOW` defines a 24-hour maximum from the original
+fresh snapshot selection. Both database components must have been updated by
+that start time and must not yet have reached their next-update time. The
+orchestrated release records its start and database digest before qualification;
+resume reuses them. Distributed workers pin the same snapshot and pass the
+original `--qualification-started-at` value when joining an existing window.
+Without that option, a pinned snapshot must be fresh at the worker's own start.
+An expired pinned selection fails without refreshing or substituting databases.
+
+Qualification records carry `qualificationWindow.startedAt` and `expiresAt`,
+and record the actual completion time. Pin freshness and divergence deadlines
+for the image and its test dependencies, and the expiry of applied vulnerability
+exceptions, can shorten approval. Assembly retains the earliest start and
+deadline across platforms. Completion, assembly, candidate publication and
+signed release verification require current approval; promotion checks the
+deadline in the authenticated verification statement. Delayed phases and resume
+cannot renew it. A seven-day candidate retention period does not extend release
+approval. Expiry requires a new qualification run with fresh evidence.
+
+Historical record inspection does not impose a current-age gate. Rescanning a
+published digest verifies the original signed evidence and uses a fresh database
+for the new assessment; an expired release qualification window does not reject
+that historical evidence.
 
 
 ## Build and qualification<a id="build-and-qualification"></a>

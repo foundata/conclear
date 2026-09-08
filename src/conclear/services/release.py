@@ -23,7 +23,11 @@ from conclear.artifacts import (
     qualification_transports,
 )
 from conclear.config import ReleaseImageConfig, RepositoryConfig
-from conclear.database import select_fresh_database, trivy_cache_root
+from conclear.database import (
+    select_database_by_digest,
+    select_fresh_database,
+    trivy_cache_root,
+)
 from conclear.dependencies import command_tools
 from conclear.errors import (
     ConClearError,
@@ -36,7 +40,13 @@ from conclear.jsonutil import atomic_write_json, sha256_bytes
 from conclear.pins import PinResolver, PinStore
 from conclear.presentation import Finding
 from conclear.provenance import ProvenanceInput, generate_provenance
-from conclear.records import SourceIdentity, Verdict, parse_timestamp, utc_now
+from conclear.records import (
+    SourceIdentity,
+    Verdict,
+    format_timestamp,
+    parse_timestamp,
+    utc_now,
+)
 from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
 from conclear.services.assembly import assemble_candidate
@@ -289,6 +299,7 @@ def _continue_release(
             version=request.version,
             tools=runtime.identities,
             now=now_factory(),
+            clock=now_factory,
         )
     if (
         workspace.load().state is RunState.ASSEMBLED
@@ -317,6 +328,7 @@ def _continue_release(
                 registry_control=registry_control,
                 auth_file=request.profile.auth_file,
                 now=now_factory(),
+                clock=now_factory,
             )
         published = load_published(workspace, candidate, image)
         if workspace.load().state is RunState.PUBLISHED:
@@ -353,6 +365,7 @@ def _continue_release(
                 host_architecture=host_platform.machine(),
                 ci_context=public_ci_context,
                 now=now_factory(),
+                clock=now_factory,
             )
         if workspace.load().state is not RunState.VERIFIED:
             raise OperationalError("Release did not reach the verified state")
@@ -371,6 +384,7 @@ def _continue_release(
             public_key=request.profile.cosign_public_key,
             auth_file=request.profile.auth_file,
             now=now_factory(),
+            clock=now_factory,
         )
         return _write_summary(workspace, published.immutable_reference, promotion)
     finally:
@@ -413,11 +427,32 @@ def _qualify_release(
             f"External image pin checks rejected the release: {pin_rejection.image}",
             code=pin_rejection.check_id,
         )
-    database = select_fresh_database(
-        runtime.trivy(),
-        trivy_cache_root(request.cache_home),
-        now=now_factory(),
-    )
+    immutable_inputs = workspace.load().immutable_inputs
+    started_value = immutable_inputs.get("qualificationStartedAt")
+    if started_value is None:
+        database = select_fresh_database(
+            runtime.trivy(), trivy_cache_root(request.cache_home), now=now_factory()
+        )
+        qualification_started_at = now_factory()
+        workspace.bind_immutable_inputs(
+            {
+                "qualificationStartedAt": format_timestamp(qualification_started_at),
+                "qualificationDatabaseDigest": database.digest,
+            }
+        )
+    else:
+        qualification_started_at = parse_timestamp(
+            started_value, "qualification start", error=InvalidInvocationError
+        )
+        database = select_database_by_digest(
+            runtime.trivy(),
+            trivy_cache_root(request.cache_home),
+            expected_digest=Digest(
+                immutable_inputs.get("qualificationDatabaseDigest", "")
+            ),
+            now=now_factory(),
+            qualification_started_at=qualification_started_at,
+        )
     hooks = hook_runner(runtime, repository, workspace)
     ordered_platforms = tuple(
         sorted(
@@ -453,6 +488,8 @@ def _qualify_release(
             database=database,
             preflight=preflight,
             now=now_factory(),
+            qualification_started_at=qualification_started_at,
+            record_clock=now_factory,
         )
         if result.verdict is Verdict.REJECTED:
             rejecting_finding = next(

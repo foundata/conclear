@@ -14,9 +14,10 @@ from conclear.database import (
     trivy_cache_root,
 )
 from conclear.dependencies import command_tools
+from conclear.errors import InvalidInvocationError
 from conclear.pins import PinStore
 from conclear.presentation import CommandResult, ResultStatus
-from conclear.records import utc_now
+from conclear.records import format_timestamp, parse_timestamp, utc_now
 from conclear.release_profile import ReleaseProfile
 from conclear.services.assembly import assemble_candidate
 from conclear.services.checking import check_image
@@ -228,6 +229,11 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
 @platform_option
 @profile_option
 @click.option("database_digest", "--database-digest")
+@click.option(
+    "qualification_start",
+    "--qualification-started-at",
+    help="Original UTC qualification start shared with a pinned database snapshot.",
+)
 @format_option
 def qualify_command(
     source_root: Path,
@@ -237,14 +243,28 @@ def qualify_command(
     platform_text: str,
     profile_name: str | None,
     database_digest: str | None,
+    qualification_start: str | None,
     output_format: str,
 ) -> None:
     """Run all local gates and emit one platform qualification."""
     selected = profile(profile_name) if profile_name else None
     expected_database = None if database_digest is None else Digest(database_digest)
+    if qualification_start is not None and expected_database is None:
+        raise InvalidInvocationError(
+            "--qualification-started-at requires --database-digest"
+        )
+    started_at = (
+        None
+        if qualification_start is None
+        else parse_timestamp(
+            qualification_start, "qualification start", error=InvalidInvocationError
+        )
+    )
     additional_inputs = {} if selected is None else profile_inputs(selected)
     if expected_database is not None:
         additional_inputs["databaseDigest"] = str(expected_database)
+    if started_at is not None:
+        additional_inputs["qualificationStartedAt"] = format_timestamp(started_at)
     source_run = create_source_run(
         source_root=source_root,
         selector=selector,
@@ -293,6 +313,8 @@ def qualify_command(
                 source_run.runtime.trivy(),
                 database_cache,
                 expected_digest=expected_database,
+                now=utc_now(),
+                qualification_started_at=started_at,
             )
         )
         hooks = hook_runner(
@@ -307,6 +329,8 @@ def qualify_command(
             database=database,
             preflight=preflight,
             now=utc_now(),
+            qualification_started_at=started_at,
+            record_clock=utc_now,
         )
         target = {
             "accepted": RunState.QUALIFIED,
@@ -331,6 +355,7 @@ def qualify_command(
                     "recordDigest": result.record_digest,
                     "layout": str(result.layout_path),
                     "databaseDigest": database.digest,
+                    "qualificationWindow": result.qualification_window.to_dict(),
                 },
             ),
             output_format,
@@ -404,6 +429,7 @@ def assemble_command(
             version=version,
             tools=source_run.runtime.identities,
             now=utc_now(),
+            clock=utc_now,
             source_time=source_run.source_time,
         )
     emit(

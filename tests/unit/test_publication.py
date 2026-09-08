@@ -30,6 +30,7 @@ from conclear.errors import (
     RuleRejectionError,
     UnsupportedOperationError,
 )
+from conclear.freshness import QualificationWindow
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
     atomic_write_json,
@@ -491,6 +492,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
         tag,
         (),
         (),
+        QualificationWindow.start(datetime(2026, 1, 1, tzinfo=UTC)),
     )
     tags: dict[str, Digest] = {}
     registry = FakeRegistry(observation.graph, tags)
@@ -507,6 +509,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
             registry_control=registry_control,
             auth_file=None,
             now=now,
+            clock=lambda: now,
         )
     assert workspace.journal.entries() == ()
     del tags[tag]
@@ -521,6 +524,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
             registry_control=registry_control,
             auth_file=None,
             now=now,
+            clock=lambda: now,
         )
 
     entry = workspace.journal.entries()[0]
@@ -579,6 +583,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         tag,
         ("sha256:" + "1" * 64,),
         (),
+        QualificationWindow.start(datetime(2026, 1, 1, tzinfo=UTC)),
     )
     platform = Platform.parse("linux/amd64")
     sbom = workspace.root / "exports" / "sbom" / "app-linux-amd64.spdx.json"
@@ -678,6 +683,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         registry_control=registry_control,
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
+        clock=lambda: datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
     )
     assert load_published(workspace, candidate, image) == published
     workspace.journal.update(
@@ -778,6 +784,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
                 run_id="1234",
             ),
             now=now,
+            clock=lambda: now,
         )
 
     with pytest.raises(InvalidInvocationError, match="builder identity differs"):
@@ -842,6 +849,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             public_key=public_key,
             auth_file=None,
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
+            clock=lambda: datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
     registry_control.expirations[tag] = expiration
     registry_control.expirations[tag] = datetime(2026, 1, 1, 0, 6, tzinfo=UTC)
@@ -858,6 +866,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             public_key=public_key,
             auth_file=None,
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
+            clock=lambda: datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
     assert caught.value.code == "CC0603"
     registry_control.expirations[tag] = expiration
@@ -873,6 +882,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             registry,
             None,
             immutable=True,
+            authorize_tag_write=lambda: None,
         )
     assert tags["race"] == observation.graph.digest
     race_entry = next(
@@ -900,6 +910,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             registry,
             None,
             immutable=True,
+            authorize_tag_write=lambda: None,
         )
     assert tags["unprotected"] == observation.graph.digest
     unprotected_entry = next(
@@ -942,6 +953,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             public_key=public_key,
             auth_file=None,
             now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
+            clock=lambda: datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
         )
     assert tags["1.2.3"] == observation.graph.digest
     assert "1.2.3" in registry_control.immutable
@@ -960,6 +972,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         public_key=public_key,
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
+        clock=lambda: datetime(2026, 1, 1, 0, 6, tzinfo=UTC),
     )
 
     assert workspace.load().state is RunState.PROMOTED

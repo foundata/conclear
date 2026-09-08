@@ -9,6 +9,7 @@ verdict follows from every collected finding, including those of the
 dependency closure.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -19,7 +20,9 @@ from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.checks import validate_image_labels
 from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig
 from conclear.context import hash_build_context
+from conclear.database import qualification_database_window
 from conclear.errors import OperationalError
+from conclear.freshness import QualificationWindow, evidence_window
 from conclear.hooks import HookRunner
 from conclear.jsonutil import (
     sha256_bytes,
@@ -130,6 +133,7 @@ class QualificationResult:
     layout_reference: str
     verdict: Verdict
     findings: tuple[Finding, ...]
+    qualification_window: QualificationWindow
 
 
 def build_platform(inputs: BuildInputs, builder: Builder) -> BuildEvidence:
@@ -311,11 +315,16 @@ def qualify_platform(
     database: DatabaseObservation,
     preflight: ClosurePreflight,
     now: datetime,
+    record_clock: Callable[[], datetime],
+    qualification_started_at: datetime | None = None,
 ) -> QualificationResult:
     """Execute the local platform pipeline and store one public qualification."""
     _require_closure_preflight(inputs, preflight)
     if not preflight.accepted:
         raise OperationalError("Qualification cannot build after rejected preflight")
+    window = qualification_database_window(
+        database, started_at=qualification_started_at or now, now=now
+    )
     build = build_platform(inputs, builder)
     dependency_builds = build_test_dependencies(inputs, builder)
     runtime_evidence = test_platform(
@@ -325,6 +334,8 @@ def qualify_platform(
         inputs, build, scanner, database, today=now.date()
     )
     require_source_integrity(inputs.workspace, inputs.repository.path.parent)
+    completed_at = record_clock()
+    window.require_current(completed_at, phase="qualification completion")
     pin_findings = tuple(
         replace(finding, image=item.image.image_id)
         for item in preflight.images
@@ -400,11 +411,16 @@ def qualify_platform(
         "payloadDigests": list(payload_digests),
         "databaseDigest": database.digest,
         "databaseMetadata": database.metadata,
+        "qualificationWindow": window.to_dict(),
         "findings": [finding.to_dict() for finding in findings],
     }
+    if verdict is Verdict.ACCEPTED:
+        window = evidence_window(payload)
+        window.require_current(completed_at, phase="qualification completion")
+        payload["qualificationWindow"] = window.to_dict()
     record = RecordEnvelope(
         record_type="platformQualification",
-        created_at=now,
+        created_at=completed_at,
         run_id=inputs.workspace.run_id,
         source=inputs.source,
         configuration_digest=sha256_bytes(inputs.repository.raw_bytes),
@@ -425,6 +441,7 @@ def qualify_platform(
         layout_reference="qualified",
         verdict=verdict,
         findings=findings,
+        qualification_window=window,
     )
 
 

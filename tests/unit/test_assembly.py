@@ -290,6 +290,10 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
                 }
                 for name, version in (("vulnerability", 2), ("java", 1))
             },
+            "qualificationWindow": {
+                "startedAt": "2026-01-01T00:00:00Z",
+                "expiresAt": "2026-01-02T00:00:00Z",
+            },
             "findings": [],
         },
     )
@@ -312,6 +316,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
         source_time=datetime(2026, 1, 1, tzinfo=UTC),
         tools=(tool,),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
 
     assert candidate.record_digest == sha256_file(candidate.record_path)
@@ -354,4 +359,5 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             source_time=datetime(2026, 1, 1, tzinfo=UTC),
             tools=(tool,),
             now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+            clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
         )

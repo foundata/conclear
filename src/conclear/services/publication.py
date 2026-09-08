@@ -11,6 +11,7 @@ and `conclear.services.promotion` reuse.
 import logging
 import re
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -100,10 +101,12 @@ def publish_candidate(
     registry_control: RegistryControl,
     auth_file: Path | None,
     now: datetime,
+    clock: Callable[[], datetime],
 ) -> PublishedCandidate:
     """Publish one unused candidate, verify its graph and set bounded expiration."""
     if workspace.load().state is not RunState.ASSEMBLED:
         raise InvalidInvocationError("Candidate publication requires assembled state")
+    candidate.qualification_window.require_current(now, phase="publication")
     tagged = image.repository.with_tag(candidate.candidate_tag)
     if re.fullmatch(CANDIDATE_TAG_PATTERN, candidate.candidate_tag) is None:
         raise InvalidInvocationError("Candidate name is outside the retention pattern")
@@ -133,6 +136,7 @@ def publish_candidate(
             registry_control=registry_control,
             auth_file=auth_file,
             now=now,
+            clock=clock,
         )
     if registry.resolve_optional(tagged, auth_file=auth_file) is not None:
         raise OperationalError(f"Generated candidate tag is already in use: {tagged}")
@@ -150,6 +154,7 @@ def publish_candidate(
         },
     )
     try:
+        candidate.qualification_window.require_current(clock(), phase="publication")
         registry.copy_layout_to_registry(
             layout_path=candidate.observation.path,
             layout_reference=candidate.observation.reference,
@@ -183,6 +188,10 @@ def publish_candidate(
             auth_file=auth_file,
         )
         _require_same_graph(candidate.observation.graph, remote.graph)
+        completed_at = clock()
+        candidate.qualification_window.require_current(
+            completed_at, phase="publication completion"
+        )
     except Exception:
         workspace.journal.mark_failed("candidate")
         raise
@@ -195,7 +204,7 @@ def publish_candidate(
             "immutabilityEnabled": False,
         },
     )
-    workspace.transition(RunState.PUBLISHED, now=now)
+    workspace.transition(RunState.PUBLISHED, now=completed_at)
     return PublishedCandidate(tagged, immutable, remote.graph, expiration, False)
 
 
@@ -210,6 +219,7 @@ def _resume_published_candidate(
     registry_control: RegistryControl,
     auth_file: Path | None,
     now: datetime,
+    clock: Callable[[], datetime],
 ) -> PublishedCandidate:
     expected_value = entry.metadata.get("digest")
     if expected_value != str(candidate.observation.graph.digest):
@@ -255,6 +265,12 @@ def _resume_published_candidate(
         auth_file=auth_file,
     )
     _require_same_graph(candidate.observation.graph, remote.graph)
+    completed_at = clock()
+    candidate.qualification_window.require_current(
+        completed_at, phase="publication resume"
+    )
+    if completed_at.astimezone(UTC) >= expiration:
+        raise RuleRejectionError("Candidate expired during resume", code="CC0603")
     workspace.journal.update(
         "candidate",
         ResourceStatus.CREATED,
@@ -265,7 +281,7 @@ def _resume_published_candidate(
             "retention": retention.to_dict(),
         },
     )
-    workspace.transition(RunState.PUBLISHED, now=now)
+    workspace.transition(RunState.PUBLISHED, now=completed_at)
     return PublishedCandidate(
         tagged, immutable, remote.graph, expiration, tag_observation.immutable
     )

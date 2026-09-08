@@ -8,6 +8,7 @@ to repoint an immutable tag that already names another digest and requires
 registry-enforced protection for every final version tag.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from conclear.errors import (
     OperationalError,
     RuleRejectionError,
 )
+from conclear.freshness import QualificationWindow
 from conclear.jsonutil import load_json
 from conclear.parsing import object_value
 from conclear.presentation import Finding
@@ -52,6 +54,7 @@ def promote_candidate(
     public_key: Path,
     auth_file: Path | None,
     now: datetime,
+    clock: Callable[[], datetime],
 ) -> PromotionResult:
     """Repeat verification, apply exact digest tags and remove the candidate tag."""
     if workspace.load().state is not RunState.VERIFIED:
@@ -75,6 +78,23 @@ def promote_candidate(
         predicate_type=verification.predicate_type,
         expected=expected_statement,
     )
+    predicate = object_value(
+        expected_statement.get("predicate"), "release verification"
+    )
+    payload = object_value(predicate.get("payload"), "release verification payload")
+    window = QualificationWindow.from_dict(payload.get("qualificationWindow"))
+    window.require_current(now, phase="promotion")
+    expiration = tag_state.expiration
+
+    def authorize_tag_write() -> None:
+        checked_at = clock()
+        window.require_current(checked_at, phase="promotion")
+        if checked_at.astimezone(UTC) >= expiration:
+            raise RuleRejectionError(
+                "Candidate expired during promotion", code="CC0603"
+            )
+
+    authorize_tag_write()
     immutable_tags = image.release.render_immutable(version)
     moving_tags = image.release.moving_tags
     registry_control.verify_tag_policy(
@@ -86,6 +106,7 @@ def promote_candidate(
     protected = True
     for tag in immutable_tags:
         current = registry_control.observe_tag(image.repository, tag)
+        authorize_tag_write()
         if current is not None and current.digest != published.graph.digest:
             raise RuleRejectionError(
                 f"Immutable release tag already names another digest: {tag}",
@@ -107,6 +128,7 @@ def promote_candidate(
                         registry,
                         auth_file,
                         immutable=True,
+                        authorize_tag_write=authorize_tag_write,
                     )
                     and protected
                 )
@@ -138,6 +160,7 @@ def promote_candidate(
                 registry,
                 auth_file,
                 immutable=True,
+                authorize_tag_write=authorize_tag_write,
             )
             and protected
         )
@@ -152,9 +175,11 @@ def promote_candidate(
             registry,
             auth_file,
             immutable=False,
+            authorize_tag_write=authorize_tag_write,
         )
         observed.append((tag, published.graph.digest))
-    workspace.transition(RunState.PROMOTED, now=now)
+    authorize_tag_write()
+    workspace.transition(RunState.PROMOTED, now=clock())
     try:
         if tag_state.immutable:
             mutable = registry_control.ensure_tag_mutable(
@@ -193,6 +218,7 @@ def _write_release_tag(
     auth_file: Path | None,
     *,
     immutable: bool,
+    authorize_tag_write: Callable[[], None],
 ) -> bool:
     """Write or adopt one release tag and return whether the registry protects it."""
     resource_id = f"tag-{tag}"
@@ -215,6 +241,7 @@ def _write_release_tag(
                 )
             protected = True
             if immutable and not current.immutable:
+                authorize_tag_write()
                 protected = _protect_release_tag(
                     registry_control, image, tag, expected_digest=digest
                 )
@@ -231,6 +258,7 @@ def _write_release_tag(
             metadata=metadata,
         )
     try:
+        authorize_tag_write()
         result = registry_control.assign_tag(image.repository, tag, digest)
         resolved = registry.resolve_digest(tagged, auth_file=auth_file)
         if result.digest != digest or resolved != digest:

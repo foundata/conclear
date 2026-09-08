@@ -175,6 +175,7 @@ def qualify_worker(
         database=DatabaseObservation(database_path, database_digest, DATABASE_METADATA),
         preflight=closure_preflight(inputs),
         now=NOW,
+        record_clock=lambda: NOW,
     )
     workspace.transition(
         {
@@ -256,6 +257,7 @@ def assemble(
         source_time=NOW,
         tools=(tool(),),
         now=NOW,
+        clock=lambda: NOW,
     )
 
 
@@ -1113,6 +1115,7 @@ def test_owned_and_imported_records_are_validated_differently(
             source_time=NOW,
             tools=(tool(),),
             now=NOW,
+            clock=lambda: NOW,
         )
 
 

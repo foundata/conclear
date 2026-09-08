@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "0806969483e586dc33a96cf0bf90cc95517b1121",
+ "guideRevision": "50240520ec9aef8d3725fae6c1be9a931cb465b1",
  "requirements": [
   {
    "id": "IG0001",
@@ -2955,6 +2955,13 @@
    "section": "Linting and testing",
    "anchor": "linting-and-testing",
    "text": "For a sudo escalation requirement, test a permitted operation from an actual non-root caller and denial for an unauthorized caller or operation. Repeat the permitted operation under `no-new-privileges` and require escalation to fail. Validate sudoers with the installed implementation's validator. Record the caller identities, policy, commands, outcomes and observed runtime controls. A presence-only requirement does not claim working escalation."
+  },
+  {
+   "id": "IG0423",
+   "modality": "MUST",
+   "section": "Vulnerability and configuration scanning",
+   "anchor": "vulnerability-and-configuration-scanning",
+   "text": "ConClear MUST define a finite qualification window beginning with selection of a fresh common database snapshot. Distributed workers MUST use that exact snapshot within the original window. Qualification completion, assembly, publication and promotion MUST reject expired approval, including on resume. The deadline MUST be recorded with the evidence and MUST NOT outlive pin freshness, permitted pin divergence or applied vulnerability exceptions. Expiry requires renewed qualification; it does not invalidate historical evidence. Rescans MUST assess the unchanged released subject with a fresh database."
   }
  ],
  "retired": []

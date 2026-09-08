@@ -1,13 +1,16 @@
 """Qualification transport validation and release-candidate assembly."""
 
 import stat
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from conclear.config import ImageConfig, ReleaseImageConfig, RepositoryConfig
+from conclear.database import require_database_fresh_at
 from conclear.emulation import validate_execution_observation
-from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.errors import InvalidInvocationError, OperationalError, RuleRejectionError
+from conclear.freshness import QualificationWindow, common_window, evidence_window
 from conclear.identity import IDENTITY
 from conclear.jsonutil import load_json, sha256_bytes, sha256_file
 from conclear.layout_assembly import (
@@ -69,6 +72,7 @@ class CandidateResult:
     candidate_tag: str
     qualification_digests: tuple[str, ...]
     payload_digests: tuple[str, ...]
+    qualification_window: QualificationWindow
     qualification_runs: tuple[tuple[Platform, str], ...] = ()
 
 
@@ -104,6 +108,8 @@ class _Qualification:
     build_arguments: tuple[tuple[str, str], ...]
     manifest_digest: Digest
     transport: QualificationTransport
+    qualification_window: QualificationWindow
+    qualified_at: datetime
 
 
 def assemble_candidate(
@@ -116,6 +122,7 @@ def assemble_candidate(
     source_time: datetime,
     tools: tuple[ToolIdentity, ...],
     now: datetime,
+    clock: Callable[[], datetime],
 ) -> CandidateResult:
     """Verify every transported byte and assemble exact required platform coverage."""
     snapshot = workspace.load()
@@ -205,6 +212,14 @@ def assemble_candidate(
             raise InvalidInvocationError(
                 "Qualifications identify different test dependency inputs"
             )
+    for item in qualifications:
+        item.qualification_window.require_current(now, phase="assembly")
+        if item.qualified_at > now:
+            raise RuleRejectionError(
+                "Qualification completion is in the future", code="CC0505"
+            )
+    window = common_window(tuple(item.qualification_window for item in qualifications))
+    window.require_current(now, phase="assembly")
     tag = candidate_tag(
         version=version,
         run_id=workspace.run_id,
@@ -257,6 +272,7 @@ def assemble_candidate(
         },
         "subjectDescriptor": observation.graph.root.to_dict(),
         "candidateTag": tag,
+        "qualificationWindow": window.to_dict(),
         "candidateNaming": {
             "version": version,
             "runId": workspace.run_id,
@@ -264,9 +280,11 @@ def assemble_candidate(
             "tag": tag,
         },
     }
+    completed_at = clock()
+    window.require_current(completed_at, phase="assembly completion")
     record = RecordEnvelope(
         record_type="releaseCandidate",
-        created_at=now,
+        created_at=completed_at,
         run_id=workspace.run_id,
         source=first.source,
         configuration_digest=first.configuration_digest,
@@ -276,7 +294,7 @@ def assemble_candidate(
     )
     record_path = workspace.root / "records" / "release-candidate.json"
     record_digest = record.write(record_path)
-    workspace.transition(RunState.ASSEMBLED, now=now)
+    workspace.transition(RunState.ASSEMBLED, now=completed_at)
     return CandidateResult(
         record_path,
         record_digest,
@@ -284,6 +302,7 @@ def assemble_candidate(
         tag,
         qualification_digests,
         payload_digests,
+        window,
         tuple(
             (item.platform, item.run_id)
             for item in sorted(qualifications, key=lambda value: value.platform)
@@ -437,6 +456,12 @@ def _read_qualification(
         payload_digests=payload_digests,
         expected_arguments=expected_arguments,
     )
+    window = evidence_window(payload)
+    window.require_current(record_created_at, phase="qualification completion")
+    require_database_fresh_at(
+        _narrow.object_value(payload.get("databaseMetadata"), "database metadata"),
+        window.started_at,
+    )
     return _Qualification(
         run_id=_narrow.string_value(record.get("runId"), "qualification run id"),
         image_id=_narrow.string_value(payload.get("imageId"), "image id"),
@@ -460,6 +485,8 @@ def _read_qualification(
         build_arguments=build_arguments,
         manifest_digest=manifest_digest,
         transport=transport,
+        qualification_window=window,
+        qualified_at=record_created_at,
     )
 
 

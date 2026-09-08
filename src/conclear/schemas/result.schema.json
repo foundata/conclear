@@ -330,6 +330,9 @@
               },
               "databaseDigest": {
                 "$ref": "#/$defs/digest"
+              },
+              "qualificationWindow": {
+                "$ref": "#/$defs/qualificationWindow"
               }
             }
           }
@@ -1430,6 +1433,15 @@
     }
   ],
   "$defs": {
+    "qualificationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startedAt", "expiresAt"],
+      "properties": {
+        "startedAt": {"$ref": "#/$defs/timestamp"},
+        "expiresAt": {"$ref": "#/$defs/timestamp"}
+      }
+    },
     "digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
@@ -1624,10 +1636,14 @@
         },
         "databaseDigest": {
           "$ref": "#/$defs/digest"
+        },
+        "qualificationWindow": {
+          "$ref": "#/$defs/qualificationWindow"
         }
       },
       "required": [
         "databaseDigest",
+        "qualificationWindow",
         "layout",
         "record",
         "recordDigest",

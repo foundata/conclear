@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Protocol
 
 from conclear.adapters.trivy import DatabaseObservation
-from conclear.errors import OperationalError
+from conclear.errors import OperationalError, RuleRejectionError
+from conclear.freshness import QualificationWindow
+from conclear.records import parse_timestamp
 from conclear.values import Digest
 
 
@@ -56,6 +58,8 @@ def select_database_by_digest(
     cache_root: Path,
     *,
     expected_digest: Digest,
+    now: datetime,
+    qualification_started_at: datetime | None = None,
 ) -> DatabaseObservation:
     """Select an exact distributed snapshot without consulting a mutable pointer."""
     selected = adapter.select_database_by_digest(cache_root, expected_digest)
@@ -63,13 +67,40 @@ def select_database_by_digest(
         raise OperationalError(
             "Selected Trivy database does not match the expected digest", code="CC0505"
         )
+    qualification_database_window(
+        selected, started_at=qualification_started_at or now, now=now
+    )
     return selected
 
 
+def qualification_database_window(
+    database: DatabaseObservation, *, started_at: datetime, now: datetime
+) -> QualificationWindow:
+    """Require a database fresh at the original start and a still-valid window."""
+    window = QualificationWindow.start(started_at)
+    window.require_current(now, phase="qualification")
+    require_database_fresh_at(database.metadata, started_at)
+    return window
+
+
+def require_database_fresh_at(metadata: dict[str, object], now: datetime) -> None:
+    """Validate historical database freshness without applying today's clock."""
+    if not _fresh_metadata(metadata, now):
+        raise RuleRejectionError(
+            "Trivy database was not fresh at the qualification start; "
+            "select a fresh common snapshot or supply its original qualification start",
+            code="CC0505",
+        )
+
+
 def _fresh(database: DatabaseObservation, now: datetime) -> bool:
+    return _fresh_metadata(database.metadata, now)
+
+
+def _fresh_metadata(metadata: dict[str, object], now: datetime) -> bool:
     next_updates: list[datetime] = []
     for name in ("vulnerability", "java"):
-        component = database.metadata.get(name)
+        component = metadata.get(name)
         if not isinstance(component, dict):
             raise OperationalError(f"Trivy {name} database metadata is malformed")
         value = component.get("nextUpdate")
@@ -87,5 +118,12 @@ def _fresh(database: DatabaseObservation, now: datetime) -> bool:
             raise OperationalError(
                 f"Trivy {name} database next-update time lacks a timezone"
             )
+        updated_at = parse_timestamp(
+            component.get("updatedAt"),
+            f"Trivy {name} database update time",
+            error=OperationalError,
+        )
+        if updated_at > now or updated_at >= next_update:
+            return False
         next_updates.append(next_update)
     return all(now.astimezone(UTC) < item.astimezone(UTC) for item in next_updates)

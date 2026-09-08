@@ -170,4 +170,5 @@ def test_verification_after_attestation_requires_the_expected_state(
             host_architecture="x86_64",
             ci_context=None,
             now=NOW,
+            clock=lambda: NOW,
         )

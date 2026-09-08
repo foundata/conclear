@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "0806969483e586dc33a96cf0bf90cc95517b1121",
+  "guideRevision": "50240520ec9aef8d3725fae6c1be9a931cb465b1",
   "limits": [
     {"name": "Pin resolution freshness", "value": "24 hours"},
     {"name": "Pin divergence", "value": "7 days"},
@@ -50,7 +50,7 @@
     {"id": "CC0502", "summary": "Reject fixable HIGH and CRITICAL findings without an exact exception", "severity": "error", "behavior": "automated", "requirements": ["IG0300", "IG0313"]},
     {"id": "CC0503", "summary": "Validate exception completeness, expiry and exact finding matches", "severity": "error", "behavior": "automated", "requirements": ["IG0309", "IG0310", "IG0311"]},
     {"id": "CC0504", "summary": "Generate and validate one digest-bound SPDX JSON SBOM per platform", "severity": "error", "behavior": "automated", "requirements": ["IG0009", "IG0264", "IG0324", "IG0325", "IG0326", "IG0327"]},
-    {"id": "CC0505", "summary": "Hold one validated vulnerability database snapshot across a release", "severity": "error", "behavior": "automated", "requirements": ["IG0301", "IG0305"]},
+    {"id": "CC0505", "summary": "Hold one fresh database snapshot within a bounded qualification window", "severity": "error", "behavior": "automated", "requirements": ["IG0301", "IG0305", "IG0423"]},
     {"id": "CC0601", "summary": "Generate a unique lowercase-ULID candidate reference", "severity": "error", "behavior": "automated", "requirements": ["IG0012", "IG0089", "IG0090", "IG0095"]},
     {"id": "CC0602", "summary": "Preserve and compare the complete local and remote digest graph", "severity": "error", "behavior": "automated", "requirements": ["IG0013", "IG0076", "IG0263", "IG0294", "IG0296", "IG0302"]},
     {"id": "CC0603", "summary": "Enforce and verify a bounded registry candidate lifetime", "severity": "error", "behavior": "automated", "requirements": ["IG0079", "IG0085", "IG0093"]},

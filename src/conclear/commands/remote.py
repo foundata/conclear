@@ -107,6 +107,7 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
             registry_control=registry_control,
             auth_file=selected.auth_file,
             now=utc_now(),
+            clock=utc_now,
         )
     finally:
         registry_control.close()
@@ -214,6 +215,7 @@ def verify_command(
         host_architecture=host_platform.machine(),
         ci_context=public_ci_context,
         now=utc_now(),
+        clock=utc_now,
     )
     emit(
         CommandResult(
@@ -266,6 +268,7 @@ def promote_command(
             public_key=selected.cosign_public_key,
             auth_file=selected.auth_file,
             now=utc_now(),
+            clock=utc_now,
         )
     finally:
         registry_control.close()

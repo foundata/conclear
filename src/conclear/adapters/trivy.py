@@ -321,15 +321,23 @@ def _database_observation(snapshot: Path) -> DatabaseObservation:
             snapshot / "java-db" / "metadata.json",
         ),
     }
-    digests: dict[str, str] = {}
+    identity: dict[str, object] = {}
     metadata: dict[str, object] = {}
     for name, (database_path, metadata_path) in components.items():
-        digests[name] = sha256_file(database_path)
-        metadata[name] = _database_metadata(
+        component = _database_metadata(
             object_value(load_json(metadata_path), label=f"Trivy {name} DB metadata"),
             label=f"Trivy {name} DB metadata",
         )
-    digest = sha256_bytes(canonical_json_bytes(digests))
+        metadata[name] = component
+        # Download time is local; upstream freshness metadata belongs to the
+        # immutable snapshot so changing it invalidates a pinned selection.
+        identity[name] = {
+            "contentDigest": sha256_file(database_path),
+            "schemaVersion": component["schemaVersion"],
+            "updatedAt": component["updatedAt"],
+            "nextUpdate": component["nextUpdate"],
+        }
+    digest = sha256_bytes(canonical_json_bytes(identity))
     return DatabaseObservation(snapshot, digest, metadata)
 
 

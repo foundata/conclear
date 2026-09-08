@@ -23,7 +23,7 @@ from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import load_json, sha256_bytes
 from conclear.path_safety import contained_path
-from conclear.records import SourceIdentity, Verdict, validate_record
+from conclear.records import SourceIdentity, Verdict, utc_now, validate_record
 from conclear.runtime import ApplicationRuntime
 from conclear.services.assembly import assemble_candidate
 from conclear.services.preflight import ClosurePreflight, ImagePreflight
@@ -241,6 +241,7 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
     )
     trivy = runtime.trivy()
     database = trivy.select_database(trivy_cache)
+    qualification_started_at = utc_now()
     preflight = ClosurePreflight(primary=ImagePreflight(image, (), ()), dependencies=())
 
     digests = []
@@ -257,7 +258,7 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
             auth_file=None,
             host_architecture="x86_64",
         )
-        # Every worker selects the shared snapshot by its digest, never by freshness.
+        # Workers share the original snapshot and qualification start.
         selected = trivy.select_database_by_digest(trivy_cache, Digest(database.digest))
         result = qualify_platform(
             inputs,
@@ -272,7 +273,9 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
             scanner=trivy,
             database=selected,
             preflight=preflight,
-            now=NOW,
+            now=utc_now(),
+            record_clock=utc_now,
+            qualification_started_at=qualification_started_at,
         )
         record = load_json(result.record_path)
         validate_record(record)
@@ -302,7 +305,8 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
         version="integration",
         source_time=SOURCE_TIME,
         tools=runtime.identities,
-        now=NOW,
+        now=utc_now(),
+        clock=utc_now,
     )
     assert candidate.record_path.is_file()
     assert len(candidate.observation.platform_manifests) == 2

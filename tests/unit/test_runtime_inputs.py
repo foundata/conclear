@@ -103,7 +103,7 @@ def test_database_selects_distributed_snapshot_by_exact_digest(tmp_path: Path) -
     selected = DatabaseObservation(
         tmp_path,
         str(expected),
-        database_metadata("2025-12-31T00:00:00Z"),
+        database_metadata("2026-01-01T06:00:00Z"),
     )
     adapter = FakeDatabase(selected, selected)
 
@@ -111,6 +111,8 @@ def test_database_selects_distributed_snapshot_by_exact_digest(tmp_path: Path) -
         adapter,
         tmp_path,
         expected_digest=expected,
+        now=datetime(2026, 1, 1, 12, tzinfo=UTC),
+        qualification_started_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
     assert result is selected
@@ -136,6 +138,7 @@ def test_database_rejects_distributed_snapshot_content_mismatch(
             adapter,
             tmp_path,
             expected_digest=expected,
+            now=datetime(2026, 1, 1, tzinfo=UTC),
         )
     assert caught.value.code == "CC0505"
 

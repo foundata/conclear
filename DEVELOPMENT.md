@@ -531,12 +531,13 @@ digest. The session-scoped `trivy_cache` fixture in
 the CLI transport scenario, so one invocation of the complete tier provisions it
 before any dependent case runs, whatever the collection order. The fixture needs
 a manifest-owned cache directory in `CONCLEAR_TEST_TRIVY_CACHE`. When that cache
-holds no snapshot, every dependent case skips unless
+holds no fresh snapshot, every dependent case skips unless
 `CONCLEAR_TEST_TRIVY_DOWNLOAD=1` is also set, in which case the production
 adapter downloads the current Trivy and Java databases once (about 1.1 GB
-compressed, several GB on disk). Every later run is offline and reuses the
-pinned snapshot, so record the cache directory and its snapshot digest in the
-run manifest and remove it when the run ends.
+compressed, several GB on disk). Later runs can reuse the pinned snapshot
+offline while it is fresh enough to start qualification. Stale caches require
+explicit download permission again. Record the cache directory and its snapshot
+digest in the run manifest and remove it when the run ends.
 
 The workstation's Trivy package may lag behind the accepted line.
 `CONCLEAR_TEST_TRIVY` names the absolute path of a verified official Trivy

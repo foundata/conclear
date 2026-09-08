@@ -422,6 +422,7 @@ def test_sudo_qualification_binds_permission_contract_and_test_report(
         database=DatabaseObservation(database, "sha256:" + "e" * 64, DATABASE_METADATA),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
     )
     assert outcome.verdict is Verdict.ACCEPTED
     record = json.loads(outcome.record_path.read_text(encoding="utf-8"))

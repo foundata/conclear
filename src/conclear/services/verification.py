@@ -7,6 +7,7 @@ statement that promotion later requires. A retry accepts only unchanged
 evidence and reuses a verification statement the registry still serves.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -81,11 +82,13 @@ def verify_candidate(
     host_architecture: str,
     ci_context: PublicCIContext | None,
     now: datetime,
+    clock: Callable[[], datetime],
 ) -> VerificationResult:
     """Verify every subject and evidence payload, then sign the verification result."""
     snapshot = workspace.load()
     if snapshot.state is not RunState.ATTESTED:
         raise InvalidInvocationError("Verification requires attested state")
+    candidate.qualification_window.require_current(now, phase="release verification")
     if signer_mode not in {"managed-key", "kms", "hsm"}:
         raise InvalidInvocationError("Unsupported signer mode")
     if not signer_key_id:
@@ -167,6 +170,7 @@ def verify_candidate(
             expected=provenance_predicate,
         )
     payload: dict[str, object] = {
+        "qualificationWindow": candidate.qualification_window.to_dict(),
         "subject": {
             "repository": image.repository.repository_name,
             "digest": str(published.graph.digest),
@@ -191,9 +195,13 @@ def verify_candidate(
             "candidateRecord": evidence.candidate_record_digest,
         },
     }
+    verified_at = clock()
+    candidate.qualification_window.require_current(
+        verified_at, phase="release verification"
+    )
     record = RecordEnvelope(
         record_type="releaseVerification",
-        created_at=now,
+        created_at=verified_at,
         run_id=workspace.run_id,
         source=evidence.source,
         configuration_digest=evidence.configuration_digest,
@@ -280,8 +288,12 @@ def verify_candidate(
         predicate_type=RELEASE_VERIFICATION_TYPE,
         expected=statement,
     ):
+        completed_at = clock()
+        candidate.qualification_window.require_current(
+            completed_at, phase="release verification resume"
+        )
         workspace.journal.update("release-verification", ResourceStatus.CREATED)
-        workspace.transition(RunState.VERIFIED, now=now)
+        workspace.transition(RunState.VERIFIED, now=completed_at)
         return VerificationResult(
             record_path,
             record_digest,
@@ -293,6 +305,9 @@ def verify_candidate(
     elif existing_verification.status is ResourceStatus.CREATED:
         raise OperationalError("Recorded release verification attestation is missing")
     try:
+        candidate.qualification_window.require_current(
+            clock(), phase="release verification signing"
+        )
         signer.attest_statement(
             subject=published.immutable_reference,
             statement=statement_path,
@@ -307,11 +322,15 @@ def verify_candidate(
             predicate_type=RELEASE_VERIFICATION_TYPE,
             expected=statement,
         )
+        completed_at = clock()
+        candidate.qualification_window.require_current(
+            completed_at, phase="release verification completion"
+        )
     except Exception:
         workspace.journal.mark_failed("release-verification")
         raise
     workspace.journal.update("release-verification", ResourceStatus.CREATED)
-    workspace.transition(RunState.VERIFIED, now=now)
+    workspace.transition(RunState.VERIFIED, now=completed_at)
     return VerificationResult(
         record_path,
         record_digest,

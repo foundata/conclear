@@ -5,6 +5,7 @@ from pathlib import Path
 from conclear.attestations import RELEASE_VERIFICATION_TYPE
 from conclear.config import ReleaseImageConfig
 from conclear.errors import InvalidInvocationError, RuleRejectionError
+from conclear.freshness import QualificationWindow, common_window, evidence_window
 from conclear.jsonutil import load_json, sha256_file
 from conclear.layout_assembly import AssemblyObservation
 from conclear.oci import validate_layout
@@ -181,6 +182,9 @@ def load_candidate(
         candidate_tag=candidate_tag_value,
         qualification_digests=tuple(qualification_digests),
         payload_digests=tuple(sorted(payload_digests)),
+        qualification_window=QualificationWindow.from_dict(
+            payload.get("qualificationWindow")
+        ),
         qualification_runs=tuple(sorted(qualification_runs)),
     )
 
@@ -281,6 +285,7 @@ def load_release_evidence(
     )
     sboms: list[tuple[Platform, Path, str]] = []
     scan_digests: list[str] = []
+    windows: list[QualificationWindow] = []
     bound_runs = _bound_runs(candidate, image)
     for platform in image.platforms:
         record_path = (
@@ -294,6 +299,7 @@ def load_release_evidence(
                 "Candidate does not bind a qualification record", code="CC0304"
             )
         payload = _narrow.object_value(record.get("payload"), "qualification payload")
+        windows.append(evidence_window(payload))
         sbom_value = _narrow.object_value(payload.get("sbom"), "qualification SBOM")
         sbom_digest = _narrow.string_value(sbom_value.get("digest"), "SBOM digest")
         sbom_path = workspace.root / "exports" / "sbom" / f"{platform.key}.spdx.json"
@@ -318,6 +324,10 @@ def load_release_evidence(
                     f"Scan report changed for {platform}", code="CC0501"
                 )
             scan_digests.append(scan_digest)
+    if common_window(tuple(windows)) != candidate.qualification_window:
+        raise RuleRejectionError(
+            "Candidate qualification window changed", code="CC0505"
+        )
     provenance_path = workspace.root / "records" / "provenance.json"
     evidence = ReleaseEvidence(
         source=SourceIdentity(
