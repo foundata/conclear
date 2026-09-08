@@ -9,6 +9,7 @@ and `conclear.services.promotion` reuse.
 """
 
 import logging
+import re
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,9 +29,9 @@ from conclear.records import (
     format_timestamp,
     parse_timestamp,
 )
-from conclear.registry_control import RegistryControl
+from conclear.registry_control import CandidateRetentionObservation, RegistryControl
 from conclear.services.assembly import CandidateResult
-from conclear.values import Digest, OCIReference
+from conclear.values import CANDIDATE_TAG_PATTERN, Digest, OCIReference
 from conclear.workspace import (
     ResourceEntry,
     ResourceKind,
@@ -105,6 +106,8 @@ def publish_candidate(
     if workspace.load().state is not RunState.ASSEMBLED:
         raise InvalidInvocationError("Candidate publication requires assembled state")
     tagged = image.repository.with_tag(candidate.candidate_tag)
+    if re.fullmatch(CANDIDATE_TAG_PATTERN, candidate.candidate_tag) is None:
+        raise InvalidInvocationError("Candidate name is outside the retention pattern")
     existing_entries = [
         item
         for item in workspace.journal.entries()
@@ -127,6 +130,7 @@ def publish_candidate(
         )
     if registry.resolve_optional(tagged, auth_file=auth_file) is not None:
         raise OperationalError(f"Generated candidate tag is already in use: {tagged}")
+    retention = _require_candidate_retention(image, registry_control)
     expiration = now.astimezone(UTC) + image.release_limits.candidate_lifetime
     workspace.journal.plan(
         resource_id="candidate",
@@ -136,6 +140,7 @@ def publish_candidate(
         metadata={
             "digest": str(candidate.observation.graph.digest),
             "expiration": format_timestamp(expiration),
+            "retention": retention.to_dict(),
         },
     )
     try:
@@ -226,6 +231,7 @@ def _resume_published_candidate(
     )
     if tag_observation is None or tag_observation.digest != observed:
         raise OperationalError("Registry candidate state differs during resume")
+    retention = _require_candidate_retention(image, registry_control)
     if tag_observation.expiration != expiration:
         tag_observation = registry_control.enforce_candidate_lifetime(
             image.repository, candidate.candidate_tag, expiration
@@ -252,12 +258,34 @@ def _resume_published_candidate(
             "digest": str(observed),
             "expiration": format_timestamp(expiration),
             "immutabilityEnabled": tag_observation.immutable,
+            "retention": retention.to_dict(),
         },
     )
     workspace.transition(RunState.PUBLISHED, now=now)
     return PublishedCandidate(
         tagged, immutable, remote.graph, expiration, tag_observation.immutable
     )
+
+
+def _require_candidate_retention(
+    image: ReleaseImageConfig, registry_control: RegistryControl
+) -> CandidateRetentionObservation:
+    retention = registry_control.ensure_candidate_retention(
+        image.repository, image.release_limits.candidate_lifetime
+    )
+    if (
+        retention.repository != image.repository
+        or not retention.policy_id
+        or retention.tag_pattern != CANDIDATE_TAG_PATTERN
+        or not 0
+        < retention.maximum_age.total_seconds()
+        <= image.release_limits.candidate_lifetime.total_seconds()
+    ):
+        raise OperationalError(
+            "Registry did not establish candidate retention before upload",
+            code="CC0603",
+        )
+    return retention
 
 
 def require_remote_graph_unchanged(

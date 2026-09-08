@@ -628,9 +628,24 @@ checks, qualification, assembly and provenance. The complete `publish` through
 supported backend must provide exact tag observation, digest-preserving graph
 handling, Cosign referrers, an independently enforced candidate lifetime,
 selective tag protection, exact tag assignment, deletion and ambiguous-write
-recovery. Quay.io provides these controls and `quay` is currently the only
-implemented backend. A release profile that selects `quay` rejects a destination
+recovery. `quay` is currently the only implemented backend. A release profile
+that selects `quay` rejects a destination
 on another registry before qualification or remote mutation.
+
+Publication also requires Quay's repository auto-prune API and an API token
+with `repo:admin` access to the destination. Before uploading a candidate,
+ConClear creates or reuses an age-based retention rule restricted to its
+generated candidate tags. It verifies that rule, then uploads the image and
+sets the exact per-tag expiration. The rule remains across releases and covers
+an interrupted upload without needing the publishing process to resume.
+Existing rules are not relaxed; a stricter rule may remove a candidate earlier.
+No repository suppression or release-profile option disables this requirement.
+If the API is unavailable or the token cannot manage these rules, publication
+stops before uploading. Local qualification and assembly remain available.
+
+The registry operator must keep Quay's asynchronous auto-pruner running and
+monitor its scheduling delay. ConClear checks the stored policy, not the health
+of that remote worker. No build CI service is needed for this registry control.
 
 
 ## 11. Check and run the release environment

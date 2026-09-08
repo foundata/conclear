@@ -2,7 +2,7 @@
 
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, override
 
@@ -33,8 +33,8 @@ from conclear.jsonutil import (
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph, validate_layout
 from conclear.process import CommandRequest, ProcessResult
 from conclear.records import ToolIdentity
-from conclear.registry_control import TagObservation
-from conclear.values import Digest, OCIReference, Platform
+from conclear.registry_control import CandidateRetentionObservation, TagObservation
+from conclear.values import CANDIDATE_TAG_PATTERN, Digest, OCIReference, Platform
 
 DATABASE_METADATA: dict[str, object] = {
     name: {
@@ -366,6 +366,13 @@ class FakeRegistryControl:
         if observed is None:
             raise AssertionError("expiration target is absent")
         return observed
+
+    def ensure_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation:
+        return CandidateRetentionObservation(
+            repository, "policy-id", CANDIDATE_TAG_PATTERN, maximum_age
+        )
 
     def ensure_tag_immutable(
         self, repository: OCIReference, tag: str

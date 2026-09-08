@@ -2,7 +2,7 @@ import base64
 import json
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import override
 
@@ -41,7 +41,7 @@ from conclear.jsonutil import (
 from conclear.layout_assembly import PlatformLayout, assemble_layout
 from conclear.oci import OCI_CONFIG, OCI_MANIFEST, OCIGraph
 from conclear.provenance import ProvenanceInput, generate_provenance
-from conclear.registry_control import TagObservation
+from conclear.registry_control import CandidateRetentionObservation, TagObservation
 from conclear.release_profile import (
     BuilderConfig,
     CIContextPolicy,
@@ -59,7 +59,13 @@ from conclear.services.ci_context import PublicCIContext
 from conclear.services.promotion import promote_candidate
 from conclear.services.publication import publish_candidate
 from conclear.services.verification import VerificationResult, verify_candidate
-from conclear.values import Digest, OCIReference, Platform, candidate_tag
+from conclear.values import (
+    CANDIDATE_TAG_PATTERN,
+    Digest,
+    OCIReference,
+    Platform,
+    candidate_tag,
+)
 from conclear.workspace import (
     ResourceKind,
     ResourceStatus,
@@ -199,6 +205,7 @@ class FakeRegistryControl:
         self.expirations: dict[str, datetime] = {}
         self.immutable: set[str] = set()
         self.fail_delete = False
+        self.retention: CandidateRetentionObservation | None = None
 
     @property
     def provider(self) -> str:
@@ -224,6 +231,14 @@ class FakeRegistryControl:
         observed = self.observe_tag(OCIReference("quay.io", "example/app"), tag)
         assert observed is not None
         return observed
+
+    def ensure_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation:
+        self.retention = CandidateRetentionObservation(
+            repository, "policy-id", CANDIDATE_TAG_PATTERN, maximum_age
+        )
+        return self.retention
 
     def ensure_tag_immutable(
         self, repository: OCIReference, tag: str

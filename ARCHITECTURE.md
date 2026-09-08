@@ -771,9 +771,9 @@ later release run may use newer accepted tools. `doctor` validates one scope,
 commands declare and reporting every failure instead of the first.
 
 All external commands use argument arrays, sanitized environments, explicit
-timeouts, bounded retries and captured logs. Cosign machine responses use private
-temporary files, with a 128 MiB response limit, separately from the 1 MiB
-redacted diagnostic capture. Overflow fails explicitly before JSON parsing;
+timeouts, bounded retries and captured logs. Cosign machine responses use
+private temporary files, with a 128 MiB response limit, separately from the 1
+MiB redacted diagnostic capture. Overflow fails explicitly before JSON parsing;
 DSSE payloads also have a 16 MiB base64-encoded size limit. Temporary responses
 are removed after consumption or failure. ConClear never constructs a shell
 command from project input. Logs redact credentials, authorization headers,
@@ -1054,9 +1054,10 @@ resolves ambiguous writes. It must enable selective immutable-tag protection
 where the provider enforces it and report the control as unavailable where the
 provider accepts but does not enforce it; repository-wide immutability does not
 satisfy the requirement. Local timestamps and best-effort cleanup never satisfy
-the lifetime requirement. Quay.io provides the required controls, does not
-currently enforce per-tag immutability, and `quay` is the only implemented
-backend.
+the lifetime requirement. `quay` is the only implemented backend. Publication
+requires its repository auto-prune API to be enabled and accessible with the
+supplied credentials, as well as native tag expiration. Availability is checked
+against the configured endpoint rather than inferred from its hostname.
 
 <a id="promise-ip0029"></a>
 The default candidate lives in the final release repository so signatures and
@@ -1067,22 +1068,39 @@ lowercase ULID, uses the first eight hexadecimal characters of the full source
 revision for the short form and validates every component before creating the
 tag.
 
-`publish` checks that the candidate tag is unused, then copies the accepted
+`publish` checks that the candidate tag is unused and establishes a verified
+repository retention rule before uploading any candidate content. The Quay
+adapter creates or reuses a `creation_date` auto-prune policy whose anchored
+pattern matches only generated ConClear candidate names. The observed maximum
+age cannot exceed the configured candidate lifetime. Existing policies are
+never broadened or relaxed; a stricter existing policy can remove candidates
+earlier. The policy remains in place across runs and is not removed by cleanup.
+A missing, unauthorized or unverifiable retention API stops publication before
+upload. The policy ID, pattern and maximum age are journaled with the candidate.
+
+ConClear then copies the accepted
 manifest or index with Skopeo's digest-preserving path, including every platform
 for an index. It resolves the remote index, platform manifests and referenced
 content and compares the complete graph with the local candidate. Registries do
 not provide a portable compare-and-swap operation, so pre-write checks detect
 ordinary collisions while post-write verification determines success.
 
-Immediately after a successful copy, ConClear asks the selected backend to
-enforce and verify the candidate lifetime. Failure to establish that independent
-control stops the release before attestation. ConClear enables candidate tag
-immutability when the backend supports it and otherwise records that the
-recommended control was unavailable. A failed or ambiguous publication is
-recorded for cleanup; resume reuses its tag only after conclusively resolving it
-to the unchanged expected digest within its lifetime. Candidate content and
-evidence must be safe for public disclosure; later provider garbage collection
-is outside the release verdict.
+Immediately after a successful copy, ConClear also sets and verifies the exact
+per-tag deadline. The pre-existing retention rule covers an upload that succeeds
+remotely but loses its acknowledgement, even if ConClear never resumes. Failure
+to confirm the per-tag deadline stops the release before attestation. ConClear
+enables candidate tag immutability when the backend supports it and otherwise
+records that the recommended control was unavailable. A failed or ambiguous
+publication is recorded for cleanup; resume reuses its tag only after
+conclusively resolving it to the unchanged expected digest within its lifetime.
+Candidate content and evidence must be safe for public disclosure; later
+provider garbage collection is outside the release verdict.
+
+Quay's auto-pruner runs asynchronously. Registry operators must keep that
+service enabled, monitor its execution and account for its scheduling delay
+when setting retention limits. Observing the policy through the API proves
+its configuration, not the health or timing of a remote worker. This is a
+registry operation and does not require a build CI service.
 
 <a id="promise-ip0030"></a>
 Promotion first confirms that the candidate has not expired, then resolves and

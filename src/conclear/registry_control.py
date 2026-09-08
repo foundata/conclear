@@ -1,7 +1,7 @@
 """Provider-neutral release-registry control contract."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from conclear.values import Digest, OCIReference
@@ -15,6 +15,25 @@ class TagObservation:
     digest: Digest
     expiration: datetime | None
     immutable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateRetentionObservation:
+    """Provider retention already covering future generated candidate tags."""
+
+    repository: OCIReference
+    policy_id: str
+    tag_pattern: str
+    maximum_age: timedelta
+
+    def to_dict(self) -> dict[str, object]:
+        """Return non-secret evidence of the observed repository policy."""
+        return {
+            "repository": str(self.repository),
+            "policyId": self.policy_id,
+            "tagPattern": self.tag_pattern,
+            "maximumAgeSeconds": int(self.maximum_age.total_seconds()),
+        }
 
 
 class RegistryControl(Protocol):
@@ -33,6 +52,12 @@ class RegistryControl(Protocol):
         self, repository: OCIReference, tag: str, expiration: datetime
     ) -> TagObservation:
         """Enforce and verify a candidate deadline independently of this process."""
+        ...
+
+    def ensure_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation:
+        """Establish independent retention for future candidates before any upload."""
         ...
 
     def ensure_tag_immutable(

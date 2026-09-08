@@ -21,6 +21,11 @@ _REPOSITORY_COMPONENT_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
 _TAG_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 _ULID_PATTERN = re.compile(r"^[0-9a-hjkmnp-tv-z]{26}$")
 _REVISION_PATTERN = re.compile(r"^[0-9a-f]{40,64}$")
+CANDIDATE_TAG_PATTERN = (
+    r"^([A-Za-z0-9_][A-Za-z0-9_.-]{0,80}-candidate\."
+    r"[0-9a-hjkmnp-tv-z]{26}\.g[0-9a-f]{8}|"
+    r"g[0-9a-f]{8}-candidate\.[0-9a-hjkmnp-tv-z]{26})$"
+)
 
 
 @dataclass(frozen=True, slots=True, order=True)

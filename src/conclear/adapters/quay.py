@@ -1,7 +1,8 @@
 """Synchronous Quay REST API adapter."""
 
+import re
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
@@ -12,9 +13,9 @@ from conclear.errors import (
     OperationalError,
     UnsupportedOperationError,
 )
-from conclear.parsing import object_value, string_value
-from conclear.registry_control import TagObservation
-from conclear.values import Digest, OCIReference
+from conclear.parsing import array_value, object_value, string_value
+from conclear.registry_control import CandidateRetentionObservation, TagObservation
+from conclear.values import CANDIDATE_TAG_PATTERN, Digest, OCIReference
 
 MAX_QUAY_RESPONSE_BYTES = 4 * 1024 * 1024
 
@@ -104,6 +105,92 @@ class QuayAdapter:
         if observed.expiration is None or int(observed.expiration.timestamp()) != epoch:
             raise OperationalError("Quay did not retain the requested tag expiration")
         return observed
+
+    def ensure_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation:
+        """Create or reuse a candidate-only age policy and verify it before upload.
+
+        The policy belongs to the repository, not a release run. Existing rules
+        are never broadened, relaxed or deleted, including on ambiguous writes.
+        """
+        seconds = int(maximum_age.total_seconds())
+        if seconds <= 0 or maximum_age != timedelta(seconds=seconds):
+            raise InvalidInvocationError(
+                "Candidate retention needs positive whole seconds"
+            )
+        namespace, name = self._repository_parts(repository)
+        path = f"/repository/{namespace}/{name}/autoprunepolicy/"
+        try:
+            observed = self._candidate_retention(repository, path, maximum_age)
+            if observed is not None:
+                return observed
+            try:
+                self._request(
+                    "POST",
+                    path,
+                    json_body={
+                        "method": "creation_date",
+                        "value": f"{seconds}s",
+                        "tagPattern": CANDIDATE_TAG_PATTERN,
+                        "tagPatternMatches": True,
+                    },
+                )
+            except httpx.TransportError:
+                pass
+            except _QuayAPIError as exc:
+                if exc.status_code not in {400, 409}:
+                    raise
+            observed = self._candidate_retention(repository, path, maximum_age)
+            if observed is None:
+                raise OperationalError(
+                    "Quay did not retain the required candidate retention policy",
+                    code="CC0603",
+                )
+            return observed
+        except _QuayAPIError as exc:
+            if exc.status_code in {401, 403, 404, 405}:
+                raise UnsupportedOperationError(
+                    "Quay candidate retention is unavailable or unauthorized; no candidate was uploaded",
+                    code="CC0603",
+                ) from exc
+            raise
+        except httpx.TransportError as exc:
+            raise OperationalError(
+                "Unable to verify Quay candidate retention", code="CC0603"
+            ) from exc
+
+    def _candidate_retention(
+        self, repository: OCIReference, path: str, maximum_age: timedelta
+    ) -> CandidateRetentionObservation | None:
+        response = self._request("GET", path)
+        value = object_value(self._decode(response), label="Quay retention response")
+        matches: list[CandidateRetentionObservation] = []
+        for raw in array_value(value.get("policies"), label="Quay retention policies"):
+            policy = object_value(raw, label="Quay retention policy")
+            if (
+                policy.get("method") != "creation_date"
+                or policy.get("tagPattern") != CANDIDATE_TAG_PATTERN
+                or policy.get("tagPatternMatches") is not True
+            ):
+                continue
+            age = _retention_age(policy.get("value"))
+            if age <= maximum_age:
+                matches.append(
+                    CandidateRetentionObservation(
+                        repository,
+                        string_value(
+                            policy.get("uuid"), label="Quay retention policy ID"
+                        ),
+                        CANDIDATE_TAG_PATTERN,
+                        age,
+                    )
+                )
+        return (
+            min(matches, key=lambda item: (item.maximum_age, item.policy_id))
+            if matches
+            else None
+        )
 
     def ensure_tag_immutable(
         self, repository: OCIReference, tag: str
@@ -263,6 +350,21 @@ class QuayAdapter:
     def _tag_path(self, repository: OCIReference, tag: str) -> str:
         namespace, name = self._repository_parts(repository)
         return f"/repository/{namespace}/{name}/tag/{quote(tag, safe='')}"
+
+
+def _retention_age(value: object) -> timedelta:
+    if (
+        not isinstance(value, str)
+        or re.fullmatch(r"[1-9][0-9]{0,8}[smhdw]", value) is None
+    ):
+        raise OperationalError(
+            "Quay candidate retention age is malformed", code="CC0603"
+        )
+    seconds = (
+        int(value[:-1])
+        * {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[value[-1]]
+    )
+    return timedelta(seconds=seconds)
 
 
 def _tag_expiration(item: dict[str, object]) -> datetime | None:
