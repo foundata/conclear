@@ -990,8 +990,10 @@ exactly one vulnerability result gates a release. Every rejecting scan runs
 against local content and the digest-addressed layout before publication. Every
 failed Trivy configuration check rejects qualification except `DS-0026`, which
 demands a Containerfile `HEALTHCHECK` that the guide forbids in OCI-format
-images and `CC0112` rejects; that single check is inapplicable by construction
-and is not a repository exception.
+images and `CC0112` rejects, and `DS-0002` when the image declares UID 0 with a
+reviewed `root_requirement`. The first check is inapplicable by construction;
+the second exemption records the declared root justification. Neither exempts
+secrets, vulnerabilities or unrelated configuration findings.
 
 Each platform SBOM is SPDX 2.3 JSON. ConClear validates the document, records
 its exact specification version and exports the raw JSON.
