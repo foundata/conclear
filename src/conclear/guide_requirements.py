@@ -294,7 +294,9 @@ def read_listing(path: Path, *, guide_revision: str) -> RequirementInventory:
         else item
         for item in raw_requirements
     ]
-    return _inventory(guide_revision, stripped, untrusted.get("retired"))
+    return _inventory(
+        guide_revision, stripped, untrusted.get("retired"), document_order=True
+    )
 
 
 def render_inventory(inventory: RequirementInventory) -> bytes:
@@ -473,7 +475,11 @@ def _load_resource(name: str, label: str) -> dict[str, Any]:
 
 
 def _inventory(
-    revision: str, raw_requirements: object, raw_retired: object
+    revision: str,
+    raw_requirements: object,
+    raw_retired: object,
+    *,
+    document_order: bool = False,
 ) -> RequirementInventory:
     if not isinstance(raw_requirements, list) or not raw_requirements:
         raise OperationalError("Requirement inventory requirements are malformed")
@@ -518,6 +524,8 @@ def _inventory(
                 note=_string(item, "note", "Requirement inventory"),
             )
         )
+    if document_order:
+        requirements.sort(key=lambda item: item.requirement_id)
     _require_sorted_unique(
         tuple(item.requirement_id for item in requirements), "Requirement inventory"
     )

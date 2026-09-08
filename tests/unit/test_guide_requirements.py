@@ -353,7 +353,10 @@ def test_shipped_inventory_anchors_are_well_formed() -> None:
         assert module._ANCHOR.fullmatch(item.anchor)
 
 
-def test_listing_import_strips_lines_and_diff_reports_changes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("reverse", [False, True])
+def test_listing_import_strips_lines_and_diff_reports_changes(
+    tmp_path: Path, reverse: bool
+) -> None:
     listing = tmp_path / "listing.json"
     listing.write_text(
         json.dumps(
@@ -383,6 +386,10 @@ def test_listing_import_strips_lines_and_diff_reports_changes(tmp_path: Path) ->
         encoding="utf-8",
     )
 
+    if reverse:
+        value = json.loads(listing.read_text(encoding="utf-8"))
+        value["requirements"].reverse()
+        listing.write_text(json.dumps(value), encoding="utf-8")
     new = read_listing(listing, guide_revision="c" * 40)
     rendered = json.loads(render_inventory(new))
 
