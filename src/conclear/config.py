@@ -150,6 +150,18 @@ class TestLaunchConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SudoTestConfig:
+    """A noninteractive sudo operation and a second, unauthorized caller."""
+
+    user: int
+    denied_user: int
+    command: tuple[str, ...]
+    expected_stdout: str
+    target_user: int = 0
+    timeout_seconds: int = 30
+
+
+@dataclass(frozen=True, slots=True)
 class TestConfig:
     """Typed test inputs of a qualified image: fixtures, outputs, steps and launch."""
 
@@ -157,15 +169,42 @@ class TestConfig:
     outputs: tuple[TestOutputConfig, ...]
     preparations: tuple[TestPreparationConfig, ...]
     launch: TestLaunchConfig
+    sudo: SudoTestConfig | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class RootRequirement:
-    """Reviewed justification for running as container UID 0."""
+class RuntimeRequirement:
+    """Owned, reviewed justification for one runtime permission."""
 
     rationale: str
     owner: str
     review_trigger: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the reviewed permission's public evidence fields."""
+        return {
+            "rationale": self.rationale,
+            "owner": self.owner,
+            "reviewTrigger": self.review_trigger,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SudoRequirement:
+    """Sudo's purpose and scope, independent of the startup user."""
+
+    review: RuntimeRequirement
+    mode: str
+    scope: str
+    setid_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SetIDRequirement:
+    """A reviewed set-ID executable other than the declared sudo executable."""
+
+    path: str
+    review: RuntimeRequirement
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,8 +235,35 @@ class RuntimeConfig:
     capabilities: tuple[str, ...]
     startup_timeout_seconds: int
     shutdown_timeout_seconds: int
-    root_requirement: RootRequirement | None = None
+    root_requirement: RuntimeRequirement | None = None
     systemd: SystemdConfig | None = None
+    sudo_requirement: SudoRequirement | None = None
+    writable_root_requirement: RuntimeRequirement | None = None
+    setid_requirements: tuple[SetIDRequirement, ...] = ()
+
+    @property
+    def no_new_privileges(self) -> bool:
+        """Permit exec-time escalation only for the reviewed functional mode."""
+        return (
+            self.sudo_requirement is None or self.sudo_requirement.mode != "escalation"
+        )
+
+    @property
+    def setid_paths(self) -> tuple[str, ...]:
+        """Return the exact declared set-ID paths, including sudo when required."""
+        sudo_paths = (
+            () if self.sudo_requirement is None else self.sudo_requirement.setid_paths
+        )
+        return tuple(
+            sorted((*sudo_paths, *(item.path for item in self.setid_requirements)))
+        )
+
+    @property
+    def requires_restrictive_test(self) -> bool:
+        """Return whether functional controls differ from the restrictive defaults."""
+        return (
+            not self.read_only or bool(self.capabilities) or not self.no_new_privileges
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,6 +543,12 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         ),
     )
     test_value = toml_table(value.get("test", {}))
+    test = _parse_test(test_value, source_root)
+    escalation = not runtime.no_new_privileges
+    if escalation != (test.sudo is not None) and value.get("repository") is not None:
+        raise InvalidInvocationError(
+            "Sudo escalation requires test.sudo; other modes must not declare it"
+        )
     test_dependencies = tuple(_string_list(test_value.get("dependencies", [])))
     repository_value = value.get("repository")
     if repository_value is None:
@@ -530,7 +602,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         native_test_platforms=native_platforms,
         scanner=toml_string(value.get("scanner", "trivy")),
         rescan_scope=toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
-        test=_parse_test(test_value, source_root),
+        test=test,
         hooks=tuple(
             _parse_hook(toml_table(item)) for item in _list(value.get("hooks", []))
         ),
@@ -630,9 +702,33 @@ def _parse_test(value: dict[str, Any], source_root: Path) -> TestConfig:
         outputs=outputs,
         preparations=preparations,
         launch=launch,
+        sudo=_parse_sudo_test(toml_table(value["sudo"])) if "sudo" in value else None,
     )
     _validate_mount_handles(test)
     return test
+
+
+def _parse_sudo_test(value: dict[str, Any]) -> SudoTestConfig:
+    user = toml_integer(value["user"])
+    denied_user = toml_integer(value["denied_user"])
+    target_user = toml_integer(value.get("target_user", 0))
+    if len({user, denied_user, target_user}) != 3:
+        raise InvalidInvocationError(
+            "Sudo test callers and target must be distinct identities"
+        )
+    command = _command(value["command"], "sudo test command")
+    if not command[0].startswith("/"):
+        raise InvalidInvocationError(
+            "Sudo test command must use an absolute executable path"
+        )
+    return SudoTestConfig(
+        user=user,
+        denied_user=denied_user,
+        command=command,
+        expected_stdout=toml_string(value["expected_stdout"]),
+        target_user=target_user,
+        timeout_seconds=toml_integer(value.get("timeout_seconds", 30)),
+    )
 
 
 def _parse_test_preparation(
@@ -945,14 +1041,36 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
         )
     root_value = value.get("root_requirement")
     root_requirement = (
-        None
-        if root_value is None
-        else RootRequirement(
-            rationale=toml_string(toml_table(root_value)["rationale"]),
-            owner=toml_string(toml_table(root_value)["owner"]),
-            review_trigger=toml_string(toml_table(root_value)["review_trigger"]),
-        )
+        None if root_value is None else _parse_requirement(toml_table(root_value))
     )
+    sudo_value = value.get("sudo_requirement")
+    sudo = (
+        None if sudo_value is None else _parse_sudo_requirement(toml_table(sudo_value))
+    )
+    writable_value = value.get("writable_root_requirement")
+    writable = (
+        None
+        if writable_value is None
+        else _parse_requirement(toml_table(writable_value))
+    )
+    setid = tuple(
+        SetIDRequirement(
+            path=_container_paths(
+                [item["path"]], field_name="set-ID executable", allow_root=False
+            )[0],
+            review=_parse_requirement(item),
+        )
+        for raw in _list(value.get("setid_requirements", []))
+        for item in (toml_table(raw),)
+    )
+    paths = [
+        *(item.path for item in setid),
+        *(() if sudo is None else sudo.setid_paths),
+    ]
+    if len(paths) != len(set(paths)):
+        raise InvalidInvocationError(
+            "Set-ID executable requirements must name distinct paths"
+        )
     systemd_value = value.get("systemd")
     systemd = (
         None
@@ -966,7 +1084,7 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
     return RuntimeConfig(
         profile=profile,
         user=toml_integer(value["user"]),
-        read_only=True,
+        read_only=writable is None,
         writable_mounts=tuple(sorted(writable_mounts)),
         memory=toml_string(value["memory"]),
         cpus=_number(value["cpus"]),
@@ -983,6 +1101,42 @@ def _parse_runtime(value: dict[str, Any]) -> RuntimeConfig:
         ),
         root_requirement=root_requirement,
         systemd=systemd,
+        sudo_requirement=sudo,
+        writable_root_requirement=writable,
+        setid_requirements=setid,
+    )
+
+
+def _parse_requirement(value: dict[str, Any]) -> RuntimeRequirement:
+    fields = tuple(
+        toml_string(value[name]).strip()
+        for name in ("rationale", "owner", "review_trigger")
+    )
+    if not all(fields):
+        raise InvalidInvocationError(
+            "Runtime requirement rationale, owner and review trigger must not be blank"
+        )
+    return RuntimeRequirement(*fields)
+
+
+def _parse_sudo_requirement(value: dict[str, Any]) -> SudoRequirement:
+    scope = toml_string(value["scope"]).strip()
+    if not scope:
+        raise InvalidInvocationError("Sudo authorization scope must not be blank")
+    paths = _container_paths(
+        value.get("setid_paths", ["/usr/bin/sudo"]),
+        field_name="sudo set-ID executables",
+        allow_root=False,
+    )
+    if value["mode"] == "escalation" and not paths:
+        raise InvalidInvocationError(
+            "Sudo escalation requires a declared set-ID executable"
+        )
+    return SudoRequirement(
+        review=_parse_requirement(value),
+        mode=toml_string(value["mode"]),
+        scope=scope,
+        setid_paths=paths,
     )
 
 

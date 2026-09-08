@@ -1,0 +1,1 @@
+conclear-test ALL=(root) NOPASSWD: /usr/bin/id -u

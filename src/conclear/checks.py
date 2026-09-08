@@ -64,6 +64,7 @@ def analyze_containerfile(
     expected_user: int | None = None,
     expected_stop_signal: str | None = None,
     expected_writable_mounts: tuple[str, ...] | None = None,
+    allowed_setid_paths: tuple[str, ...] = (),
 ) -> ContainerfileAnalysis:
     """Parse a Containerfile and return facts plus rule findings."""
     content = read_regular_file(
@@ -166,11 +167,11 @@ def analyze_containerfile(
                         line_location,
                     )
                 )
-            if _has_unsafe_chmod(argument):
+            if _has_unsafe_chmod(argument, allowed_setid_paths):
                 findings.append(
                     _finding(
                         "CC0109",
-                        "World-writable and set-ID application modes are prohibited",
+                        "World-writable or undeclared set-ID application modes are prohibited",
                         line_location,
                     )
                 )
@@ -349,6 +350,7 @@ def check_image_static(image: ImageConfig) -> tuple[Finding, ...]:
             None if image.runtime.systemd is None else SYSTEMD_STOP_SIGNAL
         ),
         expected_writable_mounts=image.runtime.writable_mounts,
+        allowed_setid_paths=image.runtime.setid_paths,
     )
     findings = list(analysis.findings)
     findings.extend(_check_context(image.context))
@@ -412,7 +414,7 @@ def validate_image_labels(
     return tuple(findings)
 
 
-def _has_unsafe_chmod(argument: str) -> bool:
+def _has_unsafe_chmod(argument: str, allowed_setid_paths: tuple[str, ...] = ()) -> bool:
     for match in _CHMOD_COMMAND_PATTERN.finditer(argument):
         try:
             tokens = shlex.split(match.group("arguments"), comments=False, posix=True)
@@ -427,7 +429,17 @@ def _has_unsafe_chmod(argument: str) -> bool:
             None,
         )
         if mode is not None and _unsafe_chmod_mode(mode):
-            return True
+            paths = tokens[tokens.index(mode) + 1 :]
+            declared = bool(paths) and all(
+                path in allowed_setid_paths for path in paths
+            )
+            if (
+                not declared
+                or "-R" in tokens
+                or "--recursive" in tokens
+                or _unsafe_chmod_mode(mode, allow_setid=True)
+            ):
+                return True
     return False
 
 
@@ -472,11 +484,11 @@ def volume_paths(
     return paths
 
 
-def _unsafe_chmod_mode(mode: str) -> bool:
+def _unsafe_chmod_mode(mode: str, *, allow_setid: bool = False) -> bool:
     if re.fullmatch(r"[0-7]{3,5}", mode):
         world_writable = int(mode[-1], 8) & 0o2 != 0
         special = mode[-4] if len(mode) >= 4 else "0"
-        return world_writable or special in "2467"
+        return world_writable or (not allow_setid and special in "2467")
     for clause in mode.split(","):
         operation = "+" if "+" in clause else "=" if "=" in clause else None
         if operation is None:
@@ -486,7 +498,7 @@ def _unsafe_chmod_mode(mode: str) -> bool:
         if affects_world and "w" in permissions:
             return True
         affects_set_id = not who or "a" in who or "u" in who or "g" in who
-        if affects_set_id and "s" in permissions:
+        if not allow_setid and affects_set_id and "s" in permissions:
             return True
     return False
 

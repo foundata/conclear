@@ -253,8 +253,12 @@ class Runtime:
             nofile_hard=1024,
             cap_add=(),
             cap_drop=("CHOWN", "SETUID"),
-            bounding_capabilities=self.bounding_capabilities,
-            effective_capabilities=self.effective_capabilities,
+            bounding_capabilities=()
+            if str(values["name"]).endswith("-restrictive")
+            else self.bounding_capabilities,
+            effective_capabilities=()
+            if str(values["name"]).endswith("-restrictive")
+            else self.effective_capabilities,
             security_options=("no-new-privileges",),
             stop_signal=(
                 "SIGTERM"

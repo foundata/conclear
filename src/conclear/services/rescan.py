@@ -19,7 +19,7 @@ from conclear.attestations import (
     decode_dsse_statements,
     write_statement,
 )
-from conclear.config import MAX_REMEDIATION, VulnerabilityException
+from conclear.config import MAX_REMEDIATION, RuntimeConfig, VulnerabilityException
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json
 from conclear.parsing import object_value, string_value
@@ -199,6 +199,7 @@ def rescan_release(
     signing: RescanSigning | None,
     now: datetime,
     record_clock: Callable[[], datetime],
+    runtime_rules: RuntimeConfig | None = None,
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -307,6 +308,7 @@ def rescan_release(
     report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     findings: list[dict[str, object]] = []
     applied_exceptions: list[dict[str, object]] = []
+    applied_runtime_requirements: list[dict[str, object]] = []
     active_findings: set[RemediationFindingKey] = set()
     for platform, digest in sorted(manifest_map.items()):
         if platform is None:
@@ -360,6 +362,7 @@ def rescan_release(
             image_id=image_id,
             exceptions=exceptions,
             today=now.date(),
+            runtime=runtime_rules,
         )
         suppressed = set()
         for vulnerability in evaluation.fixable_vulnerabilities:
@@ -393,6 +396,10 @@ def rescan_release(
         applied_exceptions.extend(
             {"platform": str(platform), **item.to_dict()}
             for item in evaluation.applied_exceptions
+        )
+        applied_runtime_requirements.extend(
+            {"platform": str(platform), **item}
+            for item in evaluation.applied_runtime_requirements
         )
     remediation_findings: list[dict[str, object]] = []
     for finding in sorted(active_findings):
@@ -448,6 +455,7 @@ def rescan_release(
             "scope": scope,
             "findings": findings,
             "appliedExceptions": applied_exceptions,
+            "appliedRuntimeRequirements": applied_runtime_requirements,
             "triage": [item.to_dict() for item in triage],
             "previousResultDigest": previous_result_digest,
             "authoritative": signing is not None,

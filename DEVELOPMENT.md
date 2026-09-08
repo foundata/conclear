@@ -422,6 +422,31 @@ CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration
 
 The run ID becomes part of an OCI repository name, so it must be lowercase.
 
+The sudo tests need a separate Linux amd64 fixture containing real sudo,
+visudo, UID 10001 and the denied account `nobody`. After recording an absolute
+`RUN` directory and its descendant storage, images and containers in the local
+test manifest, build and export it with isolated rootless storage:
+
+```sh
+buildah --root "$RUN/builder/root" --runroot "$RUN/builder/runroot" \
+  --storage-driver vfs bud --platform linux/amd64 --format oci \
+  --tag localhost/conclear-sudo:fixture tests/local_integration/sudo_fixture
+buildah --root "$RUN/builder/root" --runroot "$RUN/builder/runroot" \
+  --storage-driver vfs push localhost/conclear-sudo:fixture "oci:$RUN/layout:sudo-fixture"
+CONCLEAR_TEST_SUDO_LAYOUT="$RUN/layout" uv run pytest -m local_integration \
+  tests/local_integration/test_sudo.py --basetemp "$RUN/pytest"
+buildah --root "$RUN/builder/root" --runroot "$RUN/builder/runroot" \
+  --storage-driver vfs rmi --all
+```
+
+The fixture build downloads its pinned public Debian base and packages. The
+tests make no registry writes, use fresh Podman storage below `--basetemp`,
+retain `sudo-results.json` and reset only their own storage. They exercise
+presence-only and escalation modes, permitted and denied callers, and blocked
+escalation under restrictive controls. Without `CONCLEAR_TEST_SUDO_LAYOUT`
+they skip. Use an unused `--basetemp` directory for each run and record cleanup
+in the manifest, including after a failed build or test.
+
 The local suite compiles network-free `scratch` fixtures with Go, uses isolated
 Buildah and Podman storage, copies only between local OCI layouts with Skopeo
 and creates disposable Cosign key material under the run workspace. Its manual

@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "39c0a4c6105dc1af5c3f86ee28ef2051f294c240",
+ "guideRevision": "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06",
  "requirements": [
   {
    "id": "IG0001",
@@ -1302,7 +1302,7 @@
    "modality": "MUST",
    "section": "Files, ownership and permissions",
    "anchor": "files-ownership-and-permissions",
-   "text": "Ensure the runtime identity cannot change executable code or immutable configuration, including by changing their permission modes."
+   "text": "Ensure unprivileged runtime identities cannot directly change executable code or immutable configuration, including by changing their permission modes. Document intentional administration of those files by an authorized root or sudo identity; unrestricted root access can change them on a writable root filesystem."
   },
   {
    "id": "IG0187",
@@ -1365,7 +1365,7 @@
    "modality": "MUST NOT",
    "section": "Files, ownership and permissions",
    "anchor": "files-ownership-and-permissions",
-   "text": "Use `chmod -R 777`, world-writable application directories or setuid/setgid executables."
+   "text": "Use `chmod -R 777` or world-writable application directories."
   },
   {
    "id": "IG0196",
@@ -1449,7 +1449,7 @@
    "modality": "MUST",
    "section": "Users and runtime filesystem",
    "anchor": "users-and-runtime-filesystem",
-   "text": "Set `USER` to a numeric, non-zero UID in the final stage unless the application has a documented, reviewed requirement for root."
+   "text": "Set `USER` to a numeric, non-zero UID in the final stage unless the configured startup identity has a documented, reviewed requirement for UID 0. Record the rationale, owner and review trigger in `runtime.root_requirement`; declare `USER 0` explicitly when it applies."
   },
   {
    "id": "IG0208",
@@ -1470,7 +1470,7 @@
    "modality": "MUST",
    "section": "Users and runtime filesystem",
    "anchor": "users-and-runtime-filesystem",
-   "text": "Ensure application startup does not need to change file ownership, install packages or rewrite its executable or static configuration."
+   "text": "Ensure ordinary application startup does not need to change file ownership, install packages or rewrite its executable or static configuration. For an image whose purpose includes those administration tasks, document and test the intended operations and required writable paths. A writable root filesystem needs its own rationale, owner and review trigger in `runtime.writable_root_requirement`."
   },
   {
    "id": "IG0211",
@@ -1505,7 +1505,7 @@
    "modality": "SHOULD",
    "section": "Users and runtime filesystem",
    "anchor": "users-and-runtime-filesystem",
-   "text": "Drop all capabilities and enable `no-new-privileges` in smoke tests, adding back only a documented capability when required."
+   "text": "Drop all capabilities and enable `no-new-privileges` in smoke tests. Add back only declared capabilities required by the tested operation. Omit `no-new-privileges` from a functional sudo test only when the reviewed sudo requirement declares escalation."
   },
   {
    "id": "IG0216",
@@ -1526,7 +1526,7 @@
    "modality": "MUST NOT",
    "section": "Users and runtime filesystem",
    "anchor": "users-and-runtime-filesystem",
-   "text": "Install or use `sudo` in the final image."
+   "text": "Include or use `sudo` in the final image without a documented, reviewed `runtime.sudo_requirement` giving its rationale, owner, review trigger and authorization scope. State whether the requirement is `presence-only` or `escalation`; installing the package alone does not authorize escalation."
   },
   {
    "id": "IG0219",
@@ -2835,7 +2835,7 @@
    "modality": "MUST",
    "section": "Linting and testing",
    "anchor": "linting-and-testing",
-   "text": "Run with a read-only root filesystem, all capabilities dropped and `no-new-privileges` during a hardening test."
+   "text": "Test the declared functional runtime contract. When it permits sudo escalation, a writable root filesystem or additional capabilities, also run a separate restrictive test of the same gated artifact with a read-only root filesystem, all capabilities dropped and `no-new-privileges`. In that test, privilege escalation is expected to fail; the image need not complete administration tasks that the restrictions deliberately prevent."
   },
   {
    "id": "IG0406",
@@ -2934,6 +2934,27 @@
    "section": "Reference Containerfile",
    "anchor": "reference-containerfile",
    "text": "The repository owner MUST document how `build/example` is produced, tested and associated with the source revision recorded in the labels and provenance."
+  },
+  {
+   "id": "IG0420",
+   "modality": "MUST NOT",
+   "section": "Files, ownership and permissions",
+   "anchor": "files-ownership-and-permissions",
+   "text": "Include setuid/setgid executables without a reviewed requirement naming each executable, its purpose, owner and review trigger. Check inherited executables as well as files added by the image. Protect each executable and its parent directories against modification by unprivileged callers; a sudo requirement covers only the sudo executable paths it declares."
+  },
+  {
+   "id": "IG0421",
+   "modality": "MUST",
+   "section": "Users and runtime filesystem",
+   "anchor": "users-and-runtime-filesystem",
+   "text": "Repository owners MUST review sudo authorization and set-ID requirements when their declared review triggers occur. A reviewed repository change with a named owner is sufficient; a separate approval service is not required."
+  },
+  {
+   "id": "IG0422",
+   "modality": "MUST",
+   "section": "Linting and testing",
+   "anchor": "linting-and-testing",
+   "text": "For a sudo escalation requirement, test a permitted operation from an actual non-root caller and denial for an unauthorized caller or operation. Repeat the permitted operation under `no-new-privileges` and require escalation to fail. Validate sudoers with the installed implementation's validator. Record the caller identities, policy, commands, outcomes and observed runtime controls. A presence-only requirement does not claim working escalation."
   }
  ],
  "retired": []

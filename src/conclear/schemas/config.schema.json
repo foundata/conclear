@@ -79,6 +79,19 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "sudo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["user", "denied_user", "command", "expected_stdout"],
+          "properties": {
+            "user": {"type": "integer", "minimum": 1, "maximum": 4294967294},
+            "denied_user": {"type": "integer", "minimum": 1, "maximum": 4294967294},
+            "target_user": {"type": "integer", "minimum": 0, "maximum": 4294967294},
+            "command": {"$ref": "#/$defs/command"},
+            "expected_stdout": {"type": "string", "maxLength": 65536},
+            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 300}
+          }
+        },
         "dependencies": {
           "type": "array",
           "uniqueItems": true,
@@ -141,11 +154,52 @@
         }
       }
     },
+    "runtimeRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rationale", "owner", "review_trigger"],
+      "properties": {
+        "rationale": {"$ref": "#/$defs/nonEmptyString"},
+        "owner": {"$ref": "#/$defs/nonEmptyString"},
+        "review_trigger": {"$ref": "#/$defs/nonEmptyString"}
+      }
+    },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
       "required": ["profile", "user", "memory", "cpus", "pids", "nofile"],
       "properties": {
+        "writable_root_requirement": {"$ref": "#/$defs/runtimeRequirement"},
+        "setid_requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "rationale", "owner", "review_trigger"],
+            "properties": {
+              "path": {"type": "string", "pattern": "^/"},
+              "rationale": {"$ref": "#/$defs/nonEmptyString"},
+              "owner": {"$ref": "#/$defs/nonEmptyString"},
+              "review_trigger": {"$ref": "#/$defs/nonEmptyString"}
+            }
+          }
+        },
+        "sudo_requirement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rationale", "owner", "review_trigger", "mode", "scope"],
+          "properties": {
+            "rationale": {"$ref": "#/$defs/nonEmptyString"},
+            "owner": {"$ref": "#/$defs/nonEmptyString"},
+            "review_trigger": {"$ref": "#/$defs/nonEmptyString"},
+            "mode": {"enum": ["presence-only", "escalation"]},
+            "scope": {"$ref": "#/$defs/nonEmptyString"},
+            "setid_paths": {
+              "type": "array", "uniqueItems": true,
+              "items": {"type": "string", "pattern": "^/"}
+            }
+          }
+        },
         "profile": {"enum": ["service", "one-shot", "scratch", "systemd"]},
         "user": {"type": "integer", "minimum": 0, "maximum": 4294967294},
         "root_requirement": {

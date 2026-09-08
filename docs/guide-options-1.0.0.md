@@ -4,8 +4,8 @@
 
 This inventory records guide choices whose availability is not fully visible
 from the check catalog. It is pinned to
-[OCI container image build and release guide](https://github.com/foundata/guidelines/blob/39c0a4c6105dc1af5c3f86ee28ef2051f294c240/oci-container-image-guide.md)
-at revision `39c0a4c6105dc1af5c3f86ee28ef2051f294c240`. Each entry names the
+[OCI container image build and release guide](https://github.com/foundata/guidelines/blob/adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06/oci-container-image-guide.md)
+at revision `adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06`. Each entry names the
 guide requirements it concerns; the conformance document links every requirement
 identifier to the guide.
 
@@ -124,3 +124,39 @@ identifier to the guide.
   the application.
 - **Reconsider when:** Keep this manual unless an authoritative project policy
   can express the decision without pretending judgment is mechanical.
+
+## GO0012: Reviewed sudo presence or escalation
+
+- **Guide requirements:** `IG0218`, `IG0405`, `IG0422`
+- **Status:** `supported`
+- **Checks:** `CC0401`, `CC0405`
+- **Rationale:** A sudo requirement declares purpose, owner, review trigger,
+  mode and scope. Escalation requires actual non-root permitted and denied
+  callers plus a restrictive probe; final-image inventory and authorization
+  review remain manual.
+- **Reconsider when:** Reconsider when the image's sudo implementation needs a
+  different validator or authentication test contract.
+
+## GO0013: Reviewed writable container root filesystem
+
+- **Guide requirements:** `IG0186`, `IG0210`, `IG0405`
+- **Status:** `supported`
+- **Checks:** `CC0401`, `CC0404`
+- **Rationale:** A separate writable-root requirement changes the functional
+  container's root filesystem mode and adds a restrictive probe. It grants no
+  host writes or additional capabilities.
+- **Reconsider when:** Review the requirement when the administration tasks or
+  writable paths change.
+
+## GO0014: Reviewed set-ID executable inventory
+
+- **Guide requirements:** `IG0420`, `IG0421`
+- **Status:** `manual`
+- **Checks:** `CC0109`
+- **Rationale:** ConClear checks declared executable paths, ownership, set-ID
+  modes and protected parent directories. Owners review the complete final-image
+  inventory, each purpose and review triggers; inherited executables are not
+  automatically inventoried.
+- **Reconsider when:** Reconsider after a bounded final-image filesystem
+  inventory can validate every privileged executable without depending on
+  image-provided tools.

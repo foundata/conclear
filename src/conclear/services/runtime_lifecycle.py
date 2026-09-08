@@ -120,6 +120,7 @@ class RuntimeAdapter(Protocol):
         name: str,
         command: tuple[str, ...],
         timeout_seconds: float,
+        user: int | None = None,
     ) -> ExecObservation:
         """Observe one in-container command without rejecting its exit status."""
         ...

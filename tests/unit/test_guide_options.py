@@ -85,7 +85,7 @@ def test_guide_options_are_versioned_and_reference_active_checks() -> None:
         "out-of-scope",
     }
     assert {item.option_id for item in inventory.options} == {
-        f"GO{index:04d}" for index in range(1, 12)
+        f"GO{index:04d}" for index in range(1, 15)
     }
     for option in inventory.options:
         assert option.requirements

@@ -29,6 +29,7 @@ from conclear.jsonutil import (
 )
 from conclear.oci import validate_layout
 from conclear.presentation import Finding
+from conclear.services.privilege_tests import test_privileges
 from conclear.services.qualification_inputs import (
     BuildEvidence,
     QualificationInputs,
@@ -171,6 +172,17 @@ def test_platform(
             storage_root,
             runroot,
         )
+        if not any(finding.severity == "error" for finding in findings):
+            privilege_findings, privilege_results = test_privileges(
+                inputs,
+                runtime,
+                storage_root=storage_root,
+                runroot=runroot,
+                image_name=image_names[inputs.image.image_id],
+                mounts=_bind_mounts(inputs.image.test.launch.mounts, materialized),
+            )
+            findings.extend(privilege_findings)
+            results.extend(privilege_results)
         if not any(finding.severity == "error" for finding in findings):
             container = runtime.create_container(
                 root=storage_root,

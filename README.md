@@ -117,11 +117,13 @@ selected source revision, which holds project facts and the exceptions the guide
 permits, never credentials. Images whose tests need fixtures, generated outputs
 or sibling images describe them in `[images.test]`. Trust roots, signing keys
 and registry credentials stay outside the repository in a named release profile.
-The runtime contract defaults to a numeric non-root user. A documented root
-requirement and the separate systemd lifecycle profile are supported without
-leaving rootless Podman or relaxing the read-only, namespace, capability or
-resource controls; the [quick start](./docs/quickstart.md#5-add-concleartoml)
-shows both opt-in forms.
+The runtime contract defaults to a numeric non-root user and a read-only root.
+Starting as UID 0, supporting sudo and using a writable root each require a
+separate reviewed declaration. Sudo escalation has permitted-caller,
+unauthorized-caller and restrictive runtime tests. These permissions remain
+independent of the systemd lifecycle profile and never enable host root or
+privileged containers. The [quick start](./docs/quickstart.md#5-add-concleartoml)
+shows the configuration and test contracts.
 
 
 ### Running a release<a id="usage-release"></a>

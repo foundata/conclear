@@ -190,9 +190,9 @@ class PodmanAdapter(ToolAdapter):
             f"nofile={runtime.nofile}:{runtime.nofile}",
             "--cap-drop",
             "all",
-            "--security-opt",
-            "no-new-privileges",
         ]
+        if runtime.no_new_privileges:
+            command.extend(("--security-opt", "no-new-privileges"))
         if runtime.systemd is None:
             command.extend(("--systemd", "false"))
         else:
@@ -342,17 +342,21 @@ class PodmanAdapter(ToolAdapter):
         name: str,
         command: tuple[str, ...],
         timeout_seconds: float,
+        user: int | None = None,
     ) -> ExecObservation:
         """Observe an in-container status without hiding Podman failures."""
+        identity = () if user is None else ("--user", str(user))
         try:
             result = self._run(
-                (*self._storage(root, runroot), "exec", name, *command),
+                (*self._storage(root, runroot), "exec", *identity, name, *command),
                 timeout_seconds=timeout_seconds,
             )
         except CommandExecutionError as exc:
             if exc.returncode is None or exc.returncode in {125, 126, 127}:
                 raise
             return ExecObservation(exc.returncode, exc.stdout, exc.stderr)
+        if result.stdout_truncated or result.stderr_truncated:
+            raise OperationalError("Podman exec output exceeds the observation limit")
         return ExecObservation(result.returncode, result.stdout, result.stderr)
 
     def inspect_controls(

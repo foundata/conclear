@@ -297,8 +297,9 @@ tag_intent = "moving-release-line"
 `containerfile`, `context` and `native_test_platforms` default to
 `Containerfile`, `.` and `["linux/amd64"]`. The optional `scanner` key names the
 gating scanner for the reader and accepts only the supported stack. The root
-filesystem is always read-only and has no configuration key; writable paths are
-declared individually. Release tag templates may use only the documented
+filesystem defaults to read-only; writable paths are declared individually. A
+`writable_root_requirement` with rationale, owner and review trigger permits a
+writable container root without granting writable host paths. Release tag templates may use only the documented
 `{version}` value; unversioned projects omit version-dependent templates.
 Candidate tags remain entirely ConClear-owned.
 
@@ -308,6 +309,17 @@ contains a closed `root_requirement` table with non-empty `rationale`, `owner`
 and `review_trigger` values. The exception is reviewed repository input and is
 recorded in the platform qualification. A root requirement is rejected for a
 non-zero UID.
+
+A separate `sudo_requirement` records rationale, owner, review trigger,
+authorization scope and either `presence-only` or `escalation` mode. Only
+escalation disables `no-new-privileges` in the functional runtime. It requires
+`test.sudo` to name distinct non-root permitted and denied callers, a distinct
+target UID, an absolute command and exact expected stdout. Tests use
+noninteractive sudo; test accounts and policy must exist in the image or in
+declared read-only launch fixtures. Sudo executable paths default to
+`/usr/bin/sudo`; other set-ID executables require individual
+`setid_requirements`. These declarations do not add capabilities or change the
+startup user or root filesystem mode.
 
 The `service`, `one-shot` and `scratch` profiles use the ordinary process
 lifecycle and explicitly disable Podman's automatic systemd mode. The separate
@@ -355,7 +367,7 @@ Each preparation step selects the primary image or one of its declared
 test-image dependencies, replaces that exact image's entrypoint with an argument
 array, supplies only declared non-secret environment values and mounts, and
 declares a bounded timeout and expected exit status. Preparation executes under
-the selected image's configured user, read-only root, capability,
+the selected image's configured user, root filesystem mode, capability,
 `no-new-privileges`, platform and resource controls. It cannot alter those
 controls or the main launch verdict. The main launch retains the tested image's
 original entrypoint and may add an explicit argument array, non-secret
@@ -845,7 +857,7 @@ verifies its exit status and the ownership, type and mode of every generated
 output before a later step may consume it.
 
 <a id="promise-ip0023"></a>
-Built-in runtime checks cover the configured user, read-only root filesystem,
+Built-in runtime checks cover the configured user, root filesystem mode,
 writable mounts, private user and cgroup namespaces, absence of privileged
 mode, capabilities, `no-new-privileges`, startup, health command, signal
 forwarding, expected exit-status propagation, shutdown, file ownership and
@@ -855,8 +867,10 @@ metadata. Runtime application files expected to remain immutable are checked
 for root ownership and permission modes that deny group and other writes. They
 cannot overlap a writable runtime mount. For a non-root runtime identity,
 owner-write bits do not grant that identity access and are not rejected. For
-UID 0, the read-only root and non-overlap requirements keep those paths
-immutable. Launch arguments and non-secret environment values supplement the
+UID 0 with a read-only root, the root and non-overlap requirements keep those
+paths immutable. An authorized administrator on a writable root can change
+them; ownership checks then protect against direct unprivileged writes only.
+Launch arguments and non-secret environment values supplement the
 image's original entrypoint; they cannot replace it or override a built-in gate.
 
 Every runtime container uses rootless Podman with an explicit private user
@@ -868,6 +882,27 @@ test outputs may be writable bind mounts. It drops every capability before
 adding only the exact reviewed set in configuration and verifies the resulting
 bounding and effective sets. These constraints apply equally to the systemd
 profile.
+
+Permission probes use separate, journaled containers from the exact imported
+artifact. The sudo probe resolves declared executables, checks their set-ID
+modes and root ownership, and checks that their parent directories are not
+writable by unprivileged users. It validates sudoers with `visudo -c`, checks
+policy ownership and parents, and retains the validated files with their
+digest in the test report. The permitted operation must succeed with exact
+stdout; the denied caller must fail both authorization and execution. The
+probe observes each non-root caller's UID and kernel `NoNewPrivs` flag.
+
+A functional contract with escalation, a writable root or extra capabilities
+also receives a restrictive probe with read-only root, no capabilities and
+`no-new-privileges`. Sudo escalation must fail there. Generic restrictive probes
+check effective controls without requiring administrative startup to succeed.
+Set-ID inspection requires a POSIX shell, `sleep`, `readlink` and `stat`.
+Sudo tests also require `id`, `cat`, `env` and the image's sudo/visudo
+implementation. The probes are
+removed before the primary lifecycle test; declared launch fixtures are the
+same in each container. Final-image inventory and the adequacy of each
+authorization scope remain reviewed responsibilities, including undeclared
+privileged executables inherited from a base image.
 
 For a systemd image, ConClear explicitly enables Podman's systemd mode and
 applies the `SIGRTMIN+3` stop signal. It verifies that PID 1 is `systemd`, that

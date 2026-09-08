@@ -270,6 +270,13 @@ def assessment_notes(
             )
         )
         _user_notes(image, suggestions, decisions)
+        decisions.append(
+            Note(
+                image.image_id,
+                "runtime.privileges",
+                "Review sudo presence, inherited set-ID executables and any need for a writable root; declare each requirement separately and test sudo escalation when required.",
+            )
+        )
         writable = _writable_mounts(image)
         if writable:
             suggestions.append(

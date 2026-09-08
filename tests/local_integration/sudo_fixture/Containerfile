@@ -1,0 +1,7 @@
+FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+RUN apt-get update && apt-get install -y --no-install-recommends sudo \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home --shell /bin/sh conclear-test
+COPY --chown=0:0 --chmod=0440 sudoers /etc/sudoers.d/conclear
+USER 10001
+CMD ["sleep", "infinity"]

@@ -1050,6 +1050,7 @@ def test_common_model_holds_only_build_facts() -> None:
         "outputs",
         "preparations",
         "launch",
+        "sudo",
     }
 
 

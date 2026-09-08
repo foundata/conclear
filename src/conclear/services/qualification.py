@@ -116,6 +116,7 @@ class ScanEvidence:
     scans: tuple[ScanObservation, ...]
     applied_exceptions: tuple[AppliedException, ...]
     findings: tuple[Finding, ...]
+    applied_runtime_requirements: tuple[dict[str, object], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,17 +272,23 @@ def generate_evidence(
         image_id=inputs.image.image_id,
         exceptions=(),
         today=today,
+        runtime=inputs.image.runtime,
     )
     image_evaluation = evaluate_trivy_report(
         image_scan.value,
         image_id=inputs.image.image_id,
         exceptions=inputs.image.vulnerability_exceptions,
         today=today,
+        runtime=inputs.image.runtime,
     )
     return ScanEvidence(
         sbom=sbom,
         scans=(source_scan, containerfile_scan, image_scan),
         applied_exceptions=image_evaluation.applied_exceptions,
+        applied_runtime_requirements=(
+            containerfile_evaluation.applied_runtime_requirements
+            + image_evaluation.applied_runtime_requirements
+        ),
         findings=(
             source_evaluation.findings
             + containerfile_evaluation.findings
@@ -384,6 +391,7 @@ def qualify_platform(
         "appliedExceptions": [
             item.to_dict() for item in scan_evidence.applied_exceptions
         ],
+        "appliedRuntimeRequirements": list(scan_evidence.applied_runtime_requirements),
         "payloadDigests": list(payload_digests),
         "databaseDigest": database.digest,
         "databaseMetadata": database.metadata,
@@ -513,6 +521,7 @@ def _runtime_constraints(image: ImageConfig) -> dict[str, object]:
         "profile": runtime.profile,
         "user": runtime.user,
         "readOnly": runtime.read_only,
+        "noNewPrivileges": runtime.no_new_privileges,
         "writableMounts": list(runtime.writable_mounts),
         "memory": runtime.memory,
         "cpus": runtime.cpus,
@@ -521,11 +530,21 @@ def _runtime_constraints(image: ImageConfig) -> dict[str, object]:
         "capabilities": list(runtime.capabilities),
     }
     if runtime.root_requirement is not None:
-        result["rootRequirement"] = {
-            "rationale": runtime.root_requirement.rationale,
-            "owner": runtime.root_requirement.owner,
-            "reviewTrigger": runtime.root_requirement.review_trigger,
+        result["rootRequirement"] = runtime.root_requirement.to_dict()
+    if runtime.writable_root_requirement is not None:
+        result["writableRootRequirement"] = runtime.writable_root_requirement.to_dict()
+    if runtime.sudo_requirement is not None:
+        sudo = runtime.sudo_requirement
+        result["sudoRequirement"] = {
+            **sudo.review.to_dict(),
+            "mode": sudo.mode,
+            "scope": sudo.scope,
+            "setidPaths": list(sudo.setid_paths),
         }
+    result["setidRequirements"] = [
+        {"path": item.path, **item.review.to_dict()}
+        for item in runtime.setid_requirements
+    ]
     if runtime.systemd is not None:
         result["systemd"] = {
             "requiredUnits": list(runtime.systemd.required_units),

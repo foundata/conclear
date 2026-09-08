@@ -212,8 +212,9 @@ and currently accepts only `trivy`; it documents the gating scanner for the
 reader.
 
 Use `profile = "one-shot"` for a command that should exit. The test launch
-contract may set its expected exit status. The root filesystem is always
-read-only, so runtime writable paths must be listed explicitly. The effective
+contract may set its expected exit status. The root filesystem defaults to
+read-only; a reviewed `writable_root_requirement` permits a writable root.
+Runtime writable mounts must still be listed explicitly. The effective
 set is exact: a Containerfile or base-image `VOLUME` creates an anonymous
 writable mount and its destination must also appear in `writable_mounts`.
 ConClear retains declared anonymous volumes in its isolated run-owned Podman
@@ -243,8 +244,10 @@ review_trigger = "Review when upstream supports an unprivileged mode."
 ```
 
 Root inside the container remains rootless on the host. ConClear still uses a
-private user and cgroup namespace, a read-only root filesystem, dropped
-capabilities, `no-new-privileges` and the declared resource limits. It does not
+private user and cgroup namespace and the declared resource limits. A root
+requirement alone leaves the read-only root, dropped capabilities and
+`no-new-privileges` defaults unchanged. Separate permissions below cover
+operations that need different functional controls. ConClear does not
 offer privileged mode, host namespaces, host devices or repository-selected
 writable host paths. The separately declared run-owned test outputs described
 below remain the only writable bind-mount source.
@@ -283,6 +286,72 @@ and the optional health command within one startup deadline, sends `SIGRTMIN+3`
 and verifies bounded shutdown and the expected exit status. The other runtime
 profiles explicitly disable Podman's automatic systemd mode.
 
+
+### Reviewed sudo and filesystem permissions
+
+Startup root and sudo access have separate justifications. A non-root service
+can support sudo; a systemd integration-test target may need both requirements.
+Keep the actual authorization in sudoers and describe its intended scope here:
+
+```toml
+[images.runtime.sudo_requirement]
+rationale = "Integration tests exercise Ansible become through sudo."
+owner = "platform@example.com"
+review_trigger = "Changes to test purpose, callers or sudo authorization."
+mode = "escalation"
+scope = "The test account administers a disposable OS; other accounts cannot."
+setid_paths = ["/usr/bin/sudo"]
+
+[images.test.sudo]
+user = 10001
+denied_user = 65534
+target_user = 0
+command = ["/usr/bin/id", "-u"]
+expected_stdout = "0\n"
+timeout_seconds = 30
+```
+
+Use existing named accounts with those numeric UIDs, or supply account and
+sudoers files as declared read-only launch fixtures. The permitted account must
+be authorized for the test command without an interactive password; the other
+account must be denied. ConClear invokes `sudo -n` itself. This example tests
+identity escalation; repository application tests still need to cover the
+intended Ansible tasks. Passwords do not belong in the configuration or image.
+
+Only `mode = "escalation"` permits functional runtime escalation. Use
+`mode = "presence-only"` when the package is needed without claiming working
+escalation, and omit `[images.test.sudo]`. `setid_paths` defaults to
+`["/usr/bin/sudo"]`; presence-only mode may declare an empty array if its sudo
+executable has no set-ID bits. Each declared path is checked for protected
+ownership and set-ID mode. Other required set-ID executables use separate
+`[[images.runtime.setid_requirements]]` tables with `path`, `rationale`, `owner`
+and `review_trigger`.
+
+Declare the capabilities needed by the operation under `[images.runtime]`;
+sudo commonly needs `CAP_SETUID` and `CAP_SETGID`, and the command may need
+others. ConClear adds none automatically. Keep narrow writable mounts where
+possible. An OS target that needs a writable root must also declare:
+
+```toml
+[images.runtime.writable_root_requirement]
+rationale = "The tested administration tasks install packages and modify /etc."
+owner = "platform@example.com"
+review_trigger = "Changes to the administration tasks or writable paths."
+```
+
+The sudo tests validate policy with `visudo -c`, retain its files in the test
+report, and exercise permitted and denied access from non-root accounts. A
+separate restrictive container uses a read-only root, no capabilities and
+`no-new-privileges`; escalation must fail. The probes require a POSIX shell,
+`sleep`, `readlink`, `stat`, `id`, `cat`, `env` and sudo/visudo. The installed
+validator must identify the checked files with its `path: parsed OK` output.
+The normal lifecycle test still uses the image's declared user and command.
+
+Review inherited set-ID executables and sudo presence in the final image;
+ConClear's declared-path checks do not inventory every inherited executable.
+Unrestricted sudo gives the account root-equivalent access within the container
+and needs a scope that explains why. No declaration enables privileged mode,
+host namespaces or arbitrary writable host mounts.
 
 ## 6. Describe application test inputs when needed
 

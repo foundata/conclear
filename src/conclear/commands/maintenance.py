@@ -519,6 +519,7 @@ def rescan_command(
             signing=signing,
             now=utc_now(),
             record_clock=utc_now,
+            runtime_rules=image.runtime,
         )
         if result.authoritative:
             if result.verified_at is None:

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "productVersion": "1.0.0",
-  "guideRevision": "39c0a4c6105dc1af5c3f86ee28ef2051f294c240",
+  "guideRevision": "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06",
   "options": [
     {
       "id": "GO0001",
@@ -101,6 +101,33 @@
       "rationale": "ConClear verifies exact image references and observations but cannot decide whether an upstream lifecycle, publisher or dependency set fits the application.",
       "reconsiderWhen": "Keep this manual unless an authoritative project policy can express the decision without pretending judgment is mechanical.",
       "checks": ["CC9001"]
+    },
+    {
+      "id": "GO0012",
+      "summary": "Reviewed sudo presence or escalation",
+      "requirements": ["IG0218", "IG0405", "IG0422"],
+      "status": "supported",
+      "rationale": "A sudo requirement declares purpose, owner, review trigger, mode and scope. Escalation requires actual non-root permitted and denied callers plus a restrictive probe; final-image inventory and authorization review remain manual.",
+      "reconsiderWhen": "Reconsider when the image's sudo implementation needs a different validator or authentication test contract.",
+      "checks": ["CC0401", "CC0405"]
+    },
+    {
+      "id": "GO0013",
+      "summary": "Reviewed writable container root filesystem",
+      "requirements": ["IG0186", "IG0210", "IG0405"],
+      "status": "supported",
+      "rationale": "A separate writable-root requirement changes the functional container's root filesystem mode and adds a restrictive probe. It grants no host writes or additional capabilities.",
+      "reconsiderWhen": "Review the requirement when the administration tasks or writable paths change.",
+      "checks": ["CC0401", "CC0404"]
+    },
+    {
+      "id": "GO0014",
+      "summary": "Reviewed set-ID executable inventory",
+      "requirements": ["IG0420", "IG0421"],
+      "status": "manual",
+      "rationale": "ConClear checks declared executable paths, ownership, set-ID modes and protected parent directories. Owners review the complete final-image inventory, each purpose and review triggers; inherited executables are not automatically inventoried.",
+      "reconsiderWhen": "Reconsider after a bounded final-image filesystem inventory can validate every privileged executable without depending on image-provided tools.",
+      "checks": ["CC0109"]
     }
   ]
 }

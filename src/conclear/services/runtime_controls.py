@@ -47,10 +47,11 @@ def control_findings(
         or observed.nofile_hard != expected.nofile
     ):
         mismatches.append("nofile")
-    if not any(
+    no_new_privileges = any(
         value.lower().replace("_", "-") == "no-new-privileges"
         for value in observed.security_options
-    ):
+    )
+    if no_new_privileges is not expected.no_new_privileges:
         mismatches.append("no-new-privileges")
     if observed.user_namespace != "private":
         mismatches.append("user namespace")

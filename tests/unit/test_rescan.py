@@ -1,4 +1,6 @@
 import base64
+from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -17,7 +19,11 @@ from conclear.attestations import (
     SPDX_DOCUMENT_TYPE,
     STATEMENT_TYPE,
 )
-from conclear.config import VulnerabilityException
+from conclear.config import (
+    RuntimeRequirement,
+    VulnerabilityException,
+    load_repository_config,
+)
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import (
@@ -223,9 +229,10 @@ class FakeSigner:
 
 
 class FakeScanner:
-    def __init__(self) -> None:
+    def __init__(self, *, root_check: bool = False) -> None:
         self.sbom_scans = 0
         self.layout_scans = 0
+        self.root_check = root_check
 
     def scan_sbom(
         self,
@@ -252,6 +259,10 @@ class FakeScanner:
         assert cache_root.is_dir()
         self.layout_scans += 1
         value = _scan_report()
+        if self.root_check:
+            results = value["Results"]
+            assert isinstance(results, list)
+            results.append({"Misconfigurations": [{"ID": "DS-0002", "Status": "FAIL"}]})
         digest = atomic_write_json(report_path, value)
         return ScanObservation(report_path, digest, value)
 
@@ -386,6 +397,7 @@ def _exception() -> VulnerabilityException:
 def test_authoritative_rescan_verifies_complete_retained_inventory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    repository_factory: Callable[..., Path],
     scope: str,
     fail_post_verification: bool,
     triage_platform: str,
@@ -504,7 +516,16 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     cache.mkdir()
     database = DatabaseObservation(cache, "sha256:" + "6" * 64, DATABASE_METADATA)
 
-    scanner = FakeScanner()
+    scanner = FakeScanner(root_check=scope == "full-image")
+    runtime_rules = replace(
+        load_repository_config(repository_factory() / "conclear.toml")
+        .release_image("app")
+        .runtime,
+        user=0,
+        root_requirement=RuntimeRequirement(
+            "Run systemd.", "platform", "Lifecycle changes."
+        ),
+    )
     triage = (
         TriageDecision(
             subject=subject,
@@ -591,6 +612,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             image_id="app",
             expected_configuration_digest=configuration_digest,
             scope=scope,
+            runtime_rules=runtime_rules,
             exceptions=((_exception(),) if use_exception else ()),
             triage=triage,
             previous_result_digest=previous_result_digest,
@@ -654,6 +676,20 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         else []
     )
     assert record["payload"]["appliedExceptions"] == expected_exceptions
+    assert record["payload"]["appliedRuntimeRequirements"] == (
+        [
+            {
+                "platform": "linux/amd64",
+                "checkId": "DS-0002",
+                "requirement": "root_requirement",
+                "rationale": "Run systemd.",
+                "owner": "platform",
+                "reviewTrigger": "Lifecycle changes.",
+            }
+        ]
+        if scope == "full-image"
+        else []
+    )
     expected_finding_count = (
         2 if triage_decision == "affected" and not use_exception else 0
     )

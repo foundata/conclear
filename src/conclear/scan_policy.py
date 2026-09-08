@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import date
 
-from conclear.config import VulnerabilityException
+from conclear.config import RuntimeConfig, VulnerabilityException
 from conclear.errors import OperationalError
 from conclear.parsing import array_value, object_value, string_value
 from conclear.presentation import Finding
@@ -46,6 +46,7 @@ class ScanEvaluation:
     findings: tuple[Finding, ...]
     applied_exceptions: tuple[AppliedException, ...]
     fixable_vulnerabilities: tuple[FixableVulnerability, ...]
+    applied_runtime_requirements: tuple[dict[str, object], ...] = ()
 
     @property
     def accepted(self) -> bool:
@@ -64,6 +65,7 @@ def evaluate_trivy_report(
     image_id: str,
     exceptions: tuple[VulnerabilityException, ...],
     today: date,
+    runtime: RuntimeConfig | None = None,
 ) -> ScanEvaluation:
     """Reject secrets, failed misconfigurations and unexcepted fixable vulnerabilities."""
     report = object_value(value, label="Trivy report")
@@ -72,6 +74,7 @@ def evaluate_trivy_report(
     findings: list[Finding] = []
     applied: list[AppliedException] = []
     vulnerabilities: list[FixableVulnerability] = []
+    runtime_requirements: list[dict[str, object]] = []
     for raw_result in results:
         result = object_value(raw_result, label="Trivy result")
         target = result.get("Target")
@@ -97,6 +100,20 @@ def evaluate_trivy_report(
                 misconfiguration.get("ID"), label="Trivy misconfiguration ID"
             )
             if identifier in _INAPPLICABLE_MISCONFIGURATIONS:
+                continue
+            if (
+                identifier in {"DS-0002", "DS002", "AVD-DS-0002"}
+                and runtime is not None
+                and runtime.user == 0
+                and runtime.root_requirement is not None
+            ):
+                runtime_requirements.append(
+                    {
+                        "checkId": identifier,
+                        "requirement": "root_requirement",
+                        **runtime.root_requirement.to_dict(),
+                    }
+                )
                 continue
             findings.append(
                 Finding(
@@ -162,6 +179,7 @@ def evaluate_trivy_report(
                 )
             )
     return ScanEvaluation(
+        applied_runtime_requirements=tuple(runtime_requirements),
         findings=tuple(
             sorted(
                 findings,

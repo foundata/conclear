@@ -75,7 +75,7 @@ def test_conformance_generation_is_deterministic(tmp_path: Path) -> None:
     path = tmp_path / "conformance.md"
     write_conformance(path)
     assert path.read_text(encoding="utf-8") == render_conformance()
-    assert "39c0a4c6105dc1af5c3f86ee28ef2051f294c240" in render_conformance()
+    assert "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06" in render_conformance()
 
 
 def test_committed_conformance_document_is_current() -> None:

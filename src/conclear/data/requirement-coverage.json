@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "39c0a4c6105dc1af5c3f86ee28ef2051f294c240",
+  "guideRevision": "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06",
   "entries": [
     {"id": "IG0001", "status": "automated", "rationale": "`conclear release` runs the complete fail-closed workflow from a reviewed revision to verified promotion."},
     {"id": "IG0002", "status": "automated", "rationale": "Every run builds from a detached worktree of the selected committed revision and takes trust configuration from the release profile."},
@@ -130,7 +130,7 @@
     {"id": "IG0211", "status": "manual", "rationale": "Capabilities, devices and namespaces are declared in repository configuration and reviewed (GO0005)."},
     {"id": "IG0212", "status": "manual", "rationale": "Identity allocation per image is review."},
     {"id": "IG0217", "status": "manual", "rationale": "The listening port is review."},
-    {"id": "IG0218", "status": "manual", "rationale": "`sudo` presence is review."},
+    {"id": "IG0218", "status": "manual", "rationale": "Final-image sudo presence and the justification's scope are reviewed; declared sudo permissions and tests are validated by ConClear."},
     {"id": "IG0220", "status": "manual", "rationale": "Writable path breadth is review."},
     {"id": "IG0227", "status": "manual", "rationale": "Entrypoint flag design is review."},
     {"id": "IG0228", "status": "manual", "rationale": "The ENTRYPOINT and CMD split is review."},
@@ -227,6 +227,8 @@
     {"id": "IG0416", "status": "manual", "rationale": "Pipeline tooling is review; ConClear runs no formatter."},
     {"id": "IG0417", "status": "manual", "rationale": "Build stage design is review."},
     {"id": "IG0418", "status": "manual", "rationale": "Runtime base suitability is review."},
-    {"id": "IG0419", "status": "manual", "rationale": "Artifact provenance documentation is a project duty."}
+    {"id": "IG0419", "status": "manual", "rationale": "Artifact provenance documentation is a project duty."},
+    {"id": "IG0420", "status": "manual", "rationale": "ConClear validates declared set-ID paths and permissions; reviewing the complete final-image inventory, including inherited executables, and each purpose remains manual."},
+    {"id": "IG0421", "status": "manual", "rationale": "ConClear requires review metadata; the repository owner reviews its adequacy and revisits permissions at their declared triggers."}
   ]
 }

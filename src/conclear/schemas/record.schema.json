@@ -128,7 +128,7 @@
         "guideTitle": {"const": "OCI container image build and release guide"},
         "guideRepository": {"const": "https://github.com/foundata/guidelines"},
         "guidePath": {"const": "oci-container-image-guide.md"},
-        "guideRevision": {"const": "39c0a4c6105dc1af5c3f86ee28ef2051f294c240"}
+        "guideRevision": {"const": "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06"}
       }
     },
     "source": {
@@ -193,6 +193,15 @@
         "mechanism": {"enum": ["native", "qemu-user", "cross-build"]}
       }
     },
+    "runtimeRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rationale", "owner", "reviewTrigger"],
+      "properties": {
+        "rationale": {"type": "string", "minLength": 1},
+        "owner": {"type": "string", "minLength": 1},
+        "reviewTrigger": {"type": "string", "minLength": 1}
+      }
+    },
     "runtimeConstraints": {
       "type": "object",
       "additionalProperties": false,
@@ -200,7 +209,34 @@
       "properties": {
         "profile": {"enum": ["service", "one-shot", "scratch", "systemd"]},
         "user": {"type": "integer", "minimum": 0},
-        "readOnly": {"const": true},
+        "readOnly": {"type": "boolean"},
+        "noNewPrivileges": {"type": "boolean"},
+        "writableRootRequirement": {"$ref": "#/$defs/runtimeRequirement"},
+        "sudoRequirement": {
+          "type": "object", "additionalProperties": false,
+          "required": ["rationale", "owner", "reviewTrigger", "mode", "scope", "setidPaths"],
+          "properties": {
+            "rationale": {"type": "string", "minLength": 1},
+            "owner": {"type": "string", "minLength": 1},
+            "reviewTrigger": {"type": "string", "minLength": 1},
+            "mode": {"enum": ["presence-only", "escalation"]},
+            "scope": {"type": "string", "minLength": 1},
+            "setidPaths": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+          }
+        },
+        "setidRequirements": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["path", "rationale", "owner", "reviewTrigger"],
+            "properties": {
+              "path": {"type": "string"},
+              "rationale": {"type": "string", "minLength": 1},
+              "owner": {"type": "string", "minLength": 1},
+              "reviewTrigger": {"type": "string", "minLength": 1}
+            }
+          }
+        },
         "writableMounts": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
         "memory": {"type": "string", "pattern": "^[1-9][0-9]*(?:KiB|MiB|GiB)$"},
         "cpus": {"type": "number", "exclusiveMinimum": 0},
@@ -228,6 +264,20 @@
         }
       },
       "allOf": [
+        {
+          "if": {"properties": {"readOnly": {"const": false}}, "required": ["readOnly"]},
+          "then": {"required": ["writableRootRequirement"]},
+          "else": {"not": {"required": ["writableRootRequirement"]}}
+        },
+        {
+          "if": {"properties": {"noNewPrivileges": {"const": false}}, "required": ["noNewPrivileges"]},
+          "then": {"required": ["sudoRequirement"], "properties": {"sudoRequirement": {"properties": {"mode": {"const": "escalation"}}}}}
+        },
+        {
+          "if": {"required": ["sudoRequirement"], "properties": {"sudoRequirement": {"required": ["mode"], "properties": {"mode": {"const": "escalation"}}}}},
+          "then": {"required": ["noNewPrivileges"], "properties": {"noNewPrivileges": {"const": false}}},
+          "else": {"properties": {"noNewPrivileges": {"const": true}}}
+        },
         {
           "if": {"properties": {"user": {"const": 0}}, "required": ["user"]},
           "then": {"required": ["rootRequirement"]},
@@ -263,6 +313,32 @@
         "stopSignal": {"type": "string", "minLength": 1}
       }
     },
+    "setidObservation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "resolvedPath", "owner", "mode"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/"},
+        "resolvedPath": {"type": "string", "pattern": "^/"},
+        "owner": {"const": 0},
+        "mode": {"type": "string", "pattern": "^0o[0-7]{3,4}$"}
+      }
+    },
+    "sudoTestResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["user", "targetUser", "command", "expected", "status", "exitStatus", "stdout", "stderr", "noNewPrivileges"],
+      "properties": {
+        "name": {"const": "sudoAuthorization"},
+        "user": {"type": "integer", "minimum": 1},
+        "targetUser": {"type": "integer", "minimum": 0},
+        "command": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "expected": {"enum": ["success", "denied"]},
+        "status": {"enum": ["passed", "failed"]},
+        "exitStatus": {"type": "integer", "minimum": 0},
+        "stdout": {"type": "string"},
+        "stderr": {"type": "string"},
+        "noNewPrivileges": {"type": "boolean"}
+      }
+    },
     "testResult": {
       "type": "object",
       "additionalProperties": false,
@@ -275,6 +351,11 @@
         "status": {"enum": ["passed", "failed", "skipped"]},
         "digest": {"$ref": "#/$defs/digest"},
         "observed": {"$ref": "#/$defs/runtimeObservation"},
+        "setidExecutables": {"type": "array", "items": {"$ref": "#/$defs/setidObservation"}},
+        "sudoExecutable": {"type": "string", "pattern": "^/"},
+        "sudoPolicy": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^/"}, "additionalProperties": {"type": "string"}},
+        "sudoPolicyDigest": {"$ref": "#/$defs/digest"},
+        "sudoTests": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sudoTestResult"}},
         "exitStatus": {"type": "integer"},
         "outcome": {"enum": ["ready", "timeout", "exited"]},
         "attempts": {"type": "integer", "minimum": 0},
@@ -484,6 +565,19 @@
         "sbom": {"type": "object", "additionalProperties": false, "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"const": "SPDX-2.3"}}},
         "scans": {"type": "array", "items": {"$ref": "#/$defs/scan"}},
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
+        "appliedRuntimeRequirements": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["checkId", "requirement", "rationale", "owner", "reviewTrigger"],
+            "properties": {
+              "checkId": {"enum": ["DS-0002", "DS002", "AVD-DS-0002"]},
+              "requirement": {"const": "root_requirement"},
+              "rationale": {"type": "string", "minLength": 1},
+              "owner": {"type": "string", "minLength": 1},
+              "reviewTrigger": {"type": "string", "minLength": 1}
+            }
+          }
+        },
         "payloadDigests": {"$ref": "#/$defs/digestArray"},
         "databaseDigest": {"$ref": "#/$defs/digest"},
         "databaseMetadata": {"$ref": "#/$defs/databaseMetadata"},
@@ -566,6 +660,20 @@
         "scope": {"enum": ["sbom-vulnerabilities", "full-image"]},
         "findings": {"type": "array", "items": {"$ref": "#/$defs/rescanFinding"}},
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/rescanAppliedException"}},
+        "appliedRuntimeRequirements": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["platform", "checkId", "requirement", "rationale", "owner", "reviewTrigger"],
+            "properties": {
+              "platform": {"$ref": "#/$defs/platform"},
+              "checkId": {"enum": ["DS-0002", "DS002", "AVD-DS-0002"]},
+              "requirement": {"const": "root_requirement"},
+              "rationale": {"type": "string", "minLength": 1},
+              "owner": {"type": "string", "minLength": 1},
+              "reviewTrigger": {"type": "string", "minLength": 1}
+            }
+          }
+        },
         "triage": {"type": "array", "items": {"$ref": "#/$defs/triageDecision"}},
         "previousResultDigest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
         "authoritative": {"type": "boolean"},
