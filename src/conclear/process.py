@@ -6,7 +6,8 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -93,6 +94,8 @@ class CommandRequest:
     log_path: Path | None = None
     secret_values: tuple[str, ...] = ()
     secret_paths: tuple[Path, ...] = ()
+    stdout_artifact: Path | None = None
+    max_artifact_bytes: int = 128 * 1024 * 1024
 
     def __post_init__(self) -> None:
         """Reject unsafe or unbounded execution specifications."""
@@ -113,6 +116,12 @@ class CommandRequest:
             raise OperationalError("Registry and signing writes cannot retry blindly")
         if self.max_output_bytes < 1024:
             raise OperationalError("Captured output bound is too small")
+        if self.stdout_artifact is not None and (
+            not self.stdout_artifact.is_absolute() or self.max_artifact_bytes < 1024
+        ):
+            raise OperationalError(
+                "Machine output needs an absolute path and size bound"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +199,12 @@ class ProcessRunner:
 
     def run(self, request: CommandRequest) -> ProcessResult:
         """Run a command, retrying only explicitly classified read operations."""
+        with _stdout_artifact(request.stdout_artifact) as artifact:
+            return self._run_attempts(request, artifact)
+
+    def _run_attempts(
+        self, request: CommandRequest, artifact: BinaryIO | None
+    ) -> ProcessResult:
         redactor = Redactor(
             secret_values=request.secret_values,
             secret_paths=request.secret_paths,
@@ -197,8 +212,11 @@ class ProcessRunner:
         attempts = request.retries + 1
         last_failure: CommandExecutionError | CommandTimeoutError | None = None
         for attempt in range(1, attempts + 1):
+            if artifact is not None:
+                artifact.seek(0)
+                artifact.truncate()
             try:
-                result = self._run_once(request, redactor, attempt)
+                result = self._run_once(request, redactor, attempt, artifact)
             except (CommandExecutionError, CommandTimeoutError) as exc:
                 last_failure = exc
                 if attempt == attempts:
@@ -217,6 +235,7 @@ class ProcessRunner:
         request: CommandRequest,
         redactor: Redactor,
         attempt: int,
+        artifact: BinaryIO | None,
     ) -> ProcessResult:
         start = self._monotonic()
         try:
@@ -239,7 +258,12 @@ class ProcessRunner:
             raise OperationalError("Process pipes were not created")
         stdout_stream = cast(BinaryIO, process.stdout)
         stderr_stream = cast(BinaryIO, process.stderr)
-        stdout = _BoundedCapture(stdout_stream, request.max_output_bytes)
+        stdout = _BoundedCapture(
+            stdout_stream,
+            request.max_output_bytes,
+            artifact,
+            request.max_artifact_bytes,
+        )
         stderr = _BoundedCapture(stderr_stream, request.max_output_bytes)
         stdout.start()
         stderr.start()
@@ -296,6 +320,12 @@ class ProcessRunner:
                 "failure",
             )
             raise execution_failure
+        if artifact is not None:
+            if stdout.alive or not stdout.complete:
+                raise OperationalError("Machine output capture did not complete")
+            if stdout.artifact_error is not None:
+                raise OperationalError(stdout.artifact_error)
+            artifact.flush()
         return ProcessResult(
             argv=redacted_argv,
             returncode=process.returncode,
@@ -385,12 +415,23 @@ class ProcessRunner:
 
 
 class _BoundedCapture:
-    def __init__(self, stream: BinaryIO, limit: int) -> None:
+    def __init__(
+        self,
+        stream: BinaryIO,
+        limit: int,
+        artifact: BinaryIO | None = None,
+        artifact_limit: int = 0,
+    ) -> None:
         self._stream = stream
         self._limit = limit
         self._content = bytearray()
         self._thread = threading.Thread(target=self._drain, daemon=True)
         self.truncated = False
+        self.complete = False
+        self.artifact_error: str | None = None
+        self._artifact = artifact
+        self._artifact_limit = artifact_limit
+        self._artifact_bytes = 0
 
     def start(self) -> None:
         self._thread.start()
@@ -413,8 +454,46 @@ class _BoundedCapture:
                     self._content.extend(chunk[:remaining])
                 if len(chunk) > remaining:
                     self.truncated = True
+                self._write_artifact(chunk)
+            self.complete = True
         except (OSError, ValueError):
             return
+
+    def _write_artifact(self, chunk: bytes) -> None:
+        if self._artifact is None or self.artifact_error is not None:
+            return
+        self._artifact_bytes += len(chunk)
+        if self._artifact_bytes > self._artifact_limit:
+            self.artifact_error = (
+                f"Machine output exceeds the {self._artifact_limit}-byte size limit"
+            )
+            return
+        try:
+            self._artifact.write(chunk)
+        except (OSError, ValueError):
+            self.artifact_error = "Unable to write machine output"
+
+
+@contextmanager
+def _stdout_artifact(path: Path | None) -> Iterator[BinaryIO | None]:
+    """Keep raw machine output separate from redacted, bounded diagnostics."""
+    if path is None:
+        yield None
+        return
+    try:
+        descriptor = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600
+        )
+    except OSError as exc:
+        raise OperationalError(
+            "Unable to create exclusive machine output file"
+        ) from exc
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            yield stream
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
 
 
 def _finish_capture(stream: BinaryIO, capture: _BoundedCapture, timeout: float) -> None:

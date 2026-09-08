@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
 )
+from conclear.fileio import read_regular_file
 from conclear.jsonutil import (
     atomic_write_bytes,
     canonical_json_bytes,
@@ -32,6 +34,7 @@ _FORBIDDEN_RELEASE_OPTIONS = frozenset(
         "--no-upload=true",
     }
 )
+MAX_COSIGN_RESPONSE_BYTES = 128 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,16 +339,36 @@ class CosignAdapter(ToolAdapter):
                 self._auth_file,
                 self._docker_config / "config.json",
             )
+        machine_readable = arguments[0] in {"verify", "verify-attestation", "download"}
+        directory = (self._log_directory.parent / "cosign-responses").absolute()
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         try:
-            return self._run(
-                arguments,
-                timeout_seconds=600,
-                operation=operation,
-                retries=2 if operation is OperationKind.READ else 0,
-                extra_environment=environment,
-                secret_values=secret_values,
-                secret_paths=secret_paths,
-            ).stdout
+            with tempfile.TemporaryDirectory(dir=directory) as temporary:
+                output = Path(temporary) / "stdout.json"
+                result = self._run(
+                    arguments,
+                    timeout_seconds=600,
+                    operation=operation,
+                    retries=2 if operation is OperationKind.READ else 0,
+                    extra_environment=environment,
+                    secret_values=secret_values,
+                    secret_paths=secret_paths,
+                    stdout_artifact=output if machine_readable else None,
+                    max_artifact_bytes=MAX_COSIGN_RESPONSE_BYTES,
+                )
+                if not machine_readable:
+                    return result.stdout
+                content = read_regular_file(
+                    output,
+                    maximum_bytes=MAX_COSIGN_RESPONSE_BYTES,
+                    label="Cosign machine response",
+                )
+                try:
+                    return content.decode("utf-8")
+                except UnicodeError as exc:
+                    raise OperationalError(
+                        "Cosign machine response is not UTF-8"
+                    ) from exc
         except CommandExecutionError as exc:
             if check_code is None:
                 raise

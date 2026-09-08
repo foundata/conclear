@@ -160,6 +160,69 @@ def test_process_runner_captures_bounded_redacted_output(
     assert "secret" not in (tmp_path / "command.json").read_text()
 
 
+def test_machine_output_is_complete_private_and_not_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = (
+        b'{"secret":"keep-these-bytes","padding":"' + b"x" * (2 * 1024 * 1024) + b'"}'
+    )
+    monkeypatch.setattr(
+        subprocess, "Popen", lambda *args, **kwargs: FakeProcess(stdout=content)
+    )
+    output = tmp_path / "response.json"
+
+    result = ProcessRunner().run(
+        request(tmp_path, stdout_artifact=output, secret_values=("keep-these-bytes",))
+    )
+
+    assert output.read_bytes() == content
+    assert output.stat().st_mode & 0o777 == 0o600
+    assert result.stdout_truncated
+    assert "keep-these-bytes" not in result.stdout
+    assert "keep-these-bytes" not in (tmp_path / "command.json").read_text()
+
+
+def test_machine_output_overflow_fails_without_leaving_partial_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        subprocess, "Popen", lambda *args, **kwargs: FakeProcess(stdout=b"x" * 2049)
+    )
+    output = tmp_path / "response.json"
+
+    with pytest.raises(OperationalError, match="Machine output exceeds the 2048-byte"):
+        ProcessRunner().run(
+            request(tmp_path, stdout_artifact=output, max_artifact_bytes=2048)
+        )
+
+    assert not output.exists()
+
+
+def test_machine_output_retry_discards_failed_attempt_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    processes = iter(
+        (FakeProcess(stdout=b"failed", returncode=1), FakeProcess(stdout=b"ok"))
+    )
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: next(processes))
+    output = tmp_path / "response.json"
+
+    result = ProcessRunner().run(request(tmp_path, stdout_artifact=output, retries=1))
+
+    assert result.attempts == 2
+    assert output.read_bytes() == b"ok"
+
+
+def test_machine_output_never_replaces_existing_file(tmp_path: Path) -> None:
+    output = tmp_path / "response.json"
+    output.write_text("protected")
+
+    with pytest.raises(OperationalError, match="exclusive machine output"):
+        ProcessRunner().run(request(tmp_path, stdout_artifact=output))
+
+    assert output.read_text() == "protected"
+
+
 def test_process_runner_terminates_timed_out_process_group(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

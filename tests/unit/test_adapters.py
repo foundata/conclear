@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ from conclear.adapters.podman import BindMount, PodmanAdapter
 from conclear.adapters.quay import QuayAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
+from conclear.attestations import decode_dsse_statements
 from conclear.config import load_repository_config
 from conclear.errors import (
     CommandExecutionError,
@@ -75,7 +77,9 @@ class FakeRunner:
         if isinstance(response, Exception):
             raise response
         if callable(response):
-            return response(request)
+            response = response(request)
+        if request.stdout_artifact is not None:
+            request.stdout_artifact.write_text(response.stdout)
         return response
 
 
@@ -114,6 +118,36 @@ def adapter_arguments(
         environment={"PATH": "/usr/bin", "HOME": str(tmp_path / "home")},
         log_directory=tmp_path / "logs",
     )
+
+
+@pytest.mark.parametrize(
+    "entry_count,payload_size", [(1, 2 * 1024 * 1024), (2048, 1024)]
+)
+def test_cosign_machine_responses_exceed_diagnostic_limit(
+    tmp_path: Path, entry_count: int, payload_size: int
+) -> None:
+    statement = {
+        "_type": "https://in-toto.io/Statement/v1",
+        "predicate": {"data": "x" * payload_size},
+    }
+    entry = {
+        "payloadType": "application/vnd.in-toto+json",
+        "payload": base64.b64encode(json.dumps(statement).encode()).decode(),
+    }
+    output = "\n".join(json.dumps(entry) for _ in range(entry_count))
+    runner = FakeRunner(result(output), result(output))
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "a" * 64)
+
+    verified = adapter.verify_attestation(
+        subject=subject, public_key=tmp_path / "public.pem", predicate_type="custom"
+    )
+    downloaded = adapter.download_attestations(subject=subject, predicate_type="custom")
+
+    assert len(decode_dsse_statements(verified.entries)) == entry_count
+    assert verified.entries == downloaded
+    assert all(request.stdout_artifact is not None for request in runner.requests)
+    assert not list((tmp_path / "cosign-responses").iterdir())
 
 
 def test_buildah_info_uses_supported_go_template_json(tmp_path: Path) -> None:

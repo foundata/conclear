@@ -771,7 +771,11 @@ later release run may use newer accepted tools. `doctor` validates one scope,
 commands declare and reporting every failure instead of the first.
 
 All external commands use argument arrays, sanitized environments, explicit
-timeouts, bounded retries and captured logs. ConClear never constructs a shell
+timeouts, bounded retries and captured logs. Cosign machine responses use private
+temporary files, with a 128 MiB response limit, separately from the 1 MiB
+redacted diagnostic capture. Overflow fails explicitly before JSON parsing;
+DSSE payloads also have a 16 MiB base64-encoded size limit. Temporary responses
+are removed after consumption or failure. ConClear never constructs a shell
 command from project input. Logs redact credentials, authorization headers,
 passphrases and secret mount paths before they are persisted or displayed.
 
