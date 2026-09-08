@@ -32,10 +32,10 @@ from conclear.services.assembly import CandidateResult
 from conclear.services.attestation import (
     ReleaseEvidence,
     Signer,
-    has_downloaded_statement,
+    has_verified_statement,
     provenance_subjects,
-    require_downloaded_predicate,
-    require_downloaded_statement,
+    require_verified_predicate,
+    require_verified_statement,
     validate_release_provenance,
     verify_image_signature,
 )
@@ -140,13 +140,9 @@ def verify_candidate(
             )
         subject = published.reference.with_digest(manifest_map[platform])
         sbom = validate_spdx_document(load_json(path), label=f"SBOM for {platform}")
-        signer.verify_attestation(
-            subject=subject,
-            public_key=profile.cosign_public_key,
-            predicate_type="spdxjson",
-        )
-        require_downloaded_predicate(
+        require_verified_predicate(
             signer,
+            public_key=profile.cosign_public_key,
             subject=subject,
             predicate_type=SPDX_DOCUMENT_TYPE,
             expected=sbom,
@@ -163,13 +159,9 @@ def verify_candidate(
         provenance.get("predicate"), "provenance predicate"
     )
     for _resource, provenance_subject in provenance_subjects(published):
-        signer.verify_attestation(
-            subject=provenance_subject,
-            public_key=profile.cosign_public_key,
-            predicate_type=SLSA_PROVENANCE_TYPE,
-        )
-        require_downloaded_predicate(
+        require_verified_predicate(
             signer,
+            public_key=profile.cosign_public_key,
             subject=provenance_subject,
             predicate_type=SLSA_PROVENANCE_TYPE,
             expected=provenance_predicate,
@@ -281,17 +273,13 @@ def verify_candidate(
             ephemeral=False,
             metadata=verification_metadata,
         )
-    elif has_downloaded_statement(
+    elif has_verified_statement(
         signer,
+        public_key=profile.cosign_public_key,
         subject=published.immutable_reference,
         predicate_type=RELEASE_VERIFICATION_TYPE,
         expected=statement,
     ):
-        signer.verify_attestation(
-            subject=published.immutable_reference,
-            public_key=profile.cosign_public_key,
-            predicate_type=RELEASE_VERIFICATION_TYPE,
-        )
         workspace.journal.update("release-verification", ResourceStatus.CREATED)
         workspace.transition(RunState.VERIFIED, now=now)
         return VerificationResult(
@@ -312,13 +300,9 @@ def verify_candidate(
             passphrase=passphrase,
             passphrase_path=profile.passphrase_file,
         )
-        signer.verify_attestation(
-            subject=published.immutable_reference,
-            public_key=profile.cosign_public_key,
-            predicate_type=RELEASE_VERIFICATION_TYPE,
-        )
-        require_downloaded_statement(
+        require_verified_statement(
             signer,
+            public_key=profile.cosign_public_key,
             subject=published.immutable_reference,
             predicate_type=RELEASE_VERIFICATION_TYPE,
             expected=statement,

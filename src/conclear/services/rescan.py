@@ -16,7 +16,6 @@ from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
     RESCAN_TYPE,
     SPDX_DOCUMENT_TYPE,
-    decode_dsse_statements,
     write_statement,
 )
 from conclear.config import MAX_REMEDIATION, RuntimeConfig, VulnerabilityException
@@ -38,6 +37,7 @@ from conclear.rescan_history import (
     history_from_records,
 )
 from conclear.scan_policy import evaluate_trivy_report
+from conclear.services.attestation_reads import verified_statements
 from conclear.spdx import validate_spdx_document
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference
@@ -154,21 +154,21 @@ def verified_rescan_history(
     )
     if not envelopes:
         return ()
-    verification = signer.verify_attestation(
+    statements = verified_statements(
+        signer,
         subject=subject,
         public_key=public_key,
         predicate_type=RESCAN_TYPE,
     )
-    statements = decode_dsse_statements(envelopes)
     matches = tuple(
         statement
         for statement in statements
         if statement.get("predicateType") == RESCAN_TYPE
         and _has_subject(statement, subject)
     )
-    if len(matches) != len(statements) or len(verification.entries) != len(matches):
+    if len(matches) != len(statements):
         raise OperationalError(
-            "Downloaded rescan attestations differ from Cosign verification"
+            "Verified rescan attestations have an unexpected subject or predicate type"
         )
     records = tuple(
         object_value(statement.get("predicate"), "rescan record")
@@ -221,14 +221,12 @@ def rescan_release(
         raise InvalidInvocationError(
             "Rescan remediation history does not match the previous result"
         )
-    signer.verify_attestation(
-        subject=subject,
-        public_key=public_key,
-        predicate_type=RELEASE_VERIFICATION_TYPE,
-    )
     release_statement = _one_statement(
-        signer.download_attestations(
-            subject=subject, predicate_type=RELEASE_VERIFICATION_TYPE
+        verified_statements(
+            signer,
+            subject=subject,
+            public_key=public_key,
+            predicate_type=RELEASE_VERIFICATION_TYPE,
         ),
         predicate_type=RELEASE_VERIFICATION_TYPE,
         subject=subject,
@@ -316,14 +314,12 @@ def rescan_release(
                 "Rescan platform coverage invariant failed", code="CC0801"
             )
         manifest_subject = subject.with_digest(digest)
-        signer.verify_attestation(
-            subject=manifest_subject,
-            public_key=public_key,
-            predicate_type="spdxjson",
-        )
         statement = _one_statement(
-            signer.download_attestations(
-                subject=manifest_subject, predicate_type=SPDX_DOCUMENT_TYPE
+            verified_statements(
+                signer,
+                subject=manifest_subject,
+                public_key=public_key,
+                predicate_type=SPDX_DOCUMENT_TYPE,
             ),
             predicate_type=SPDX_DOCUMENT_TYPE,
             subject=manifest_subject,
@@ -564,14 +560,14 @@ def _scanner_identity(tools: tuple[ToolIdentity, ...]) -> str:
 
 
 def _one_statement(
-    envelopes: tuple[object, ...],
+    statements: tuple[dict[str, object], ...],
     *,
     predicate_type: str,
     subject: OCIReference,
 ) -> dict[str, object]:
     matches = [
         statement
-        for statement in decode_dsse_statements(envelopes)
+        for statement in statements
         if statement.get("predicateType") == predicate_type
         and _has_subject(statement, subject)
     ]

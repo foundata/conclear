@@ -72,17 +72,12 @@ def test_real_cosign_spdx_attestation_round_trip(tmp_path: Path) -> None:
         private_key=str(private_key),
         passphrase=read_secret_file(Path(values["passphrase_file"])),
     )
-    signer.verify_attestation(
+    verified = signer.verify_attestation(
         subject=subject,
         public_key=public_key,
         predicate_type="spdxjson",
     )
-    statements = decode_dsse_statements(
-        signer.download_attestations(
-            subject=subject,
-            predicate_type=SPDX_DOCUMENT_TYPE,
-        )
-    )
+    statements = decode_dsse_statements(verified.entries)
 
     assert subject.digest is not None
     assert any(

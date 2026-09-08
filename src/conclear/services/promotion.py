@@ -23,7 +23,7 @@ from conclear.jsonutil import load_json
 from conclear.parsing import object_value
 from conclear.presentation import Finding
 from conclear.registry_control import RegistryControl
-from conclear.services.attestation import Signer, require_downloaded_statement
+from conclear.services.attestation import Signer, require_verified_statement
 from conclear.services.publication import PublishedCandidate, Registry, retry_entry
 from conclear.services.verification import VerificationResult
 from conclear.values import Digest, OCIReference
@@ -66,16 +66,12 @@ def promote_candidate(
         raise OperationalError("Candidate expiration is missing before promotion")
     if now.astimezone(UTC) >= tag_state.expiration:
         raise RuleRejectionError("Candidate expired before promotion", code="CC0603")
-    signer.verify_attestation(
-        subject=verification.subject,
-        public_key=public_key,
-        predicate_type=verification.predicate_type,
-    )
     expected_statement = object_value(
         load_json(verification.statement_path), "release verification statement"
     )
-    require_downloaded_statement(
+    require_verified_statement(
         signer,
+        public_key=public_key,
         subject=verification.subject,
         predicate_type=verification.predicate_type,
         expected=expected_statement,

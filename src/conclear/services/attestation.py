@@ -4,7 +4,7 @@
 statement, then signs the index and every platform manifest with mandatory
 public log inclusion. The evidence matching it uses to recognise an already
 attached attestation is shared with verification and promotion, which repeat
-the same downloads before they trust a remote statement.
+the verifier's authenticated payloads before they trust a remote statement.
 """
 
 from dataclasses import dataclass
@@ -18,7 +18,6 @@ from conclear.adapters.cosign import (
 )
 from conclear.attestations import (
     SPDX_DOCUMENT_TYPE,
-    decode_dsse_statements,
     statement_matches,
 )
 from conclear.config import ReleaseImageConfig
@@ -34,6 +33,7 @@ from conclear.parsing import object_value
 from conclear.provenance import SLSA_PROVENANCE_TYPE, ProvenanceMaterial
 from conclear.records import SourceIdentity, ToolIdentity
 from conclear.schema import validate_external
+from conclear.services.attestation_reads import verified_statements
 from conclear.services.publication import (
     PublishedCandidate,
     Registry,
@@ -184,17 +184,13 @@ def attest_candidate(
             metadata=metadata,
         )
         if existing is not None:
-            if _has_downloaded_predicate(
+            if _has_verified_predicate(
                 signer,
+                public_key=public_key,
                 subject=subject,
                 predicate_type=SPDX_DOCUMENT_TYPE,
                 expected=sbom,
             ):
-                signer.verify_attestation(
-                    subject=subject,
-                    public_key=public_key,
-                    predicate_type="spdxjson",
-                )
                 workspace.journal.update(resource, ResourceStatus.CREATED)
                 continue
             if existing.status is ResourceStatus.CREATED:
@@ -250,17 +246,13 @@ def attest_candidate(
             metadata=provenance_metadata,
         )
         if existing_provenance is not None:
-            if _has_downloaded_predicate(
+            if _has_verified_predicate(
                 signer,
+                public_key=public_key,
                 subject=subject,
                 predicate_type=SLSA_PROVENANCE_TYPE,
                 expected=provenance_predicate,
             ):
-                signer.verify_attestation(
-                    subject=subject,
-                    public_key=public_key,
-                    predicate_type=SLSA_PROVENANCE_TYPE,
-                )
                 workspace.journal.update(resource, ResourceStatus.CREATED)
                 continue
             if existing_provenance.status is ResourceStatus.CREATED:
@@ -330,18 +322,18 @@ def attest_candidate(
     workspace.transition(RunState.ATTESTED, now=now)
 
 
-def _has_downloaded_predicate(
+def _has_verified_predicate(
     signer: Signer,
     *,
     subject: OCIReference,
+    public_key: Path,
     predicate_type: str,
     expected: object,
 ) -> bool:
-    statements = decode_dsse_statements(
-        signer.download_attestations(
-            subject=subject,
-            predicate_type=predicate_type,
-        )
+    if not signer.download_attestations(subject=subject, predicate_type=predicate_type):
+        return False
+    statements = verified_statements(
+        signer, subject=subject, public_key=public_key, predicate_type=predicate_type
     )
     return any(
         subject.digest is not None
@@ -356,10 +348,11 @@ def _has_downloaded_predicate(
     )
 
 
-def has_downloaded_statement(
+def has_verified_statement(
     signer: Signer,
     *,
     subject: OCIReference,
+    public_key: Path,
     predicate_type: str,
     expected: dict[str, object],
 ) -> bool:
@@ -369,9 +362,10 @@ def has_downloaded_statement(
     single subject it signs, so the comparison covers the subject digest, the
     predicate type and the complete predicate rather than the whole document.
     """
-    return _has_downloaded_predicate(
+    return _has_verified_predicate(
         signer,
         subject=subject,
+        public_key=public_key,
         predicate_type=predicate_type,
         expected=expected.get("predicate"),
     )
@@ -397,42 +391,52 @@ def provenance_subjects(
     return tuple(subjects)
 
 
-def require_downloaded_predicate(
+def require_verified_predicate(
     signer: Signer,
     *,
     subject: OCIReference,
+    public_key: Path,
     predicate_type: str,
     expected: object,
 ) -> None:
-    """Fail unless the registry serves an attestation carrying `expected`."""
-    if not _has_downloaded_predicate(
-        signer,
-        subject=subject,
-        predicate_type=predicate_type,
-        expected=expected,
+    """Fail unless a verified attestation carries the complete expected predicate."""
+    if not any(
+        subject.digest is not None
+        and statement_matches(
+            statement,
+            subject_name=subject.repository_name,
+            subject_digest=subject.digest,
+            predicate_type=predicate_type,
+            predicate=expected,
+        )
+        for statement in verified_statements(
+            signer,
+            subject=subject,
+            public_key=public_key,
+            predicate_type=predicate_type,
+        )
     ):
         raise OperationalError(
-            f"Downloaded {predicate_type} predicate does not match evidence"
+            f"Verified {predicate_type} predicate does not match evidence"
         )
 
 
-def require_downloaded_statement(
+def require_verified_statement(
     signer: Signer,
     *,
     subject: OCIReference,
+    public_key: Path,
     predicate_type: str,
     expected: dict[str, object],
 ) -> None:
-    """Fail unless the registry serves the statement Cosign wrapped around `expected`."""
-    if not has_downloaded_statement(
+    """Require the verified statement Cosign wrapped around `expected`."""
+    require_verified_predicate(
         signer,
         subject=subject,
+        public_key=public_key,
         predicate_type=predicate_type,
-        expected=expected,
-    ):
-        raise OperationalError(
-            f"Downloaded {predicate_type} Statement does not match evidence"
-        )
+        expected=expected.get("predicate"),
+    )
 
 
 def validate_release_provenance(

@@ -133,14 +133,12 @@ class FakeSigner:
             subject,
             tuple(
                 {
-                    "critical": {
-                        "identity": {"docker-reference": subject.repository_name},
-                        "image": {"docker-manifest-digest": str(subject.digest)},
-                        "type": predicate_type,
-                    },
-                    "optional": None,
+                    "payloadType": "application/vnd.in-toto+json",
+                    "payload": base64.b64encode(canonical_json_bytes(statement)).decode(
+                        "ascii"
+                    ),
                 }
-                for _statement in self.statements[(str(subject), predicate_type)]
+                for statement in self.statements[(str(subject), predicate_type)]
             ),
         )
 

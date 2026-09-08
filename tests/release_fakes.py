@@ -488,7 +488,15 @@ class FakeSigner(CosignAdapter):
             raise OperationalError("Fake attestation verification failed")
         return VerificationObservation(
             subject,
-            tuple(self._verification_entry(subject) for _statement in statements),
+            tuple(
+                {
+                    "payloadType": "application/vnd.in-toto+json",
+                    "payload": base64.b64encode(canonical_json_bytes(statement)).decode(
+                        "ascii"
+                    ),
+                }
+                for statement in statements
+            ),
         )
 
     @override

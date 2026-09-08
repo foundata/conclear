@@ -1166,6 +1166,13 @@ retrieves and validates its predicate through Cosign during verification and
 rescans; it does not use Cosign's deprecated unsigned raw SBOM attachment
 command.
 
+Attestation consumers decode the DSSE envelopes returned by
+`cosign verify-attestation` with the approved public key. Those authenticated
+payloads supply the predicates used by verification, promotion, retry recovery
+and rescan history. A retry may download an attestation to observe its presence;
+downloaded payloads never substitute for verified entries, even when the entry
+counts or subject names agree.
+
 <a id="promise-ip0033"></a>
 `verify` starts from the candidate digest rather than its tag. It recursively
 compares the registry graph with the candidate, verifies every required image

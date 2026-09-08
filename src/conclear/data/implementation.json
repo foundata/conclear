@@ -328,8 +328,9 @@
     {
       "id": "IP0033",
       "summary": "Verify the remote graph, signatures, attestations and identities before attaching the final verification result",
-      "implementation": ["src/conclear/services/verification.py", "src/conclear/attestations.py", "src/conclear/oci.py"],
+      "implementation": ["src/conclear/services/verification.py", "src/conclear/services/attestation_reads.py", "src/conclear/attestations.py", "src/conclear/oci.py"],
       "tests": [
+        {"path": "tests/unit/test_attestation_binding.py", "tier": "unit"},
         {"path": "tests/unit/test_publication.py", "tier": "unit"},
         {"path": "tests/unit/test_assembly_verification.py", "tier": "unit"},
         {"path": "tests/network/test_cosign_attestation.py", "tier": "network"}

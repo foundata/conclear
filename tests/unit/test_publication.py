@@ -366,7 +366,20 @@ class FakeSigner:
         if self.fail_once == predicate_type:
             self.fail_once = None
             raise OperationalError("injected verification interruption")
-        return VerificationObservation(subject, ({"verified": True},))
+        return VerificationObservation(
+            subject,
+            tuple(
+                {
+                    "payloadType": "application/vnd.in-toto+json",
+                    "payload": base64.b64encode(canonical_json_bytes(statement)).decode(
+                        "ascii"
+                    ),
+                }
+                for statement in self.statements[
+                    (str(subject), statement_predicate_type)
+                ]
+            ),
+        )
 
     def download_attestations(
         self, *, subject: OCIReference, predicate_type: str
