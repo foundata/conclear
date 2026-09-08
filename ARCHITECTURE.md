@@ -1113,10 +1113,12 @@ A supported registry backend must provide exact tag observation,
 digest-preserving manifest-list and platform graph handling, OCI referrer
 support compatible with Cosign, an independently enforced candidate lifetime,
 exact digest tag assignment, owned-tag deletion and post-write observation that
-resolves ambiguous writes. It must enable selective immutable-tag protection
-where the provider enforces it and report the control as unavailable where the
-provider accepts but does not enforce it; repository-wide immutability does not
-satisfy the requirement. Local timestamps and best-effort cleanup never satisfy
+resolves ambiguous writes. It must verify selective immutable-tag policies
+before candidate upload and before promotion, and observe protection on each
+final tag assignment. Unavailable or unreadable protection stops the operation;
+repository-wide immutability does not satisfy the requirement because candidate
+expiry and moving tags must remain available. Local timestamps and best-effort
+cleanup never satisfy
 the lifetime requirement. `quay` is the only implemented backend. Publication
 requires its repository auto-prune API to be enabled and accessible with the
 supplied credentials, as well as native tag expiration. Availability is checked
@@ -1152,12 +1154,11 @@ Immediately after a successful copy, ConClear also sets and verifies the exact
 per-tag deadline. The pre-existing retention rule covers an upload that succeeds
 remotely but loses its acknowledgement, even if ConClear never resumes. Failure
 to confirm the per-tag deadline stops the release before attestation. ConClear
-enables candidate tag immutability when the backend supports it and otherwise
-records that the recommended control was unavailable. A failed or ambiguous
-publication is recorded for cleanup; resume reuses its tag only after
-conclusively resolving it to the unchanged expected digest within its lifetime.
-Candidate content and evidence must be safe for public disclosure; later
-provider garbage collection is outside the release verdict.
+keeps candidate tags mutable so expiration and deletion remain possible. A
+failed or ambiguous publication is recorded for cleanup; resume reuses its tag
+only after conclusively resolving it to the unchanged expected digest within its
+lifetime. Candidate content and evidence must be safe for public disclosure;
+later provider garbage collection is outside the release verdict.
 
 Quay's auto-pruner runs asynchronously. Registry operators must keep that
 service enabled, monitor its execution and account for its scheduling delay
@@ -1168,11 +1169,15 @@ registry operation and does not require a build CI service.
 <a id="promise-ip0030"></a>
 Promotion first confirms that the candidate has not expired, then resolves and
 verifies the signed release-verification attestation. It refuses to replace an
-immutable version tag that already names another digest, whether or not the
-registry enforces immutability. It writes only the verified digest to each
-requested immutable or moving tag, enables registry tag protection where the
-backend supports it and records when that control was unavailable, resolves
-every tag afterward and records the observed result separately. A partial
+immutable version tag that already names another digest. It reads repository and
+organization immutability policies and requires coverage of every final version
+tag while excluding the candidate and declared moving tags. Quay policy checks
+use the same regular-expression engine and full-match semantics as Quay, with a
+bounded match time; malformed or timed-out policies fail closed. ConClear never
+changes these policies. The API token needs repository and organization policy
+read access. Promotion writes only the verified digest, requires protection on
+assignment of each immutable tag, resolves every tag afterward and records the
+observed result separately. A partial
 multi-tag update is an operational failure and is never hidden by rollback or
 repointing.
 

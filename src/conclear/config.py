@@ -274,6 +274,23 @@ class ReleaseTags:
     immutable_tags: tuple[str, ...]
     moving_tags: tuple[str, ...]
 
+    def render_immutable(self, version: str | None) -> tuple[str, ...]:
+        """Render final tags and reject overlap with mutable release references."""
+        tags: list[str] = []
+        for template in self.immutable_tags:
+            if "{version}" in template and version is None:
+                raise InvalidInvocationError(
+                    "Version-dependent release tag requires --version"
+                )
+            tag = template.replace("{version}", version or "")
+            OCIReference("registry.invalid", "validation").with_tag(tag)
+            if tag in self.moving_tags or "-candidate." in tag:
+                raise InvalidInvocationError(
+                    "Immutable and moving or candidate tags must be disjoint"
+                )
+            tags.append(tag)
+        return tuple(tags)
+
 
 @dataclass(frozen=True, slots=True)
 class VulnerabilityException:

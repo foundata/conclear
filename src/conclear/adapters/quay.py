@@ -7,6 +7,7 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import quote
 
 import httpx
+import regex
 
 from conclear.errors import (
     InvalidInvocationError,
@@ -18,6 +19,8 @@ from conclear.registry_control import CandidateRetentionObservation, TagObservat
 from conclear.values import CANDIDATE_TAG_PATTERN, Digest, OCIReference
 
 MAX_QUAY_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_IMMUTABILITY_POLICIES = 100
+POLICY_MATCH_TIMEOUT_SECONDS = 0.1
 
 
 class _QuayAPIError(OperationalError):
@@ -213,6 +216,73 @@ class QuayAdapter:
                 "tag immutability for this repository"
             )
         return observed
+
+    def verify_tag_policy(
+        self,
+        repository: OCIReference,
+        *,
+        immutable_tags: tuple[str, ...],
+        mutable_tags: tuple[str, ...],
+    ) -> None:
+        """Check repository and inherited organization policies without changing them.
+
+        Quay uses regex.fullmatch with an optional inverted match rule. Use the
+        same engine with a bounded match time and reject unreadable policies.
+        """
+        namespace, name = self._repository_parts(repository)
+        protected: set[str] = set()
+        try:
+            for path in (
+                f"/repository/{namespace}/{name}/immutabilitypolicy/",
+                f"/organization/{namespace}/immutabilitypolicy/",
+            ):
+                response = self._request("GET", path)
+                value = object_value(self._decode(response), "Quay policy response")
+                policies = array_value(value.get("policies"), "Quay tag policies")
+                if len(policies) > MAX_IMMUTABILITY_POLICIES:
+                    raise OperationalError("Quay has too many immutability policies")
+                for raw in policies:
+                    policy = object_value(raw, "Quay immutability policy")
+                    pattern = string_value(policy.get("tagPattern"), "tag pattern")
+                    matches = policy.get("tagPatternMatches")
+                    if not 0 < len(pattern) <= 256 or not isinstance(matches, bool):
+                        raise OperationalError("Quay immutability policy is malformed")
+                    for tag in (*immutable_tags, *mutable_tags):
+                        matched = (
+                            regex.fullmatch(
+                                pattern, tag, timeout=POLICY_MATCH_TIMEOUT_SECONDS
+                            )
+                            is not None
+                        )
+                        if matched == matches:
+                            protected.add(tag)
+        except _QuayAPIError as exc:
+            if exc.status_code in {401, 403, 404, 405}:
+                raise UnsupportedOperationError(
+                    "Quay immutability policies are unavailable or unauthorized; "
+                    "repository and organization policy read access is required",
+                    code="CC0604",
+                ) from exc
+            raise
+        except (httpx.TransportError, regex.error, TimeoutError) as exc:
+            raise OperationalError(
+                "Unable to verify Quay immutability policies", code="CC0604"
+            ) from exc
+        missing = sorted(set(immutable_tags) - protected)
+        blocked = sorted(set(mutable_tags) & protected)
+        if missing or blocked:
+            raise OperationalError(
+                "Quay requires selective tag immutability before publication; "
+                f"unprotected release tags={missing}, protected mutable tags={blocked}",
+                code="CC0604",
+            )
+        for tag in mutable_tags:
+            observed = self.observe_tag(repository, tag)
+            if observed is not None and observed.immutable:
+                raise OperationalError(
+                    f"Mutable tag is individually protected in Quay: {tag}",
+                    code="CC0604",
+                )
 
     def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:
         """Disable Quay tag immutability and verify the observed control."""

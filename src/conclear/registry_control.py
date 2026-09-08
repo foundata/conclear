@@ -66,6 +66,16 @@ class RegistryControl(Protocol):
         """Ensure and verify that a tag cannot be repointed."""
         ...
 
+    def verify_tag_policy(
+        self,
+        repository: OCIReference,
+        *,
+        immutable_tags: tuple[str, ...],
+        mutable_tags: tuple[str, ...],
+    ) -> None:
+        """Require effective policies to protect final tags and exclude mutable tags."""
+        ...
+
     def ensure_tag_mutable(self, repository: OCIReference, tag: str) -> TagObservation:
         """Ensure and verify that an owned candidate can be removed."""
         ...

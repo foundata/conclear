@@ -206,6 +206,16 @@ class FakeRegistryControl:
         self.immutable: set[str] = set()
         self.fail_delete = False
         self.retention: CandidateRetentionObservation | None = None
+        self.protected_tags: set[str] = set()
+
+    def verify_tag_policy(
+        self,
+        repository: OCIReference,
+        *,
+        immutable_tags: tuple[str, ...],
+        mutable_tags: tuple[str, ...],
+    ) -> None:
+        self.protected_tags.update(immutable_tags)
 
     @property
     def provider(self) -> str:
@@ -261,6 +271,8 @@ class FakeRegistryControl:
     ) -> TagObservation:
         del repository
         self.tags[tag] = digest
+        if tag in self.protected_tags:
+            self.immutable.add(tag)
         observed = self.observe_tag(OCIReference("quay.io", "example/app"), tag)
         assert observed is not None
         return observed
@@ -453,7 +465,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
     image = repository.release_image("app")
     workspace = RunWorkspace.create(
         state_home=tmp_path / "state",
-        immutable_inputs={"sourceRevision": "b" * 40},
+        immutable_inputs={"sourceRevision": "b" * 40, "version": "1.2.3"},
         id_factory=IdFactory(),
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -878,24 +890,24 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         ) -> TagObservation:
             raise UnsupportedOperationError("not enforced")
 
-    protected = promotion_module._write_release_tag(
-        "unprotected",
-        observation.graph.digest,
-        image,
-        workspace,
-        UnenforcedControl(tags),
-        registry,
-        None,
-        immutable=True,
-    )
-    assert protected is False
+    with pytest.raises(OperationalError, match="not protected on assignment"):
+        promotion_module._write_release_tag(
+            "unprotected",
+            observation.graph.digest,
+            image,
+            workspace,
+            UnenforcedControl(tags),
+            registry,
+            None,
+            immutable=True,
+        )
     assert tags["unprotected"] == observation.graph.digest
     unprotected_entry = next(
         entry
         for entry in workspace.journal.entries()
         if entry.resource_id == "tag-unprotected"
     )
-    assert unprotected_entry.status is ResourceStatus.CREATED
+    assert unprotected_entry.status is ResourceStatus.FAILED
     image = replace(
         image,
         release=replace(

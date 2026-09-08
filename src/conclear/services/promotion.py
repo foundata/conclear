@@ -4,8 +4,8 @@
 statement, applies every immutable and moving release tag to the verified
 digest through the registry control plane, verifies each tag through the
 transport view and finally removes the ConClear-owned candidate tag. It refuses
-to repoint an immutable tag that already names another digest and reports a
-registry that cannot protect tags without failing the promotion.
+to repoint an immutable tag that already names another digest and requires
+registry-enforced protection for every final version tag.
 """
 
 from dataclasses import dataclass
@@ -17,7 +17,6 @@ from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
-    UnsupportedOperationError,
 )
 from conclear.jsonutil import load_json
 from conclear.parsing import object_value
@@ -26,7 +25,7 @@ from conclear.registry_control import RegistryControl
 from conclear.services.attestation import Signer, require_verified_statement
 from conclear.services.publication import PublishedCandidate, Registry, retry_entry
 from conclear.services.verification import VerificationResult
-from conclear.values import Digest, OCIReference
+from conclear.values import Digest
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 
 
@@ -76,14 +75,13 @@ def promote_candidate(
         predicate_type=verification.predicate_type,
         expected=expected_statement,
     )
-    immutable_tags = tuple(
-        _render_tag(item, version) for item in image.release.immutable_tags
-    )
+    immutable_tags = image.release.render_immutable(version)
     moving_tags = image.release.moving_tags
-    if set(immutable_tags) & set(moving_tags):
-        raise InvalidInvocationError(
-            "Immutable and moving release tags must be disjoint"
-        )
+    registry_control.verify_tag_policy(
+        image.repository,
+        immutable_tags=immutable_tags,
+        mutable_tags=(published.reference.tag or "", *moving_tags),
+    )
     observed: list[tuple[str, Digest]] = []
     protected = True
     for tag in immutable_tags:
@@ -241,8 +239,13 @@ def _write_release_tag(
             )
         protected = True
         if immutable:
-            protected = _protect_release_tag(
-                registry_control, image, tag, expected_digest=digest
+            if not result.immutable:
+                raise OperationalError(
+                    f"Release tag was not protected on assignment: {tag}", code="CC0604"
+                )
+        elif result.immutable:
+            raise OperationalError(
+                f"Moving tag was unexpectedly made immutable: {tag}", code="CC0604"
             )
     except Exception:
         workspace.journal.mark_failed(resource_id)
@@ -258,29 +261,8 @@ def _protect_release_tag(
     *,
     expected_digest: Digest,
 ) -> bool:
-    """Enable registry tag protection where the backend enforces it.
-
-    Returns False when the backend reports the control as unavailable; the
-    verified digest stays in place and ConClear's own refusal to repoint an
-    immutable version tag remains the enforced control.
-    """
-    try:
-        result = registry_control.ensure_tag_immutable(image.repository, tag)
-    except UnsupportedOperationError:
-        return False
+    """Require verified protection when adopting an existing final tag."""
+    result = registry_control.ensure_tag_immutable(image.repository, tag)
     if result.digest != expected_digest or not result.immutable:
         raise OperationalError(f"Immutable release tag was not protected: {tag}")
     return True
-
-
-def _render_tag(template: str, version: str | None) -> str:
-    if "{version}" in template:
-        if version is None:
-            raise InvalidInvocationError(
-                "Version-dependent release tag requires --version"
-            )
-        rendered = template.replace("{version}", version)
-    else:
-        rendered = template
-    OCIReference("registry.invalid", "validation").with_tag(rendered)
-    return rendered

@@ -650,6 +650,23 @@ The registry operator must keep Quay's asynchronous auto-pruner running and
 monitor its scheduling delay. ConClear checks the stored policy, not the health
 of that remote worker. No build CI service is needed for this registry control.
 
+Configure a selective immutability policy in the Quay organization or repository
+before the first publication. For version tags such as `1.2.3` and `v1.2.3`, a
+matching policy with `tagPattern = "v?[0-9]+\\.[0-9]+\\.[0-9]+"` covers those
+names without freezing candidates or `latest`. Adjust the pattern to your
+actual version naming, including any prereleases. Quay applies full-match
+semantics. ConClear checks both repository and inherited organization policies
+before upload and promotion; a broader inherited policy can still block a
+moving tag. The API token needs `repo:admin` and `org:admin` access to read both
+policy scopes. ConClear does not create, broaden or remove immutability policies
+and rejects unavailable controls. Candidates remain mutable so retention and
+cleanup can remove them.
+
+A failed attempt can use the same requested version in a new run while that
+final version tag is absent. Once a final tag exists, retries must preserve its
+digest, even if a later moving-tag update failed. Changed image bytes need a new
+version; `latest` advances only after verification.
+
 
 ## 11. Check and run the release environment
 

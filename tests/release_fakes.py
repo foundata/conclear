@@ -341,6 +341,16 @@ class FakeRegistryControl:
         self.expirations: dict[str, datetime] = {}
         self.immutable: set[str] = set()
         self.closed = False
+        self.protected_tags: set[str] = set()
+
+    def verify_tag_policy(
+        self,
+        repository: OCIReference,
+        *,
+        immutable_tags: tuple[str, ...],
+        mutable_tags: tuple[str, ...],
+    ) -> None:
+        self.protected_tags.update(immutable_tags)
 
     @property
     def provider(self) -> str:
@@ -394,6 +404,8 @@ class FakeRegistryControl:
         self, repository: OCIReference, tag: str, digest: Digest
     ) -> TagObservation:
         self.tags[tag] = digest
+        if tag in self.protected_tags:
+            self.immutable.add(tag)
         observed = self.observe_tag(repository, tag)
         if observed is None:
             raise AssertionError("written tag is absent")

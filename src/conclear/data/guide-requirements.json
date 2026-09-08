@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "5db54ccf59b67e44f964badb93cfbdc311fa36cb",
+ "guideRevision": "0806969483e586dc33a96cf0bf90cc95517b1121",
  "requirements": [
   {
    "id": "IG0001",
@@ -641,10 +641,10 @@
   },
   {
    "id": "IG0092",
-   "modality": "SHOULD",
+   "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Where the registry supports tag immutability, the release workflow SHOULD enable it for candidate and release tags."
+   "text": "Before uploading a candidate, ConClear MUST verify an effective registry policy that protects the configured immutable release tags on creation and leaves candidate and declared moving tags mutable. It MUST repeat this check before promotion and verify protection of each assigned immutable tag. Missing, unreadable or unenforced protection MUST stop publication or promotion."
   },
   {
    "id": "IG0093",

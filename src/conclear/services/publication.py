@@ -22,7 +22,6 @@ from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
     RuleRejectionError,
-    UnsupportedOperationError,
 )
 from conclear.oci import OCIGraph, graph_fingerprint
 from conclear.records import (
@@ -108,6 +107,13 @@ def publish_candidate(
     tagged = image.repository.with_tag(candidate.candidate_tag)
     if re.fullmatch(CANDIDATE_TAG_PATTERN, candidate.candidate_tag) is None:
         raise InvalidInvocationError("Candidate name is outside the retention pattern")
+    registry_control.verify_tag_policy(
+        image.repository,
+        immutable_tags=image.release.render_immutable(
+            workspace.load().immutable_inputs.get("version") or None
+        ),
+        mutable_tags=(candidate.candidate_tag, *image.release.moving_tags),
+    )
     existing_entries = [
         item
         for item in workspace.journal.entries()
@@ -162,6 +168,10 @@ def publish_candidate(
             raise OperationalError(
                 "Registry candidate-lifetime update observed another digest"
             )
+        if expiration_observation.immutable:
+            raise OperationalError(
+                "Candidate must remain mutable for independent expiry", code="CC0603"
+            )
         immutable = image.repository.with_digest(remote_digest)
         remote = registry.copy_registry_to_layout(
             source=immutable,
@@ -173,14 +183,6 @@ def publish_candidate(
             auth_file=auth_file,
         )
         _require_same_graph(candidate.observation.graph, remote.graph)
-        immutable_enabled = False
-        try:
-            immutable_observation = registry_control.ensure_tag_immutable(
-                image.repository, candidate.candidate_tag
-            )
-            immutable_enabled = immutable_observation.immutable
-        except UnsupportedOperationError:
-            immutable_enabled = False
     except Exception:
         workspace.journal.mark_failed("candidate")
         raise
@@ -190,13 +192,11 @@ def publish_candidate(
         metadata={
             "digest": str(remote_digest),
             "expiration": format_timestamp(expiration),
-            "immutabilityEnabled": immutable_enabled,
+            "immutabilityEnabled": False,
         },
     )
     workspace.transition(RunState.PUBLISHED, now=now)
-    return PublishedCandidate(
-        tagged, immutable, remote.graph, expiration, immutable_enabled
-    )
+    return PublishedCandidate(tagged, immutable, remote.graph, expiration, False)
 
 
 def _resume_published_candidate(
@@ -231,6 +231,10 @@ def _resume_published_candidate(
     )
     if tag_observation is None or tag_observation.digest != observed:
         raise OperationalError("Registry candidate state differs during resume")
+    if tag_observation.immutable:
+        raise OperationalError(
+            "Candidate must remain mutable for independent expiry", code="CC0603"
+        )
     retention = _require_candidate_retention(image, registry_control)
     if tag_observation.expiration != expiration:
         tag_observation = registry_control.enforce_candidate_lifetime(

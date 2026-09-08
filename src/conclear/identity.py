@@ -25,7 +25,7 @@ SOURCE_REVISION = _load_source_revision()
 GUIDE_TITLE = "OCI container image build and release guide"
 GUIDE_REPOSITORY = "https://github.com/foundata/guidelines"
 GUIDE_PATH = "oci-container-image-guide.md"
-GUIDE_REVISION = "5db54ccf59b67e44f964badb93cfbdc311fa36cb"
+GUIDE_REVISION = "0806969483e586dc33a96cf0bf90cc95517b1121"
 
 
 @dataclass(frozen=True, slots=True)

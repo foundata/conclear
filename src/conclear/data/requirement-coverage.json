@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "5db54ccf59b67e44f964badb93cfbdc311fa36cb",
+  "guideRevision": "0806969483e586dc33a96cf0bf90cc95517b1121",
   "entries": [
     {"id": "IG0001", "status": "automated", "rationale": "`conclear release` runs the complete fail-closed workflow from a reviewed revision to verified promotion."},
     {"id": "IG0002", "status": "automated", "rationale": "Every run builds from a detached worktree of the selected committed revision and takes trust configuration from the release profile."},
@@ -61,7 +61,7 @@
     {"id": "IG0087", "status": "automated", "rationale": "`conclear promote` moves declared convenience tags to the verified digest."},
     {"id": "IG0088", "status": "external", "rationale": "Deployment admission is owned by the deployment environment (GO0009)."},
     {"id": "IG0091", "status": "manual", "rationale": "Every rejecting content gate runs before upload; whether candidate content may be public is a project decision."},
-    {"id": "IG0092", "status": "automated", "rationale": "Publication requests Quay tag immutability and records whether the provider enforces it."},
+    {"id": "IG0092", "status": "automated", "rationale": "Publication and promotion require selective registry policies; final tags must be protected on assignment while candidate and moving tags remain mutable."},
     {"id": "IG0094", "status": "automated", "rationale": "Candidates are always published in the final repository."},
     {"id": "IG0113", "status": "manual", "rationale": "Declared pins carry a tag and a digest; an unexplained bare digest in the Containerfile is review."},
     {"id": "IG0115", "status": "manual", "rationale": "A reproducibility claim is review."},

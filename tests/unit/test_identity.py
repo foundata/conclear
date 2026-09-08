@@ -12,7 +12,7 @@ from conclear.identity import (
 
 
 def test_identity_exposes_selected_guide_revision() -> None:
-    assert GUIDE_REVISION == "5db54ccf59b67e44f964badb93cfbdc311fa36cb"
+    assert GUIDE_REVISION == "0806969483e586dc33a96cf0bf90cc95517b1121"
     assert IDENTITY.to_public_dict() == {
         "name": "conclear",
         "version": "1.0.0",
@@ -21,7 +21,7 @@ def test_identity_exposes_selected_guide_revision() -> None:
             "title": "OCI container image build and release guide",
             "repository": "https://github.com/foundata/guidelines",
             "path": "oci-container-image-guide.md",
-            "revision": "5db54ccf59b67e44f964badb93cfbdc311fa36cb",
+            "revision": "0806969483e586dc33a96cf0bf90cc95517b1121",
         },
     }
 
@@ -36,7 +36,7 @@ def test_identity_object_is_json_serializable() -> None:
 def test_human_identity_matches_normative_shape() -> None:
     assert human_version().splitlines() == [
         f"ConClear 1.0.0 (commit {SOURCE_REVISION})",
-        'Implements the automatable rules of foundata "OCI container image build and release guide", oci-container-image-guide.md at commit 5db54ccf59b67e44f964badb93cfbdc311fa36cb',
+        'Implements the automatable rules of foundata "OCI container image build and release guide", oci-container-image-guide.md at commit 0806969483e586dc33a96cf0bf90cc95517b1121',
     ]
 
 

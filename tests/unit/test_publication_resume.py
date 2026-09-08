@@ -32,7 +32,7 @@ class Scenario:
         self.image = repository.release_image("app")
         self.workspace = RunWorkspace.create(
             state_home=tmp_path / "state",
-            immutable_inputs={"sourceRevision": "b" * 40},
+            immutable_inputs={"sourceRevision": "b" * 40, "version": "1.2.3"},
             id_factory=IdFactory(),
             now=NOW,
         )
@@ -219,13 +219,11 @@ def test_publication_requires_assembled_state(scenario: Scenario) -> None:
         scenario.publish()
 
 
-def test_publication_records_unsupported_immutability_without_failing(
+def test_publication_never_enables_candidate_immutability(
     scenario: Scenario,
 ) -> None:
-    from conclear.errors import UnsupportedOperationError
-
     def unsupported(repository: OCIReference, tag: str) -> TagObservation:
-        raise UnsupportedOperationError("immutability is not offered")
+        raise AssertionError("Candidate immutability must not be requested")
 
     scenario.registry_control.ensure_tag_immutable = unsupported  # type: ignore[method-assign]
 
