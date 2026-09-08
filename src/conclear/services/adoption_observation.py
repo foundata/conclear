@@ -5,7 +5,6 @@ select the proposed runtime profile before the profile-dependent checks run,
 so the findings agree with what the draft will propose.
 """
 
-import json
 import re
 import shlex
 from dataclasses import dataclass
@@ -15,10 +14,8 @@ from typing import Protocol
 
 from conclear.adapters.git import SourceObservation
 from conclear.checks import (
-    Instruction,
-    analyze_containerfile,
+    analyze_containerfile_source,
     normalized_signal,
-    parse_containerfile,
     volume_paths,
 )
 from conclear.config import (
@@ -26,6 +23,7 @@ from conclear.config import (
     SYSTEMD_WRITABLE_MOUNTS,
     normalize_observed_source_url,
 )
+from conclear.containerfile import Instruction, load_containerfile
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.path_safety import contained_path
 from conclear.presentation import Finding
@@ -290,14 +288,11 @@ def observe_containerfile(
     command: Instruction | None = None
     volumes: list[str] = []
     labels: dict[str, str] = {}
-    for instruction in parse_containerfile(path):
+    source = load_containerfile(path)
+    for instruction in source.final_stage:
         keyword = instruction.keyword.upper()
-        argument = instruction.argument.strip()
-        if keyword == "FROM":
-            user = stop_signal = entrypoint = command = None
-            volumes = []
-            labels = {}
-        elif keyword == "USER":
+        argument = instruction.body
+        if keyword == "USER":
             user = instruction
         elif keyword == "STOPSIGNAL":
             stop_signal = instruction
@@ -327,8 +322,8 @@ def observe_containerfile(
         )
         expected_stop_signal = None
         expected_writable = final_volumes
-    analysis = analyze_containerfile(
-        path,
+    analysis = analyze_containerfile_source(
+        source,
         expected_user=expected_user,
         expected_stop_signal=expected_stop_signal,
         expected_writable_mounts=expected_writable,
@@ -342,7 +337,7 @@ def observe_containerfile(
         ),
         user=final_user,
         volumes=final_volumes,
-        stop_signal=None if stop_signal is None else stop_signal.argument.strip(),
+        stop_signal=None if stop_signal is None else stop_signal.body,
         labels=tuple(sorted(labels.items())),
         entrypoint=final_entrypoint,
         profile=profile,
@@ -382,7 +377,7 @@ def _external_reference(reference: str) -> ExternalReference:
 def _final_user(instruction: Instruction | None) -> FinalUser:
     if instruction is None:
         return FinalUser(None, None, UserKind.MISSING)
-    raw = instruction.argument.strip()
+    raw = instruction.body
     user_part = raw.split(":", 1)[0]
     if user_part.isdecimal():
         uid = int(user_part)
@@ -393,18 +388,11 @@ def _final_user(instruction: Instruction | None) -> FinalUser:
 def _entrypoint(instruction: Instruction | None) -> Entrypoint:
     if instruction is None:
         return Entrypoint(None, (), EntrypointForm.MISSING, False)
-    argument = instruction.argument.strip()
+    argument = instruction.body
     keyword = instruction.keyword.upper()
-    try:
-        value = json.loads(argument)
-    except (json.JSONDecodeError, RecursionError):
-        value = None
-    if (
-        isinstance(value, list)
-        and value
-        and all(isinstance(item, str) for item in value)
-    ):
-        command = tuple(str(item) for item in value)
+    value = instruction.exec_command
+    if value is not None:
+        command = value
         form = EntrypointForm.EXEC
     else:
         try:

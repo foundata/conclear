@@ -112,6 +112,7 @@ conclear/
 │   ├── release_profile.py        # Maintainer-controlled release profiles
 │   ├── catalog.py                # CCnnnn check catalog loader
 │   ├── checks.py                 # Static Containerfile and context checks
+│   ├── containerfile.py          # Shared lexical model and source byte spans
 │   ├── conformance.py            # docs/conformance.md generator
 │   ├── guide_options.py          # Guide-option support inventory generator
 │   ├── guide_requirements.py     # Guide requirement inventory, coverage and revision diffs

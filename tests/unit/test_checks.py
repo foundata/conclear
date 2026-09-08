@@ -477,8 +477,8 @@ def test_comment_lines_inside_a_continued_instruction_are_ignored(
 
     run = next(item for item in analysis.instructions if item.keyword == "RUN")
     assert (run.line_number, run.end_line_number) == (2, 5)
-    assert "apt-get install -y curl" in run.argument
-    assert "#" not in run.argument
+    assert "apt-get install -y curl" in run.body
+    assert "#" not in run.body
     assert [item.keyword for item in analysis.instructions] == [
         "FROM",
         "RUN",

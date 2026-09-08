@@ -84,9 +84,12 @@ identities in the project repository.
 
 ## 3. Make the Containerfile qualify
 
-Every external image in `FROM` or `COPY --from` must use a fully qualified tag
-and digest. Declare the same reference in `conclear.toml`; ConClear rejects
-undeclared and unused pins.
+Every external image in `FROM`, `COPY --from` or `RUN --mount=...,from=...` must
+use a fully qualified tag and digest. Declare the same reference in
+`conclear.toml`; ConClear rejects undeclared and unused pins. Check the
+[supported Containerfile syntax](../ARCHITECTURE.md#supported-containerfile-syntax)
+before adopting files with builder extensions. Heredocs, backtick escapes and
+`ONBUILD` are outside ConClear's current subset.
 
 The final image must use the numeric user declared in `conclear.toml` and a
 JSON-array `ENTRYPOINT` or `CMD`. Use a non-zero UID unless the image has a

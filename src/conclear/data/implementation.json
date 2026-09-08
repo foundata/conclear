@@ -114,10 +114,12 @@
     {
       "id": "IP0012",
       "summary": "Generate deterministic repository-wide pin proposals from parsed declarations and exact byte spans",
-      "implementation": ["src/conclear/pin_occurrences.py", "src/conclear/pin_updates.py", "src/conclear/toml_spans.py"],
+      "implementation": ["src/conclear/pin_occurrences.py", "src/conclear/pin_updates.py", "src/conclear/toml_spans.py", "src/conclear/containerfile.py"],
       "tests": [
         {"path": "tests/unit/test_pin_updates.py", "tier": "unit"},
-        {"path": "tests/unit/test_toml_spans.py", "tier": "unit"}
+        {"path": "tests/unit/test_toml_spans.py", "tier": "unit"},
+        {"path": "tests/unit/test_containerfile.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_containerfile.py", "tier": "local_integration"}
       ]
     },
     {

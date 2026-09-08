@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import conclear.pin_occurrences as pin_occurrences_module
 import conclear.pin_updates as pin_updates_module
 from conclear.config import PinIntent, load_repository_config
 from conclear.errors import (
@@ -14,6 +15,7 @@ from conclear.errors import (
     OperationalError,
     RuleRejectionError,
 )
+from conclear.fileio import read_regular_file
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
 from conclear.pin_application import (
@@ -466,6 +468,64 @@ def test_multi_stage_repeated_reference_binds_every_instruction(tmp_path: Path) 
     assert (root / "Containerfile.generator").read_text(encoding="utf-8") == (
         generator.replace(OLD, NEW).replace(TOOL_OLD, TOOL_NEW)
     )
+
+
+def test_quoted_continued_pin_edits_preserve_all_other_bytes(tmp_path: Path) -> None:
+    generator = GENERATOR_CONTAINERFILE.replace(
+        f"COPY --from={TOOL_TAG}@{TOOL_OLD} /tool /usr/local/bin/tool\n",
+        "# Multibyte source before an editable reference: \u00e4\n"
+        "COPY --chown=1001:1001 \\\n"
+        "    # Preserve this comment and the surrounding quotes.\n"
+        f'    --from="{TOOL_TAG}@{TOOL_OLD}" ["/tool", "/usr/local/bin/tool"]\n'
+        f"RUN --mount='type=bind,from={TOOL_TAG}@{TOOL_OLD},target=/a b' true\n",
+    )
+    root = repository(tmp_path, generator=generator)
+    proposal = propose(root)
+    apply(proposal, root)
+    assert (root / "Containerfile.generator").read_bytes() == (
+        generator.replace(OLD, NEW).replace(TOOL_OLD, TOOL_NEW).encode()
+    )
+
+
+@pytest.mark.parametrize("separator", ["\\\n", "'", '"'])
+def test_nonliteral_pin_spelling_is_observed_but_never_rewritten(
+    tmp_path: Path, separator: str
+) -> None:
+    split_reference = f"quay.io/ex{separator}ample/tool:2.1.0@{TOOL_OLD}"
+    if separator != "\\\n":
+        split_reference += separator
+    generator = GENERATOR_CONTAINERFILE.replace(
+        f"COPY --from={TOOL_TAG}@{TOOL_OLD}", f"COPY --from={split_reference}"
+    )
+    root = repository(tmp_path, generator=generator)
+    with pytest.raises(InvalidInvocationError, match="contiguous literal") as caught:
+        propose(root)
+    assert caught.value.code == "CC0206"
+    assert (root / "Containerfile.generator").read_text(encoding="utf-8") == generator
+
+
+def test_pin_discovery_parses_the_bytes_it_snapshots_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = repository(tmp_path)
+    config = load_repository_config(root / "conclear.toml")
+    calls: list[Path] = []
+
+    def read_and_mutate(path: Path, *, maximum_bytes: int, label: str) -> bytes:
+        content = read_regular_file(path, maximum_bytes=maximum_bytes, label=label)
+        calls.append(path)
+        if path.name == "Containerfile":
+            path.write_bytes(b"FROM scratch\n")
+        return content
+
+    monkeypatch.setattr(pin_occurrences_module, "read_regular_file", read_and_mutate)
+    snapshot = pin_occurrences_module.discover_occurrences(config, None)
+    assert len(calls) == len(set(calls)) == 3
+    assert snapshot.contents["Containerfile"] == RUNTIME_CONTAINERFILE.encode()
+    occurrence = next(
+        item for item in snapshot.occurrences if item.path == "Containerfile"
+    )
+    assert str(occurrence.reference) == OLD_REFERENCE
 
 
 def test_selection_omitting_an_image_sharing_the_dependency_is_rejected(

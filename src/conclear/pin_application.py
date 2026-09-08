@@ -17,13 +17,13 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
-from conclear.checks import MAX_CONTAINERFILE_BYTES
 from conclear.config import (
     MAX_CONFIG_BYTES,
     PinIntent,
     RepositoryConfig,
     load_repository_config,
 )
+from conclear.containerfile import MAX_CONTAINERFILE_BYTES
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,

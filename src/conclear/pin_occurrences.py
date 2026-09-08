@@ -16,18 +16,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from conclear.checks import (
-    MAX_CONTAINERFILE_BYTES,
-    ReferenceOccurrence,
-    analyze_containerfile,
-    external_reference_occurrences,
-)
 from conclear.config import (
     MAX_CONFIG_BYTES,
     ImageConfig,
     PinIntent,
     RepositoryConfig,
 )
+from conclear.containerfile import MAX_CONTAINERFILE_BYTES, parse_containerfile
 from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.fileio import read_regular_file
 from conclear.path_safety import contained_path
@@ -141,9 +136,9 @@ def _containerfile_occurrences(
 ) -> list[Occurrence]:
     path = _relative(root, image.containerfile)
     content = _load_target(root, path, contents, MAX_CONTAINERFILE_BYTES)
-    analysis = analyze_containerfile(image.containerfile)
+    source = parse_containerfile(content, path=image.containerfile)
     declared = {str(pin.reference) for pin in image.pins}
-    observed = set(analysis.external_references)
+    observed = {item.reference for item in source.external_inputs}
     if declared != observed:
         missing = ", ".join(sorted(observed - declared)) or "none"
         orphaned = ", ".join(sorted(declared - observed)) or "none"
@@ -152,51 +147,29 @@ def _containerfile_occurrences(
             f"undeclared {missing}; unused {orphaned}",
             code="CC0203",
         )
-    line_offsets = _line_offsets(content)
-    grouped: dict[ReferenceOccurrence, int] = {}
-    for occurrence in external_reference_occurrences(image.containerfile):
-        grouped[occurrence] = grouped.get(occurrence, 0) + 1
     result: list[Occurrence] = []
-    for occurrence, count in grouped.items():
+    for occurrence in source.external_inputs:
         reference = OCIReference.parse(
             occurrence.reference, require_tag=True, require_digest=True
         )
-        result.extend(
+        start, end = occurrence.span.start, occurrence.span.end
+        if content[start:end] != occurrence.reference.encode("utf-8"):
+            raise InvalidInvocationError(
+                "Pin updates require a contiguous literal image reference: "
+                f"{occurrence.reference}",
+                code="CC0206",
+            )
+        result.append(
             Occurrence(
                 path=path,
                 start=start,
-                end=start + len(occurrence.reference.encode("utf-8")),
+                end=end,
                 reference=reference,
                 image_id=image.image_id,
                 tag_intent=None,
             )
-            for start in _instruction_spans(content, occurrence, count, line_offsets)
         )
     return result
-
-
-def _instruction_spans(
-    content: bytes,
-    reference: ReferenceOccurrence,
-    count: int,
-    line_offsets: list[int],
-) -> list[int]:
-    start = line_offsets[reference.line_number - 1]
-    end = (
-        line_offsets[reference.end_line_number]
-        if reference.end_line_number < len(line_offsets)
-        else len(content)
-    )
-    matches = [
-        match.start() + start
-        for match in _token_pattern(reference.reference).finditer(content[start:end])
-    ]
-    if len(matches) != count:
-        raise InvalidInvocationError(
-            f"Containerfile input could not be located exactly: {reference.reference}",
-            code="CC0206",
-        )
-    return matches
 
 
 def _declaration_occurrences(
@@ -360,14 +333,6 @@ def _readable(reference: OCIReference) -> str:
     return str(
         OCIReference(reference.registry, reference.repository, tag=reference.tag)
     )
-
-
-def _line_offsets(content: bytes) -> list[int]:
-    offsets = [0]
-    for index, byte in enumerate(content):
-        if byte == 0x0A:
-            offsets.append(index + 1)
-    return offsets
 
 
 def _token_pattern(reference: str) -> re.Pattern[bytes]:

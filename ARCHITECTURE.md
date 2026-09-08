@@ -31,6 +31,7 @@ The terms MUST, SHOULD and MAY are used as defined in
 - [Guide identity and conformance](#guide-identity-and-conformance)
 - [Configuration and trust inputs](#configuration-and-trust-inputs)
 - [Built-in limits](#built-in-limits)
+- [Supported Containerfile syntax](#supported-containerfile-syntax)
 - [Pin updates](#pin-updates)
 - [Command model](#command-model)
 - [Records and workspaces](#records-and-workspaces)
@@ -495,6 +496,66 @@ Changing a built-in limit changes release behavior and therefore requires a
 reviewed code change, conformance update and ordinary ConClear release. Evidence
 identifies the exact ConClear and guide revisions that supplied the effective
 limit.
+
+
+## Supported Containerfile syntax<a id="supported-containerfile-syntax"></a>
+
+`containerfile.py` owns one immutable lexical representation for static checks,
+adoption observation and pin discovery. It records logical instructions, builder
+flags, stage names and image operands with offsets into the original bytes.
+Each operation reads a bounded source snapshot once and passes that snapshot to
+its consumers. Pin discovery does not reread the Containerfile or search its
+instruction text to locate editable operands.
+
+The supported subset includes:
+
+- UTF-8 text with LF instruction boundaries, full-line comments, indentation and
+  default backslash continuations. Continuations remove the backslash and line
+  ending without inserting a space. Existing whitespace is preserved;
+  intervening blank and comment lines are ignored. Format checks still reject
+  BOMs, CR line endings and a missing final newline.
+- Whitespace-delimited `FROM` operands, optional leading builder flags and
+  `AS name` stages. `scratch` and named stages are not external image inputs.
+- Leading `COPY --from=...`, `ADD --from=...` and repeated
+  `RUN --mount=...,from=...,...` flags. Single or double quotes can surround
+  flag values; spaces inside quotes are preserved. Mount fields use comma
+  separators. The first non-flag operand or standalone `--` ends the builder
+  flag prefix. Text resembling a flag inside a shell command, JSON operand or
+  label is not an image input. Numeric stage references are observed but
+  rejected by policy.
+- JSON and shell instruction bodies. JSON exec-form decoding is shared by checks
+  and adoption. Shell bodies remain text, not a shell execution model.
+
+ConClear does not implement all syntax accepted by Buildah. Heredocs,
+non-default escape or platform directives, and `ONBUILD` instructions are
+explicitly unsupported. In non-JSON `RUN`, `COPY` and `ADD` bodies, any `<<`
+spelling is conservatively rejected, including quoted literal text. Duplicate
+`--from` flags, duplicate `from` fields within one mount, empty image operands,
+malformed `FROM` declarations and unterminated quotes or continuations are
+rejected before any pin proposal or build. BuildKit `syntax` directives remain a
+policy rejection. These boundaries are not claims that the builder rejects those
+forms.
+
+Image-reference variables are retained as text so adoption can report them;
+policy rejects them rather than evaluating build arguments. Observation covers
+explicit final-stage instructions, not inherited base-image configuration or
+expanded label values. Hadolint, Buildah and built-image checks remain
+necessary; successful lexing alone does not establish builder validity or guide
+compliance.
+
+Pin editing requires each image reference to occupy one contiguous literal byte
+span. Surrounding quotes and continuations between operands are preserved. A
+reference split internally by a continuation, escape or quote may be observable,
+but cannot be rewritten. The extra-occurrence guard described below remains a
+separate safety check; it does not discover image inputs or edit spans.
+
+Hermetic tests cover lexical boundaries and byte-span round trips, including
+generated combinations of whitespace, quotes and multibyte prefixes. Local
+integration tests compare complex fixtures with Buildah's emitted OCI metadata
+and verify that valid heredoc and backtick-escape fixtures are explicitly
+outside ConClear's subset. The lexer is intentionally narrower than the
+[builder parser](https://github.com/containers/buildah/tree/v1.43.2/vendor/github.com/openshift/imagebuilder/dockerfile/parser);
+adding syntax requires shared lexical tests and a real-builder comparison.
 
 
 ## Pin updates<a id="pin-updates"></a>
