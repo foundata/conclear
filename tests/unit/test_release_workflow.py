@@ -41,6 +41,7 @@ from conclear.release_profile import (
 )
 from conclear.services import release
 from conclear.services.release import ReleaseRequest, ReleaseResult
+from conclear.source_integrity import source_tree_digest
 from conclear.values import Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 from tests.release_fakes import FakeRuntime
@@ -103,6 +104,7 @@ class Harness:
                 "sourceRevision": "b" * 40,
                 "sourceRepository": self.repository.project.source,
                 "configurationDigest": sha256_bytes(self.repository.raw_bytes),
+                "sourceTreeDigest": source_tree_digest(self.source_root),
                 "image": "app",
                 "version": "1.2.3",
                 "profile": self.profile.name,

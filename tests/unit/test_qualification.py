@@ -45,6 +45,7 @@ from conclear.services.qualification import (
 from conclear.services.qualification_inputs import BuildInputs, QualificationInputs
 from conclear.services.runtime_lifecycle import ReadinessTiming
 from conclear.services.runtime_tests import test_platform as run_platform_tests
+from conclear.source_integrity import source_tree_digest
 from conclear.values import Digest, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
 from tests.unit.test_config import _image_text
@@ -421,6 +422,7 @@ def inputs(repository: Path, tmp_path: Path) -> QualificationInputs:
             "sourceRevision": "b" * 40,
             "sourceRepository": config.project.source,
             "configurationDigest": sha256_bytes(config.raw_bytes),
+            "sourceTreeDigest": source_tree_digest(repository),
             "image": "app",
             "version": "1.2.3",
         },

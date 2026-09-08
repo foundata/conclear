@@ -43,6 +43,7 @@ from conclear.services.runtime_lifecycle import (
     RuntimeAdapter,
     exercise_container,
 )
+from conclear.source_integrity import require_source_integrity
 from conclear.test_inputs import (
     MaterializedTestInputs,
     destroy_secret_test_outputs,
@@ -87,6 +88,7 @@ def test_platform(
 ) -> RuntimeEvidence:
     """Import the exact layout and apply generic and repository-specific tests."""
     require_execution_mode(inputs)
+    require_source_integrity(inputs.workspace, inputs.repository.path.parent)
     try:
         primary_graph = validate_layout(
             build.observation.layout_path, reference="qualified"
@@ -246,6 +248,7 @@ def test_platform(
                 findings.append(
                     Finding("CC0403", "error", f"Repository hook failed: {hook.name}")
                 )
+        require_source_integrity(inputs.workspace, inputs.repository.path.parent)
         incomplete = any(
             hook.required and hook.status is HookStatus.SKIPPED for hook in hook_results
         )

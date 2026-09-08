@@ -29,6 +29,7 @@ from conclear.services.assembly import assemble_candidate
 from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification import qualify_platform
 from conclear.services.qualification_inputs import QualificationInputs
+from conclear.source_integrity import source_tree_digest
 from conclear.tools import ToolName
 from conclear.values import Digest, Platform
 from conclear.workspace import RunState, RunWorkspace
@@ -231,6 +232,7 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
             "sourceRevision": "a" * 40,
             "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "sourceTreeDigest": source_tree_digest(context),
             "image": "fixture",
             "version": "integration",
         },

@@ -29,6 +29,7 @@ from conclear.release_profile import (
 )
 from conclear.services import release
 from conclear.services.release import ReleaseRequest
+from conclear.source_integrity import source_tree_digest
 from conclear.values import OCIReference
 from conclear.workspace import RunState, RunWorkspace
 from tests.release_fakes import FakeRuntime
@@ -137,7 +138,9 @@ def test_release_does_not_promote_until_verification_transitions_state(
     published = SimpleNamespace(immutable_reference=object())
     image = SimpleNamespace(repository=object())
     repository = SimpleNamespace(
-        image=lambda _image_id: image, release_image=lambda _image_id: image
+        image=lambda _image_id: image,
+        release_image=lambda _image_id: image,
+        path=tmp_path / "repository" / "conclear.toml",
     )
     runtime = SimpleNamespace(
         skopeo=lambda: object(),
@@ -153,6 +156,7 @@ def test_release_does_not_promote_until_verification_transitions_state(
         lambda _profile, *, destinations: registry_control,
     )
     monkeypatch.setattr(release, "validate_registry_destinations", lambda *_args: None)
+    monkeypatch.setattr(release, "require_source_integrity", lambda *_args: None)
     monkeypatch.setattr(release, "signer_identity", lambda *_args: ("key", "id"))
     monkeypatch.setattr(release, "verify_candidate", lambda *_args, **_kwargs: None)
 
@@ -268,6 +272,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
             "sourceRevision": "b" * 40,
             "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "sourceTreeDigest": source_tree_digest(source_root),
             "image": "app",
             "version": "1.2.3",
             "profile": profile_value.name,

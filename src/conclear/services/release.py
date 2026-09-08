@@ -55,6 +55,7 @@ from conclear.services.run_context import (
     open_source_run,
 )
 from conclear.services.verification import verify_candidate
+from conclear.source_integrity import require_source_integrity
 from conclear.values import (
     Digest,
     OCIReference,
@@ -261,6 +262,7 @@ def _continue_release(
 ) -> ReleaseResult:
     image = repository.release_image(request.image_id)
     validate_registry_destinations(request.profile, (image.repository,))
+    require_source_integrity(workspace, repository.path.parent)
     public_ci_context = resolve_ci_context(
         request.ci_context,
         policy=request.profile.ci_context,

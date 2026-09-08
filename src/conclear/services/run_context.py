@@ -21,6 +21,7 @@ from conclear.hooks import HookRunner
 from conclear.jsonutil import sha256_bytes
 from conclear.records import SourceIdentity, utc_now
 from conclear.runtime import ApplicationRuntime
+from conclear.source_integrity import require_source_integrity, source_tree_digest
 from conclear.tools import ToolName
 from conclear.workspace import (
     IdFactory,
@@ -106,6 +107,7 @@ def create_source_run(
         "sourceRoot",
         "sourceRevision",
         "sourceRepository",
+        "sourceTreeDigest",
         "image",
         "version",
         "profile",
@@ -168,6 +170,9 @@ def create_source_run(
                 code="CC0001",
             )
         repository.release_image(image_id)
+        workspace.bind_immutable_inputs(
+            {"sourceTreeDigest": source_tree_digest(worktree)}, now=created_at
+        )
     except BaseException as exc:
         # The run exists from here on, so the failure names it even though the
         # caller never receives the workspace.
@@ -243,6 +248,7 @@ def open_source_run(
     observation = runtime.git().observe(worktree, "HEAD")
     if observation.revision != revision:
         raise InvalidInvocationError("Workspace source checkout changed")
+    require_source_integrity(workspace, worktree)
     return SourceRun(
         workspace,
         repository,

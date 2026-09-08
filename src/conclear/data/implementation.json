@@ -186,9 +186,11 @@
     {
       "id": "IP0019",
       "summary": "Build only from the selected isolated Git worktree with confined context and reviewed Hadolint configuration",
-      "implementation": ["src/conclear/services/run_context.py", "src/conclear/context.py", "src/conclear/checks.py", "src/conclear/adapters/hadolint.py"],
+      "implementation": ["src/conclear/services/run_context.py", "src/conclear/source_integrity.py", "src/conclear/context.py", "src/conclear/checks.py", "src/conclear/adapters/hadolint.py"],
       "tests": [
         {"path": "tests/unit/test_run_context.py", "tier": "unit"},
+        {"path": "tests/unit/test_source_integrity.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_source_integrity.py", "tier": "local_integration"},
         {"path": "tests/unit/test_context.py", "tier": "unit"},
         {"path": "tests/unit/test_checks.py", "tier": "unit"}
       ]

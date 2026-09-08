@@ -806,6 +806,14 @@ its working directory and, when that directory contains a committed regular
 checkout rather than the invoking directory or the operator's home defines lint
 policy.
 
+The run also binds the complete detached checkout's content digest, including
+hooks, ignored files, symlink targets and file modes. Reopening a run and the
+build, test and evidence boundaries recheck that binding. A changed checkout is
+rejected without repair; older runs without the binding must be restarted.
+Hooks must keep generated files and caches outside the checkout, in run-owned
+output directories. A clean Git status alone is not sufficient evidence of
+unchanged source bytes.
+
 Trivy runs from a fresh private directory with explicit ConClear-owned
 configuration, ignore and secret-rule files. Ambient and repository Trivy
 suppression files do not define release policy. Image scanning covers both

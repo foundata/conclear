@@ -44,6 +44,7 @@ from conclear.services.qualification_inputs import (
 )
 from conclear.services.runtime_lifecycle import RuntimeAdapter
 from conclear.services.runtime_tests import test_platform
+from conclear.source_integrity import require_source_integrity
 from conclear.values import Platform
 from conclear.workspace import (
     ResourceKind,
@@ -134,6 +135,7 @@ class QualificationResult:
 def build_platform(inputs: BuildInputs, builder: Builder) -> BuildEvidence:
     """Build one isolated platform layout and verify its labels and platform."""
     require_execution_mode(inputs)
+    require_source_integrity(inputs.workspace, inputs.repository.path.parent)
     workspace = inputs.workspace
     platform_key = inputs.platform.key
     layout_path = workspace.root / "layouts" / inputs.image.image_id / platform_key
@@ -187,6 +189,7 @@ def build_platform(inputs: BuildInputs, builder: Builder) -> BuildEvidence:
         raise
     workspace.journal.update(storage_id, ResourceStatus.CREATED)
     workspace.journal.update(layout_id, ResourceStatus.CREATED)
+    require_source_integrity(workspace, inputs.repository.path.parent)
     graph = observation.graph
     if len(graph.manifests) != 1 or not graph.manifests[
         0
@@ -232,6 +235,7 @@ def generate_evidence(
     today: date,
 ) -> ScanEvidence:
     """Generate local scans and SPDX, then apply vulnerability policy."""
+    require_source_integrity(inputs.workspace, inputs.repository.path.parent)
     report_root = (
         inputs.workspace.root / "reports" / inputs.image.image_id / inputs.platform.key
     )
@@ -320,6 +324,7 @@ def qualify_platform(
     scan_evidence = generate_evidence(
         inputs, build, scanner, database, today=now.date()
     )
+    require_source_integrity(inputs.workspace, inputs.repository.path.parent)
     pin_findings = tuple(
         replace(finding, image=item.image.image_id)
         for item in preflight.images

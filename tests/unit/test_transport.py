@@ -40,6 +40,7 @@ from conclear.services.assembly import assemble_candidate
 from conclear.services.cleanup import cleanup_run
 from conclear.services.qualification import qualify_platform
 from conclear.services.qualification_inputs import QualificationInputs
+from conclear.source_integrity import source_tree_digest
 from conclear.transport import (
     MANIFEST_NAME,
     TransportKind,
@@ -140,6 +141,7 @@ def qualify_worker(
             "sourceRevision": source_revision,
             "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "sourceTreeDigest": source_tree_digest(source_root),
             "image": "app",
             "version": version or "",
         },
