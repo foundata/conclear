@@ -806,6 +806,15 @@ its working directory and, when that directory contains a committed regular
 checkout rather than the invoking directory or the operator's home defines lint
 policy.
 
+Trivy runs from a fresh private directory with explicit ConClear-owned
+configuration, ignore and secret-rule files. Ambient and repository Trivy
+suppression files do not define release policy. Image scanning covers both
+filesystem contents and OCI configuration/history, including secrets inherited
+from a base image. A report without image-configuration check results is an
+operational failure, not a clean scan. The reviewed-root contract exempts only
+Trivy's DS-0002 root-user check; other findings remain subject to the normal
+policy and the applied root justification is retained in evidence.
+
 <a id="promise-ip0020"></a>
 Buildah produces OCI format in rootless mode and exports an OCI layout. ConClear
 derives `SOURCE_DATE_EPOCH` from the source commit time where the project build

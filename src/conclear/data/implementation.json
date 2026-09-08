@@ -252,6 +252,7 @@
       "summary": "Gate local content with Trivy and retain a validated SPDX 2.3 SBOM for every platform",
       "implementation": ["src/conclear/scan_policy.py", "src/conclear/spdx.py", "src/conclear/services/qualification.py", "src/conclear/adapters/trivy.py"],
       "tests": [
+        {"path": "tests/local_integration/test_trivy_policy.py", "tier": "local_integration"},
         {"path": "tests/unit/test_scan_policy.py", "tier": "unit"},
         {"path": "tests/unit/test_spdx_validation.py", "tier": "unit"},
         {"path": "tests/local_integration/test_trivy_database.py", "tier": "local_integration"}

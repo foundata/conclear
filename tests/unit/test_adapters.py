@@ -810,6 +810,11 @@ def test_trivy_scans_cannot_update_or_query_outside_selected_snapshot(
     tmp_path: Path,
 ) -> None:
     def write_report(request: CommandRequest) -> ProcessResult:
+        assert request.cwd is not None and request.cwd != tmp_path
+        for option in ("--config", "--ignorefile", "--secret-config"):
+            path = Path(request.argv[request.argv.index(option) + 1])
+            assert path.parent == request.cwd
+            assert path.read_bytes() == (b"" if option == "--ignorefile" else b"{}\n")
         report = Path(request.argv[request.argv.index("--output") + 1])
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text('{"Results":[]}', encoding="utf-8")
@@ -832,6 +837,57 @@ def test_trivy_scans_cannot_update_or_query_outside_selected_snapshot(
         "--offline-scan",
     ):
         assert option in arguments
+
+
+@pytest.mark.parametrize("coverage", [False, True])
+def test_trivy_requires_positive_image_configuration_coverage(
+    tmp_path: Path, coverage: bool
+) -> None:
+    def write_report(request: CommandRequest) -> ProcessResult:
+        assert (
+            request.argv[request.argv.index("--image-config-scanners") + 1]
+            == "misconfig,secret"
+        )
+        assert "--include-non-failures" in request.argv
+        report = Path(request.argv[request.argv.index("--output") + 1])
+        report.write_text(
+            json.dumps(
+                {
+                    "ArtifactType": "container_image",
+                    "ArtifactName": str(tmp_path),
+                    "Results": [
+                        {
+                            "Class": "config",
+                            "Type": "dockerfile",
+                            "Target": str(tmp_path),
+                            "Misconfigurations": [{"ID": "DS-0002", "Status": "PASS"}],
+                        }
+                    ]
+                    if coverage
+                    else [],
+                }
+            )
+        )
+        return result()
+
+    adapter = adapter_arguments(
+        tmp_path, ToolName.TRIVY, FakeRunner(write_report)
+    ).create(TrivyAdapter)
+    if coverage:
+        adapter.scan_layout(
+            layout_path=tmp_path,
+            report_path=tmp_path / "image.json",
+            cache_root=tmp_path / "cache",
+        )
+    else:
+        with pytest.raises(
+            OperationalError, match="lacks OCI configuration scan coverage"
+        ):
+            adapter.scan_layout(
+                layout_path=tmp_path,
+                report_path=tmp_path / "image.json",
+                cache_root=tmp_path / "cache",
+            )
 
 
 def test_cosign_release_signing_keeps_public_log_policy_enabled(

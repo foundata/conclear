@@ -10,7 +10,7 @@ from pathlib import Path
 
 from conclear.adapters.base import ToolAdapter
 from conclear.errors import OperationalError
-from conclear.fileio import locked_file
+from conclear.fileio import create_new_file, locked_file
 from conclear.jsonutil import (
     atomic_write_json,
     canonical_json_bytes,
@@ -18,7 +18,7 @@ from conclear.jsonutil import (
     sha256_bytes,
     sha256_file,
 )
-from conclear.parsing import object_value, string_value
+from conclear.parsing import array_value, object_value, string_value
 from conclear.process import OperationKind
 from conclear.records import format_timestamp
 from conclear.spdx import validate_spdx_document
@@ -85,17 +85,22 @@ class TrivyAdapter(ToolAdapter):
         with locked_file(cache_root / ".db.lock", label="Trivy database cache"):
             temporary = Path(tempfile.mkdtemp(prefix=".db.", dir=cache_root))
             try:
-                self._run(
-                    ("image", "--download-db-only", "--cache-dir", str(temporary)),
+                self._execute(
+                    (
+                        "image",
+                        "--download-db-only",
+                        "--cache-dir",
+                        str(temporary.absolute()),
+                    ),
                     timeout_seconds=900,
                     operation=OperationKind.WRITE,
                 )
-                self._run(
+                self._execute(
                     (
                         "image",
                         "--download-java-db-only",
                         "--cache-dir",
-                        str(temporary),
+                        str(temporary.absolute()),
                     ),
                     timeout_seconds=900,
                     operation=OperationKind.WRITE,
@@ -145,7 +150,7 @@ class TrivyAdapter(ToolAdapter):
             (
                 "filesystem",
                 "--cache-dir",
-                str(cache_root),
+                str(cache_root.absolute()),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -155,8 +160,8 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "json",
                 "--output",
-                str(report_path),
-                str(path),
+                str(report_path.absolute()),
+                str(path.absolute()),
             ),
             report_path,
         )
@@ -169,26 +174,31 @@ class TrivyAdapter(ToolAdapter):
         cache_root: Path,
     ) -> ScanObservation:
         """Scan one exact OCI layout using the selected immutable database cache."""
-        return self._scan(
+        observation = self._scan(
             (
                 "image",
                 "--input",
-                str(layout_path),
+                str(layout_path.absolute()),
                 "--cache-dir",
-                str(cache_root),
+                str(cache_root.absolute()),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
                 "--offline-scan",
                 "--scanners",
                 "vuln,secret,misconfig",
+                "--image-config-scanners",
+                "misconfig,secret",
+                "--include-non-failures",
                 "--format",
                 "json",
                 "--output",
-                str(report_path),
+                str(report_path.absolute()),
             ),
             report_path,
         )
+        _require_image_config_coverage(observation.value)
+        return observation
 
     def generate_spdx(
         self,
@@ -202,9 +212,9 @@ class TrivyAdapter(ToolAdapter):
             (
                 "image",
                 "--input",
-                str(layout_path),
+                str(layout_path.absolute()),
                 "--cache-dir",
-                str(cache_root),
+                str(cache_root.absolute()),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -212,7 +222,7 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "spdx-json",
                 "--output",
-                str(output_path),
+                str(output_path.absolute()),
             ),
             output_path,
         )
@@ -231,23 +241,73 @@ class TrivyAdapter(ToolAdapter):
             (
                 "sbom",
                 "--cache-dir",
-                str(cache_root),
+                str(cache_root.absolute()),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--offline-scan",
                 "--format",
                 "json",
                 "--output",
-                str(report_path),
-                str(sbom_path),
+                str(report_path.absolute()),
+                str(sbom_path.absolute()),
             ),
             report_path,
         )
 
     def _scan(self, arguments: tuple[str, ...], output_path: Path) -> ScanObservation:
-        self._run(arguments, timeout_seconds=1800)
+        self._execute(arguments, timeout_seconds=1800)
         value = load_json(output_path)
         return ScanObservation(output_path, sha256_file(output_path), value)
+
+    def _execute(
+        self,
+        arguments: tuple[str, ...],
+        *,
+        timeout_seconds: float,
+        operation: OperationKind = OperationKind.READ,
+    ) -> None:
+        """Exclude ambient and repository suppression files from every invocation."""
+        root = (self._log_directory.parent / "trivy-invocations").absolute()
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=root) as temporary:
+            directory = Path(temporary)
+            config = directory / "trivy.json"
+            ignore = directory / ".trivyignore"
+            secret = directory / "trivy-secret.yaml"
+            create_new_file(config, b"{}\n", mode=0o600)
+            create_new_file(ignore, b"", mode=0o600)
+            create_new_file(secret, b"{}\n", mode=0o600)
+            options: tuple[str, ...] = (
+                "--config",
+                str(config),
+                "--ignorefile",
+                str(ignore),
+                "--disable-telemetry",
+                "--skip-version-check",
+            )
+            if arguments[0] in {"image", "filesystem"}:
+                options += ("--secret-config", str(secret))
+            self._run(
+                (arguments[0], *options, *arguments[1:]),
+                cwd=directory,
+                timeout_seconds=timeout_seconds,
+                operation=operation,
+            )
+
+
+def _require_image_config_coverage(value: object) -> None:
+    report = object_value(value, label="Trivy image report")
+    results = array_value(report.get("Results"), label="Trivy image results")
+    if report.get("ArtifactType") != "container_image" or not any(
+        isinstance(result, dict)
+        and result.get("Class") == "config"
+        and result.get("Type") == "dockerfile"
+        and result.get("Target") == report.get("ArtifactName")
+        and isinstance(result.get("Misconfigurations"), list)
+        and bool(result["Misconfigurations"])
+        for result in results
+    ):
+        raise OperationalError("Trivy report lacks OCI configuration scan coverage")
 
 
 def _database_observation(snapshot: Path) -> DatabaseObservation:
