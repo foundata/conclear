@@ -9,7 +9,7 @@ from conclear.adapters.quay import QuayAdapter
 from conclear.errors import OperationalError, UnsupportedOperationError
 from conclear.services import promotion
 from conclear.values import OCIReference
-from conclear.workspace import RunState
+from conclear.workspace import ResourceKind, RunState
 from tests.unit.test_publication_resume import Scenario
 from tests.unit.test_release_workflow import Harness
 
@@ -180,3 +180,33 @@ def test_policy_is_rechecked_before_any_final_tag_write(
     assert "1.2.3" not in harness.runtime.registry.tags
     assert "latest" not in harness.runtime.registry.tags
     assert harness.workspace.load().state is RunState.INCOMPLETE
+
+
+def test_retry_rejects_a_moving_tag_protected_after_the_policy_check(
+    tmp_path: Path, repository_factory: Callable[..., Path]
+) -> None:
+    scenario = Scenario(tmp_path, repository_factory)
+    digest = scenario.observation.graph.digest
+    scenario.workspace.journal.plan(
+        resource_id="tag-latest",
+        kind=ResourceKind.TAG_WRITE,
+        identifier=str(scenario.image.repository.with_tag("latest")),
+        ephemeral=False,
+        metadata={"digest": str(digest), "immutable": False},
+    )
+    scenario.tags["latest"] = digest
+    scenario.registry_control.immutable.add("latest")
+    with pytest.raises(OperationalError, match=r"Moving tag.*immutable") as caught:
+        promotion._write_release_tag(
+            "latest",
+            digest,
+            scenario.image,
+            scenario.workspace,
+            scenario.registry_control,
+            scenario.registry,
+            None,
+            immutable=False,
+            authorize_tag_write=lambda: None,
+        )
+    assert caught.value.code == "CC0604"
+    assert "latest" in scenario.registry_control.immutable

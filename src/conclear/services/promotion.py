@@ -234,6 +234,10 @@ def _write_release_tag(
     if existing is not None:
         current = registry_control.observe_tag(image.repository, tag)
         if current is not None and current.digest == digest:
+            if not immutable and current.immutable:
+                raise OperationalError(
+                    f"Moving tag was unexpectedly made immutable: {tag}", code="CC0604"
+                )
             resolved = registry.resolve_digest(tagged, auth_file=auth_file)
             if resolved != digest:
                 raise OperationalError(
