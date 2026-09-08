@@ -299,7 +299,8 @@ tag_intent = "moving-release-line"
 gating scanner for the reader and accepts only the supported stack. The root
 filesystem defaults to read-only; writable paths are declared individually. A
 `writable_root_requirement` with rationale, owner and review trigger permits a
-writable container root without granting writable host paths. Release tag templates may use only the documented
+writable container root without granting writable host paths. Release tag
+templates may use only the documented
 `{version}` value; unversioned projects omit version-dependent templates.
 Candidate tags remain entirely ConClear-owned.
 
@@ -315,8 +316,10 @@ authorization scope and either `presence-only` or `escalation` mode. Only
 escalation disables `no-new-privileges` in the functional runtime. It requires
 `test.sudo` to name distinct non-root permitted and denied callers, a distinct
 target UID, an absolute command and exact expected stdout. Tests use
-noninteractive sudo; test accounts and policy must exist in the image or in
-declared read-only launch fixtures. Sudo executable paths default to
+noninteractive sudo; test accounts and policy must exist in the image.
+Root-startup images may instead use declared read-only launch fixtures whose
+policy files appear root-owned in the container's user namespace.
+Sudo executable paths default to
 `/usr/bin/sudo`; other set-ID executables require individual
 `setid_requirements`. These declarations do not add capabilities or change the
 startup user or root filesystem mode.
@@ -889,8 +892,11 @@ modes and root ownership, and checks that their parent directories are not
 writable by unprivileged users. It validates sudoers with `visudo -c`, checks
 policy ownership and parents, and retains the validated files with their
 digest in the test report. The permitted operation must succeed with exact
-stdout; the denied caller must fail both authorization and execution. The
-probe observes each non-root caller's UID and kernel `NoNewPrivs` flag.
+stdout; the denied caller must fail both authorization and execution. ConClear
+queries that caller's authorization as container root with `sudo -l -U`, so a
+missing password cannot be mistaken for policy denial. It executes the
+negative operation as the actual non-root caller and records both identities.
+The probe observes each non-root caller's UID and kernel `NoNewPrivs` flag.
 
 A functional contract with escalation, a writable root or extra capabilities
 also receives a restrictive probe with read-only root, no capabilities and

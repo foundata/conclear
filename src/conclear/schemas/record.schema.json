@@ -128,7 +128,7 @@
         "guideTitle": {"const": "OCI container image build and release guide"},
         "guideRepository": {"const": "https://github.com/foundata/guidelines"},
         "guidePath": {"const": "oci-container-image-guide.md"},
-        "guideRevision": {"const": "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06"}
+        "guideRevision": {"const": "5db54ccf59b67e44f964badb93cfbdc311fa36cb"}
       }
     },
     "source": {
@@ -328,7 +328,8 @@
       "required": ["user", "targetUser", "command", "expected", "status", "exitStatus", "stdout", "stderr", "noNewPrivileges"],
       "properties": {
         "name": {"const": "sudoAuthorization"},
-        "user": {"type": "integer", "minimum": 1},
+        "user": {"type": "integer", "minimum": 0},
+        "policyUser": {"type": "integer", "minimum": 1},
         "targetUser": {"type": "integer", "minimum": 0},
         "command": {"type": "array", "minItems": 1, "items": {"type": "string"}},
         "expected": {"enum": ["success", "denied"]},
@@ -337,7 +338,12 @@
         "stdout": {"type": "string"},
         "stderr": {"type": "string"},
         "noNewPrivileges": {"type": "boolean"}
-      }
+      },
+      "allOf": [{
+        "if": {"required": ["name"], "properties": {"name": {"const": "sudoAuthorization"}}},
+        "then": {"required": ["policyUser"], "properties": {"user": {"const": 0}}},
+        "else": {"properties": {"user": {"minimum": 1}}, "not": {"required": ["policyUser"]}}
+      }]
     },
     "testResult": {
       "type": "object",

@@ -89,7 +89,7 @@ def test_root_version_reports_full_identity() -> None:
     result = CliRunner().invoke(root, ["--version"])
     assert result.exit_code == 0
     assert "ConClear 1.0.0" in result.stdout
-    assert "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06" in result.stdout
+    assert "5db54ccf59b67e44f964badb93cfbdc311fa36cb" in result.stdout
     assert result.stderr == ""
 
 
@@ -98,7 +98,7 @@ def test_version_json_is_exactly_one_document() -> None:
     assert result.exit_code == 0
     value = json.loads(result.stdout)
     assert value["name"] == "conclear"
-    assert value["guide"]["revision"] == "adfd3d5b5ac52f7a8c88b088b1eeec6f5f709f06"
+    assert value["guide"]["revision"] == "5db54ccf59b67e44f964badb93cfbdc311fa36cb"
     assert result.stdout.count("\n") == 1
     assert result.stderr == ""
 

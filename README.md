@@ -122,8 +122,9 @@ Starting as UID 0, supporting sudo and using a writable root each require a
 separate reviewed declaration. Sudo escalation has permitted-caller,
 unauthorized-caller and restrictive runtime tests. These permissions remain
 independent of the systemd lifecycle profile and never enable host root or
-privileged containers. The [quick start](./docs/quickstart.md#5-add-concleartoml)
-shows the configuration and test contracts.
+privileged containers. The
+[quick start](./docs/quickstart.md#5-add-concleartoml) shows the configuration
+and test contracts.
 
 
 ### Running a release<a id="usage-release"></a>

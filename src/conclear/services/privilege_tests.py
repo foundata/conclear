@@ -258,7 +258,9 @@ class _Probe:
         callers = (test.user,) if restrictive else (test.denied_user, test.user)
         for user in callers:
             identity = self.require(("id", "-u"), user=user).strip()
-            self.require(("id", "-un"), user=user)
+            caller_name = self.require(("id", "-un"), user=user).strip()
+            if not caller_name or "\n" in caller_name:
+                raise OperationalError("Sudo caller's account name is malformed")
             if identity != str(user) or user == 0:
                 raise OperationalError(
                     "Sudo probe did not run as its declared non-root caller"
@@ -279,6 +281,8 @@ class _Probe:
                     "sudo",
                     "-n",
                     "-l",
+                    "-U",
+                    caller_name,
                     "-u",
                     f"#{test.target_user}",
                     "--",
@@ -286,7 +290,7 @@ class _Probe:
                 )
                 authorization = self.observe(
                     authorization_command,
-                    user=user,
+                    user=0,
                     timeout=test.timeout_seconds,
                 )
                 if authorization.exit_status != 1:
@@ -300,7 +304,8 @@ class _Probe:
                 results.append(
                     {
                         "name": "sudoAuthorization",
-                        "user": user,
+                        "user": 0,
+                        "policyUser": user,
                         "targetUser": test.target_user,
                         "command": list(authorization_command),
                         "expected": "denied",

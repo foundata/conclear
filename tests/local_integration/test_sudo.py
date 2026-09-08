@@ -73,6 +73,13 @@ def test_real_sudo_permissions_and_restrictive_controls(
         )
         assert not findings
         assert all(item["status"] == "passed" for item in results)
+        if mode == "escalation":
+            tests = results[0]["sudoTests"]
+            assert isinstance(tests, list)
+            assert tests[0]["user"] == 0 and tests[0]["policyUser"] == 65534
+            assert "a password is required" not in tests[0]["stderr"]
+            assert "unknown user" not in tests[0]["stderr"]
+            assert tests[0]["command"][tests[0]["command"].index("-U") + 1] == "nobody"
         assert all(
             item.status is ResourceStatus.REMOVED
             for item in value.workspace.journal.entries()

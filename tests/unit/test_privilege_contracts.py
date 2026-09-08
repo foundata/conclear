@@ -277,6 +277,12 @@ class PrivilegeRuntime(Runtime):
                 succeeds = True
             if self.defect == "permitted-denied":
                 succeeds = False
+            if "-U" in command:
+                assert user == 0 and command[command.index("-U") + 1] == "user65534"
+                succeeds = self.defect in {
+                    "unauthorized-allowed",
+                    "unauthorized-with-password",
+                }
             status = 0 if succeeds else 1
             output = "0\n" if succeeds else ""
         else:
@@ -307,7 +313,7 @@ def test_privilege_probes_record_policy_identities_and_both_modes(
         "/etc/sudoers.d/test": "test ALL=(root) NOPASSWD: ALL\n",
     }
     callers = [user for user, command in runtime.probe_commands if command[0] == "sudo"]
-    assert callers == ([65534, 65534, 10001, 10001] if mode == "escalation" else [])
+    assert callers == ([0, 65534, 10001, 10001] if mode == "escalation" else [])
     assert all(
         item.status is ResourceStatus.REMOVED
         for item in value.workspace.journal.entries()
@@ -322,7 +328,13 @@ def test_privilege_probes_record_policy_identities_and_both_modes(
 
 
 @pytest.mark.parametrize(
-    "defect", ["unauthorized-allowed", "restriction-bypassed", "permitted-denied"]
+    "defect",
+    [
+        "unauthorized-allowed",
+        "unauthorized-with-password",
+        "restriction-bypassed",
+        "permitted-denied",
+    ],
 )
 def test_incorrect_sudo_outcomes_reject_the_gate(
     repository_factory: Callable[..., Path], tmp_path: Path, defect: str

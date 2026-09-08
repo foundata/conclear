@@ -311,8 +311,11 @@ expected_stdout = "0\n"
 timeout_seconds = 30
 ```
 
-Use existing named accounts with those numeric UIDs, or supply account and
-sudoers files as declared read-only launch fixtures. The permitted account must
+Use existing named accounts with those numeric UIDs. Root-startup images can
+also supply account and sudoers files as declared read-only launch fixtures;
+sudoers must appear root-owned inside the container. For a non-root startup
+identity, bake the policy into the image because ConClear's user mapping makes
+host-owned fixture files belong to that identity. The permitted account must
 be authorized for the test command without an interactive password; the other
 account must be denied. ConClear invokes `sudo -n` itself. This example tests
 identity escalation; repository application tests still need to cover the
