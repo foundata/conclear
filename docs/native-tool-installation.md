@@ -127,7 +127,7 @@ conclear doctor --config conclear.toml --scope qualify --format json
 `CC0301` reports unsupported versions. Check for older binaries earlier on the
 fixed path; changing your shell's `PATH` cannot fix selection. Qualification
 diagnostics check local tools and rootless storage; Cosign and
-[external release prerequisites](./quickstart.md#10-create-a-release-profile)
+[external release prerequisites](./quickstart.md#5-prepare-release-access)
 need release-scope checks. A passing diagnostic is not a complete release drill.
 
 For updates, verify a supported release, install a new root-owned version

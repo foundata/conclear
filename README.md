@@ -106,11 +106,9 @@ built distribution such as the published package can.
 
 ### Getting started<a id="usage-getting-started"></a>
 
-The [quick start](./docs/quickstart.md) is the path from an empty container
-project to a first release: the repository files, a compliant Containerfile and
-build context, `conclear.toml`, runtime test inputs, the local checks, a first
-qualification and candidate, pin updates, the release profile and the release
-itself.
+The [quick start](./docs/quickstart.md) covers repository setup, local checks,
+release access and the normal `release` workflow. It links to the reference
+contracts for runtime exceptions and distributed qualification.
 
 An existing repository can start with the `conclear adopt` command, which
 observes its conventional Containerfiles and Git origin read-only, separates
@@ -142,8 +140,8 @@ separate reviewed declaration. Sudo escalation has permitted-caller,
 unauthorized-caller and restrictive runtime tests. These permissions remain
 independent of the systemd lifecycle profile and never enable host root or
 privileged containers. The
-[quick start](./docs/quickstart.md#5-add-concleartoml) shows the configuration
-and test contracts.
+[configuration contract](./ARCHITECTURE.md#configuration-and-trust-inputs)
+describes these runtime and test options.
 
 
 ### Running a release<a id="usage-release"></a>
@@ -155,8 +153,9 @@ promotion:
 conclear release --image app --revision v1.2.3 --version 1.2.3 --profile foundata
 ```
 
-The quick start explains what the command does at each stage under
-[Check and run the release environment](./docs/quickstart.md#11-check-and-run-the-release-environment).
+See
+[Release the committed revision](./docs/quickstart.md#6-release-the-committed-revision)
+for readiness checks and release behavior.
 
 
 ### Resuming an interrupted run<a id="usage-resume"></a>
