@@ -1,8 +1,8 @@
 """Read-only discovery of pin occurrences in one repository worktree.
 
 `discover_occurrences` locates every exact byte span that names a declared
-tagged and digest-pinned reference: each `[[images.pins]]` declaration in
-`conclear.toml` and each Containerfile image input of the selected images. It
+tagged and digest-pinned reference in the selected Containerfiles. The
+`[[images.pins]]` declarations supply tag intent without repeating digests. It
 reads repository files without following symbolic links and never edits one.
 `conclear.pin_updates` builds proposals from this view and
 `conclear.pin_application` reuses it to prove that the worktree still matches a
@@ -26,7 +26,6 @@ from conclear.containerfile import MAX_CONTAINERFILE_BYTES, parse_containerfile
 from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.fileio import read_regular_file
 from conclear.path_safety import contained_path
-from conclear.toml_spans import locate_string_values
 from conclear.values import OCIReference
 
 CONFIGURATION_NAME = "conclear.toml"
@@ -78,7 +77,7 @@ def discover_occurrences(
     occurrences: list[Occurrence] = []
     for image in selected:
         occurrences.extend(_containerfile_occurrences(root, image, contents))
-    occurrences.extend(_declaration_occurrences(repository, selected, contents))
+    _load_target(root, CONFIGURATION_NAME, contents, MAX_CONFIG_BYTES)
     intents = _consistent_intents(occurrences)
     for occurrence in occurrences:
         if str(occurrence.reference) not in intents:
@@ -166,59 +165,11 @@ def _containerfile_occurrences(
                 end=end,
                 reference=reference,
                 image_id=image.image_id,
-                tag_intent=None,
+                tag_intent=next(
+                    pin.tag_intent for pin in image.pins if pin.reference == reference
+                ),
             )
         )
-    return result
-
-
-def _declaration_occurrences(
-    repository: RepositoryConfig,
-    selected: tuple[ImageConfig, ...],
-    contents: dict[str, bytes],
-) -> list[Occurrence]:
-    root = repository.path.parent
-    content = _load_target(root, CONFIGURATION_NAME, contents, MAX_CONFIG_BYTES)
-    located = locate_string_values(content)
-    selected_ids = {image.image_id for image in selected}
-    by_image: dict[str, ImageConfig] = {}
-    for image in repository.images:
-        by_image[image.image_id] = image
-    positions = list(repository.images)
-    found: dict[tuple[int, int], tuple[int, int, str]] = {}
-    for item in located:
-        path = item.path
-        if (
-            len(path) == 5
-            and path[0] == "images"
-            and path[2] == "pins"
-            and path[4] == "reference"
-            and isinstance(path[1], int)
-            and isinstance(path[3], int)
-        ):
-            found[(path[1], path[3])] = (item.start, item.end, item.value)
-    result: list[Occurrence] = []
-    for image_index, image in enumerate(positions):
-        if image.image_id not in selected_ids:
-            continue
-        for pin_index, pin in enumerate(image.pins):
-            declaration = found.get((image_index, pin_index))
-            if declaration is None or declaration[2] != str(pin.reference):
-                raise InvalidInvocationError(
-                    f"Pin declaration could not be located exactly: {pin.reference}",
-                    code="CC0206",
-                )
-            start, end, _ = declaration
-            result.append(
-                Occurrence(
-                    path=CONFIGURATION_NAME,
-                    start=start,
-                    end=end,
-                    reference=pin.reference,
-                    image_id=image.image_id,
-                    tag_intent=pin.tag_intent,
-                )
-            )
     return result
 
 

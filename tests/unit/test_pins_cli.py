@@ -161,7 +161,7 @@ def test_propose_writes_one_proposal_and_reports_review_in_json(
     assert value["status"] == "success"
     assert value["data"]["changed"] is True
     assert value["data"]["reviewRequired"] is True
-    assert value["data"]["files"] == ["Containerfile", "conclear.toml"]
+    assert value["data"]["files"] == ["Containerfile"]
     assert value["findings"][0]["checkId"] == "CC0205"
     assert value["data"]["proposalDigest"].startswith("sha256:")
     stored = json.loads(output.read_text(encoding="utf-8"))
@@ -250,14 +250,14 @@ def test_apply_names_paths_digests_and_follow_up_in_human_output(
     result = invoke(["pins", "apply", "--proposal", str(output), "--config", config])
 
     assert result.exit_code == 0, result.output
-    assert "Applied the pin update proposal to 2 file(s)" in result.stdout
+    assert "Applied the pin update proposal to 1 file(s)" in result.stdout
     assert "changed: Containerfile" in result.stdout
-    assert "changed: conclear.toml" in result.stdout
+    assert "changed: conclear.toml" not in result.stdout
     assert f"{OLD} -> {NEW}" in result.stdout
     assert f"next: conclear pins check --config {config} --image app" in result.stdout
     assert "CC0205 warning" in result.stdout
     assert NEW in (root_path / "Containerfile").read_text(encoding="utf-8")
-    assert NEW in (root_path / "conclear.toml").read_text(encoding="utf-8")
+    assert NEW not in (root_path / "conclear.toml").read_text(encoding="utf-8")
     assert requested == [(ToolName.GIT,)]
     assert git.calls == ["observe", "observe"]
 
@@ -308,7 +308,6 @@ def test_apply_json_is_one_object_and_repeats_are_already_applied(
     assert json.loads(first.stdout)["data"]["status"] == "applied"
     assert json.loads(first.stdout)["data"]["changedPaths"] == [
         "Containerfile",
-        "conclear.toml",
     ]
     assert second.exit_code == 0
     assert json.loads(second.stdout)["data"]["status"] == "already-applied"

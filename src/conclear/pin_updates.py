@@ -1,8 +1,9 @@
 """Non-mutating pin-update proposals.
 
 `propose_pin_updates` resolves each declared readable tag once and binds the
-observed digest to every `[[images.pins]]` declaration and every Containerfile
-image input that names the same tagged and digest-pinned reference. It returns
+observed digest to every Containerfile image input that names the same tagged
+and digest-pinned reference. It binds the unchanged intent declarations through
+the repository configuration digest. It returns
 a schema-validated proposal and never edits a project file. The occurrences it
 binds come from the read-only worktree view in `conclear.pin_occurrences`;
 `conclear.pin_application` applies the proposal.

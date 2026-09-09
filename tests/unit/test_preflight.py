@@ -5,7 +5,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from conclear.config import load_repository_config
+from conclear.errors import InvalidInvocationError
 from conclear.pins import PinStore
 from conclear.services.preflight import ClosurePreflight, preflight_image_closure
 from conclear.values import Digest, OCIReference
@@ -50,7 +53,7 @@ def _helper_repository(
     root = repository_factory()
     (root / "Containerfile.helper").write_text(containerfile, encoding="utf-8")
     tables = "".join(
-        f'\n[[images.pins]]\nreference = "{pin}"\ntag_intent = "immutable-version"\n'
+        f'\n[[images.pins]]\nreference = "{pin.split("@")[0]}"\ntag_intent = "immutable-version"\n'
         for pin in pins
     )
     path = root / "conclear.toml"
@@ -147,7 +150,7 @@ def test_closure_preflight_rejects_an_unpinned_dependency_input(
     assert resolver.requests == []
 
 
-def test_closure_preflight_rejects_an_unused_dependency_pin(
+def test_closure_configuration_rejects_an_unused_dependency_pin_before_resolving(
     repository_factory: Callable[..., Path], tmp_path: Path
 ) -> None:
     root = _helper_repository(
@@ -155,16 +158,9 @@ def test_closure_preflight_rejects_an_unused_dependency_pin(
     )
     resolver = Resolver({"quay.io/example/base:1": "sha256:" + "a" * 64})
 
-    preflight = _preflight(root, tmp_path, resolver)
-
-    assert not preflight.accepted
-    [error] = [
-        item for item in preflight.dependencies[0].findings if item.severity == "error"
-    ]
-    assert (error.check_id, error.message) == (
-        "CC0203",
-        f"Declared pin is not used: {HELPER_BASE}",
-    )
+    with pytest.raises(InvalidInvocationError, match="exactly one digest") as caught:
+        _preflight(root, tmp_path, resolver)
+    assert caught.value.code == "CC0203"
     assert resolver.requests == []
 
 
@@ -228,7 +224,7 @@ def test_closure_preflight_checks_transitive_dependencies_dependency_first(
             dependencies=("tool",),
             keys='containerfile = "Containerfile.helper"\n',
             tables=(
-                f'\n[[images.pins]]\nreference = "{BASE}"\n'
+                f'\n[[images.pins]]\nreference = "{BASE.split("@")[0]}"\n'
                 'tag_intent = "immutable-version"\n'
             ),
         )
@@ -237,7 +233,7 @@ def test_closure_preflight_checks_transitive_dependencies_dependency_first(
             releasable=False,
             keys='containerfile = "Containerfile.tool"\n',
             tables=(
-                f'\n[[images.pins]]\nreference = "{HELPER_BASE}"\n'
+                f'\n[[images.pins]]\nreference = "{HELPER_BASE.split("@")[0]}"\n'
                 'tag_intent = "immutable-version"\n'
                 '\n[images.limits]\npin_divergence = "1h"\n'
             ),

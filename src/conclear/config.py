@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from conclear.containerfile import MAX_CONTAINERFILE_BYTES, parse_containerfile
 from conclear.errors import InvalidInvocationError
+from conclear.fileio import read_regular_file
 from conclear.parsing import toml_integer, toml_string, toml_table
 from conclear.path_safety import contained_path
 from conclear.schema import validate_external
@@ -560,7 +562,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
     )
     context = contained_path(source_root, toml_string(value.get("context", ".")))
     runtime = _parse_runtime(toml_table(value["runtime"]))
-    pins = tuple(_parse_pin(toml_table(item)) for item in _list(value.get("pins", [])))
+    pins = _parse_pins(_list(value.get("pins", [])), containerfile)
     limits_value = toml_table(value.get("limits", {}))
     pin_limits = PinLimits(
         pin_freshness=parse_duration(
@@ -1183,16 +1185,45 @@ def _parse_hook(value: dict[str, Any]) -> HookConfig:
     )
 
 
-def _parse_pin(value: dict[str, Any]) -> PinConfig:
-    return PinConfig(
-        reference=OCIReference.parse(
-            toml_string(value["reference"]),
-            require_tag=True,
-            require_digest=True,
-            allow_localhost=False,
-        ),
-        tag_intent=PinIntent(toml_string(value["tag_intent"])),
+def _parse_pins(values: list[Any], containerfile: Path) -> tuple[PinConfig, ...]:
+    """Bind explicit tag intent to the digest owned by the Containerfile."""
+    if not values:
+        return ()
+    content = read_regular_file(
+        containerfile, maximum_bytes=MAX_CONTAINERFILE_BYTES, label="Containerfile"
     )
+    source = parse_containerfile(content, path=containerfile)
+    references: dict[str, set[OCIReference]] = {}
+    for item in source.external_inputs:
+        reference = OCIReference.parse(
+            item.reference, require_tag=True, require_digest=True, allow_localhost=False
+        )
+        tag = str(
+            OCIReference(reference.registry, reference.repository, tag=reference.tag)
+        )
+        references.setdefault(tag, set()).add(reference)
+    pins: list[PinConfig] = []
+    declared: set[str] = set()
+    for raw in values:
+        value = toml_table(raw)
+        tag = toml_string(value["reference"])
+        OCIReference.parse(tag, require_tag=True, allow_localhost=False)
+        if tag in declared:
+            raise InvalidInvocationError(
+                f"Duplicate pin intent declaration: {tag}", code="CC0203"
+            )
+        declared.add(tag)
+        matches = references.get(tag, set())
+        if len(matches) != 1:
+            raise InvalidInvocationError(
+                f"Pin {tag} must match exactly one digest in {containerfile.name}; "
+                f"found {len(matches)}",
+                code="CC0203",
+            )
+        pins.append(
+            PinConfig(next(iter(matches)), PinIntent(toml_string(value["tag_intent"])))
+        )
+    return tuple(pins)
 
 
 def _parse_exception(value: dict[str, Any], image_id: str) -> VulnerabilityException:

@@ -124,6 +124,10 @@ def test_check_json_rule_rejection_uses_exit_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root_path = repository_factory(containerfile="from scratch\nUSER 0\n")
+    path = root_path / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").split("[[images.pins]]")[0], encoding="utf-8"
+    )
     monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
     result = CliRunner().invoke(
         root,

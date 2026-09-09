@@ -13,7 +13,6 @@ from conclear.config import PinIntent, load_repository_config
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
-    RuleRejectionError,
 )
 from conclear.fileio import read_regular_file
 from conclear.identity import ApplicationIdentity
@@ -86,7 +85,7 @@ nofile = 1024
 health_command = ["/usr/local/bin/healthcheck"]
 
 [[images.pins]]
-reference\t=   "{OLD_REFERENCE}"   # shared base image
+reference\t=   "{TAG}"   # shared base image
 tag_intent = "moving-release-line"
 
 [[images]]
@@ -96,11 +95,11 @@ repository = "quay.io/example/generator"
 platforms = ["linux/amd64"]
 
 [[images.pins]]
-reference = "{OLD_REFERENCE}"
+reference = "{TAG}"
 tag_intent = "moving-release-line"
 
 [[images.pins]]
-reference = '{TOOL_TAG}@{TOOL_OLD}'
+reference = '{TOOL_TAG}'
 tag_intent = "immutable-version"
 
 [images.release]
@@ -200,9 +199,7 @@ def snapshot(root: Path) -> dict[str, tuple[bytes, int]]:
 
 def expected_after_apply(root: Path) -> dict[str, bytes]:
     return {
-        "conclear.toml": CONFIGURATION.replace(OLD, NEW)
-        .replace(TOOL_OLD, TOOL_NEW)
-        .encode("utf-8"),
+        "conclear.toml": CONFIGURATION.encode("utf-8"),
         "Containerfile": RUNTIME_CONTAINERFILE.replace(OLD, NEW).encode("utf-8"),
         "Containerfile.generator": GENERATOR_CONTAINERFILE.replace(OLD, NEW)
         .replace(TOOL_OLD, TOOL_NEW)
@@ -239,8 +236,6 @@ def test_shared_pin_is_resolved_once_and_bound_to_every_occurrence(
     assert edits == [
         ("Containerfile", OLD_REFERENCE, NEW_REFERENCE),
         ("Containerfile.generator", OLD_REFERENCE, NEW_REFERENCE),
-        ("conclear.toml", OLD_REFERENCE, NEW_REFERENCE),
-        ("conclear.toml", OLD_REFERENCE, NEW_REFERENCE),
     ]
     unchanged = next(
         item
@@ -279,7 +274,6 @@ def test_application_rewrites_only_proposed_spans_and_preserves_modes(
     assert outcome.changed_paths == (
         "Containerfile",
         "Containerfile.generator",
-        "conclear.toml",
     )
     after = snapshot(root)
     assert {name: content for name, (content, _) in after.items()} == (
@@ -398,8 +392,8 @@ def test_immutable_version_change_records_review_requirement(tmp_path: Path) -> 
 
 def test_divergent_tag_intents_for_one_dependency_are_rejected(tmp_path: Path) -> None:
     configuration = CONFIGURATION.replace(
-        f'reference = "{OLD_REFERENCE}"\ntag_intent = "moving-release-line"',
-        f'reference = "{OLD_REFERENCE}"\ntag_intent = "immutable-version"',
+        f'reference = "{TAG}"\ntag_intent = "moving-release-line"',
+        f'reference = "{TAG}"\ntag_intent = "immutable-version"',
     )
     root = repository(tmp_path, configuration=configuration)
 
@@ -416,7 +410,7 @@ def test_missing_containerfile_occurrence_is_a_declaration_mismatch(
         runtime=RUNTIME_CONTAINERFILE.replace(OLD_REFERENCE, f"{TOOL_TAG}@{TOOL_OLD}"),
     )
 
-    with pytest.raises(RuleRejectionError) as caught:
+    with pytest.raises(InvalidInvocationError, match="exactly one digest") as caught:
         propose(root)
     assert caught.value.code == "CC0203"
 
@@ -543,9 +537,9 @@ def test_closed_selection_limits_the_proposal_to_selected_images(
     tmp_path: Path,
 ) -> None:
     configuration = CONFIGURATION.replace(
-        f'[[images.pins]]\nreference\t=   "{OLD_REFERENCE}"   # shared base image\n'
+        f'[[images.pins]]\nreference\t=   "{TAG}"   # shared base image\n'
         'tag_intent = "moving-release-line"\n',
-        f'[[images.pins]]\nreference = "quay.io/example/other:1@{OLD}"\n'
+        '[[images.pins]]\nreference = "quay.io/example/other:1"\n'
         'tag_intent = "moving-release-line"\n',
     )
     runtime = RUNTIME_CONTAINERFILE.replace(
@@ -560,7 +554,7 @@ def test_closed_selection_limits_the_proposal_to_selected_images(
 
     assert resolver.calls == ["quay.io/example/other:1"]
     assert proposal.image_ids == ("runtime",)
-    assert [item.path for item in proposal.files] == ["Containerfile", "conclear.toml"]
+    assert [item.path for item in proposal.files] == ["Containerfile"]
 
 
 @pytest.mark.parametrize(
@@ -609,6 +603,23 @@ def test_changed_git_revision_or_repository_is_rejected(tmp_path: Path) -> None:
             root,
             source=SourceIdentity("https://github.com/example/other", SOURCE.revision),
         )
+    assert snapshot(root) == before
+
+
+def test_idempotent_pin_application_still_requires_unchanged_intent(
+    tmp_path: Path,
+) -> None:
+    root = repository(tmp_path)
+    proposal = propose(root)
+    apply(proposal, root)
+    path = root / "conclear.toml"
+    path.write_text(
+        CONFIGURATION.replace("moving-release-line", "immutable-version"),
+        encoding="utf-8",
+    )
+    before = snapshot(root)
+    with pytest.raises(InvalidInvocationError, match="configuration digest"):
+        apply(proposal, root)
     assert snapshot(root) == before
 
 
@@ -706,12 +717,12 @@ def test_semantic_proposal_invariants_are_enforced(tmp_path: Path) -> None:
         parse_proposal(
             _with_file(
                 proposal,
-                2,
+                0,
                 edits=[
-                    *proposal.to_dict()["files"][2]["edits"],  # type: ignore[index]
+                    *proposal.to_dict()["files"][0]["edits"],  # type: ignore[index]
                     {
-                        "start": proposal.files[2].edits[0].start + 1,
-                        "end": proposal.files[2].edits[0].end + 1,
+                        "start": proposal.files[0].edits[0].start + 1,
+                        "end": proposal.files[0].edits[0].end + 1,
                         "oldBytes": OLD_REFERENCE,
                         "newBytes": NEW_REFERENCE,
                     },

@@ -279,7 +279,7 @@
       "additionalProperties": false,
       "required": ["reference", "tag_intent"],
       "properties": {
-        "reference": {"type": "string", "pattern": "^\\S+:[^@]+@sha256:[0-9a-f]{64}$"},
+        "reference": {"type": "string", "pattern": "^[^\\s@]+:[^\\s@/]+$"},
         "tag_intent": {"enum": ["immutable-version", "moving-release-line"]}
       }
     },

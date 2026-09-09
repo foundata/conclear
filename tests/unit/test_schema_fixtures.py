@@ -151,7 +151,7 @@ def test_configuration_profile_result_and_triage_fixtures(
     assert _errors("config.schema.json", {**configuration, "images": [image]})
     image = dict(configuration["images"][0])
     image["pins"] = [
-        {"reference": "quay.io/example/base:1", "tag_intent": "immutable-version"}
+        {"reference": "quay.io/example/base", "tag_intent": "immutable-version"}
     ]
     assert _errors("config.schema.json", {**configuration, "images": [image]})
     assert load_repository_config(root / "conclear.toml").images[0].image_id == "app"

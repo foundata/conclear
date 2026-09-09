@@ -492,7 +492,7 @@ def _with_helper(repository_factory: Callable[..., Path]) -> Callable[..., Path]
                 "helper",
                 releasable=False,
                 tables=(
-                    f'\n[[images.pins]]\nreference = "{pin}"\n'
+                    f'\n[[images.pins]]\nreference = "{pin.split("@")[0]}"\n'
                     'tag_intent = "immutable-version"\n'
                 ),
             ),

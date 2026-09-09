@@ -29,9 +29,8 @@ def repository_factory(tmp_path: Path) -> Callable[..., Path]:
             "**/.git/\n**/.env*\n**/*.key\n**/*.pem\n**/.venv/\n**/venv/\n",
             encoding="utf-8",
         )
-        digest = "a" * 64
         (root / "conclear.toml").write_text(
-            f"""schema_version = 1
+            """schema_version = 1
 
 [project]
 name = "example"
@@ -43,7 +42,7 @@ repository = "quay.io/example/app"
 platforms = ["linux/amd64"]
 
 [images.release]
-immutable_tags = ["{{version}}"]
+immutable_tags = ["{version}"]
 moving_tags = ["stable"]
 
 [images.runtime]
@@ -56,7 +55,7 @@ nofile = 1024
 health_command = ["/app", "health"]
 
 [[images.pins]]
-reference = "quay.io/example/base:1@sha256:{digest}"
+reference = "quay.io/example/base:1"
 tag_intent = "immutable-version"
 """,
             encoding="utf-8",

@@ -143,7 +143,7 @@ def render_draft(
                 (
                     "",
                     "[[images.pins]]",
-                    f"reference = {_toml(reference.reference)}",
+                    f"reference = {_toml(reference.reference.split('@')[0])}",
                     f"tag_intent = {_toml(_decide('immutable-version or moving-release-line'))}",
                 )
             )

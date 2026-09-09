@@ -136,6 +136,7 @@ def test_static_checks_accept_configured_reviewed_root_user(
     path = root / "conclear.toml"
     path.write_text(
         path.read_text(encoding="utf-8")
+        .split("[[images.pins]]")[0]
         .replace("user = 10001", "user = 0")
         .replace(
             'health_command = ["/app", "health"]',
@@ -164,6 +165,10 @@ def test_static_checks_reject_user_that_differs_from_runtime_contract(
     repository_factory: Callable[..., Path],
 ) -> None:
     root = repository_factory(containerfile='USER 10002\nENTRYPOINT ["/app"]\n')
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").split("[[images.pins]]")[0], encoding="utf-8"
+    )
     image = load_repository_config(root / "conclear.toml").release_image("app")
 
     findings = [

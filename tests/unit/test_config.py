@@ -82,6 +82,61 @@ def test_repository_configuration_is_validated_and_narrowed(
     assert image.runtime.systemd is None
 
 
+def test_pin_digest_is_derived_from_containerfile_without_changing_configuration(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    original = path.read_bytes()
+    assert b"@sha256:" not in original
+    before = load_repository_config(path).release_image(None).pins[0]
+    containerfile = root / "Containerfile"
+    containerfile.write_text(
+        containerfile.read_text(encoding="utf-8").replace("a" * 64, "b" * 64),
+        encoding="utf-8",
+    )
+    after = load_repository_config(path).release_image(None).pins[0]
+    assert str(before.reference.digest) == "sha256:" + "a" * 64
+    assert str(after.reference.digest) == "sha256:" + "b" * 64
+    assert before.tag_intent is after.tag_intent
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "case", ["repeated-intent", "ambiguous-digest", "duplicated-digest"]
+)
+def test_pin_declarations_reject_ambiguous_or_duplicated_authority(
+    repository_factory: Callable[..., Path], case: str
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    text = path.read_text(encoding="utf-8")
+    if case == "repeated-intent":
+        path.write_text(
+            text + "\n[[images.pins]]" + text.split("[[images.pins]]")[1],
+            encoding="utf-8",
+        )
+    elif case == "ambiguous-digest":
+        containerfile = root / "Containerfile"
+        containerfile.write_text(
+            containerfile.read_text(encoding="utf-8")
+            + "FROM quay.io/example/base:1@sha256:"
+            + "b" * 64
+            + "\n",
+            encoding="utf-8",
+        )
+    else:
+        path.write_text(
+            text.replace(
+                'reference = "quay.io/example/base:1"',
+                'reference = "quay.io/example/base:1@sha256:' + "a" * 64 + '"',
+            ),
+            encoding="utf-8",
+        )
+    with pytest.raises(InvalidInvocationError):
+        load_repository_config(path)
+
+
 def test_repository_configuration_accepts_reviewed_root_runtime(
     repository_factory: Callable[..., Path],
 ) -> None:

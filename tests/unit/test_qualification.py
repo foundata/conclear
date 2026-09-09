@@ -1757,7 +1757,7 @@ def test_dependency_pins_are_evaluated_under_their_own_freshness_limit(
         path.read_text(encoding="utf-8")
         + f"""
 [[images.pins]]
-reference = "{reference}"
+reference = "{reference.split("@")[0]}"
 tag_intent = "immutable-version"
 
 [images.limits]

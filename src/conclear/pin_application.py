@@ -103,17 +103,29 @@ def apply_pin_proposal(
         maximum_bytes=MAX_CONFIG_BYTES,
         label="repository configuration",
     )
-    if proposal.files and all(
-        sha256_bytes(targets[item.path]) == item.result_sha256
-        for item in proposal.files
-    ):
-        return ApplicationOutcome(ApplicationStatus.ALREADY_APPLIED, (), proposal)
     if sha256_bytes(configuration) != proposal.configuration_digest:
         raise InvalidInvocationError(
             "Proposal configuration digest does not match the current configuration",
             code="CC0207",
         )
+    if proposal.files and all(
+        sha256_bytes(targets[item.path]) == item.result_sha256
+        for item in proposal.files
+    ):
+        repository = load_repository_config(root / CONFIGURATION_NAME)
+        _compare_snapshot(
+            discover_occurrences(repository, proposal.image_ids),
+            proposal,
+            expect_applied=True,
+        )
+        return ApplicationOutcome(ApplicationStatus.ALREADY_APPLIED, (), proposal)
     if not proposal.files:
+        repository = load_repository_config(root / CONFIGURATION_NAME)
+        _compare_snapshot(
+            discover_occurrences(repository, proposal.image_ids),
+            proposal,
+            expect_applied=False,
+        )
         return ApplicationOutcome(ApplicationStatus.NO_CHANGE, (), proposal)
     results: dict[str, bytes] = {}
     for item in proposal.files:

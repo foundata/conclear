@@ -125,7 +125,6 @@ conclear/
 │   ├── pin_occurrences.py        # Read-only pin occurrence discovery
 │   ├── pin_updates.py            # Non-mutating pin-update proposals
 │   ├── pin_application.py        # Verified all-or-nothing proposal application
-│   ├── toml_spans.py             # Structural TOML string spans
 │   ├── workspace.py              # Run state machine and ownership journal
 │   ├── process.py                # Supervised execution and redaction
 │   ├── oci.py                    # Layout, descriptor and graph validation
