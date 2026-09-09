@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "45690c38bec6a8a80b078f38d482adba83b336a5",
+ "guideRevision": "f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb",
  "requirements": [
   {
    "id": "IG0001",
@@ -532,77 +532,77 @@
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Preserve the complete OCI manifest, index, configuration and blob graph without digest transformation."
+   "text": "The backend MUST preserve the complete OCI manifest, index, configuration and blob graph without digest transformation."
   },
   {
    "id": "IG0077",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Resolve exact tags and digests without treating ambiguous remote state as absence."
+   "text": "The backend MUST resolve exact tags and digests without treating ambiguous remote state as absence."
   },
   {
    "id": "IG0078",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Store and retrieve Cosign signatures and attestations for image indexes and platform manifests in the released subject's repository."
+   "text": "The backend MUST store and retrieve Cosign signatures and attestations for image indexes and platform manifests in the released subject's repository."
   },
   {
    "id": "IG0079",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Enforce and verify a bounded candidate lifetime independently of the ConClear process that published it."
+   "text": "The release owner MUST declare an owner and procedure for removing abandoned candidates in the protected release profile. Manual cleanup is an accepted fallback and requires retained ownership records."
   },
   {
    "id": "IG0080",
-   "modality": "MUST",
+   "modality": "SHOULD",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Prevent immutable release tags from being repointed while permitting declared moving tags."
+   "text": "The registry SHOULD enforce selective version-tag immutability while leaving candidate and declared moving tags mutable."
   },
   {
    "id": "IG0081",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Assign release tags only to the verified digest and permit an exact post-write observation."
+   "text": "The backend MUST assign release tags only to the verified digest and permit an exact post-write observation."
   },
   {
    "id": "IG0082",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Delete an owned candidate reference and permit conclusive verification of its removal."
+   "text": "The backend MUST delete an owned candidate reference and permit conclusive verification of its removal."
   },
   {
    "id": "IG0083",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Expose enough remote state for ConClear to recover safely from interrupted or ambiguous writes."
+   "text": "The backend MUST expose enough remote state for ConClear to recover safely from interrupted or ambiguous writes."
   },
   {
    "id": "IG0084",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Use externally supplied, narrowly scoped credentials without placing secret values in repository configuration or release evidence."
+   "text": "The backend MUST use externally supplied, narrowly scoped credentials without placing secret values in repository configuration or release evidence."
   },
   {
    "id": "IG0085",
-   "modality": "MUST",
+   "modality": "SHOULD",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Enforce the candidate lifetime through a native per-tag expiration, a verified retention rule restricted to ConClear candidate names or another provider control that remains effective if the releasing process never resumes; a local timestamp or best-effort cleanup attempt is not sufficient."
+   "text": "The release owner SHOULD automate candidate cleanup through native tag expiration, a candidate-only pruning policy or a scheduled cleanup command. Automation does not require CI or a new platform service."
   },
   {
    "id": "IG0086",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "A project with versions MUST publish an immutable version tag such as `:1.8.2`."
+   "text": "A project with versions MUST publish a version tag such as `:1.8.2` and MUST NOT repoint it to different content. Registry enforcement is a separate control; the repository declares these names in `release.version_tags`."
   },
   {
    "id": "IG0087",
@@ -644,14 +644,14 @@
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "Before uploading a candidate, ConClear MUST verify an effective registry policy that protects the configured immutable release tags on creation and leaves candidate and declared moving tags mutable. It MUST repeat this check before promotion and verify protection of each assigned immutable tag. Missing, unreadable or unenforced protection MUST stop publication or promotion."
+   "text": "The protected release profile MUST explicitly require registry tag protection or record its reviewed absence with a rationale and owner. Required protection MUST be verified before upload and promotion, including protection on final tag assignment and exclusion of candidate and moving tags. Missing or unreadable required protection MUST stop the operation. ConClear MUST record the selected policy and observed protection without claiming enforcement in the reviewed-absence mode."
   },
   {
    "id": "IG0093",
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "ConClear MUST set a bounded default candidate lifetime through the selected registry-control backend and refuse promotion after expiry. Repository configuration MAY shorten but MUST NOT extend or disable it. The backend MUST verify that the provider retained or otherwise enforces the requested deadline."
+   "text": "ConClear MUST record a finite candidate-authorization deadline before upload and enforce it before and during promotion, including resume. Repository configuration MAY shorten but MUST NOT extend or disable the maximum. Retries and registry expiration settings MUST NOT extend the recorded authorization. Registry cleanup metadata is separate from this deadline."
   },
   {
    "id": "IG0094",
@@ -679,7 +679,7 @@
    "modality": "MUST",
    "section": "Registries and image names",
    "anchor": "registries-and-image-names",
-   "text": "After successful promotion, ConClear MUST delete the temporary candidate tag. A rejected or abandoned candidate MUST be deleted explicitly or left to its configured expiration. Delayed removal of unreferenced manifests and blobs by registry garbage collection is not a release failure."
+   "text": "After successful promotion, ConClear MUST attempt to delete the temporary candidate tag and verify its removal. Cleanup failure MUST be reported separately without revoking the completed release. The cleanup owner MUST remove rejected or abandoned candidates through the declared procedure. Delayed garbage collection is not a release failure, and cleanup MUST NOT delete supported release tags or their required evidence."
   },
   {
    "id": "IG0098",
@@ -2212,7 +2212,7 @@
    "modality": "MUST NOT",
    "section": "Rescans and remediation",
    "anchor": "rescans-and-remediation",
-   "text": "Immutable version and release tags MUST NOT be repointed for remediation. The registry owner enforces immutability; ConClear refuses a different existing digest and reports observed repointing as a policy failure."
+   "text": "Version and release tags MUST NOT be repointed for remediation. The release owner maintains their stability; ConClear refuses a different existing digest and reports observed repointing as a policy failure."
   },
   {
    "id": "IG0317",

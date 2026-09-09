@@ -32,6 +32,7 @@ from conclear.pins import PinStore, check_image_pins
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import SourceIdentity, parse_timestamp, utc_now
 from conclear.registry_control import RegistryControl
+from conclear.registry_policy import policy_findings
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime, ToolProblem
 from conclear.services.cleanup import cleanup_run
@@ -125,6 +126,7 @@ def doctor_command(
     }
     if selected is not None:
         data["profile"] = selected.name
+        data["registryPolicy"] = selected.registry.policy.to_dict()
         data["ciContextPolicy"] = selected.ci_context.value
         data["ciContextObserved"] = isinstance(observed_ci, ObservedCIContext)
         if isinstance(observed_ci, ObservedCIContext):
@@ -138,6 +140,9 @@ def doctor_command(
             "doctor",
             ResultStatus.SUCCESS,
             f"Environment is ready for {scope.value}",
+            findings=()
+            if selected is None
+            else policy_findings(selected.registry.policy),
             data=data,
         ),
         output_format,

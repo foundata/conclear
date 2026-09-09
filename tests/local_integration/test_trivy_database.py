@@ -155,7 +155,7 @@ repository = "quay.io/example/fixture"
 platforms = ["linux/amd64", "linux/amd64/v3"]
 
 [images.release]
-immutable_tags = ["{{version}}"]
+version_tags = ["{{version}}"]
 moving_tags = ["stable"]
 
 [images.runtime]

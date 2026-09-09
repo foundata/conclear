@@ -273,17 +273,17 @@ class RuntimeConfig:
 
 @dataclass(frozen=True, slots=True)
 class ReleaseTags:
-    """Configured immutable and moving release tags."""
+    """Version tags that must retain their digest, and explicitly moving tags."""
 
-    immutable_tags: tuple[str, ...]
+    version_tags: tuple[str, ...]
     moving_tags: tuple[str, ...]
 
-    def render_immutable(self, version: str | None) -> tuple[str, ...]:
+    def render_versions(self, version: str | None) -> tuple[str, ...]:
         """Render final tags and reject overlap with mutable release references."""
         if version is not None:
             validate_release_version(version)
         tags: list[str] = []
-        for template in self.immutable_tags:
+        for template in self.version_tags:
             if "{version}" in template and version is None:
                 raise InvalidInvocationError(
                     "Version-dependent release tag requires --version"
@@ -292,10 +292,10 @@ class ReleaseTags:
             OCIReference("registry.invalid", "validation").with_tag(tag)
             if tag in self.moving_tags or "-candidate." in tag:
                 raise InvalidInvocationError(
-                    "Immutable and moving or candidate tags must be disjoint"
+                    "Version and moving or candidate tags must be disjoint"
                 )
             if tag in tags:
-                raise InvalidInvocationError(f"Rendered immutable tags collide: {tag}")
+                raise InvalidInvocationError(f"Rendered version tags collide: {tag}")
             tags.append(tag)
         return tuple(tags)
 
@@ -1042,23 +1042,23 @@ def _require_unique_names(values: tuple[object, ...], label: str) -> None:
 
 
 def _parse_release_tags(value: dict[str, Any]) -> ReleaseTags:
-    immutable_tags = tuple(_string_list(value.get("immutable_tags", [])))
+    version_tags = tuple(_string_list(value.get("version_tags", [])))
     moving_tags = tuple(_string_list(value.get("moving_tags", [])))
-    if not immutable_tags and not moving_tags:
+    if not version_tags and not moving_tags:
         raise InvalidInvocationError(
-            "A release must declare at least one immutable or moving tag"
+            "A release must declare at least one version or moving tag"
         )
     reserved = tuple(
-        tag for tag in (*immutable_tags, *moving_tags) if "-candidate." in tag
+        tag for tag in (*version_tags, *moving_tags) if "-candidate." in tag
     )
     if reserved:
         raise InvalidInvocationError(
             "Release tags cannot use the ConClear-owned -candidate. namespace"
         )
-    literal_tags = tuple(tag for tag in immutable_tags if "{version}" not in tag)
-    ReleaseTags(literal_tags, moving_tags).render_immutable(None)
+    literal_tags = tuple(tag for tag in version_tags if "{version}" not in tag)
+    ReleaseTags(literal_tags, moving_tags).render_versions(None)
     return ReleaseTags(
-        immutable_tags=immutable_tags,
+        version_tags=version_tags,
         moving_tags=moving_tags,
     )
 

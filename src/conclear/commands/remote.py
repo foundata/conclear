@@ -21,6 +21,7 @@ from conclear.dependencies import (
 from conclear.errors import InvalidInvocationError
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import format_timestamp, utc_now
+from conclear.registry_policy import policy_findings
 from conclear.release_profile import ReleaseProfile
 from conclear.services.attestation import attest_candidate
 from conclear.services.ci_context import resolve_ci_context
@@ -102,6 +103,7 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
         result = publish_candidate(
             candidate,
             image=image,
+            policy=selected.registry.policy,
             workspace=source_run.workspace,
             registry=source_run.runtime.skopeo(),
             registry_control=registry_control,
@@ -116,10 +118,12 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
             "publish",
             ResultStatus.SUCCESS,
             "Candidate published and graph-verified",
+            findings=policy_findings(selected.registry.policy),
             data={
                 "reference": str(result.reference),
                 "digest": str(result.graph.digest),
                 "expiration": format_timestamp(result.expiration),
+                "registryPolicy": selected.registry.policy.to_dict(),
                 "immutabilityEnabled": result.immutability_enabled,
             },
         ),
@@ -287,6 +291,7 @@ def promote_command(
                     {"tag": tag, "digest": str(digest)} for tag, digest in result.tags
                 ],
                 "candidateDeleted": result.candidate_deleted,
+                "registryPolicy": selected.registry.policy.to_dict(),
                 "immutabilityEnabled": result.immutability_enabled,
             },
         ),
@@ -371,6 +376,7 @@ def release_command(
                 "subject": result.subject,
                 "tags": [{"tag": tag, "digest": digest} for tag, digest in result.tags],
                 "candidateDeleted": result.candidate_deleted,
+                "registryPolicy": selected.registry.policy.to_dict(),
                 "immutabilityEnabled": result.immutability_enabled,
             },
         ),

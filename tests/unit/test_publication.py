@@ -73,6 +73,7 @@ from conclear.workspace import (
     RunState,
     RunWorkspace,
 )
+from tests.registry_policy_fixtures import STRICT_POLICY
 
 BUILDER_ID = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
 
@@ -213,10 +214,10 @@ class FakeRegistryControl:
         self,
         repository: OCIReference,
         *,
-        immutable_tags: tuple[str, ...],
+        version_tags: tuple[str, ...],
         mutable_tags: tuple[str, ...],
     ) -> None:
-        self.protected_tags.update(immutable_tags)
+        self.protected_tags.update(version_tags)
 
     @property
     def provider(self) -> str:
@@ -510,6 +511,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
             auth_file=None,
             now=now,
             clock=lambda: now,
+            policy=STRICT_POLICY,
         )
     assert workspace.journal.entries() == ()
     del tags[tag]
@@ -525,6 +527,7 @@ def test_failed_publication_retains_digest_ownership_and_expiration(
             auth_file=None,
             now=now,
             clock=lambda: now,
+            policy=STRICT_POLICY,
         )
 
     entry = workspace.journal.entries()[0]
@@ -664,6 +667,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             "quay.io",
             "https://quay.io/api/v1",
             None,
+            policy=STRICT_POLICY,
         ),
         cosign_private_key="test.key",
         cosign_public_key=public_key,
@@ -684,6 +688,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         auth_file=None,
         now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
         clock=lambda: datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
+        policy=STRICT_POLICY,
     )
     assert load_published(workspace, candidate, image) == published
     workspace.journal.update(
@@ -882,6 +887,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             registry,
             None,
             immutable=True,
+            require_protection=True,
             authorize_tag_write=lambda: None,
         )
     assert tags["race"] == observation.graph.digest
@@ -910,6 +916,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             registry,
             None,
             immutable=True,
+            require_protection=True,
             authorize_tag_write=lambda: None,
         )
     assert tags["unprotected"] == observation.graph.digest
@@ -923,7 +930,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         image,
         release=replace(
             image.release,
-            immutable_tags=("{version}", "v{version}"),
+            version_tags=("{version}", "v{version}"),
         ),
     )
     workspace.journal.plan(
@@ -933,7 +940,8 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         ephemeral=False,
         metadata={
             "digest": str(observation.graph.digest),
-            "immutable": True,
+            "versionTag": True,
+            "registryProtectionRequired": True,
         },
     )
     workspace.journal.update("tag-1.2.3", ResourceStatus.FAILED)

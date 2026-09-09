@@ -19,6 +19,13 @@ from urllib.parse import urlsplit, urlunsplit
 from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import sha256_bytes
 from conclear.parsing import toml_integer, toml_string, toml_table
+from conclear.registry_policy import (
+    CandidateCleanupMode,
+    CandidateCleanupPolicy,
+    RegistryPolicy,
+    TagProtectionMode,
+    TagProtectionPolicy,
+)
 from conclear.schema import validate_external
 from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
 from conclear.values import HOST_PATTERN, URL_PATH_COMPONENT_PATTERN
@@ -53,6 +60,7 @@ class QuayRegistryConfig:
     host: str
     api_url: str
     token_file: Path | None
+    policy: RegistryPolicy
 
 
 type RegistryConfig = QuayRegistryConfig
@@ -159,6 +167,22 @@ def normalize_builder_id(value: str) -> str:
 
 def _parse_registry_profile(value: dict[str, Any]) -> RegistryConfig:
     provider = RegistryProvider(toml_string(value["provider"]))
+    protection = toml_table(value["tag_protection"])
+    cleanup = toml_table(value["candidate_cleanup"])
+    policy = RegistryPolicy(
+        TagProtectionPolicy(
+            TagProtectionMode(toml_string(protection["mode"])),
+            None
+            if "rationale" not in protection
+            else toml_string(protection["rationale"]),
+            None if "owner" not in protection else toml_string(protection["owner"]),
+        ),
+        CandidateCleanupPolicy(
+            CandidateCleanupMode(toml_string(cleanup["mode"])),
+            toml_string(cleanup["owner"]),
+            toml_string(cleanup["procedure"]),
+        ),
+    )
     if provider is RegistryProvider.QUAY:
         return QuayRegistryConfig(
             provider=provider,
@@ -167,6 +191,7 @@ def _parse_registry_profile(value: dict[str, Any]) -> RegistryConfig:
                 toml_string(value.get("api_url", "https://quay.io/api/v1"))
             ),
             token_file=_optional_private_path(value.get("token_file")),
+            policy=policy,
         )
     raise InvalidInvocationError(f"Unsupported registry provider: {provider.value}")
 

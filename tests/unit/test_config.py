@@ -38,10 +38,10 @@ def test_image_inference_counts_only_releasable_images(
 
 def test_rendered_tags_are_unique_and_distinct_from_latest() -> None:
     with pytest.raises(InvalidInvocationError, match="collide"):
-        ReleaseTags(("{version}", "1.2.3"), ("latest",)).render_immutable("1.2.3")
+        ReleaseTags(("{version}", "1.2.3"), ("latest",)).render_versions("1.2.3")
     with pytest.raises(InvalidInvocationError, match="disjoint"):
-        ReleaseTags(("{version}",), ("latest",)).render_immutable("latest")
-    assert ReleaseTags(("{version}",), ("latest",)).render_immutable("1.2.3") == (
+        ReleaseTags(("{version}",), ("latest",)).render_versions("latest")
+    assert ReleaseTags(("{version}",), ("latest",)).render_versions("1.2.3") == (
         "1.2.3",
     )
 
@@ -56,9 +56,7 @@ def test_omitted_tag_classes_are_empty_and_literal_collisions_fail_on_load(
     )
     assert load_repository_config(path).release_image(None).release.moving_tags == ()
     path.write_text(
-        original.replace(
-            'immutable_tags = ["{version}"]', 'immutable_tags = ["stable"]'
-        ),
+        original.replace('version_tags = ["{version}"]', 'version_tags = ["stable"]'),
         encoding="utf-8",
     )
     with pytest.raises(InvalidInvocationError, match="disjoint"):
@@ -819,8 +817,8 @@ review_trigger = "Base image update"
     ("configured", "replacement"),
     (
         (
-            'immutable_tags = ["{version}"]',
-            'immutable_tags = ["{version}-candidate.manual"]',
+            'version_tags = ["{version}"]',
+            'version_tags = ["{version}-candidate.manual"]',
         ),
         ('moving_tags = ["stable"]', 'moving_tags = ["stable-candidate.manual"]'),
     ),
@@ -1026,7 +1024,7 @@ def _image_text(
 platforms = ["linux/amd64"]
 {keys}
 [images.release]
-immutable_tags = ["{{version}}"]
+version_tags = ["{{version}}"]
 moving_tags = ["stable"]
 """
         if releasable
@@ -1241,7 +1239,7 @@ def test_test_only_image_without_a_dependent_is_rejected(
 @pytest.mark.parametrize(
     ("keys", "tables", "named"),
     [
-        ("", '[images.release]\nimmutable_tags = ["1"]\nmoving_tags = []\n', "release"),
+        ("", '[images.release]\nversion_tags = ["1"]\nmoving_tags = []\n', "release"),
         ('native_test_platforms = ["linux/amd64"]\n', "", "native_test_platforms"),
         ('rescan_scope = "full-image"\n', "", "rescan_scope"),
         ("", '[[images.hooks]]\nname = "h"\ncommand = ["/bin/true"]\n', "hooks"),

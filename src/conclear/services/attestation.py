@@ -145,6 +145,7 @@ def attest_candidate(
     """Attach SPDX and provenance, then sign every unique image digest."""
     if workspace.load().state is not RunState.PUBLISHED:
         raise InvalidInvocationError("Attestation requires published state")
+    published.require_current(now)
     require_remote_graph_unchanged(
         published,
         registry,

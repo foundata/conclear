@@ -347,10 +347,10 @@ class FakeRegistryControl:
         self,
         repository: OCIReference,
         *,
-        immutable_tags: tuple[str, ...],
+        version_tags: tuple[str, ...],
         mutable_tags: tuple[str, ...],
     ) -> None:
-        self.protected_tags.update(immutable_tags)
+        self.protected_tags.update(version_tags)
 
     @property
     def provider(self) -> str:

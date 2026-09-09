@@ -19,6 +19,7 @@ from conclear.jsonutil import load_json
 from conclear.presentation import CommandResult, Finding, ResultStatus
 from conclear.records import validate_record
 from conclear.schema import load_schema, validate_external
+from tests.registry_policy_fixtures import REGISTRY_POLICY_TOML
 from tests.unit.test_release_workflow import Harness
 from tests.unit.test_rescan_history import _record as rescan_record
 
@@ -182,7 +183,11 @@ def test_configuration_profile_result_and_triage_fixtures(
             "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"
         },
         "cosign_public_key": "/run/secrets/cosign.pub",
-        "registry": {"provider": "quay", "host": "quay.io"},
+        "registry": {
+            "provider": "quay",
+            "host": "quay.io",
+            **tomllib.loads(REGISTRY_POLICY_TOML),
+        },
     }
     assert _errors("profile.schema.json", profile) == []
     assert _errors("profile.schema.json", {**profile, "cosign_passphrase": "secret"})

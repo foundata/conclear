@@ -683,7 +683,7 @@ environment = {{ SERVICE_SELECTOR = "test" }}
 mounts = [{{ name = "result", target = "/input" }}]
 
 [images.release]
-immutable_tags = ["{{version}}"]
+version_tags = ["{{version}}"]
 moving_tags = ["stable"]
 
 [images.runtime]
@@ -704,7 +704,7 @@ platforms = ["linux/amd64"]
 native_test_platforms = ["linux/amd64"]
 
 [images.release]
-immutable_tags = ["{{version}}"]
+version_tags = ["{{version}}"]
 moving_tags = ["stable"]
 
 [images.runtime]

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "45690c38bec6a8a80b078f38d482adba83b336a5",
+  "guideRevision": "f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb",
   "limits": [
     {"name": "Pin resolution freshness", "value": "24 hours"},
     {"name": "Pin divergence", "value": "7 days"},
@@ -53,8 +53,8 @@
     {"id": "CC0505", "summary": "Hold one fresh database snapshot within a bounded qualification window", "severity": "error", "behavior": "automated", "requirements": ["IG0301", "IG0305", "IG0423"]},
     {"id": "CC0601", "summary": "Generate a unique lowercase-ULID candidate reference", "severity": "error", "behavior": "automated", "requirements": ["IG0012", "IG0089", "IG0090", "IG0095"]},
     {"id": "CC0602", "summary": "Preserve and compare the complete local and remote digest graph", "severity": "error", "behavior": "automated", "requirements": ["IG0013", "IG0076", "IG0263", "IG0294", "IG0296", "IG0302"]},
-    {"id": "CC0603", "summary": "Verify stored candidate-retention controls and reject expired candidates", "severity": "error", "behavior": "automated", "requirements": ["IG0093"]},
-    {"id": "CC0604", "summary": "Refuse immutable tag replacement and verify every promoted tag", "severity": "error", "behavior": "automated", "requirements": ["IG0016", "IG0019", "IG0081", "IG0086", "IG0096", "IG0317"]},
+    {"id": "CC0603", "summary": "Enforce candidate authorization deadlines and selected cleanup controls", "severity": "error", "behavior": "automated", "requirements": ["IG0093"]},
+    {"id": "CC0604", "summary": "Refuse version tag replacement and verify every promoted tag", "severity": "error", "behavior": "automated", "requirements": ["IG0016", "IG0019", "IG0081", "IG0086", "IG0096", "IG0317"]},
     {"id": "CC0605", "summary": "Delete and verify removal of the candidate tag after promotion", "severity": "error", "behavior": "automated", "requirements": ["IG0082", "IG0097"]},
     {"id": "CC0701", "summary": "Require default public Rekor inclusion for release signatures", "severity": "error", "behavior": "automated", "requirements": ["IG0356", "IG0357", "IG0358", "IG0372"]},
     {"id": "CC0702", "summary": "Sign and verify the index and every platform manifest", "severity": "error", "behavior": "automated", "requirements": ["IG0014", "IG0018", "IG0078", "IG0360", "IG0361", "IG0363", "IG0368"]},

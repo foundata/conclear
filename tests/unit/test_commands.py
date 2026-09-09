@@ -47,6 +47,7 @@ from conclear.services.doctor import DoctorScope
 from conclear.tools import ToolName
 from conclear.values import Digest
 from conclear.workspace import RunState, RunWorkspace
+from tests.registry_policy_fixtures import STRICT_POLICY
 from tests.unit.test_config import _image_text
 
 BUILDER_ID = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
@@ -78,6 +79,7 @@ def release_profile(
             "quay.io",
             "https://quay.io/api/v1",
             None if token is None else tmp_path / token,
+            policy=STRICT_POLICY,
         ),
         cosign_private_key=None if key is None else str(tmp_path / key),
         cosign_public_key=public_key,

@@ -17,6 +17,7 @@ from conclear.services.assembly import CandidateResult
 from conclear.services.publication import publish_candidate
 from conclear.values import Digest, OCIReference, Platform, candidate_tag
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
+from tests.registry_policy_fixtures import STRICT_POLICY
 from tests.unit.test_publication import (
     FakeRegistry,
     FakeRegistryControl,
@@ -62,6 +63,7 @@ class Scenario:
         self.tags: dict[str, Digest] = {}
         self.registry = FakeRegistry(self.observation.graph, self.tags)
         self.registry_control = FakeRegistryControl(self.tags)
+        self.policy = STRICT_POLICY
         self.tagged = self.image.repository.with_tag(self.tag)
 
     def journal_attempt(
@@ -72,7 +74,8 @@ class Scenario:
         status: ResourceStatus = ResourceStatus.FAILED,
     ) -> None:
         metadata: dict[str, object] = {
-            "digest": str(self.observation.graph.digest) if digest is None else digest
+            "registryPolicy": self.policy.to_dict(),
+            "digest": str(self.observation.graph.digest) if digest is None else digest,
         }
         if expiration is not None:
             metadata["expiration"] = expiration
@@ -98,6 +101,7 @@ class Scenario:
             auth_file=None,
             now=now,
             clock=clock or (lambda: now),
+            policy=self.policy,
         )
 
 

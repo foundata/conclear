@@ -89,6 +89,11 @@ def verify_candidate(
     if snapshot.state is not RunState.ATTESTED:
         raise InvalidInvocationError("Verification requires attested state")
     candidate.qualification_window.require_current(now, phase="release verification")
+    published.require_current(now)
+    if published.policy != profile.registry.policy:
+        raise InvalidInvocationError(
+            "Published registry policy differs from the release profile"
+        )
     if signer_mode not in {"managed-key", "kms", "hsm"}:
         raise InvalidInvocationError("Unsupported signer mode")
     if not signer_key_id:
@@ -170,6 +175,8 @@ def verify_candidate(
             expected=provenance_predicate,
         )
     payload: dict[str, object] = {
+        "candidateAuthorization": published.authorization(),
+        "registryPolicy": published.policy.to_dict(),
         "qualificationWindow": candidate.qualification_window.to_dict(),
         "subject": {
             "repository": image.repository.repository_name,
@@ -196,6 +203,7 @@ def verify_candidate(
         },
     }
     verified_at = clock()
+    published.require_current(verified_at)
     candidate.qualification_window.require_current(
         verified_at, phase="release verification"
     )
@@ -289,6 +297,7 @@ def verify_candidate(
         expected=statement,
     ):
         completed_at = clock()
+        published.require_current(completed_at)
         candidate.qualification_window.require_current(
             completed_at, phase="release verification resume"
         )
@@ -305,6 +314,7 @@ def verify_candidate(
     elif existing_verification.status is ResourceStatus.CREATED:
         raise OperationalError("Recorded release verification attestation is missing")
     try:
+        published.require_current(clock())
         candidate.qualification_window.require_current(
             clock(), phase="release verification signing"
         )
@@ -323,6 +333,7 @@ def verify_candidate(
             expected=statement,
         )
         completed_at = clock()
+        published.require_current(completed_at)
         candidate.qualification_window.require_current(
             completed_at, phase="release verification completion"
         )

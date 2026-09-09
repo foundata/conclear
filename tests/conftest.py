@@ -42,7 +42,7 @@ repository = "quay.io/example/app"
 platforms = ["linux/amd64"]
 
 [images.release]
-immutable_tags = ["{version}"]
+version_tags = ["{version}"]
 moving_tags = ["stable"]
 
 [images.runtime]

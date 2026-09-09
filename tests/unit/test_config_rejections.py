@@ -9,6 +9,7 @@ import pytest
 from conclear.config import load_repository_config, normalize_observed_source_url
 from conclear.errors import InvalidInvocationError
 from conclear.release_profile import load_release_profile, normalize_builder_id
+from tests.registry_policy_fixtures import REGISTRY_POLICY_TOML
 
 DIGEST = "sha256:" + "a" * 64
 SECOND_IMAGE = """
@@ -19,7 +20,7 @@ repository = "quay.io/example/generator"
 platforms = ["linux/amd64"]
 
 [images.release]
-immutable_tags = ["{version}"]
+version_tags = ["{version}"]
 moving_tags = ["stable"]
 
 [images.runtime]
@@ -245,8 +246,8 @@ command = ["/app"]
         ),
         (
             lambda text: text.replace(
-                'immutable_tags = ["{version}"]',
-                'immutable_tags = ["{version}", "{version}"]',
+                'version_tags = ["{version}"]',
+                'version_tags = ["{version}", "{version}"]',
             ),
             "Invalid",
         ),
@@ -328,7 +329,7 @@ def test_release_profile_names_and_files_are_validated(tmp_path: Path) -> None:
         path.write_text(
             f'schema_version = 1\nci_context = "omit"\ncosign_public_key = "{key}"\n{extra}\n'
             '[builder]\nid = "https://foundata.com/en/projects/conclear/builder/simple-v1/"\n'
-            '[registry]\nprovider = "quay"\nhost = "quay.io"\n',
+            '[registry]\nprovider = "quay"\nhost = "quay.io"\n' + REGISTRY_POLICY_TOML,
             encoding="utf-8",
         )
         path.chmod(0o600)
@@ -354,7 +355,8 @@ def test_release_profile_names_and_files_are_validated(tmp_path: Path) -> None:
     api.write_text(
         f'schema_version = 1\nci_context = "omit"\ncosign_public_key = "{public_key}"\n'
         '[builder]\nid = "https://foundata.com/en/projects/conclear/builder/simple-v1/"\n'
-        '[registry]\nprovider = "quay"\nhost = "quay.io"\napi_url = "https://quay.io"\n',
+        '[registry]\nprovider = "quay"\nhost = "quay.io"\napi_url = "https://quay.io"\n'
+        + REGISTRY_POLICY_TOML,
         encoding="utf-8",
     )
     api.chmod(0o600)

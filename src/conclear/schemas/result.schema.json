@@ -518,6 +518,9 @@
                   "$ref": "#/$defs/text"
                 }
               },
+              "registryPolicy": {
+                "$ref": "#/$defs/registryPolicy"
+              },
               "registryProvider": {
                 "$ref": "#/$defs/text"
               },
@@ -1109,6 +1112,9 @@
               "expiration": {
                 "$ref": "#/$defs/timestamp"
               },
+              "registryPolicy": {
+                "$ref": "#/$defs/registryPolicy"
+              },
               "immutabilityEnabled": {
                 "type": "boolean"
               }
@@ -1271,6 +1277,9 @@
               "candidateDeleted": {
                 "type": "boolean"
               },
+              "registryPolicy": {
+                "$ref": "#/$defs/registryPolicy"
+              },
               "immutabilityEnabled": {
                 "type": "boolean"
               }
@@ -1333,6 +1342,9 @@
               },
               "candidateDeleted": {
                 "type": "boolean"
+              },
+              "registryPolicy": {
+                "$ref": "#/$defs/registryPolicy"
               },
               "immutabilityEnabled": {
                 "type": "boolean"
@@ -1433,6 +1445,100 @@
     }
   ],
   "$defs": {
+    "registryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tagProtection",
+        "candidateCleanup"
+      ],
+      "properties": {
+        "tagProtection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "rationale",
+            "owner"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "required",
+                "not-enforced"
+              ]
+            },
+            "rationale": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "owner": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "not-enforced"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rationale": {
+                "type": "string",
+                "pattern": "\\S"
+              },
+              "owner": {
+                "type": "string",
+                "pattern": "\\S"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "rationale": {
+                "type": "null"
+              },
+              "owner": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        "candidateCleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "owner",
+            "procedure"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "manual",
+                "tag-expiration",
+                "auto-prune"
+              ]
+            },
+            "owner": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "procedure": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          }
+        }
+      }
+    },
     "qualificationWindow": {
       "type": "object",
       "additionalProperties": false,
@@ -1760,6 +1866,9 @@
           "items": {
             "$ref": "#/$defs/text"
           }
+        },
+        "registryPolicy": {
+          "$ref": "#/$defs/registryPolicy"
         },
         "registryProvider": {
           "$ref": "#/$defs/text"
@@ -2101,6 +2210,9 @@
         "expiration": {
           "$ref": "#/$defs/timestamp"
         },
+        "registryPolicy": {
+          "$ref": "#/$defs/registryPolicy"
+        },
         "immutabilityEnabled": {
           "type": "boolean"
         }
@@ -2108,6 +2220,7 @@
       "required": [
         "digest",
         "expiration",
+        "registryPolicy",
         "immutabilityEnabled",
         "reference"
       ]
@@ -2150,12 +2263,16 @@
         "candidateDeleted": {
           "type": "boolean"
         },
+        "registryPolicy": {
+          "$ref": "#/$defs/registryPolicy"
+        },
         "immutabilityEnabled": {
           "type": "boolean"
         }
       },
       "required": [
         "candidateDeleted",
+        "registryPolicy",
         "immutabilityEnabled",
         "tags"
       ]
@@ -2179,12 +2296,16 @@
         "candidateDeleted": {
           "type": "boolean"
         },
+        "registryPolicy": {
+          "$ref": "#/$defs/registryPolicy"
+        },
         "immutabilityEnabled": {
           "type": "boolean"
         }
       },
       "required": [
         "candidateDeleted",
+        "registryPolicy",
         "immutabilityEnabled",
         "runId",
         "subject",

@@ -1,9 +1,11 @@
+import tomllib
 from importlib.resources import files
 
 import pytest
 from jsonschema import Draft202012Validator
 
 from conclear.schema import load_schema, validate_schema
+from tests.registry_policy_fixtures import REGISTRY_POLICY_TOML
 
 
 @pytest.mark.parametrize(
@@ -94,7 +96,11 @@ def test_release_profile_schema_has_a_closed_registry_backend_matrix() -> None:
             "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"
         },
         "cosign_public_key": "/run/secrets/cosign.pub",
-        "registry": {"provider": "quay", "host": "quay.io"},
+        "registry": {
+            "provider": "quay",
+            "host": "quay.io",
+            **tomllib.loads(REGISTRY_POLICY_TOML),
+        },
     }
 
     validator.validate(profile)
@@ -130,7 +136,7 @@ def test_pin_update_proposal_schema_is_closed_and_bounded() -> None:
         "guideTitle": "OCI container image build and release guide",
         "guideRepository": "https://github.com/foundata/guidelines",
         "guidePath": "oci-container-image-guide.md",
-        "guideRevision": "45690c38bec6a8a80b078f38d482adba83b336a5",
+        "guideRevision": "f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb",
     }
     lookup: dict[str, object] = {
         "imageIds": ["runtime"],

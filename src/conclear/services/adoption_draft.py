@@ -87,7 +87,7 @@ def render_draft(
             (
                 "",
                 "[images.release]",
-                'immutable_tags = ["{version}"]',
+                'version_tags = ["{version}"]',
                 'moving_tags = ["stable"]',
             )
         )
@@ -229,7 +229,7 @@ def assessment_notes(
             Note(
                 image.image_id,
                 "release",
-                'Start with immutable_tags = ["{version}"] and moving_tags = ["stable"]; drop {version} for an unversioned project.',
+                'Start with version_tags = ["{version}"] and moving_tags = ["stable"]; drop {version} for an unversioned project.',
             )
         )
         suggestions.append(

@@ -12,6 +12,11 @@ A container project adopts it by adding a repository configuration, making each
 Containerfile comply with the guide and declaring any runtime inputs its tests
 need.
 
+The publication backend is [Quay](https://quay.io/). A protected release profile
+chooses required version-tag protection or its reviewed absence, and an owned
+candidate-cleanup procedure. Native expiration or auto-prune is recommended;
+manual cleanup is supported.
+
 <!-- rumdl-disable MD033 -->
 <!-- HTML for consistent rendering across limited platform parsers -->
 <div align="center" id="project-readme-header">

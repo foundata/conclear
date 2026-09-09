@@ -170,7 +170,7 @@ def create_source_run(
                 code="CC0001",
             )
         image = repository.release_image(image_id)
-        image.release.render_immutable(version)
+        image.release.render_versions(version)
         runtime = ApplicationRuntime.create(
             workspace.root / "environment", names=_with_git(names)
         )

@@ -59,6 +59,7 @@ from conclear.services.rescan import (
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
+from tests.registry_policy_fixtures import STRICT_POLICY
 
 
 class IdFactory:
@@ -459,6 +460,11 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
                 "digest": str(root_digest),
             },
             "platformDigests": {str(platform): str(manifest_digest)},
+            "registryPolicy": STRICT_POLICY.to_dict(),
+            "candidateAuthorization": {
+                "reference": "quay.io/example/app:candidate-historical",
+                "expiresAt": "2026-01-08T00:00:00Z",
+            },
             "qualificationWindow": {
                 "startedAt": "2026-01-01T00:00:00Z",
                 "expiresAt": "2026-01-02T00:00:00Z",

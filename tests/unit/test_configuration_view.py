@@ -47,7 +47,7 @@ def test_effective_configuration_shows_defaults_limits_and_explicit_measurements
     assert values["runtime.read_only"]["value"] is True
     assert values["scanner"]["origin"] == "fixed policy"
     assert values["runtime.profile_mounts"]["value"] == []
-    assert values["release.immutable_tags"]["reason"] == "Requires --version."
+    assert values["release.version_tags"]["reason"] == "Requires --version."
     for key, reason in RESOURCE_DECISIONS.items():
         assert values[f"runtime.{key}"]["origin"] == "repository"
         assert values[f"runtime.{key}"]["reason"] == reason
@@ -84,7 +84,7 @@ required_units = ["multi-user.target"]
         "/var/lib/app",
     }
     assert values["runtime.root_requirement"]["value"]["owner"] == "platform"
-    assert values["release.rendered_immutable_tags"]["value"] == ["1.2.3"]
+    assert values["release.rendered_version_tags"]["value"] == ["1.2.3"]
     assert "runtime.systemd.required_units" in values
 
 
@@ -111,7 +111,7 @@ def test_effective_view_covers_all_images_and_keeps_profile_secrets_out(
     )
     data = json.loads(json.dumps(result.to_dict()))["data"]
     assert [image["id"] for image in data["images"]] == ["app", "helper"]
-    assert "release.immutable_tags" not in data["images"][1]["values"]
+    assert "release.version_tags" not in data["images"][1]["values"]
     assert data["releaseProfile"]["builderId"] == profile.builder.id
     rendered = json.dumps(data) + str(result.details)
     for secret_path in (
@@ -232,7 +232,7 @@ def test_empty_release_tags_and_fixed_scanner_options_are_rejected(
     path = repository_factory() / "conclear.toml"
     original = path.read_text(encoding="utf-8")
     path.write_text(
-        original.replace('immutable_tags = ["{version}"]\n', "").replace(
+        original.replace('version_tags = ["{version}"]\n', "").replace(
             'moving_tags = ["stable"]\n', ""
         ),
         encoding="utf-8",

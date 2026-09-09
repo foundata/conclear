@@ -69,7 +69,7 @@ repository = "quay.io/llmtest/app"
 platforms = [{platform_list}]
 
 [images.release]
-immutable_tags = ["{{version}}"]
+version_tags = ["{{version}}"]
 moving_tags = ["stable"]
 
 [images.runtime]

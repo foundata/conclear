@@ -15,6 +15,7 @@ from conclear.release_profile import (
     ReleaseProfile,
 )
 from conclear.values import OCIReference
+from tests.registry_policy_fixtures import STRICT_POLICY
 
 
 def _profile(tmp_path: Path) -> ReleaseProfile:
@@ -30,6 +31,7 @@ def _profile(tmp_path: Path) -> ReleaseProfile:
             host="quay.io",
             api_url="https://quay.io/api/v1",
             token_file=tmp_path / "quay-token",
+            policy=STRICT_POLICY,
         ),
         cosign_private_key=None,
         cosign_public_key=tmp_path / "cosign.pub",

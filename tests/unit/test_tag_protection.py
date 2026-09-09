@@ -53,7 +53,7 @@ def check_policies(
         )
         adapter.verify_tag_policy(
             OCIReference.parse("quay.io/example/app"),
-            immutable_tags=("1.2.3", "v1.2.3"),
+            version_tags=("1.2.3", "v1.2.3"),
             mutable_tags=("latest", "1.2.3-candidate.example"),
         )
 
@@ -135,7 +135,7 @@ def test_unavailable_policy_api_is_fatal(status: int) -> None:
         ):
             adapter.verify_tag_policy(
                 OCIReference.parse("quay.io/example/app"),
-                immutable_tags=("1.2.3",),
+                version_tags=("1.2.3",),
                 mutable_tags=("latest",),
             )
 
@@ -192,7 +192,11 @@ def test_retry_rejects_a_moving_tag_protected_after_the_policy_check(
         kind=ResourceKind.TAG_WRITE,
         identifier=str(scenario.image.repository.with_tag("latest")),
         ephemeral=False,
-        metadata={"digest": str(digest), "immutable": False},
+        metadata={
+            "digest": str(digest),
+            "versionTag": False,
+            "registryProtectionRequired": False,
+        },
     )
     scenario.tags["latest"] = digest
     scenario.registry_control.immutable.add("latest")
@@ -206,6 +210,7 @@ def test_retry_rejects_a_moving_tag_protected_after_the_policy_check(
             scenario.registry,
             None,
             immutable=False,
+            require_protection=False,
             authorize_tag_write=lambda: None,
         )
     assert caught.value.code == "CC0604"

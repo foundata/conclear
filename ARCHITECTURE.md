@@ -145,7 +145,7 @@ reviewed source commit
   -> registry candidate digest                   publish
   -> signatures and attestations                 attest
   -> signed release-verification attestation     verify
-  -> immutable and convenience release tags      promote
+  -> version and moving release tags             promote
 ```
 
 <a id="promise-ip0004"></a>
@@ -274,7 +274,7 @@ platforms = ["linux/amd64", "linux/arm64"]
 native_test_platforms = ["linux/amd64"]
 
 [images.release]
-immutable_tags = ["{version}"]
+version_tags = ["{version}"]
 moving_tags = ["stable"]
 
 [images.runtime]
@@ -683,10 +683,10 @@ the repository.
 | `transport export` | Write one accepted qualification, its OCI layout and the evidence payloads it names as a new archive or directory transport with a digest-binding manifest, and report the transport and record digests. |
 | `assemble`         | Create a coordinator run from the reviewed source revision, import each transport only against a caller-supplied digest, verify every record, layout, descriptor and payload, require exact platform coverage, create an index when needed and emit `release-candidate.json`. |
 | `provenance`       | Generate an in-toto Statement predicate using SLSA Provenance v1 from the accepted candidate and observed release data. |
-| `publish`          | Copy the accepted subject to one generated candidate reference, set its expiration and compare the complete remote digest graph. |
+| `publish`          | Record candidate authorization, copy the accepted subject, apply selected cleanup controls and compare the remote digest graph. |
 | `attest`           | Attach platform SBOMs and provenance and sign the index and every platform manifest. |
 | `verify`           | Verify the remote graph, signatures, attestations, identities and guide evidence and attach a signed release-verification result. |
-| `promote`          | Apply configured immutable and moving release tags to the verified digest, verify each tag and delete the candidate tag. |
+| `promote`          | Apply configured version and moving tags to the verified digest, verify each tag and attempt candidate deletion. |
 | `release`          | Create an isolated checkout and execute the complete workflow through promotion, locally or in CI. |
 | `rescan`           | Re-evaluate a released digest from retained SBOMs or immutable image content and emit a new linked rescan result. |
 | `cleanup`          | Resume cleanup of resources recorded as owned by one release run. |
@@ -885,15 +885,15 @@ original `--qualification-started-at` value when joining an existing window.
 Without that option, a pinned snapshot must be fresh at the worker's own start.
 An expired pinned selection fails without refreshing or substituting databases.
 
-Qualification records carry `qualificationWindow.startedAt` and `expiresAt`,
-and record the actual completion time. Pin freshness and divergence deadlines
-for the image and its test dependencies, and the expiry of applied vulnerability
+Qualification records carry `qualificationWindow.startedAt` and `expiresAt`, and
+record the actual completion time. Pin freshness and divergence deadlines for
+the image and its test dependencies, and the expiry of applied vulnerability
 exceptions, can shorten approval. Assembly retains the earliest start and
 deadline across platforms. Completion, assembly, candidate publication and
 signed release verification require current approval; promotion checks the
 deadline in the authenticated verification statement. Delayed phases and resume
-cannot renew it. A seven-day candidate retention period does not extend release
-approval. Expiry requires a new qualification run with fresh evidence.
+cannot renew it. The seven-day candidate authorization limit does not extend
+release approval. Expiry requires a new qualification run with fresh evidence.
 
 Historical record inspection does not impose a current-age gate. Rescanning a
 published digest verifies the original signed evidence and uses a fresh database
@@ -1158,18 +1158,27 @@ stages remain available for destinations without a supported backend.
 
 A supported registry backend must provide exact tag observation,
 digest-preserving manifest-list and platform graph handling, OCI referrer
-support compatible with Cosign, an independently enforced candidate lifetime,
+support compatible with Cosign,
 exact digest tag assignment, owned-tag deletion and post-write observation that
-resolves ambiguous writes. It must verify selective immutable-tag policies
-before candidate upload and before promotion, and observe protection on each
-final tag assignment. Unavailable or unreadable protection stops the operation;
-repository-wide immutability does not satisfy the requirement because candidate
-expiry and moving tags must remain available. Local timestamps and best-effort
-cleanup never satisfy
-the lifetime requirement. `quay` is the only implemented backend. Publication
-requires its repository auto-prune API to be enabled and accessible with the
-supplied credentials, as well as native tag expiration. Availability is checked
-against the configured endpoint rather than inferred from its hostname.
+resolves ambiguous writes. `quay` is the only implemented backend.
+
+The protected profile requires two explicit choices:
+
+- `registry.tag_protection.mode`: `required` verifies selective version-tag
+  protection before upload and promotion, and protection on assignment.
+  `not-enforced` needs a nonempty rationale and owner. ConClear still refuses
+  conflicting version tags, but cannot prevent another writer from changing
+  them. Restrict writer permissions and consume released images by digest.
+- `registry.candidate_cleanup.mode`: `manual`, `tag-expiration` or `auto-prune`.
+  Every mode needs a cleanup owner and procedure for abandoned runs. Automation
+  is recommended; manual cleanup needs no provider policy API.
+
+There are no implicit defaults or fallback after provider errors. Required
+protection and selected cleanup APIs must work. Repository-wide locking is
+unsuitable because candidates and moving tags must remain mutable. ConClear
+does not create immutability policies. Profile choices appear in `config show`,
+`doctor`, publication and promotion results, and signed release verification.
+Rationale, owner and procedure are public evidence: keep secrets out of them.
 
 <a id="promise-ip0029"></a>
 The default candidate lives in the final release repository so signatures and
@@ -1180,15 +1189,18 @@ lowercase ULID, uses the first eight hexadecimal characters of the full source
 revision for the short form and validates every component before creating the
 tag.
 
-`publish` checks that the candidate tag is unused and establishes a verified
-repository retention rule before uploading any candidate content. The Quay
-adapter creates or reuses a `creation_date` auto-prune policy whose anchored
-pattern matches only generated ConClear candidate names. The observed maximum
-age cannot exceed the configured candidate lifetime. Existing policies are
-never broadened or relaxed; a stricter existing policy can remove candidates
-earlier. The policy remains in place across runs and is not removed by cleanup.
-A missing, unauthorized or unverifiable retention API stops publication before
-upload. The policy ID, pattern and maximum age are journaled with the candidate.
+`publish` checks that the candidate tag is unused and journals its digest,
+selected policy and original authorization deadline before uploading content.
+This deadline bounds ConClear authorization even if registry expiration is
+absent or changed. Resume reuses the recorded deadline; it cannot renew
+approval.
+
+With `auto-prune`, the Quay adapter first creates or reuses a `creation_date`
+policy whose anchored pattern matches only generated ConClear candidates.
+Its maximum age cannot exceed the configured candidate lifetime. Existing
+policies are never broadened or relaxed; stricter policies can remove candidates
+earlier. The policy remains across runs, with its ID, pattern and age journaled.
+Unavailable or unverifiable policy APIs stop publication before upload.
 
 ConClear then copies the accepted
 manifest or index with Skopeo's digest-preserving path, including every platform
@@ -1197,17 +1209,18 @@ content and compares the complete graph with the local candidate. Registries do
 not provide a portable compare-and-swap operation, so pre-write checks detect
 ordinary collisions while post-write verification determines success.
 
-Immediately after a successful copy, ConClear also sets and verifies the exact
-per-tag deadline. The pre-existing retention rule covers an upload that succeeds
-remotely but loses its acknowledgement, even if ConClear never resumes. Failure
-to confirm the per-tag deadline stops the release before attestation. ConClear
-keeps candidate tags mutable so expiration and deletion remain possible. A
-failed or ambiguous publication is recorded for cleanup; resume reuses its tag
-only after conclusively resolving it to the unchanged expected digest within its
-lifetime. Candidate content and evidence must be safe for public disclosure;
-later provider garbage collection is outside the release verdict.
+After upload, `tag-expiration` and `auto-prune` set and verify per-tag
+expiration. Only auto-prune covers the interval between a successful upload and
+setting expiration without another ConClear invocation. Manual mode observes the
+candidate without requiring expiration. All modes retain ownership state for
+cleanup after a lost acknowledgement or interrupted upload. ConClear keeps
+candidate tags mutable so expiration and deletion remain possible. A failed or
+ambiguous publication is recorded for cleanup; resume reuses its tag only after
+conclusively resolving it to the unchanged expected digest within its lifetime.
+Candidate content and evidence must be safe for public disclosure; later
+provider garbage collection is outside the release verdict.
 
-Quay's auto-pruner runs asynchronously. Registry operators must keep that
+Quay's auto-pruner runs asynchronously. When selected, operators must keep that
 service enabled, monitor its execution and account for its scheduling delay
 when setting retention limits. Observing the policy through the API proves
 its configuration, not the health or timing of a remote worker. This is a
@@ -1216,21 +1229,30 @@ registry operation and does not require a build CI service.
 <a id="promise-ip0030"></a>
 Promotion first confirms that the candidate has not expired, then resolves and
 verifies the signed release-verification attestation. It refuses to replace an
-immutable version tag that already names another digest. It reads repository and
-organization immutability policies and requires coverage of every final version
-tag while excluding the candidate and declared moving tags. Quay policy checks
+version tag that already names another digest. Both the original candidate
+deadline and qualification window must remain current before each tag write.
+The signed record binds the original deadline and selected registry policy;
+changing local state cannot renew that authorization. Registry expiration may
+shorten the usable interval but cannot extend it.
+
+When protection is `required`, ConClear reads repository and organization
+policies and requires coverage of every final version tag while excluding
+the candidate and declared moving tags. Quay policy checks
 use the same regular-expression engine and full-match semantics as Quay, with a
 bounded match time; malformed or timed-out policies fail closed. ConClear never
 changes these policies. The API token needs repository and organization policy
 read access. Promotion writes only the verified digest, requires protection on
-assignment of each immutable tag, resolves every tag afterward and records the
-observed result separately. A partial
+assignment when selected, resolves every tag afterward and records the result.
+`immutabilityEnabled` in promotion results and the release summary is true only
+when protection was required and verified for all configured version tags; it
+is not a claim about other tags or future registry administration. A partial
 multi-tag update is an operational failure and is never hidden by rollback or
 repointing.
 
 After successful promotion, ConClear deletes the candidate tag and verifies its
-removal. An abandoned or rejected candidate may be deleted with `cleanup` or
-left to its recorded expiration. Failure to delete after successful promotion is
+removal in every cleanup mode. The declared owner handles abandoned or rejected
+candidates with `cleanup` or the selected registry mechanism and monitors any
+cleanup automation. Failure to delete after successful promotion is
 reported as cleanup failure without changing the release digest's verified
 status.
 

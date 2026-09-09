@@ -17,6 +17,7 @@ from conclear.records import (
     parse_timestamp,
     validate_record,
 )
+from conclear.registry_policy import RegistryPolicy
 from conclear.services.assembly import CandidateResult, QualificationTransport
 from conclear.services.attestation import ReleaseEvidence, validate_release_provenance
 from conclear.services.publication import PublishedCandidate
@@ -503,6 +504,7 @@ def load_published(
         "candidate expiration",
         error=InvalidInvocationError,
     )
+    policy = RegistryPolicy.from_dict(entry.metadata.get("registryPolicy"))
     immutable = entry.metadata.get("immutabilityEnabled")
     if not isinstance(immutable, bool):
         raise InvalidInvocationError("Candidate immutability observation is malformed")
@@ -512,6 +514,7 @@ def load_published(
         candidate.observation.graph,
         expiration,
         immutable,
+        policy,
     )
 
 

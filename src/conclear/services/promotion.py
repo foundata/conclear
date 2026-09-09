@@ -1,11 +1,11 @@
 """Promotion of the verified digest to the configured release tags.
 
 `promote_candidate` repeats the release-verification check against the signed
-statement, applies every immutable and moving release tag to the verified
+statement, applies every version and moving release tag to the verified
 digest through the registry control plane, verifies each tag through the
 transport view and finally removes the ConClear-owned candidate tag. It refuses
-to repoint an immutable tag that already names another digest and requires
-registry-enforced protection for every final version tag.
+to repoint a version tag that already names another digest. Registry-enforced
+protection is verified when the protected profile requires it.
 """
 
 from collections.abc import Callable
@@ -24,6 +24,11 @@ from conclear.jsonutil import load_json
 from conclear.parsing import object_value
 from conclear.presentation import Finding
 from conclear.registry_control import RegistryControl
+from conclear.registry_policy import (
+    CandidateCleanupMode,
+    TagProtectionMode,
+    policy_findings,
+)
 from conclear.services.attestation import Signer, require_verified_statement
 from conclear.services.publication import PublishedCandidate, Registry, retry_entry
 from conclear.services.verification import VerificationResult
@@ -64,9 +69,14 @@ def promote_candidate(
     )
     if tag_state is None or tag_state.digest != published.graph.digest:
         raise OperationalError("Candidate tag changed before promotion")
-    if tag_state.expiration is None:
+    published.require_current(now)
+    if (
+        tag_state.expiration is None
+        and published.policy.candidate_cleanup.mode is not CandidateCleanupMode.MANUAL
+    ):
         raise OperationalError("Candidate expiration is missing before promotion")
-    if now.astimezone(UTC) >= tag_state.expiration:
+    expiration = min(published.expiration, tag_state.expiration or published.expiration)
+    if now.astimezone(UTC) >= expiration:
         raise RuleRejectionError("Candidate expired before promotion", code="CC0603")
     expected_statement = object_value(
         load_json(verification.statement_path), "release verification statement"
@@ -82,9 +92,16 @@ def promote_candidate(
         expected_statement.get("predicate"), "release verification"
     )
     payload = object_value(predicate.get("payload"), "release verification payload")
+    if (
+        payload.get("candidateAuthorization") != published.authorization()
+        or payload.get("registryPolicy") != published.policy.to_dict()
+    ):
+        raise RuleRejectionError(
+            "Candidate authorization or registry policy differs from signed verification",
+            code="CC0603",
+        )
     window = QualificationWindow.from_dict(payload.get("qualificationWindow"))
     window.require_current(now, phase="promotion")
-    expiration = tag_state.expiration
 
     def authorize_tag_write() -> None:
         checked_at = clock()
@@ -95,21 +112,25 @@ def promote_candidate(
             )
 
     authorize_tag_write()
-    immutable_tags = image.release.render_immutable(version)
+    version_tags = image.release.render_versions(version)
     moving_tags = image.release.moving_tags
-    registry_control.verify_tag_policy(
-        image.repository,
-        immutable_tags=immutable_tags,
-        mutable_tags=(published.reference.tag or "", *moving_tags),
+    require_protection = (
+        published.policy.tag_protection.mode is TagProtectionMode.REQUIRED
     )
+    if require_protection:
+        registry_control.verify_tag_policy(
+            image.repository,
+            version_tags=version_tags,
+            mutable_tags=(published.reference.tag or "", *moving_tags),
+        )
     observed: list[tuple[str, Digest]] = []
-    protected = True
-    for tag in immutable_tags:
+    protected = require_protection and bool(version_tags)
+    for tag in version_tags:
         current = registry_control.observe_tag(image.repository, tag)
         authorize_tag_write()
         if current is not None and current.digest != published.graph.digest:
             raise RuleRejectionError(
-                f"Immutable release tag already names another digest: {tag}",
+                f"Version release tag already names another digest: {tag}",
                 code="CC0604",
             )
         if current is not None:
@@ -128,13 +149,14 @@ def promote_candidate(
                         registry,
                         auth_file,
                         immutable=True,
+                        require_protection=require_protection,
                         authorize_tag_write=authorize_tag_write,
                     )
                     and protected
                 )
                 observed.append((tag, published.graph.digest))
                 continue
-            if not current.immutable:
+            if require_protection and not current.immutable:
                 protected = (
                     _protect_release_tag(
                         registry_control, image, tag, expected_digest=current.digest
@@ -160,6 +182,7 @@ def promote_candidate(
                 registry,
                 auth_file,
                 immutable=True,
+                require_protection=require_protection,
                 authorize_tag_write=authorize_tag_write,
             )
             and protected
@@ -175,6 +198,7 @@ def promote_candidate(
             registry,
             auth_file,
             immutable=False,
+            require_protection=False,
             authorize_tag_write=authorize_tag_write,
         )
         observed.append((tag, published.graph.digest))
@@ -196,6 +220,7 @@ def promote_candidate(
             tuple(observed),
             False,
             (
+                *policy_findings(published.policy),
                 Finding(
                     "CC0605",
                     "error",
@@ -205,7 +230,12 @@ def promote_candidate(
             immutability_enabled=protected,
         )
     else:
-        return PromotionResult(tuple(observed), True, immutability_enabled=protected)
+        return PromotionResult(
+            tuple(observed),
+            True,
+            policy_findings(published.policy),
+            immutability_enabled=protected,
+        )
 
 
 def _write_release_tag(
@@ -218,12 +248,17 @@ def _write_release_tag(
     auth_file: Path | None,
     *,
     immutable: bool,
+    require_protection: bool,
     authorize_tag_write: Callable[[], None],
 ) -> bool:
     """Write or adopt one release tag and return whether the registry protects it."""
     resource_id = f"tag-{tag}"
     tagged = image.repository.with_tag(tag)
-    metadata = {"digest": str(digest), "immutable": immutable}
+    metadata = {
+        "digest": str(digest),
+        "versionTag": immutable,
+        "registryProtectionRequired": require_protection,
+    }
     existing = retry_entry(
         workspace,
         resource_id=resource_id,
@@ -243,8 +278,8 @@ def _write_release_tag(
                 raise OperationalError(
                     f"Release tag {tag} has conflicting registry observations"
                 )
-            protected = True
-            if immutable and not current.immutable:
+            protected = require_protection
+            if require_protection and not current.immutable:
                 authorize_tag_write()
                 protected = _protect_release_tag(
                     registry_control, image, tag, expected_digest=digest
@@ -269,13 +304,13 @@ def _write_release_tag(
             raise OperationalError(
                 f"Release tag {tag} did not resolve to verified digest"
             )
-        protected = True
-        if immutable:
+        protected = require_protection
+        if require_protection:
             if not result.immutable:
                 raise OperationalError(
                     f"Release tag was not protected on assignment: {tag}", code="CC0604"
                 )
-        elif result.immutable:
+        elif not immutable and result.immutable:
             raise OperationalError(
                 f"Moving tag was unexpectedly made immutable: {tag}", code="CC0604"
             )

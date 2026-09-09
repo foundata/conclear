@@ -13,6 +13,7 @@ from conclear.release_profile import (
     RegistryProvider,
     load_release_profile,
 )
+from tests.registry_policy_fixtures import REGISTRY_POLICY_TOML, STRICT_POLICY
 
 
 def test_release_profile_import_does_not_load_repository_configuration(
@@ -48,6 +49,7 @@ def _profile_text(*root_lines: str, api_url: str | None = None) -> str:
         "[registry]",
         'provider = "quay"',
         'host = "quay.io"',
+        REGISTRY_POLICY_TOML,
     ]
     if api_url is not None:
         registry_lines.append(f'api_url = "{api_url}"')
@@ -105,6 +107,7 @@ def test_release_profile_parses_explicit_registry_backend(tmp_path: Path) -> Non
         "quay.io",
         "https://quay.io/api/v1",
         token_file.resolve(),
+        policy=STRICT_POLICY,
     )
     assert selected.builder == BuilderConfig(
         "https://foundata.com/en/projects/conclear/builder/simple-v1/"

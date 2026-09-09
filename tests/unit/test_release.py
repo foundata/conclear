@@ -32,6 +32,7 @@ from conclear.services.release import ReleaseRequest
 from conclear.source_integrity import source_tree_digest
 from conclear.values import OCIReference
 from conclear.workspace import RunState, RunWorkspace
+from tests.registry_policy_fixtures import STRICT_POLICY
 from tests.release_fakes import FakeRuntime
 
 BUILDER_ID = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
@@ -53,6 +54,7 @@ def profile(tmp_path: Path) -> ReleaseProfile:
             "quay.io",
             "https://quay.io/api/v1",
             tmp_path / "quay-token",
+            policy=STRICT_POLICY,
         ),
         cosign_private_key=str(tmp_path / "cosign.key"),
         cosign_public_key=tmp_path / "cosign.pub",

@@ -20,6 +20,7 @@ from conclear.release_profile import (
     ReleaseProfile,
 )
 from conclear.services.ci_context import resolve_ci_context
+from tests.registry_policy_fixtures import STRICT_POLICY
 
 REVISION = "a" * 40
 
@@ -37,6 +38,7 @@ def _profile(tmp_path: Path, policy: CIContextPolicy) -> ReleaseProfile:
             "quay.io",
             "https://quay.io/api/v1",
             None,
+            policy=STRICT_POLICY,
         ),
         cosign_private_key=None,
         cosign_public_key=tmp_path / "cosign.pub",

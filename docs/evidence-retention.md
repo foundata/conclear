@@ -187,6 +187,18 @@ Retain the signed history and protected local state across scheduler jobs.
 
 ## Operate the schedule
 
+Keep the cleanup owner and procedure in the protected profile current. Review
+abandoned runs regularly, including uploads whose acknowledgement was lost.
+After retaining their evidence, run `conclear cleanup RUN_ID --profile foundata`
+and check the reported result before discarding local ownership state. Native
+expiration and auto-prune reduce dependence on this review, but their workers
+still need monitoring. Manual cleanup mode requires no registry policy API.
+
+If ownership state is lost, reconcile candidate tags with retained run records
+before deleting them. Do not sweep version tags, moving tags or referrers for
+supported digests. An expired authorization prevents ConClear promotion; it
+does not prove that the registry has deleted the tag or collected its content.
+
 A systemd timer or cron job can run one authoritative rescan per due digest
 under an existing managed account. Serialize work for the same digest. The
 account needs the retained configuration, supported tools, protected release

@@ -70,7 +70,7 @@ class RegistryControl(Protocol):
         self,
         repository: OCIReference,
         *,
-        immutable_tags: tuple[str, ...],
+        version_tags: tuple[str, ...],
         mutable_tags: tuple[str, ...],
     ) -> None:
         """Require effective policies to protect final tags and exclude mutable tags."""

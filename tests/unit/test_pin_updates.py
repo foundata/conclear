@@ -72,7 +72,7 @@ repository = "quay.io/example/runtime"
 platforms = ["linux/amd64"]
 
 [images.release]
-immutable_tags = ["{{version}}"]
+version_tags = ["{{version}}"]
 moving_tags = ["stable"]
 
 [images.runtime]
@@ -103,7 +103,7 @@ reference = '{TOOL_TAG}'
 tag_intent = "immutable-version"
 
 [images.release]
-immutable_tags = ["{{version}}"]
+version_tags = ["{{version}}"]
 moving_tags = ["stable"]
 
 [images.runtime]

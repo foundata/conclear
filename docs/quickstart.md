@@ -49,7 +49,7 @@ repository = "quay.io/foundata/example"
 platforms = ["linux/amd64"]
 
 [images.release]
-immutable_tags = ["{version}"]
+version_tags = ["{version}"]
 moving_tags = ["latest"]
 
 [images.runtime]
@@ -168,24 +168,16 @@ For separate platform workers and manual assembly, use the
 
 ## 5. Prepare release access
 
-`quay` is the only implemented publication backend.
+`quay` is the only implemented publication backend. Provision a destination
+repository with writer access and Cosign-compatible referrers, a containers-auth
+file and a separate Quay API token. Scope writers to the intended repositories.
+The token needs repository access for tag observation, assignment and deletion;
+required tag protection also needs repository and organization policy access.
 
-Provision these registry controls and credentials:
-
-- A destination repository with writer access and Cosign-compatible referrers.
-- Selective immutability covering final version tags but excluding `latest` and
-  ConClear candidate tags. For plain or `v`-prefixed numeric versions, Quay's
-  full-match `tagPattern` can be `v?[0-9]+\.[0-9]+\.[0-9]+`. Adjust for other
-  version formats and check inherited organization policies too.
-- Accessible auto-prune and tag-expiration APIs, with the asynchronous pruner
-  enabled and monitored. ConClear establishes candidate retention before upload.
-- A containers-auth file and a separate Quay API token with `repo:admin` and
-  `org:admin` access for the required policy operations. Scope writer access to
-  the intended repositories wherever possible.
-
-ConClear verifies protection but does not create immutability policies or prove
-that the remote pruner is healthy. See the
-[publication contract](../ARCHITECTURE.md#publication-and-promotion).
+Prefer selective protection for version tags, excluding `latest` and generated
+candidates. Where it is unavailable, explicitly accept its absence with an
+owner and rationale. The example below uses that choice and native tag
+expiration.
 
 Reuse one protected release profile for your organization's build trust domain.
 With an encrypted Cosign keypair and the credential files provisioned, create
@@ -207,7 +199,28 @@ provider = "quay"
 host = "quay.io"
 api_url = "https://quay.io/api/v1"
 token_file = "~/.config/conclear/quay.token"
+
+[registry.tag_protection]
+mode = "not-enforced"
+rationale = "Selective version-tag protection is unavailable on this deployment."
+owner = "Release maintainer"
+
+[registry.candidate_cleanup]
+mode = "tag-expiration"
+owner = "Release maintainer"
+procedure = "Review abandoned runs daily; run conclear cleanup before discarding state."
 ```
+
+Use `mode = "required"` without rationale or owner in `tag_protection` when
+selective protection is available. ConClear verifies existing policies; it does
+not create them. Cleanup can instead select `manual` or `auto-prune`; all modes
+need an owner and procedure. Auto-prune establishes a candidate-only policy
+before upload and also sets tag expiration. Chosen controls fail closed;
+ConClear never downgrades after an API error. See the
+[publication contract](../ARCHITECTURE.md#publication-and-promotion).
+
+The rationale, owner and procedure are retained in public release evidence.
+Use non-secret descriptions.
 
 Keep the profile and secret files owned by the invoking user with mode `0600`.
 ConClear prompts for the signing passphrase; automation can use a protected
@@ -231,13 +244,15 @@ initialization. It does not test policy enforcement or replace a complete
 release drill. `release` qualifies all declared platforms, assembles the
 candidate, publishes, signs, verifies and promotes only the verified digest.
 
-For the example, `1.2.3` becomes an immutable tag and `latest` moves to the same
+For the example, `1.2.3` becomes a version tag and `latest` moves to the same
 digest. Changed image bytes can reuse a requested version only while its final
-tag is absent; an existing final tag must keep its digest. See
+tag is absent; an existing final tag must keep its digest. Without registry
+protection, other writers can still change it; restrict their permissions. See
 [resume](../README.md#usage-resume) for interrupted runs.
 
 Finish within the reported qualification window; expiry requires new
-qualification. Candidate retention has its own independent deadline. Keep
+qualification. Candidates also have a fixed authorization deadline recorded
+before upload; cleanup settings and retries cannot extend it. Keep
 durable pin history across releases and retain run evidence before cleanup.
 See [limits](../ARCHITECTURE.md#built-in-limits) and
 [evidence retention](./evidence-retention.md).

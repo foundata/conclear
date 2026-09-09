@@ -2,7 +2,8 @@
 
 `publish_candidate` copies the accepted subject to one unused generated
 candidate tag, compares the complete remote descriptor graph with the accepted
-one and enforces the candidate lifetime through the registry control plane.
+one and records a fixed authorization deadline before upload. Registry cleanup
+controls are applied only when the protected profile selects them.
 The module also owns the remote-graph and retry-journal checks that the later
 phases in `conclear.services.attestation`, `conclear.services.verification`
 and `conclear.services.promotion` reuse.
@@ -30,6 +31,11 @@ from conclear.records import (
     parse_timestamp,
 )
 from conclear.registry_control import CandidateRetentionObservation, RegistryControl
+from conclear.registry_policy import (
+    CandidateCleanupMode,
+    RegistryPolicy,
+    TagProtectionMode,
+)
 from conclear.services.assembly import CandidateResult
 from conclear.values import CANDIDATE_TAG_PATTERN, Digest, OCIReference
 from conclear.workspace import (
@@ -83,13 +89,28 @@ class Registry(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class PublishedCandidate:
-    """A graph-verified candidate with a registry-enforced lifetime."""
+    """A graph-verified candidate with a fixed authorization deadline."""
 
     reference: OCIReference
     immutable_reference: OCIReference
     graph: OCIGraph
     expiration: datetime
     immutability_enabled: bool
+    policy: RegistryPolicy
+
+    def require_current(self, now: datetime) -> None:
+        """Reject an expired publication attempt independently of registry cleanup."""
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise InvalidInvocationError("Candidate check time must be timezone-aware")
+        if now.astimezone(UTC) >= self.expiration:
+            raise RuleRejectionError("Candidate authorization expired", code="CC0603")
+
+    def authorization(self) -> dict[str, object]:
+        """Return the candidate identity and deadline bound by signed verification."""
+        return {
+            "reference": str(self.reference),
+            "expiresAt": format_timestamp(self.expiration),
+        }
 
 
 def publish_candidate(
@@ -99,24 +120,26 @@ def publish_candidate(
     workspace: RunWorkspace,
     registry: Registry,
     registry_control: RegistryControl,
+    policy: RegistryPolicy,
     auth_file: Path | None,
     now: datetime,
     clock: Callable[[], datetime],
 ) -> PublishedCandidate:
-    """Publish one unused candidate, verify its graph and set bounded expiration."""
+    """Publish one candidate under a fixed deadline and explicit cleanup policy."""
     if workspace.load().state is not RunState.ASSEMBLED:
         raise InvalidInvocationError("Candidate publication requires assembled state")
     candidate.qualification_window.require_current(now, phase="publication")
     tagged = image.repository.with_tag(candidate.candidate_tag)
     if re.fullmatch(CANDIDATE_TAG_PATTERN, candidate.candidate_tag) is None:
         raise InvalidInvocationError("Candidate name is outside the retention pattern")
-    registry_control.verify_tag_policy(
-        image.repository,
-        immutable_tags=image.release.render_immutable(
-            workspace.load().immutable_inputs.get("version") or None
-        ),
-        mutable_tags=(candidate.candidate_tag, *image.release.moving_tags),
-    )
+    if policy.tag_protection.mode is TagProtectionMode.REQUIRED:
+        registry_control.verify_tag_policy(
+            image.repository,
+            version_tags=image.release.render_versions(
+                workspace.load().immutable_inputs.get("version") or None
+            ),
+            mutable_tags=(candidate.candidate_tag, *image.release.moving_tags),
+        )
     existing_entries = [
         item
         for item in workspace.journal.entries()
@@ -134,13 +157,18 @@ def publish_candidate(
             workspace=workspace,
             registry=registry,
             registry_control=registry_control,
+            policy=policy,
             auth_file=auth_file,
             now=now,
             clock=clock,
         )
     if registry.resolve_optional(tagged, auth_file=auth_file) is not None:
         raise OperationalError(f"Generated candidate tag is already in use: {tagged}")
-    retention = _require_candidate_retention(image, registry_control)
+    retention = (
+        _require_candidate_retention(image, registry_control)
+        if policy.candidate_cleanup.mode is CandidateCleanupMode.AUTO_PRUNE
+        else None
+    )
     expiration = now.astimezone(UTC) + image.release_limits.candidate_lifetime
     workspace.journal.plan(
         resource_id="candidate",
@@ -150,7 +178,8 @@ def publish_candidate(
         metadata={
             "digest": str(candidate.observation.graph.digest),
             "expiration": format_timestamp(expiration),
-            "retention": retention.to_dict(),
+            "retention": None if retention is None else retention.to_dict(),
+            "registryPolicy": policy.to_dict(),
         },
     )
     try:
@@ -166,16 +195,20 @@ def publish_candidate(
             raise OperationalError(
                 f"Published digest {remote_digest} differs from accepted {candidate.observation.graph.digest}"
             )
-        expiration_observation = registry_control.enforce_candidate_lifetime(
-            image.repository, candidate.candidate_tag, expiration
+        observed = (
+            registry_control.observe_tag(image.repository, candidate.candidate_tag)
+            if policy.candidate_cleanup.mode is CandidateCleanupMode.MANUAL
+            else registry_control.enforce_candidate_lifetime(
+                image.repository, candidate.candidate_tag, expiration
+            )
         )
-        if expiration_observation.digest != remote_digest:
+        if observed is None or observed.digest != remote_digest:
             raise OperationalError(
                 "Registry candidate-lifetime update observed another digest"
             )
-        if expiration_observation.immutable:
+        if observed.immutable:
             raise OperationalError(
-                "Candidate must remain mutable for independent expiry", code="CC0603"
+                "Candidate must remain mutable for cleanup", code="CC0603"
             )
         immutable = image.repository.with_digest(remote_digest)
         remote = registry.copy_registry_to_layout(
@@ -192,6 +225,10 @@ def publish_candidate(
         candidate.qualification_window.require_current(
             completed_at, phase="publication completion"
         )
+        if completed_at.astimezone(UTC) >= expiration:
+            raise RuleRejectionError(
+                "Candidate expired during publication", code="CC0603"
+            )
     except Exception:
         workspace.journal.mark_failed("candidate")
         raise
@@ -205,7 +242,9 @@ def publish_candidate(
         },
     )
     workspace.transition(RunState.PUBLISHED, now=completed_at)
-    return PublishedCandidate(tagged, immutable, remote.graph, expiration, False)
+    return PublishedCandidate(
+        tagged, immutable, remote.graph, expiration, False, policy
+    )
 
 
 def _resume_published_candidate(
@@ -217,6 +256,7 @@ def _resume_published_candidate(
     workspace: RunWorkspace,
     registry: Registry,
     registry_control: RegistryControl,
+    policy: RegistryPolicy,
     auth_file: Path | None,
     now: datetime,
     clock: Callable[[], datetime],
@@ -234,6 +274,8 @@ def _resume_published_candidate(
         "Candidate expiration journal",
         error=InvalidInvocationError,
     )
+    if entry.metadata.get("registryPolicy") != policy.to_dict():
+        raise InvalidInvocationError("Candidate registry policy changed before resume")
     if now.astimezone(UTC) >= expiration:
         raise RuleRejectionError("Candidate expired before resume", code="CC0603")
     tag_observation = registry_control.observe_tag(
@@ -243,10 +285,17 @@ def _resume_published_candidate(
         raise OperationalError("Registry candidate state differs during resume")
     if tag_observation.immutable:
         raise OperationalError(
-            "Candidate must remain mutable for independent expiry", code="CC0603"
+            "Candidate must remain mutable for cleanup", code="CC0603"
         )
-    retention = _require_candidate_retention(image, registry_control)
-    if tag_observation.expiration != expiration:
+    retention = (
+        _require_candidate_retention(image, registry_control)
+        if policy.candidate_cleanup.mode is CandidateCleanupMode.AUTO_PRUNE
+        else None
+    )
+    if (
+        policy.candidate_cleanup.mode is not CandidateCleanupMode.MANUAL
+        and tag_observation.expiration != expiration
+    ):
         tag_observation = registry_control.enforce_candidate_lifetime(
             image.repository, candidate.candidate_tag, expiration
         )
@@ -278,12 +327,12 @@ def _resume_published_candidate(
             "digest": str(observed),
             "expiration": format_timestamp(expiration),
             "immutabilityEnabled": tag_observation.immutable,
-            "retention": retention.to_dict(),
+            "retention": None if retention is None else retention.to_dict(),
         },
     )
     workspace.transition(RunState.PUBLISHED, now=completed_at)
     return PublishedCandidate(
-        tagged, immutable, remote.graph, expiration, tag_observation.immutable
+        tagged, immutable, remote.graph, expiration, tag_observation.immutable, policy
     )
 
 

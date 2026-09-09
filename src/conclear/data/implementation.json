@@ -299,9 +299,10 @@
     },
     {
       "id": "IP0029",
-      "summary": "Publish one unique candidate, preserve its complete digest graph and enforce its independent lifetime",
-      "implementation": ["src/conclear/services/publication.py", "src/conclear/adapters/quay.py", "src/conclear/adapters/skopeo.py"],
+      "summary": "Publish one unique candidate, preserve its digest graph and enforce fixed authorization with explicit cleanup controls",
+      "implementation": ["src/conclear/services/publication.py", "src/conclear/registry_policy.py", "src/conclear/adapters/quay.py", "src/conclear/adapters/skopeo.py"],
       "tests": [
+        {"path": "tests/unit/test_registry_policy.py", "tier": "unit"},
         {"path": "tests/unit/test_candidate_retention.py", "tier": "unit"},
         {"path": "tests/unit/test_publication.py", "tier": "unit"},
         {"path": "tests/unit/test_publication_retry.py", "tier": "unit"},
@@ -313,6 +314,7 @@
       "summary": "Promote only the verified digest, verify every tag and remove the owned candidate reference",
       "implementation": ["src/conclear/services/promotion.py", "src/conclear/services/cleanup.py"],
       "tests": [
+        {"path": "tests/unit/test_registry_policy.py", "tier": "unit"},
         {"path": "tests/unit/test_publication.py", "tier": "unit"},
         {"path": "tests/unit/test_cleanup.py", "tier": "unit"},
         {"path": "tests/network/test_quay_candidate.py", "tier": "network"}

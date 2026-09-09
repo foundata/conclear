@@ -55,7 +55,7 @@ from conclear.services.ci_context import resolve_ci_context
 from conclear.services.cleanup import cleanup_run
 from conclear.services.preflight import preflight_image_closure
 from conclear.services.promotion import PromotionResult, promote_candidate
-from conclear.services.publication import publish_candidate
+from conclear.services.publication import PublishedCandidate, publish_candidate
 from conclear.services.qualification import qualify_platform
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.run_context import (
@@ -271,7 +271,7 @@ def _continue_release(
     now_factory: Callable[[], datetime],
 ) -> ReleaseResult:
     image = repository.release_image(request.image_id)
-    image.release.render_immutable(request.version)
+    image.release.render_versions(request.version)
     validate_registry_destinations(request.profile, (image.repository,))
     require_source_integrity(workspace, repository.path.parent)
     public_ci_context = resolve_ci_context(
@@ -324,6 +324,7 @@ def _continue_release(
             publish_candidate(
                 candidate,
                 image=image,
+                policy=request.profile.registry.policy,
                 workspace=workspace,
                 registry=registry,
                 registry_control=registry_control,
@@ -387,7 +388,7 @@ def _continue_release(
             now=now_factory(),
             clock=now_factory,
         )
-        return _write_summary(workspace, published.immutable_reference, promotion)
+        return _write_summary(workspace, published, promotion)
     finally:
         registry_control.close()
 
@@ -578,9 +579,10 @@ def signer_identity(profile: ReleaseProfile, signer: CosignAdapter) -> tuple[str
 
 def _write_summary(
     workspace: RunWorkspace,
-    subject: OCIReference,
+    published: PublishedCandidate,
     promotion: PromotionResult,
 ) -> ReleaseResult:
+    subject = published.immutable_reference
     tags = tuple((tag, str(digest)) for tag, digest in promotion.tags)
     atomic_write_json(
         workspace.root / "summary.json",
@@ -591,6 +593,9 @@ def _write_summary(
             "subject": str(subject),
             "tags": [{"tag": tag, "digest": digest} for tag, digest in tags],
             "immutabilityEnabled": promotion.immutability_enabled,
+            "registryPolicy": published.policy.to_dict(),
+            "candidateAuthorization": published.authorization(),
+            "candidateDeleted": promotion.candidate_deleted,
         },
         mode=0o644,
     )

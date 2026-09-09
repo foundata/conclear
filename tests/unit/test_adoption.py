@@ -505,7 +505,7 @@ def test_draft_resolves_into_a_releasable_image_with_a_test_only_dependency(
     ]
     helper_text = "\n".join(helper_lines) + "\n"
     helper_text = helper_text.replace(
-        '[images.release]\nimmutable_tags = ["{version}"]\nmoving_tags = ["stable"]\n',
+        '[images.release]\nversion_tags = ["{version}"]\nmoving_tags = ["stable"]\n',
         "",
     )
     app_text = app.replace(

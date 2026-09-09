@@ -221,7 +221,7 @@ class QuayAdapter:
         self,
         repository: OCIReference,
         *,
-        immutable_tags: tuple[str, ...],
+        version_tags: tuple[str, ...],
         mutable_tags: tuple[str, ...],
     ) -> None:
         """Check repository and inherited organization policies without changing them.
@@ -247,7 +247,7 @@ class QuayAdapter:
                     matches = policy.get("tagPatternMatches")
                     if not 0 < len(pattern) <= 256 or not isinstance(matches, bool):
                         raise OperationalError("Quay immutability policy is malformed")
-                    for tag in (*immutable_tags, *mutable_tags):
+                    for tag in (*version_tags, *mutable_tags):
                         matched = (
                             regex.fullmatch(
                                 pattern, tag, timeout=POLICY_MATCH_TIMEOUT_SECONDS
@@ -268,7 +268,7 @@ class QuayAdapter:
             raise OperationalError(
                 "Unable to verify Quay immutability policies", code="CC0604"
             ) from exc
-        missing = sorted(set(immutable_tags) - protected)
+        missing = sorted(set(version_tags) - protected)
         blocked = sorted(set(mutable_tags) & protected)
         if missing or blocked:
             raise OperationalError(

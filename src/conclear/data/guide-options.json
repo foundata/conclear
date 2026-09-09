@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "productVersion": "1.0.0",
-  "guideRevision": "45690c38bec6a8a80b078f38d482adba83b336a5",
+  "guideRevision": "f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb",
   "options": [
     {
       "id": "GO0001",
@@ -36,7 +36,7 @@
       "requirements": ["IG0061", "IG0067"],
       "status": "unsupported",
       "rationale": "Provider-neutral checks and qualification work for other repositories, but complete publication requires provider-specific controls and only the Quay backend is implemented.",
-      "reconsiderWhen": "Add a backend after it passes the published digest-preservation, ambiguity, immutability, retention and deletion contract.",
+      "reconsiderWhen": "Add a backend after it passes the published digest-preservation, ambiguity, selected protection/cleanup and deletion contract.",
       "checks": []
     },
     {

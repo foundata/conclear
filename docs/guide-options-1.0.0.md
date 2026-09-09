@@ -4,8 +4,8 @@
 
 This inventory records guide choices whose availability is not fully visible
 from the check catalog. It is pinned to
-[OCI container image build and release guide](https://github.com/foundata/guidelines/blob/45690c38bec6a8a80b078f38d482adba83b336a5/oci-container-image-guide.md)
-at revision `45690c38bec6a8a80b078f38d482adba83b336a5`. Each entry names the
+[OCI container image build and release guide](https://github.com/foundata/guidelines/blob/f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb/oci-container-image-guide.md)
+at revision `f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb`. Each entry names the
 guide requirements it concerns; the conformance document links every requirement
 identifier to the guide.
 
@@ -50,7 +50,8 @@ identifier to the guide.
   repositories, but complete publication requires provider-specific controls and
   only the Quay backend is implemented.
 - **Reconsider when:** Add a backend after it passes the published
-  digest-preservation, ambiguity, immutability, retention and deletion contract.
+  digest-preservation, ambiguity, selected protection/cleanup and deletion
+  contract.
 
 ## GO0005: Privileged and host-integrated containers
 

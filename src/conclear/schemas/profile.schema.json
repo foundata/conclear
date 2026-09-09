@@ -66,9 +66,34 @@
           "additionalProperties": false,
           "required": [
             "provider",
-            "host"
+            "host",
+            "tag_protection",
+            "candidate_cleanup"
           ],
           "properties": {
+            "tag_protection": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode"],
+              "properties": {
+                "mode": {"enum": ["required", "not-enforced"]},
+                "rationale": {"type": "string", "pattern": "\\S"},
+                "owner": {"type": "string", "pattern": "\\S"}
+              },
+              "if": {"properties": {"mode": {"const": "not-enforced"}}},
+              "then": {"required": ["rationale", "owner"]},
+              "else": {"not": {"anyOf": [{"required": ["rationale"]}, {"required": ["owner"]}]}}
+            },
+            "candidate_cleanup": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "owner", "procedure"],
+              "properties": {
+                "mode": {"enum": ["manual", "tag-expiration", "auto-prune"]},
+                "owner": {"type": "string", "pattern": "\\S"},
+                "procedure": {"type": "string", "pattern": "\\S"}
+              }
+            },
             "provider": {
               "const": "quay"
             },

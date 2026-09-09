@@ -82,12 +82,17 @@ def configuration_view(
             "name": profile.name,
             "builderId": profile.builder.id,
             "registryHost": profile.registry.host,
+            "registryPolicy": profile.registry.policy.to_dict(),
             "publicKeyDigest": profile.public_key_digest,
         }
     )
     if profile is not None:
         details.append(
             f"Protected release profile {profile.name}: builder {profile.builder.id}; registry {profile.registry.host}"
+        )
+        details.append(
+            "Registry policy: "
+            + json.dumps(profile.registry.policy.to_dict(), ensure_ascii=True)
         )
     return CommandResult(
         "config show",
@@ -241,17 +246,17 @@ def _image_values(
         )
         add("rescan_scope", image.rescan_scope)
         add(
-            "release.immutable_tags",
-            list(image.release.immutable_tags),
+            "release.version_tags",
+            list(image.release.version_tags),
             "Requires --version."
-            if any("{version}" in tag for tag in image.release.immutable_tags)
+            if any("{version}" in tag for tag in image.release.version_tags)
             else "",
         )
         add("release.moving_tags", list(image.release.moving_tags))
         if version is not None:
             add(
-                "release.rendered_immutable_tags",
-                list(image.release.render_immutable(version)),
+                "release.rendered_version_tags",
+                list(image.release.render_versions(version)),
                 origin="rendered",
             )
         add(
