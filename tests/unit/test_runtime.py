@@ -107,3 +107,40 @@ def test_diagnose_reports_every_failure_and_keeps_resolved_tools(
         "cosign: Required tool is unavailable: cosign",
     ]
     assert isinstance(problems[0].failure, RuleRejectionError)
+
+
+def test_container_tools_use_login_runtime_and_command_close_removes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    login_runtime = tmp_path / "login-runtime"
+    login_runtime.mkdir(mode=0o700)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(login_runtime))
+    runtime = ApplicationRuntime.create(
+        tmp_path / "environment",
+        names=(ToolName.PODMAN,),
+        resolver=cast(ToolResolver, _Resolver({}, tmp_path)),
+    )
+    path = Path(runtime.environment["XDG_RUNTIME_DIR"])
+    assert path.parent == login_runtime
+    assert path.is_dir()
+    runtime.close()
+    assert not path.exists()
+    assert login_runtime.is_dir()
+
+
+def test_tool_resolution_failure_removes_command_runtime_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    login_runtime = tmp_path / "login-runtime"
+    login_runtime.mkdir(mode=0o700)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(login_runtime))
+    with pytest.raises(OperationalError, match="unavailable"):
+        ApplicationRuntime.create(
+            tmp_path / "environment",
+            names=(ToolName.PODMAN,),
+            resolver=cast(
+                ToolResolver,
+                _Resolver({ToolName.PODMAN: OperationalError("unavailable")}, tmp_path),
+            ),
+        )
+    assert not tuple(login_runtime.iterdir())

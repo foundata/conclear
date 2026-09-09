@@ -22,6 +22,7 @@ from conclear.release_profile import (
     load_release_profile,
 )
 from conclear.runtime import ApplicationRuntime, ToolProblem
+from conclear.runtime_directory import remove_runtime_directory
 from conclear.secrets import read_passphrase
 from conclear.services.run_context import finish_run_failure
 from conclear.tools import ToolName
@@ -159,7 +160,10 @@ def _command_root() -> Iterator[Path]:
     root = state_home() / "conclear" / "commands"
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="command-", dir=root) as temporary:
-        yield Path(temporary)
+        try:
+            yield Path(temporary)
+        finally:
+            remove_runtime_directory(Path(temporary))
 
 
 def ci_context(selected: ReleaseProfile) -> CIContextObservation | None:

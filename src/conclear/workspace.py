@@ -77,6 +77,7 @@ class ResourceKind(StrEnum):
     """Kinds of resources that a run may own."""
 
     LOCAL_PATH = "localPath"
+    RUNTIME_DIRECTORY = "runtimeDirectory"
     GIT_WORKTREE = "gitWorktree"
     BUILDAH_STORAGE = "buildahStorage"
     PODMAN_IMPORT = "podmanImport"

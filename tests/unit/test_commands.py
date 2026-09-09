@@ -1234,7 +1234,7 @@ def test_cleanup_command_refuses_a_foreign_profile_and_reports_ownership(
     monkeypatch.setattr(
         maintenance_commands,
         "ApplicationRuntime",
-        SimpleNamespace(create=lambda root, names: run.runtime),
+        SimpleNamespace(create=lambda root, names, journal: run.runtime),
     )
     monkeypatch.setattr(
         maintenance_commands,
@@ -1505,7 +1505,7 @@ def test_diagnostic_rescan_accepts_a_read_only_profile(
         maintenance_commands,
         "ApplicationRuntime",
         SimpleNamespace(
-            create=lambda root, names: _stopping_run(recorded)(names=names)
+            create=lambda root, names, journal: _stopping_run(recorded)(names=names)
         ),
     )
 
@@ -1754,7 +1754,7 @@ def test_every_command_resolves_exactly_its_declared_tools(
     monkeypatch.setattr(
         maintenance_commands,
         "ApplicationRuntime",
-        SimpleNamespace(create=lambda root, names: stop_run(names=names)),
+        SimpleNamespace(create=lambda root, names, journal: stop_run(names=names)),
     )
     monkeypatch.setattr(
         maintenance_commands, "load_proposal", lambda path: SimpleNamespace()

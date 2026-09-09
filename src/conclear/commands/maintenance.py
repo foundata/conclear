@@ -381,6 +381,7 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
     runtime = ApplicationRuntime.create(
         workspace.root / "environment",
         names=command_tools("cleanup"),
+        journal=workspace.journal,
     )
     registry_control: RegistryControl | None = None
     if profile_name is not None:
@@ -471,6 +472,7 @@ def rescan_command(
         runtime = ApplicationRuntime.create(
             workspace.root / "environment",
             names=dependencies.tools,
+            journal=workspace.journal,
         )
         workspace.bind_immutable_inputs(
             {

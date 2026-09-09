@@ -8,6 +8,7 @@ from typing import Protocol
 
 from conclear.errors import OperationalError
 from conclear.registry_control import TagObservation
+from conclear.runtime_directory import remove_runtime_directory
 from conclear.test_inputs import remove_materialized_test_inputs
 from conclear.values import Digest, OCIReference
 from conclear.workspace import (
@@ -92,10 +93,18 @@ def cleanup_run(
     )
     exclusions = excluded_kinds or frozenset()
     excluded_ids = excluded_resource_ids or frozenset()
-    for entry in workspace.journal.cleanup_candidates():
+    # Podman and Buildah may still need sockets and namespaces while cleaning up.
+    candidates = sorted(
+        workspace.journal.cleanup_candidates(),
+        key=lambda entry: entry.kind is ResourceKind.RUNTIME_DIRECTORY,
+    )
+    for entry in candidates:
         if entry.status not in selected_statuses:
             continue
         if entry.kind in exclusions or entry.resource_id in excluded_ids:
+            retained.append(entry.resource_id)
+            continue
+        if entry.kind is ResourceKind.RUNTIME_DIRECTORY and failures:
             retained.append(entry.resource_id)
             continue
         try:
@@ -130,6 +139,18 @@ def _cleanup_entry(
     registry_control: CandidateRegistry | None,
     git: SourceWorktree | None,
 ) -> bool:
+    if entry.kind is ResourceKind.RUNTIME_DIRECTORY:
+        owner = _owned_path(workspace, entry.identifier)
+        if owner != workspace.root / "environment":
+            raise OperationalError("Journaled runtime environment is not run-owned")
+        expected_directory = entry.metadata.get("runtimeDirectory")
+        if not isinstance(expected_directory, str) or not remove_runtime_directory(
+            owner, expected_directory=expected_directory
+        ):
+            raise OperationalError(
+                "Journaled runtime directory has no ownership record"
+            )
+        return True
     if entry.kind is ResourceKind.LOCAL_PATH:
         path = _owned_path(workspace, entry.identifier)
         _remove_local(path)

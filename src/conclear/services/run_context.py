@@ -134,7 +134,9 @@ def create_source_run(
     )
     try:
         runtime = ApplicationRuntime.create(
-            workspace.root / "environment", names=(ToolName.GIT,)
+            workspace.root / "environment",
+            names=(ToolName.GIT,),
+            journal=workspace.journal,
         )
         workspace.bind_immutable_inputs(
             {
@@ -172,7 +174,9 @@ def create_source_run(
         image = repository.release_image(image_id)
         image.release.render_versions(version)
         runtime = ApplicationRuntime.create(
-            workspace.root / "environment", names=_with_git(names)
+            workspace.root / "environment",
+            names=_with_git(names),
+            journal=workspace.journal,
         )
         workspace.bind_immutable_inputs(
             {
@@ -241,7 +245,9 @@ def open_source_run(
         raise InvalidInvocationError("Workspace has no selected image")
     repository.release_image(image_id)
     runtime = ApplicationRuntime.create(
-        workspace.root / "environment", names=_with_git(names)
+        workspace.root / "environment",
+        names=_with_git(names),
+        journal=workspace.journal,
     )
     observed_tools = _tool_inputs(runtime)
     for key, value in observed_tools.items():

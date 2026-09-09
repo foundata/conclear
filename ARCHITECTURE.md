@@ -791,6 +791,14 @@ exports/sbom/<platform>.spdx.json
 summary.json
 ```
 
+Container tools use a private child of the validated user runtime directory,
+normally `/run/user/<uid>`. `environment/runtime-directory.json` and the
+ownership journal retain its identity in persistent storage. Resume recreates
+missing transient files after logout or reboot without changing release
+inputs or deadlines. Cleanup verifies the directory's ownership marker and
+removes it after container storage cleanup. Static checks do not require a
+login runtime directory.
+
 `<platform>` is a filesystem key formed by joining the normalized OCI operating
 system, architecture and optional variant with hyphens. For example,
 `linux/amd64` becomes `linux-amd64`; records continue to use the canonical

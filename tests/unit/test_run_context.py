@@ -22,7 +22,7 @@ from conclear.jsonutil import sha256_bytes
 from conclear.services.cleanup import cleanup_run
 from conclear.services.run_context import create_source_run, open_source_run
 from conclear.tools import ToolName
-from conclear.workspace import ResourceStatus, RunState, RunWorkspace
+from conclear.workspace import ResourceJournal, ResourceStatus, RunState, RunWorkspace
 from tests.unit.test_config import _image_text
 
 REVISION = "b" * 40
@@ -113,7 +113,13 @@ def source(
 
     class Runtime:
         @classmethod
-        def create(cls, path: Path, *, names: tuple[ToolName, ...]) -> FakeRuntime:
+        def create(
+            cls,
+            path: Path,
+            *,
+            names: tuple[ToolName, ...],
+            journal: ResourceJournal | None = None,
+        ) -> FakeRuntime:
             return FakeRuntime(git, names, settings["digest"])
 
     monkeypatch.setattr(run_context_module, "ApplicationRuntime", Runtime)
@@ -180,7 +186,13 @@ def test_source_run_rejects_missing_version_or_moving_tag_collision_before_build
 
     class Runtime:
         @classmethod
-        def create(cls, path: Path, *, names: tuple[ToolName, ...]) -> FakeRuntime:
+        def create(
+            cls,
+            path: Path,
+            *,
+            names: tuple[ToolName, ...],
+            journal: ResourceJournal | None = None,
+        ) -> FakeRuntime:
             resolved.extend(names)
             assert names == (ToolName.GIT,)
             return FakeRuntime(git, names, settings["digest"])
@@ -315,7 +327,13 @@ def test_tool_resolution_failure_after_workspace_creation_names_the_run(
 
     class Runtime:
         @classmethod
-        def create(cls, path: Path, *, names: tuple[ToolName, ...]) -> FakeRuntime:
+        def create(
+            cls,
+            path: Path,
+            *,
+            names: tuple[ToolName, ...],
+            journal: ResourceJournal | None = None,
+        ) -> FakeRuntime:
             if ToolName.BUILDAH in names:
                 raise OperationalError("buildah is unavailable")
             return FakeRuntime(git, names, settings["digest"])

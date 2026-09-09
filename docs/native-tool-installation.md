@@ -15,6 +15,11 @@ ConClear finds host tools on this fixed path, ignoring the caller's `PATH`:
 The recipe installs root-owned binaries under `/usr/local/libexec` and links
 them into `/usr/local/bin`, leaving distribution binaries unchanged.
 
+The fixed path excludes repository executables and shell shims, including from
+helper lookup inside host tools. Version and hash checks detect unsupported
+or changed binaries; they do not authenticate an installation. The host and
+its tool directories still need to be trusted.
+
 ## Install distribution tools
 
 ```bash
@@ -129,6 +134,14 @@ fixed path; changing your shell's `PATH` cannot fix selection. Qualification
 diagnostics check local tools and rootless storage; Cosign and
 [external release prerequisites](./quickstart.md#5-prepare-release-access)
 need release-scope checks. A passing diagnostic is not a complete release drill.
+
+Container commands require a local, user-owned, mode-0700 `XDG_RUNTIME_DIR`,
+normally `/run/user/<uid>` from a login session. ConClear uses a private child
+directory there; source, evidence and recovery state remain in persistent
+storage. A managed scheduler needs the same runtime-directory lifecycle.
+Do not substitute a home directory or relabel files to make a test pass.
+`doctor` checks directory and storage prerequisites but does not start a
+container.
 
 For updates, verify a supported release, install a new root-owned version
 directory, switch its activation link and rerun diagnostics. Never change tools

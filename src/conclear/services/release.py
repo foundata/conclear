@@ -227,7 +227,9 @@ def resume_release(
                         ResourceStatus.FAILED,
                     }
                 ),
-                excluded_kinds=frozenset({ResourceKind.CANDIDATE_REFERENCE}),
+                excluded_kinds=frozenset(
+                    {ResourceKind.CANDIDATE_REFERENCE, ResourceKind.RUNTIME_DIRECTORY}
+                ),
                 excluded_resource_ids=frozenset(protected_resources),
             )
         finally:

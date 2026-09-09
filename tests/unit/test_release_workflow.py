@@ -409,7 +409,9 @@ def test_resume_revalidates_source_root_profile_and_inputs(harness: Harness) -> 
     harness.resume()
 
     assert continued == [RunState.ATTESTED]
-    assert cleaned[0]["excluded_kinds"] == frozenset({ResourceKind.CANDIDATE_REFERENCE})
+    assert cleaned[0]["excluded_kinds"] == frozenset(
+        {ResourceKind.CANDIDATE_REFERENCE, ResourceKind.RUNTIME_DIRECTORY}
+    )
     assert "source-worktree" in cleaned[0]["excluded_resource_ids"]
     assert "layout-app-linux-amd64" in cleaned[0]["excluded_resource_ids"]
     assert harness.runtime.registry_control.closed

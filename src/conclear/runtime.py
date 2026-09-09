@@ -14,7 +14,12 @@ from conclear.adapters.trivy import TrivyAdapter
 from conclear.errors import ConClearError, OperationalError
 from conclear.process import ProcessEnvironment, ProcessRunner
 from conclear.records import ToolIdentity
+from conclear.runtime_directory import (
+    prepare_runtime_directory,
+    remove_runtime_directory,
+)
 from conclear.tools import ResolvedTool, ToolName, ToolResolver
+from conclear.workspace import ResourceJournal
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,13 +61,19 @@ class ApplicationRuntime:
         *,
         names: tuple[ToolName, ...] = tuple(ToolName),
         resolver: ToolResolver | None = None,
+        journal: ResourceJournal | None = None,
     ) -> "ApplicationRuntime":
         """Create isolated XDG paths and resolve exactly the requested tools."""
-        environment, runner = cls._prepare(root)
-        resolved = (resolver or ToolResolver(runner=runner)).resolve_all(
-            environment=environment,
-            names=names,
-        )
+        try:
+            environment, runner = cls._prepare(root, names=names, journal=journal)
+            resolved = (resolver or ToolResolver(runner=runner)).resolve_all(
+                environment=environment,
+                names=names,
+            )
+        except BaseException:
+            if journal is None:
+                remove_runtime_directory(root)
+            raise
         return cls(
             root=root,
             environment=environment,
@@ -83,7 +94,7 @@ class ApplicationRuntime:
         The returned runtime holds only the tools that resolved; a diagnosis
         must not proceed to use it while problems remain.
         """
-        environment, runner = cls._prepare(root)
+        environment, runner = cls._prepare(root, names=names)
         selected = resolver or ToolResolver(runner=runner)
         tools: dict[ToolName, ResolvedTool] = {}
         problems: list[ToolProblem] = []
@@ -98,25 +109,38 @@ class ApplicationRuntime:
         )
 
     @staticmethod
-    def _prepare(root: Path) -> tuple[dict[str, str], ProcessRunner]:
+    def _prepare(
+        root: Path,
+        *,
+        names: tuple[ToolName, ...],
+        journal: ResourceJournal | None = None,
+    ) -> tuple[dict[str, str], ProcessRunner]:
         paths = {
             "home": root / "home",
             "config": root / "config",
             "cache": root / "cache",
             "state": root / "state",
-            "runtime": root / "runtime",
             "logs": root / "logs",
         }
         for path in paths.values():
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        runtime_dir = prepare_runtime_directory(
+            root,
+            required=bool({ToolName.BUILDAH, ToolName.PODMAN} & set(names)),
+            journal=journal,
+        )
         environment = ProcessEnvironment(
             home=paths["home"],
             config_home=paths["config"],
             cache_home=paths["cache"],
             state_home=paths["state"],
-            runtime_dir=paths["runtime"],
+            runtime_dir=runtime_dir,
         ).values()
         return environment, ProcessRunner()
+
+    def close(self) -> None:
+        """Remove command-scoped transient files after all child processes finish."""
+        remove_runtime_directory(self.root)
 
     @property
     def identities(self) -> tuple[ToolIdentity, ...]:
