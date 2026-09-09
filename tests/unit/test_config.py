@@ -1,6 +1,6 @@
 import tomllib
 from collections.abc import Callable
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -8,12 +8,61 @@ import pytest
 
 import conclear.config as config_module
 from conclear.config import (
+    ReleaseTags,
     load_repository_config,
     normalize_observed_source_url,
     normalize_source_url,
 )
 from conclear.errors import InvalidInvocationError
 from conclear.values import Platform
+
+
+def test_image_inference_counts_only_releasable_images(
+    repository_factory: Callable[..., Path],
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+    image = repository.release_image(None)
+    assert image.image_id == "app"
+    dependency = config_module.ImageConfig(
+        **{
+            field.name: getattr(image, field.name)
+            for field in fields(config_module.ImageConfig)
+        }
+    )
+    dependency = replace(dependency, image_id="helper")
+    assert replace(repository, images=(image, dependency)).release_image(None) == image
+    for images in ((image, replace(image, image_id="other")), (dependency,)):
+        with pytest.raises(InvalidInvocationError, match="--image is required"):
+            replace(repository, images=images).release_image(None)
+
+
+def test_rendered_tags_are_unique_and_distinct_from_latest() -> None:
+    with pytest.raises(InvalidInvocationError, match="collide"):
+        ReleaseTags(("{version}", "1.2.3"), ("latest",)).render_immutable("1.2.3")
+    with pytest.raises(InvalidInvocationError, match="disjoint"):
+        ReleaseTags(("{version}",), ("latest",)).render_immutable("latest")
+    assert ReleaseTags(("{version}",), ("latest",)).render_immutable("1.2.3") == (
+        "1.2.3",
+    )
+
+
+def test_omitted_tag_classes_are_empty_and_literal_collisions_fail_on_load(
+    repository_factory: Callable[..., Path],
+) -> None:
+    path = repository_factory() / "conclear.toml"
+    original = path.read_text(encoding="utf-8")
+    path.write_text(
+        original.replace('moving_tags = ["stable"]\n', ""), encoding="utf-8"
+    )
+    assert load_repository_config(path).release_image(None).release.moving_tags == ()
+    path.write_text(
+        original.replace(
+            'immutable_tags = ["{version}"]', 'immutable_tags = ["stable"]'
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(InvalidInvocationError, match="disjoint"):
+        load_repository_config(path)
 
 
 def test_repository_configuration_is_validated_and_narrowed(

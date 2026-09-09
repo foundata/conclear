@@ -160,12 +160,12 @@ def pins_group() -> None:
 
 @pins_group.command("check")
 @config_option
-@click.option("image_id", "--image", required=True)
+@click.option("image_id", "--image")
 @profile_option
 @format_option
 def pins_check_command(
     config_path: Path,
-    image_id: str,
+    image_id: str | None,
     profile_name: str | None,
     output_format: str,
 ) -> None:
@@ -413,7 +413,7 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
 @click.command("rescan")
 @click.option("subject_text", "--subject", required=True)
 @config_option
-@click.option("image_id", "--image", required=True)
+@click.option("image_id", "--image")
 @required_profile_option
 @click.option("authoritative", "--authoritative", is_flag=True)
 @passphrase_option
@@ -423,7 +423,7 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
 def rescan_command(
     subject_text: str,
     config_path: Path,
-    image_id: str,
+    image_id: str | None,
     profile_name: str,
     authoritative: bool,
     passphrase_fd: int | None,
@@ -440,6 +440,7 @@ def rescan_command(
     selected = profile(profile_name)
     repository = load_repository_config(config_path)
     image = repository.release_image(image_id)
+    image_id = image.image_id
     if image.repository.repository_name != subject.repository_name:
         raise InvalidInvocationError(
             "Rescan subject repository differs from the selected image"

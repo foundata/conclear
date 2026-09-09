@@ -1004,7 +1004,7 @@ def test_release_command_validates_selection_and_reports_promotion(
 
     code, value, _ = invoke(["release", "--profile", "production"])
     assert code == 64
-    assert "--revision and --image" in value["message"]
+    assert "--revision is required" in value["message"]
 
     code, value, _ = invoke(
         [

@@ -88,7 +88,7 @@ class ReleaseRequest:
 
     repository: Path
     revision: str
-    image_id: str
+    image_id: str | None
     version: str | None
     profile: ReleaseProfile
     state_home: Path
@@ -271,6 +271,7 @@ def _continue_release(
     now_factory: Callable[[], datetime],
 ) -> ReleaseResult:
     image = repository.release_image(request.image_id)
+    image.release.render_immutable(request.version)
     validate_registry_destinations(request.profile, (image.repository,))
     require_source_integrity(workspace, repository.path.parent)
     public_ci_context = resolve_ci_context(

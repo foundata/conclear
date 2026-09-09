@@ -71,7 +71,7 @@ def _source_options[FC: Callable[..., Any]](function: FC) -> FC:
             show_default=True,
         ),
         click.option("selector", "--revision", required=True),
-        click.option("image_id", "--image", required=True),
+        click.option("image_id", "--image"),
         click.option("version", "--version"),
     )
     for decorator in reversed(decorators):
@@ -81,9 +81,9 @@ def _source_options[FC: Callable[..., Any]](function: FC) -> FC:
 
 @click.command("check")
 @config_option
-@click.option("image_id", "--image", required=True)
+@click.option("image_id", "--image")
 @format_option
-def check_command(config_path: Path, image_id: str, output_format: str) -> None:
+def check_command(config_path: Path, image_id: str | None, output_format: str) -> None:
     """Run static Containerfile, context, metadata and pin-declaration checks."""
     repository = load_repository_config(config_path)
     with command_runtime(command_tools("check")) as runtime:
@@ -107,7 +107,7 @@ def check_command(config_path: Path, image_id: str, output_format: str) -> None:
 def build_command(
     source_root: Path,
     selector: str,
-    image_id: str,
+    image_id: str | None,
     version: str | None,
     platform_text: str,
     profile_name: str | None,
@@ -238,7 +238,7 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
 def qualify_command(
     source_root: Path,
     selector: str,
-    image_id: str,
+    image_id: str | None,
     version: str | None,
     platform_text: str,
     profile_name: str | None,
@@ -381,7 +381,7 @@ def qualify_command(
 def assemble_command(
     source_root: Path,
     selector: str,
-    image_id: str,
+    image_id: str | None,
     version: str | None,
     profile_name: str | None,
     transports: tuple[tuple[Path, str], ...],

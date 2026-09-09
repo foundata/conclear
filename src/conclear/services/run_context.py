@@ -81,7 +81,7 @@ def create_source_run(
     *,
     source_root: Path,
     selector: str,
-    image_id: str,
+    image_id: str | None,
     version: str | None,
     state_home: Path,
     names: tuple[ToolName, ...],
@@ -124,7 +124,7 @@ def create_source_run(
             "sourceRoot": str(source_repository),
             "sourceRevision": observation.revision,
             "sourceRepository": observed_source,
-            "image": image_id,
+            **({"image": image_id} if image_id is not None else {}),
             "version": version or "",
             "profile": profile_name,
             **additions,
@@ -134,7 +134,7 @@ def create_source_run(
     )
     try:
         runtime = ApplicationRuntime.create(
-            workspace.root / "environment", names=_with_git(names)
+            workspace.root / "environment", names=(ToolName.GIT,)
         )
         workspace.bind_immutable_inputs(
             {
@@ -169,9 +169,18 @@ def create_source_run(
                 "Observed Git origin differs from configured project source",
                 code="CC0001",
             )
-        repository.release_image(image_id)
+        image = repository.release_image(image_id)
+        image.release.render_immutable(version)
+        runtime = ApplicationRuntime.create(
+            workspace.root / "environment", names=_with_git(names)
+        )
         workspace.bind_immutable_inputs(
-            {"sourceTreeDigest": source_tree_digest(worktree)}, now=created_at
+            {
+                "image": image.image_id,
+                "sourceTreeDigest": source_tree_digest(worktree),
+                **_tool_inputs(runtime),
+            },
+            now=created_at,
         )
     except BaseException as exc:
         # The run exists from here on, so the failure names it even though the

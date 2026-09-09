@@ -27,6 +27,7 @@ from conclear.values import (
     URL_PATH_COMPONENT_PATTERN,
     OCIReference,
     Platform,
+    validate_release_version,
 )
 
 MAX_PIN_FRESHNESS = timedelta(hours=24)
@@ -276,6 +277,8 @@ class ReleaseTags:
 
     def render_immutable(self, version: str | None) -> tuple[str, ...]:
         """Render final tags and reject overlap with mutable release references."""
+        if version is not None:
+            validate_release_version(version)
         tags: list[str] = []
         for template in self.immutable_tags:
             if "{version}" in template and version is None:
@@ -288,6 +291,8 @@ class ReleaseTags:
                 raise InvalidInvocationError(
                     "Immutable and moving or candidate tags must be disjoint"
                 )
+            if tag in tags:
+                raise InvalidInvocationError(f"Rendered immutable tags collide: {tag}")
             tags.append(tag)
         return tuple(tags)
 
@@ -367,14 +372,23 @@ class RepositoryConfig:
     path: Path
     raw_bytes: bytes
 
-    def image(self, image_id: str) -> ImageConfig:
-        """Return one image by stable identifier."""
+    def image(self, image_id: str | None) -> ImageConfig:
+        """Select explicitly, or infer the sole releasable image."""
+        if image_id is None:
+            releases = self.release_images
+            if len(releases) == 1:
+                return releases[0]
+            choices = ", ".join(image.image_id for image in releases) or "none"
+            raise InvalidInvocationError(
+                "--image is required unless exactly one release image is configured; "
+                f"release images: {choices}"
+            )
         matches = [image for image in self.images if image.image_id == image_id]
         if not matches:
             raise InvalidInvocationError(f"Unknown image id: {image_id}")
         return matches[0]
 
-    def release_image(self, image_id: str) -> ReleaseImageConfig:
+    def release_image(self, image_id: str | None) -> ReleaseImageConfig:
         """Return one releasable image; a test-only image cannot be selected."""
         image = self.image(image_id)
         if not isinstance(image, ReleaseImageConfig):
@@ -1020,8 +1034,8 @@ def _require_unique_names(values: tuple[object, ...], label: str) -> None:
 
 
 def _parse_release_tags(value: dict[str, Any]) -> ReleaseTags:
-    immutable_tags = tuple(_string_list(value["immutable_tags"]))
-    moving_tags = tuple(_string_list(value["moving_tags"]))
+    immutable_tags = tuple(_string_list(value.get("immutable_tags", [])))
+    moving_tags = tuple(_string_list(value.get("moving_tags", [])))
     reserved = tuple(
         tag for tag in (*immutable_tags, *moving_tags) if "-candidate." in tag
     )
@@ -1029,6 +1043,8 @@ def _parse_release_tags(value: dict[str, Any]) -> ReleaseTags:
         raise InvalidInvocationError(
             "Release tags cannot use the ConClear-owned -candidate. namespace"
         )
+    literal_tags = tuple(tag for tag in immutable_tags if "{version}" not in tag)
+    ReleaseTags(literal_tags, moving_tags).render_immutable(None)
     return ReleaseTags(
         immutable_tags=immutable_tags,
         moving_tags=moving_tags,

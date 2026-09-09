@@ -160,6 +160,37 @@ def test_source_run_binds_observed_identity_and_worktree_ownership(
     assert git.observe_calls == [(root.resolve(), "v1.2.3")]
 
 
+def test_source_run_records_inferred_release_image(
+    source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
+) -> None:
+    root, _, _ = source
+    run = create(root, tmp_path, image_id=None)
+    assert run.workspace.load().immutable_inputs["image"] == "app"
+
+
+@pytest.mark.parametrize("version", [None, "stable"])
+def test_source_run_rejects_missing_version_or_moving_tag_collision_before_build_tools(
+    source: tuple[Path, FakeGit, dict[str, str]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    version: str | None,
+) -> None:
+    root, git, settings = source
+    resolved: list[ToolName] = []
+
+    class Runtime:
+        @classmethod
+        def create(cls, path: Path, *, names: tuple[ToolName, ...]) -> FakeRuntime:
+            resolved.extend(names)
+            assert names == (ToolName.GIT,)
+            return FakeRuntime(git, names, settings["digest"])
+
+    monkeypatch.setattr(run_context_module, "ApplicationRuntime", Runtime)
+    with pytest.raises(InvalidInvocationError):
+        create(root, tmp_path, version=version)
+    assert resolved == [ToolName.GIT, ToolName.GIT]
+
+
 def test_source_run_rejects_reserved_additional_inputs_before_creating_a_run(
     source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
 ) -> None:
@@ -297,7 +328,10 @@ def test_tool_resolution_failure_after_workspace_creation_names_the_run(
     workspace = _only_workspace(tmp_path)
     assert workspace.load().state is RunState.INCOMPLETE
     assert failed_run_id(caught.value) == workspace.run_id
-    assert list(workspace.journal.entries()) == []
+    assert [entry.resource_id for entry in workspace.journal.entries()] == [
+        "source-worktree"
+    ]
+    _assert_cleanup_resolves_every_resource(workspace, git)
     _assert_cleanup_resolves_every_resource(workspace, git)
 
 

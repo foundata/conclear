@@ -140,7 +140,6 @@
     "release": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["immutable_tags", "moving_tags"],
       "properties": {
         "immutable_tags": {
           "type": "array",

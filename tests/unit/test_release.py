@@ -11,7 +11,7 @@ import conclear.provenance as provenance_module
 import conclear.records as records_module
 import conclear.services.assembly as assembly_module
 import conclear.services.attestation as attestation_module
-from conclear.config import load_repository_config
+from conclear.config import ReleaseTags, load_repository_config
 from conclear.errors import (
     InvalidInvocationError,
     OperationalError,
@@ -136,7 +136,7 @@ def test_release_does_not_promote_until_verification_transitions_state(
     profile_value = profile(tmp_path)
     run_workspace = workspace(tmp_path, profile_value, RunState.ATTESTED)
     published = SimpleNamespace(immutable_reference=object())
-    image = SimpleNamespace(repository=object())
+    image = SimpleNamespace(repository=object(), release=ReleaseTags((), ()))
     repository = SimpleNamespace(
         image=lambda _image_id: image,
         release_image=lambda _image_id: image,
@@ -217,7 +217,10 @@ def test_full_release_rejects_unsupported_registry_before_qualification(
 ) -> None:
     profile_value = profile(tmp_path)
     run_workspace = workspace(tmp_path, profile_value, RunState.CREATED)
-    image = SimpleNamespace(repository=OCIReference.parse("docker.io/example/app"))
+    image = SimpleNamespace(
+        repository=OCIReference.parse("docker.io/example/app"),
+        release=ReleaseTags((), ()),
+    )
     repository = SimpleNamespace(
         image=lambda _image_id: image, release_image=lambda _image_id: image
     )

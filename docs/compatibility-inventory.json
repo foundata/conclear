@@ -718,7 +718,7 @@
           "kind": "option",
           "multiple": false,
           "name": "image_id",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -876,7 +876,7 @@
           "kind": "option",
           "multiple": false,
           "name": "image_id",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -959,7 +959,7 @@
           "kind": "option",
           "multiple": false,
           "name": "image_id",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -1229,7 +1229,7 @@
           "kind": "option",
           "multiple": false,
           "name": "image_id",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -1540,7 +1540,7 @@
           "kind": "option",
           "multiple": false,
           "name": "image_id",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -1778,7 +1778,7 @@
           "kind": "option",
           "multiple": false,
           "name": "image_id",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {

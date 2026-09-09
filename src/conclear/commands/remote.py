@@ -340,8 +340,8 @@ def release_command(
             ci_context=observed_ci,
         )
     else:
-        if selector is None or image_id is None:
-            raise click.UsageError("--revision and --image are required")
+        if selector is None:
+            raise click.UsageError("--revision is required")
         result = execute_release(
             ReleaseRequest(
                 repository=source_root,
