@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "00794408532abd760164f489527490b3aca1e7b9",
+  "guideRevision": "ec806605960a063b9bfaa5f9478827e32b8f8893",
   "limits": [
     {"name": "Pin resolution freshness", "value": "24 hours"},
     {"name": "Pin divergence", "value": "7 days"},
@@ -53,18 +53,18 @@
     {"id": "CC0505", "summary": "Hold one fresh database snapshot within a bounded qualification window", "severity": "error", "behavior": "automated", "requirements": ["IG0301", "IG0305", "IG0423"]},
     {"id": "CC0601", "summary": "Generate a unique lowercase-ULID candidate reference", "severity": "error", "behavior": "automated", "requirements": ["IG0012", "IG0089", "IG0090", "IG0095"]},
     {"id": "CC0602", "summary": "Preserve and compare the complete local and remote digest graph", "severity": "error", "behavior": "automated", "requirements": ["IG0013", "IG0076", "IG0263", "IG0294", "IG0296", "IG0302"]},
-    {"id": "CC0603", "summary": "Enforce and verify a bounded registry candidate lifetime", "severity": "error", "behavior": "automated", "requirements": ["IG0079", "IG0085", "IG0093"]},
-    {"id": "CC0604", "summary": "Refuse immutable tag replacement and verify every promoted tag", "severity": "error", "behavior": "automated", "requirements": ["IG0016", "IG0019", "IG0080", "IG0081", "IG0086", "IG0096", "IG0316", "IG0317"]},
+    {"id": "CC0603", "summary": "Verify stored candidate-retention controls and reject expired candidates", "severity": "error", "behavior": "automated", "requirements": ["IG0093"]},
+    {"id": "CC0604", "summary": "Refuse immutable tag replacement and verify every promoted tag", "severity": "error", "behavior": "automated", "requirements": ["IG0016", "IG0019", "IG0081", "IG0086", "IG0096", "IG0317"]},
     {"id": "CC0605", "summary": "Delete and verify removal of the candidate tag after promotion", "severity": "error", "behavior": "automated", "requirements": ["IG0082", "IG0097"]},
     {"id": "CC0701", "summary": "Require default public Rekor inclusion for release signatures", "severity": "error", "behavior": "automated", "requirements": ["IG0356", "IG0357", "IG0358", "IG0372"]},
     {"id": "CC0702", "summary": "Sign and verify the index and every platform manifest", "severity": "error", "behavior": "automated", "requirements": ["IG0014", "IG0018", "IG0078", "IG0360", "IG0361", "IG0363", "IG0368"]},
     {"id": "CC0703", "summary": "Verify SBOM, provenance and release-verification attestations", "severity": "error", "behavior": "automated", "requirements": ["IG0015", "IG0329", "IG0330", "IG0352", "IG0353", "IG0364", "IG0369", "IG0376", "IG0377", "IG0378", "IG0379", "IG0380", "IG0381", "IG0382", "IG0383", "IG0394"]},
     {"id": "CC0704", "summary": "Keep builder, signer and source identities distinct", "severity": "error", "behavior": "automated", "requirements": ["IG0343", "IG0346", "IG0348", "IG0349", "IG0350", "IG0384"]},
     {"id": "CC0801", "summary": "Verify complete platform coverage before an authoritative rescan", "severity": "error", "behavior": "automated", "requirements": ["IG0396"]},
-    {"id": "CC0802", "summary": "Link immutable rescans and enforce remediation deadlines", "severity": "error", "behavior": "automated", "requirements": ["IG0312", "IG0314", "IG0315", "IG0318", "IG0322", "IG0323", "IG0397"]},
+    {"id": "CC0802", "summary": "Link immutable rescans and reject overdue remediation findings", "severity": "error", "behavior": "automated", "requirements": ["IG0312", "IG0314", "IG0318", "IG0322", "IG0323", "IG0397"]},
     {"id": "CC9001", "summary": "Review whether the selected base image fits the application lifecycle", "severity": "info", "behavior": "manual", "requirements": ["IG0098", "IG0099", "IG0100", "IG0101", "IG0102", "IG0103", "IG0104", "IG0105", "IG0106"]},
     {"id": "CC9002", "summary": "Review an immutable-version tag digest change as a supply-chain event", "severity": "info", "behavior": "manual", "requirements": ["IG0121", "IG0130"]},
     {"id": "CC9003", "summary": "Review vulnerability exceptions through repository security ownership", "severity": "info", "behavior": "manual", "requirements": ["IG0309"]},
-    {"id": "CC9005", "summary": "Maintain release evidence retention and signing-key procedures", "severity": "info", "behavior": "manual", "requirements": ["IG0017", "IG0066", "IG0328", "IG0362", "IG0395"]}
+    {"id": "CC9005", "summary": "Review external evidence-retention and signing-key procedures", "severity": "info", "behavior": "manual", "requirements": ["IG0017", "IG0066", "IG0328", "IG0362", "IG0395"]}
   ]
 }

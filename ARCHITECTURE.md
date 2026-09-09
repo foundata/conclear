@@ -798,6 +798,14 @@ Rejected runs retain reports with `verdict: rejected`. Interrupted runs are
 retained, but ConClear never presents its local state directory as an archive or
 registry backup.
 
+The [evidence-retention recipe](./docs/evidence-retention.md) exports each
+platform's recorded payload bytes through the existing transport format and
+preserves selected release records and the exact source checkout separately.
+Imported qualifications remain worker-owned; distributed releases retain the
+original worker transports. Protected command logs and secret material are not
+part of the shareable bundle. Archive access, signed digest-binding checks,
+backups and restore tests remain operator responsibilities.
+
 
 ## Tool execution<a id="tool-execution"></a>
 
@@ -1337,8 +1345,17 @@ vulnerability data for the complete platform set.
 
 An SBOM rescan is explicitly recorded as vulnerability matching against retained
 inventory only. A rescan that requires secret or configuration analysis
-retrieves the immutable image content and repeats those scans. Partial platform
-coverage cannot produce an accepted result.
+repeats those scans against immutable image content. Both scopes currently
+retrieve the released image graph; neither is an offline bundle reader. Partial
+platform coverage cannot produce an accepted result.
+
+The supplied repository configuration must have the exact byte digest recorded
+in the original signed release verification. Retain the original checkout,
+because loading the configuration also resolves its Containerfiles, contexts
+and test paths. Editing today's `conclear.toml` cannot change historical rescan
+policy. Separate triage input records later decisions. Rescans do not rebuild
+or execute the retained source, and an expired historical qualification window
+does not invalidate the original signed evidence.
 
 The rescan result records the released subject, platform manifests, scanner and
 database identity, ConClear and guide identity, repository-configuration digest,

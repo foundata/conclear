@@ -29,6 +29,7 @@ ConClear applies.
 - [10. Create a release profile](#10-create-a-release-profile)
 - [11. Check and run the release environment](#11-check-and-run-the-release-environment)
 - [12. Use the same commands in CI](#12-use-the-same-commands-in-ci)
+- [13. Retain evidence and operate supported releases](#13-retain-evidence-and-operate-supported-releases)
 
 
 ## 1. Install ConClear and its tools
@@ -737,3 +738,25 @@ statuses are listed in the README under
 Persist the evidence artifacts and authoritative signed attestations required by
 your release process. Do not treat logs or a mutable registry tag as release
 evidence.
+
+
+## 13. Retain evidence and operate supported releases
+
+Before cleaning a successful run, follow the
+[evidence-retention recipe](./evidence-retention.md). It exports each platform's
+qualification payloads, preserves selected release records and the exact source
+checkout, and keeps protected logs and credentials out of the shareable bundle.
+For distributed releases, retain the original worker transports before their
+workspaces disappear.
+
+Later rescans need the original `conclear.toml` bytes and the files its paths
+reference. They verify the signed release evidence and use a fresh database;
+they do not rebuild the old source or require its qualification window to
+remain current. The recipe includes a rescan command using a restored checkout.
+
+Assign owners for key custody, registry writers and retention, the inventory of
+supported digests, scheduled rescans, triage and rebuilds. A systemd timer or
+cron job on an existing managed host can call ConClear, with persistent state
+and monitoring for failed or missed assessments. CI is optional. A verified
+authoritative rescan with a rejecting verdict still advances the history; keep
+its result digest and notify the triage owner.

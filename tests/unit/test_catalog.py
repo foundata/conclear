@@ -71,11 +71,33 @@ def test_conformance_lists_every_requirement_with_its_status() -> None:
     assert "| manual" in coverage
 
 
+def test_conformance_does_not_claim_to_operate_external_release_controls() -> None:
+    statuses = {
+        item.requirement.requirement_id: item.status for item in requirement_statuses()
+    }
+    for identifier in (
+        "IG0079",
+        "IG0080",
+        "IG0085",
+        "IG0315",
+        "IG0316",
+        "IG0424",
+        "IG0425",
+        "IG0426",
+        "IG0427",
+    ):
+        assert statuses[identifier] == "external"
+    assert statuses["IG0092"] == "automated"
+    assert statuses["IG0093"] == "automated"
+    assert statuses["IG0423"] == "automated"
+    assert statuses["IG0428"] == "manual"
+
+
 def test_conformance_generation_is_deterministic(tmp_path: Path) -> None:
     path = tmp_path / "conformance.md"
     write_conformance(path)
     assert path.read_text(encoding="utf-8") == render_conformance()
-    assert "00794408532abd760164f489527490b3aca1e7b9" in render_conformance()
+    assert "ec806605960a063b9bfaa5f9478827e32b8f8893" in render_conformance()
 
 
 def test_committed_conformance_document_is_current() -> None:

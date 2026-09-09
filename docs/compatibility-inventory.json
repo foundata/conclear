@@ -454,8 +454,6 @@
         "behavior": "automated",
         "id": "CC0603",
         "requirements": [
-          "IG0079",
-          "IG0085",
           "IG0093"
         ],
         "severity": "error"
@@ -466,11 +464,9 @@
         "requirements": [
           "IG0016",
           "IG0019",
-          "IG0080",
           "IG0081",
           "IG0086",
           "IG0096",
-          "IG0316",
           "IG0317"
         ],
         "severity": "error"
@@ -559,7 +555,6 @@
         "requirements": [
           "IG0312",
           "IG0314",
-          "IG0315",
           "IG0318",
           "IG0322",
           "IG0323",

@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "00794408532abd760164f489527490b3aca1e7b9",
+ "guideRevision": "ec806605960a063b9bfaa5f9478827e32b8f8893",
  "requirements": [
   {
    "id": "IG0001",
@@ -2962,6 +2962,41 @@
    "section": "Vulnerability and configuration scanning",
    "anchor": "vulnerability-and-configuration-scanning",
    "text": "ConClear MUST define a finite qualification window beginning with selection of a fresh common database snapshot. Distributed workers MUST use that exact snapshot within the original window. Qualification completion, assembly, publication and promotion MUST reject expired approval, including on resume. The deadline MUST be recorded with the evidence and MUST NOT outlive pin freshness, permitted pin divergence or applied vulnerability exceptions. Expiry requires renewed qualification; it does not invalidate historical evidence. Rescans MUST assess the unchanged released subject with a fresh database."
+  },
+  {
+   "id": "IG0424",
+   "modality": "MUST",
+   "section": "Operating supported releases",
+   "anchor": "operating-supported-releases",
+   "text": "The organization MUST name an owner for credential and signing-key custody, registry writer permissions, candidate and release retention, the supported release inventory, scheduled rescans, vulnerability triage and rebuilds. Record the owners and procedures in a maintained operating document outside the public evidence bundle; one person may own several duties."
+  },
+  {
+   "id": "IG0425",
+   "modality": "MUST",
+   "section": "Operating supported releases",
+   "anchor": "operating-supported-releases",
+   "text": "The release owner MUST maintain a supported-release inventory keyed by repository and immutable digest. Each entry MUST identify its platforms, support status, owner, source revision, exact repository-configuration digest and retained checkout, evidence location, trusted signer, latest verified authoritative rescan digest when one exists, completed-assessment time and next due time. Operational failures or missed jobs MUST NOT advance the completed-assessment time."
+  },
+  {
+   "id": "IG0426",
+   "modality": "MUST",
+   "section": "Operating supported releases",
+   "anchor": "operating-supported-releases",
+   "text": "The scheduling owner MUST provide an available execution host, protected persistent state and credentials, monitoring for failed or overdue work, and an owned recovery procedure. Preserve pin observations and rescan history across jobs and host replacement; verify recovery without resetting an existing remediation clock."
+  },
+  {
+   "id": "IG0427",
+   "modality": "MUST",
+   "section": "Retaining the referenced bytes",
+   "anchor": "retaining-the-referenced-bytes",
+   "text": "The release owner MUST retain the exact non-secret qualification records, scan reports, SBOMs, test evidence, candidate record and provenance and verification predicates for the supported release lifetime. Retain the exact `conclear.toml` and the source checkout needed to load it. Check their digests against the signed evidence and test retrieval from the retention location before discarding the working copies."
+  },
+  {
+   "id": "IG0428",
+   "modality": "MUST",
+   "section": "Retaining the referenced bytes",
+   "anchor": "retaining-the-referenced-bytes",
+   "text": "The release owner MUST keep protected command logs, credentials, release profiles, secret test inputs and raw diagnostic output outside the shareable evidence bundle. Review the selected files for disclosure before making a bundle accessible to consumers."
   }
  ],
  "retired": []

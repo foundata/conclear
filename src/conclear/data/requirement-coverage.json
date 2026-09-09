@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "00794408532abd760164f489527490b3aca1e7b9",
+  "guideRevision": "ec806605960a063b9bfaa5f9478827e32b8f8893",
   "entries": [
     {"id": "IG0001", "status": "automated", "rationale": "`conclear release` runs the complete fail-closed workflow from a reviewed revision to verified promotion."},
     {"id": "IG0002", "status": "automated", "rationale": "Every run builds from a detached worktree of the selected committed revision and takes trust configuration from the release profile."},
@@ -56,8 +56,11 @@
     {"id": "IG0073", "status": "manual", "rationale": "Base image sourcing is review."},
     {"id": "IG0075", "status": "manual", "rationale": "Secret scanning (`CC0501`) and CI-context normalization catch known patterns; other private details in labels are review."},
     {"id": "IG0077", "status": "automated", "rationale": "Publication and promotion resolve exact tags and digests through Skopeo and the Quay API and treat ambiguous responses as unknown, never as absence."},
+    {"id": "IG0079", "status": "external", "rationale": "The registry operates candidate expiry independently; CC0603 verifies stored retention controls and rejects expired candidates but does not monitor the pruner."},
+    {"id": "IG0080", "status": "external", "rationale": "The registry enforces protection against other writers. ConClear verifies selective policies and observed tags before publication and promotion (IG0092), while the operator controls policy changes and permissions."},
     {"id": "IG0083", "status": "automated", "rationale": "The run journal records intent and outcome of every remote mutation; `conclear resume` and `conclear cleanup` recover from the observed state."},
     {"id": "IG0084", "status": "automated", "rationale": "Registry and API credentials come from the release profile's private files and are redacted from evidence and logs."},
+    {"id": "IG0085", "status": "external", "rationale": "ConClear establishes and verifies the stored candidate-retention policy (CC0603); registry pruning availability and scheduling remain external controls."},
     {"id": "IG0087", "status": "automated", "rationale": "`conclear promote` moves declared convenience tags to the verified digest."},
     {"id": "IG0088", "status": "external", "rationale": "Deployment admission is owned by the deployment environment (GO0009)."},
     {"id": "IG0091", "status": "manual", "rationale": "Every rejecting content gate runs before upload; whether candidate content may be public is a project decision."},
@@ -179,6 +182,8 @@
     {"id": "IG0303", "status": "external", "rationale": "Rescan scheduling from a digest-bound inventory is an organization control; `conclear rescan` resolves subjects by digest (`CC0801`)."},
     {"id": "IG0306", "status": "unsupported", "rationale": "1.0.0 does not rescan the pulled registry digest after upload."},
     {"id": "IG0307", "status": "external", "rationale": "Second-opinion scans are an organization audit activity outside ConClear."},
+    {"id": "IG0315", "status": "external", "rationale": "The project owner delivers remediation or approved exceptions. CC0802 records and evaluates deadlines only when invoked; it does not schedule work, rebuild or withdraw images."},
+    {"id": "IG0316", "status": "external", "rationale": "The registry owner preserves immutable version mappings; CC0604 refuses replacement and verifies tags during promotion, not continuously after release."},
     {"id": "IG0319", "status": "manual", "rationale": "Advisories are a project communication."},
     {"id": "IG0320", "status": "automated", "rationale": "Rescan results record their scope; `sbom-vulnerabilities` covers package matching only."},
     {"id": "IG0321", "status": "automated", "rationale": "The `full-image` rescan scope fetches the image by digest and scans its content."},
@@ -229,6 +234,11 @@
     {"id": "IG0418", "status": "manual", "rationale": "Runtime base suitability is review."},
     {"id": "IG0419", "status": "manual", "rationale": "Artifact provenance documentation is a project duty."},
     {"id": "IG0420", "status": "manual", "rationale": "ConClear validates declared set-ID paths and permissions; reviewing the complete final-image inventory, including inherited executables, and each purpose remains manual."},
-    {"id": "IG0421", "status": "manual", "rationale": "ConClear requires review metadata; the repository owner reviews its adequacy and revisits permissions at their declared triggers."}
+    {"id": "IG0421", "status": "manual", "rationale": "ConClear requires review metadata; the repository owner reviews its adequacy and revisits permissions at their declared triggers."},
+    {"id": "IG0424", "status": "external", "rationale": "The organization assigns the operating owners; ConClear does not manage credentials, permissions, scheduling or remediation work."},
+    {"id": "IG0425", "status": "external", "rationale": "The release owner maintains the supported-digest inventory, retained inputs, latest authoritative result and next due time."},
+    {"id": "IG0426", "status": "external", "rationale": "The scheduling owner provides host availability, protected persistent state, monitoring and tested recovery; ConClear supplies individual commands and verified history reconciliation."},
+    {"id": "IG0427", "status": "external", "rationale": "Transport export retains qualification payload bytes; the release owner archives source and release records, checks signed digest bindings and operates accessible retention and restore tests."},
+    {"id": "IG0428", "status": "manual", "rationale": "The release owner reviews disclosure and separates protected diagnostics and secrets from shareable evidence; transport export excludes non-payload files but cannot assess all application content."}
   ]
 }
