@@ -573,8 +573,68 @@ create permanent public transparency-log entries, so they are opt-in by design.
 They remain the only check on behavior that fakes cannot reproduce. Run them at
 least once before trusting a production-signed release.
 
-The two current network tests cover individual tag immutability and an SPDX
-attestation round trip. They do not exercise a complete release or recovery.
+The baseline covers candidate read-back, selected expiration and owned deletion,
+plus an SPDX attestation round trip. Select `CONCLEAR_TEST_TAG_PROTECTION`
+(`required` or `not-enforced`) and `CONCLEAR_TEST_CANDIDATE_CLEANUP` (`manual`,
+`tag-expiration` or `auto-prune`) to match the release profile. Optional tests
+check selective repository/organization protection and auto-prune creation and
+read-back. Selected controls fail if their APIs are unavailable; unselected
+controls are skipped. Read-back does not prove overwrite rejection or eventual
+pruning. Candidates remain mutable throughout the baseline.
+
+With `CONCLEAR_TEST_NETWORK_AUTHORIZED=yes`, missing required inputs fail the
+test. The external resource manifest must own the repository and every supplied
+tag. `required` also needs the full tagged references
+`CONCLEAR_TEST_QUAY_VERSION_TAG` and `CONCLEAR_TEST_QUAY_MOVING_TAG`; configure
+a selective policy for them before testing. All credential paths must be
+absolute and outside this checkout. Use the environment block in the release
+procedure below for the baseline inputs.
+
+#### Repeat release and recovery
+
+`tests/network/test_release_lifecycle.py` exercises an installed wheel through
+the public CLI. It releases the same source/version twice, checks `latest` by
+registry read-back and runs three authoritative rescans across those releases.
+It then qualifies and assembles another candidate, stops after publication and
+resumes in a new process. The assertions cover unchanged authorization expiry,
+candidate deletion, terminal-resume rejection and preservation of promoted tags
+during cleanup. A stop between commands does not test crashes during writes or
+lost provider acknowledgements.
+
+Prepare a disposable native Linux host with supported tools and a reviewed,
+reproducible fixture. Its committed configuration must contain exactly one
+release image, the manifest-owned Quay destination and `latest` as a moving tag.
+Use an unused version and repository. Put the installed wheel, source checkout,
+dedicated file-based signing credentials and XDG directories under the
+manifest's `workspace`. Keep the same configuration bytes for rescans. The
+selected profile must include a passphrase file and match the two policy-mode
+variables above.
+
+Set `CONCLEAR_TEST_RELEASE_LIFECYCLE=yes` and
+`CONCLEAR_TEST_RELEASE_SCENARIO` to an external JSON file containing:
+
+```json
+{
+  "cli": "/absolute/run/wheel-env/bin/conclear",
+  "conclear_revision": "<full revision embedded in the retained wheel>",
+  "source": "/absolute/run/image",
+  "revision": "<full committed fixture revision>",
+  "version": "1.2.3",
+  "profile": "test",
+  "state_home": "/absolute/run/state",
+  "cache_home": "/absolute/run/cache",
+  "config_home": "/absolute/run/config"
+}
+```
+
+Run `uv run pytest -m network tests/network/test_release_lifecycle.py -rs` with
+the common authorization, manifest, repository and policy-mode variables. The
+test creates `workspace/release-lifecycle` once, retains protected command
+output there and records discovered ConClear run IDs in the resource manifest.
+After reviewing evidence, clean those runs with their original state/profile,
+then remove only manifest-owned registry resources. Interrupted commands may
+leave additional journaled resources; reconcile the dedicated state directory
+before declaring cleanup complete. No result report belongs in this checkout.
 
 
 ## Generated conformance catalog<a id="conformance-catalog"></a>
@@ -962,7 +1022,7 @@ test workspaces and resource manifests outside the repository.
    ```sh
    (
      cd "${artifact_dir}"
-     jq -r '.artifacts[] | "\(.sha256)  \(.filename)"' artifacts.json |
+     jq -r '.artifacts[] | "\(.sha256 | ltrimstr("sha256:"))  \(.filename)"' artifacts.json |
        sha256sum --check -
    )
    ```
@@ -1021,6 +1081,8 @@ test workspaces and resource manifests outside the repository.
    CONCLEAR_TEST_QUAY_CANDIDATE=quay.io/<organization>/<repository>:<candidate-tag> \
    CONCLEAR_TEST_QUAY_CANDIDATE_DIGEST=sha256:<candidate-digest> \
    CONCLEAR_TEST_QUAY_TOKEN_FILE=<quay-api-token-file> \
+   CONCLEAR_TEST_TAG_PROTECTION=not-enforced \
+   CONCLEAR_TEST_CANDIDATE_CLEANUP=tag-expiration \
    CONCLEAR_TEST_COSIGN_SUBJECT=quay.io/<organization>/<repository>@sha256:<subject-digest> \
    CONCLEAR_TEST_DOCKER_CONFIG=<registry-auth-file> \
    CONCLEAR_TEST_COSIGN_PRIVATE_KEY=<test-private-key> \
