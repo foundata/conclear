@@ -39,7 +39,7 @@
         "guideTitle": {"const": "OCI container image build and release guide"},
         "guideRepository": {"const": "https://github.com/foundata/guidelines"},
         "guidePath": {"const": "oci-container-image-guide.md"},
-        "guideRevision": {"const": "50240520ec9aef8d3725fae6c1be9a931cb465b1"}
+        "guideRevision": {"const": "00794408532abd760164f489527490b3aca1e7b9"}
       }
     },
     "source": {

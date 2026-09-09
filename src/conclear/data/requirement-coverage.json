@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "50240520ec9aef8d3725fae6c1be9a931cb465b1",
+  "guideRevision": "00794408532abd760164f489527490b3aca1e7b9",
   "entries": [
     {"id": "IG0001", "status": "automated", "rationale": "`conclear release` runs the complete fail-closed workflow from a reviewed revision to verified promotion."},
     {"id": "IG0002", "status": "automated", "rationale": "Every run builds from a detached worktree of the selected committed revision and takes trust configuration from the release profile."},

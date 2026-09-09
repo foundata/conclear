@@ -4,8 +4,8 @@
 
 This inventory records guide choices whose availability is not fully visible
 from the check catalog. It is pinned to
-[OCI container image build and release guide](https://github.com/foundata/guidelines/blob/50240520ec9aef8d3725fae6c1be9a931cb465b1/oci-container-image-guide.md)
-at revision `50240520ec9aef8d3725fae6c1be9a931cb465b1`. Each entry names the
+[OCI container image build and release guide](https://github.com/foundata/guidelines/blob/00794408532abd760164f489527490b3aca1e7b9/oci-container-image-guide.md)
+at revision `00794408532abd760164f489527490b3aca1e7b9`. Each entry names the
 guide requirements it concerns; the conformance document links every requirement
 identifier to the guide.
 
