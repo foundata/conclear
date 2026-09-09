@@ -251,7 +251,8 @@ def rescan_release(
     Digest(configuration_digest)
     if configuration_digest != expected_configuration_digest:
         raise InvalidInvocationError(
-            "Rescan repository configuration differs from release verification"
+            "Rescan repository configuration differs from release verification; "
+            "use the exact conclear.toml and source checkout retained for this digest"
         )
     source_value = object_value(release_record.get("source"), "release source")
     source = SourceIdentity(
