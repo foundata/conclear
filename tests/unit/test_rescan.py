@@ -444,6 +444,17 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         now=datetime(2026, 1, 1, tzinfo=UTC),
     )
     configuration_digest = "sha256:" + "d" * 64
+    sbom: dict[str, object] = {
+        "spdxVersion": "SPDX-2.3",
+        "dataLicense": "CC0-1.0",
+        "SPDXID": "SPDXRef-DOCUMENT",
+        "name": "app",
+        "documentNamespace": "https://example.invalid/spdx/app",
+        "creationInfo": {
+            "creators": ["Tool: test"],
+            "created": "2026-01-01T00:00:00Z",
+        },
+    }
     release_record = RecordEnvelope(
         record_type="releaseVerification",
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -480,7 +491,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             "evidence": {
                 "platformQualifications": ["sha256:" + "1" * 64],
                 "scanResults": ["sha256:" + "2" * 64],
-                "sboms": ["sha256:" + "3" * 64],
+                "sboms": [sha256_bytes(canonical_json_bytes(sbom))],
                 "provenance": "sha256:" + "4" * 64,
                 "candidateRecord": "sha256:" + "5" * 64,
             },
@@ -502,21 +513,20 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
                 "digest": {"sha256": root_digest.encoded},
             }
         ]
+    signer.add(manifest_subject, "spdxjson", sbom)
+    signer.add(manifest_subject, "spdxjson", sbom)
     signer.add(
         manifest_subject,
         "spdxjson",
-        {
-            "spdxVersion": "SPDX-2.3",
-            "dataLicense": "CC0-1.0",
-            "SPDXID": "SPDXRef-DOCUMENT",
-            "name": "app",
-            "documentNamespace": "https://example.invalid/spdx/app",
-            "creationInfo": {
-                "creators": ["Tool: test"],
-                "created": "2026-01-01T00:00:00Z",
-            },
-        },
+        {**sbom, "documentNamespace": "https://example.invalid/spdx/later-build"},
     )
+    signer.add(subject, RELEASE_VERIFICATION_TYPE, release_record)
+    signer.add(
+        subject,
+        RELEASE_VERIFICATION_TYPE,
+        {**release_record, "createdAt": "2026-01-02T00:00:00Z"},
+    )
+    release_record_digest = sha256_bytes(canonical_json_bytes(release_record))
     signer.fail_rescan_verification = fail_post_verification
     public_key = tmp_path / "cosign.pub"
     public_key.write_text("test", encoding="utf-8")
@@ -571,6 +581,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             verdict=Verdict.ACCEPTED,
             payload={
                 "subject": str(subject),
+                "releaseRecordDigest": release_record_digest,
                 "platformManifests": {str(platform): str(manifest_digest)},
                 "scanner": "trivy 0.69.3",
                 "databaseDigest": "sha256:" + "6" * 64,
@@ -599,6 +610,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         remediation_history = (
             RescanHistoryEntry(
                 record_digest=previous_result_digest,
+                release_record_digest=release_record_digest,
                 verified_at=datetime(2026, 1, 1, tzinfo=UTC),
                 active_findings=(active_finding,),
             ),
@@ -643,7 +655,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         assert run.journal.entries() == ()
         return
     if wrong_release_name:
-        with pytest.raises(OperationalError, match="exactly one"):
+        with pytest.raises(OperationalError, match="unexpected subject"):
             run_rescan()
         assert run.journal.entries() == ()
         return
@@ -669,6 +681,8 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     assert result.statement_path is not None
     record = load_json(result.record_path)
     assert record["payload"]["databaseDigest"] == database.digest
+    assert record["payload"]["releaseRecordDigest"] == release_record_digest
+    assert result.release_record_digest == release_record_digest
     assert record["payload"]["scanner"] == "trivy 0.69.3"
     expected_exceptions = (
         [

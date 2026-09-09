@@ -51,6 +51,7 @@ def _record() -> RecordEnvelope:
             "appliedExceptions": [],
             "triage": [],
             "previousResultDigest": None,
+            "releaseRecordDigest": "sha256:" + "9" * 64,
             "authoritative": False,
             "remediation": {"limitSeconds": 2592000, "findings": []},
         },

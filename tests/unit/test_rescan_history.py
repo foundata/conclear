@@ -36,6 +36,7 @@ FINDING = RemediationFindingKey(
 def _entry(character: str, when: datetime) -> RescanHistoryEntry:
     return RescanHistoryEntry(
         record_digest="sha256:" + character * 64,
+        release_record_digest="sha256:" + "9" * 64,
         verified_at=when,
         active_findings=(FINDING,),
     )
@@ -69,6 +70,7 @@ def _record(
         verdict=Verdict.ACCEPTED,
         payload={
             "subject": str(SUBJECT),
+            "releaseRecordDigest": "sha256:" + "9" * 64,
             "platformManifests": {"linux/amd64": "sha256:" + "d" * 64},
             "scanner": "trivy 0.69.3",
             "databaseDigest": "sha256:" + "e" * 64,
@@ -204,6 +206,7 @@ def test_history_rejects_cache_conflicts_and_signed_forks(
         SUBJECT,
         RescanHistoryEntry(
             record_digest=first_digest,
+            release_record_digest="sha256:" + "9" * 64,
             verified_at=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
             active_findings=(FINDING,),
         ),

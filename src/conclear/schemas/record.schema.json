@@ -705,9 +705,10 @@
     "rescanResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["subject", "platformManifests", "scanner", "databaseDigest", "databaseMetadata", "scope", "findings", "appliedExceptions", "triage", "previousResultDigest", "authoritative", "remediation"],
+      "required": ["subject", "releaseRecordDigest", "platformManifests", "scanner", "databaseDigest", "databaseMetadata", "scope", "findings", "appliedExceptions", "triage", "previousResultDigest", "authoritative", "remediation"],
       "properties": {
         "subject": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
+        "releaseRecordDigest": {"$ref": "#/$defs/digest"},
         "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
         "scanner": {"type": "string"},
         "databaseDigest": {"$ref": "#/$defs/digest"},

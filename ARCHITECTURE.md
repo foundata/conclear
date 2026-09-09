@@ -1378,6 +1378,14 @@ platform manifest, retrieves each signed SBOM, verifies the attestation, signer
 and log inclusion against the external trust root, and evaluates the current
 vulnerability data for the complete platform set.
 
+Repeat releases may attach several accepted records to the same digest.
+ConClear deduplicates identical predicates and selects the earliest record
+matching the exact configuration, with the record digest breaking timestamp
+ties. Matching records must agree on source, platform, builder and signer
+identities. Each consumed SBOM must match its verified platform subject and a
+hash referenced by the selected record. A rescan records `releaseRecordDigest`;
+later rescans retain that anchor and fail if its evidence is missing.
+
 An SBOM rescan is explicitly recorded as vulnerability matching against retained
 inventory only. A rescan that requires secret or configuration analysis
 repeats those scans against immutable image content. Both scopes currently

@@ -29,7 +29,6 @@ from conclear.records import (
     Verdict,
     format_timestamp,
     parse_timestamp,
-    validate_record,
 )
 from conclear.rescan_history import (
     RemediationFindingKey,
@@ -38,7 +37,11 @@ from conclear.rescan_history import (
 )
 from conclear.scan_policy import evaluate_trivy_report
 from conclear.services.attestation_reads import verified_statements
-from conclear.spdx import validate_spdx_document
+from conclear.services.rescan_evidence import (
+    select_release_evidence,
+    select_release_sbom,
+    verified_predicates,
+)
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference
 from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
@@ -141,6 +144,7 @@ class RescanResult:
     verdict: Verdict
     verified_at: str | None
     active_findings: tuple[RemediationFindingKey, ...]
+    release_record_digest: str
 
 
 def verified_rescan_history(
@@ -160,21 +164,10 @@ def verified_rescan_history(
         public_key=public_key,
         predicate_type=RESCAN_TYPE,
     )
-    matches = tuple(
-        statement
-        for statement in statements
-        if statement.get("predicateType") == RESCAN_TYPE
-        and _has_subject(statement, subject)
+    predicates = verified_predicates(
+        statements, predicate_type=RESCAN_TYPE, subject=subject
     )
-    if len(matches) != len(statements):
-        raise OperationalError(
-            "Verified rescan attestations have an unexpected subject or predicate type"
-        )
-    records = tuple(
-        object_value(statement.get("predicate"), "rescan record")
-        for statement in matches
-    )
-    return history_from_records(records, subject)
+    return history_from_records(tuple(predicates.values()), subject)
 
 
 def rescan_release(
@@ -221,40 +214,22 @@ def rescan_release(
         raise InvalidInvocationError(
             "Rescan remediation history does not match the previous result"
         )
-    release_statement = _one_statement(
+    anchors = {item.release_record_digest for item in remediation_history}
+    if len(anchors) > 1:
+        raise OperationalError("Rescan history changes its release record anchor")
+    release = select_release_evidence(
         verified_statements(
             signer,
             subject=subject,
             public_key=public_key,
             predicate_type=RELEASE_VERIFICATION_TYPE,
         ),
-        predicate_type=RELEASE_VERIFICATION_TYPE,
         subject=subject,
+        configuration_digest=expected_configuration_digest,
+        anchored_digest=next(iter(anchors), None),
     )
-    release_record = object_value(release_statement.get("predicate"), "release record")
-    validate_record(release_record)
-    if release_record.get("recordType") != "releaseVerification":
-        raise OperationalError("Verified release predicate has the wrong record type")
-    payload = object_value(release_record.get("payload"), "release payload")
-    release_subject = object_value(payload.get("subject"), "released subject")
-    if release_subject != {
-        "repository": subject.repository_name,
-        "digest": str(subject.digest),
-    }:
-        raise OperationalError("Release verification names another subject")
-    repository_configuration = object_value(
-        release_record.get("repositoryConfiguration"), "repository configuration"
-    )
-    configuration_digest = string_value(
-        repository_configuration.get("sha256"), "repository configuration digest"
-    )
-    Digest(configuration_digest)
-    if configuration_digest != expected_configuration_digest:
-        raise InvalidInvocationError(
-            "Rescan repository configuration differs from release verification; "
-            "use the exact conclear.toml and source checkout retained for this digest"
-        )
-    source_value = object_value(release_record.get("source"), "release source")
+    payload = release.payload
+    source_value = object_value(release.record.get("source"), "release source")
     source = SourceIdentity(
         string_value(source_value.get("repository"), "source repository"),
         string_value(source_value.get("revision"), "source revision"),
@@ -309,25 +284,31 @@ def rescan_release(
     applied_exceptions: list[dict[str, object]] = []
     applied_runtime_requirements: list[dict[str, object]] = []
     active_findings: set[RemediationFindingKey] = set()
+    evidence = object_value(payload.get("evidence"), "release evidence")
+    raw_sboms = evidence.get("sboms")
+    if not isinstance(raw_sboms, list) or not all(
+        isinstance(item, str) for item in raw_sboms
+    ):
+        raise OperationalError("Release SBOM references are malformed")
+    sbom_digests = frozenset(string_value(item, "SBOM digest") for item in raw_sboms)
+    consumed_sboms: set[str] = set()
     for platform, digest in sorted(manifest_map.items()):
         if platform is None:
             raise OperationalError(
                 "Rescan platform coverage invariant failed", code="CC0801"
             )
         manifest_subject = subject.with_digest(digest)
-        statement = _one_statement(
+        sbom_digest, sbom = select_release_sbom(
             verified_statements(
                 signer,
                 subject=manifest_subject,
                 public_key=public_key,
                 predicate_type=SPDX_DOCUMENT_TYPE,
             ),
-            predicate_type=SPDX_DOCUMENT_TYPE,
             subject=manifest_subject,
+            evidence_digests=sbom_digests,
         )
-        sbom = validate_spdx_document(
-            statement.get("predicate"), label=f"SBOM for {platform}"
-        )
+        consumed_sboms.add(sbom_digest)
         sbom_path = report_root / f"{platform.key}.spdx.json"
         atomic_write_json(sbom_path, sbom, mode=0o644)
         report_path = report_root / f"{platform.key}-scan.json"
@@ -398,6 +379,8 @@ def rescan_release(
             {"platform": str(platform), **item}
             for item in evaluation.applied_runtime_requirements
         )
+    if consumed_sboms != sbom_digests:
+        raise OperationalError("Release SBOM references do not match platform coverage")
     remediation_findings: list[dict[str, object]] = []
     for finding in sorted(active_findings):
         started_at = _remediation_start(finding, remediation_history)
@@ -440,11 +423,12 @@ def rescan_release(
         created_at=recorded_at,
         run_id=workspace.run_id,
         source=source,
-        configuration_digest=configuration_digest,
+        configuration_digest=expected_configuration_digest,
         tools=tools,
         verdict=verdict,
         payload={
             "subject": str(subject),
+            "releaseRecordDigest": release.digest,
             "platformManifests": expected_platforms,
             "scanner": _scanner_identity(tools),
             "databaseDigest": database.digest,
@@ -474,6 +458,7 @@ def rescan_release(
             verdict,
             None,
             tuple(sorted(active_findings)),
+            release.digest,
         )
     statement_path = workspace.root / "records" / "rescan-statement.json"
     statement_digest = write_statement(
@@ -510,6 +495,7 @@ def rescan_release(
             *remediation_history,
             RescanHistoryEntry(
                 record_digest=record_digest,
+                release_record_digest=release.digest,
                 verified_at=recorded_at,
                 active_findings=tuple(sorted(active_findings)),
             ),
@@ -536,6 +522,7 @@ def rescan_release(
         verdict,
         verified_at,
         tuple(sorted(active_findings)),
+        release.digest,
     )
 
 
@@ -558,34 +545,3 @@ def _scanner_identity(tools: tuple[ToolIdentity, ...]) -> str:
             "Rescan evidence requires exactly one Trivy tool identity"
         )
     return f"trivy {matches[0].version}"
-
-
-def _one_statement(
-    statements: tuple[dict[str, object], ...],
-    *,
-    predicate_type: str,
-    subject: OCIReference,
-) -> dict[str, object]:
-    matches = [
-        statement
-        for statement in statements
-        if statement.get("predicateType") == predicate_type
-        and _has_subject(statement, subject)
-    ]
-    if len(matches) != 1:
-        raise OperationalError(
-            f"Expected exactly one {predicate_type} attestation, found {len(matches)}"
-        )
-    return matches[0]
-
-
-def _has_subject(statement: dict[str, object], subject: OCIReference) -> bool:
-    if subject.digest is None:
-        raise OperationalError("Rescan statement subject is not immutable")
-    subjects = statement.get("subject")
-    return isinstance(subjects, list) and any(
-        isinstance(item, dict)
-        and item.get("name") == subject.repository_name
-        and item.get("digest") == {"sha256": subject.digest.encoded}
-        for item in subjects
-    )

@@ -172,6 +172,15 @@ vulnerability matching, while `full-image` also repeats secret and configuration
 scans. Both currently retrieve the released image graph from the registry, so
 the command needs registry availability even when the bundle is local.
 
+A digest can have several valid release records after a repeat release. The
+first rescan selects the earliest accepted record matching the retained
+configuration, with its content digest breaking timestamp ties. Each platform
+SBOM must match both its signed image subject and a hash in that release record.
+Identical attestations are deduplicated; conflicting source, platform, builder
+or signer identities stop the rescan. The signed result records
+`releaseRecordDigest`, which all later rescans keep, even if another release
+record appears. Missing anchored evidence stops the rescan.
+
 The complete retained checkout matters: configuration loading checks referenced
 Containerfiles, contexts and test files even though a rescan does not build
 them. Copying only `conclear.toml` may fail. Editing it, including changing an

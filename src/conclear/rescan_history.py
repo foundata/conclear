@@ -44,12 +44,14 @@ class RescanHistoryEntry:
     """One post-attachment verified authoritative rescan observation."""
 
     record_digest: str
+    release_record_digest: str
     verified_at: datetime
     active_findings: tuple[RemediationFindingKey, ...]
 
     def __post_init__(self) -> None:
         """Validate the stored digest, time and finding identities."""
         Digest(self.record_digest)
+        Digest(self.release_record_digest)
         if self.verified_at.tzinfo is None or self.verified_at.utcoffset() is None:
             raise OperationalError("Rescan verification time must be timezone-aware")
         if self.active_findings != tuple(sorted(set(self.active_findings))):
@@ -59,6 +61,7 @@ class RescanHistoryEntry:
         """Return the durable representation."""
         return {
             "recordDigest": self.record_digest,
+            "releaseRecordDigest": self.release_record_digest,
             "verifiedAt": format_timestamp(self.verified_at),
             "activeFindings": [item.to_dict() for item in self.active_findings],
         }
@@ -124,6 +127,7 @@ class RescanHistoryStore:
                 )
             if entries and entry.verified_at < entries[-1].verified_at:
                 raise OperationalError("Rescan verification clock moved backwards")
+            _require_same_anchor((*entries, entry))
             if any(item.record_digest == entry.record_digest for item in entries):
                 raise OperationalError("Rescan result digest is already recorded")
             entries.append(entry)
@@ -163,6 +167,7 @@ class RescanHistoryStore:
         if not isinstance(raw_results, list):
             raise OperationalError("Rescan history results are malformed")
         entries = tuple(_entry(item) for item in raw_results)
+        _require_same_anchor(entries)
         if len({item.record_digest for item in entries}) != len(entries):
             raise OperationalError("Rescan history contains duplicate results")
         if any(
@@ -201,7 +206,7 @@ def history_from_records(
             raise OperationalError("Signed rescan history contains a diagnostic result")
         record_digest = sha256_bytes(canonical_json_bytes(record))
         if record_digest in digests:
-            raise OperationalError("Signed rescan history contains duplicate results")
+            continue
         digests.add(record_digest)
         previous_digest = payload.get("previousResultDigest")
         if previous_digest is not None:
@@ -221,6 +226,7 @@ def history_from_records(
         try:
             entry = RescanHistoryEntry(
                 record_digest=record_digest,
+                release_record_digest=_string(payload.get("releaseRecordDigest")),
                 verified_at=parse_timestamp(
                     record.get("createdAt"), "Rescan history timestamp"
                 ),
@@ -247,7 +253,13 @@ def history_from_records(
         chain.append(selected.entry)
         remaining.remove(selected)
         previous = selected.entry.record_digest
+    _require_same_anchor(tuple(chain))
     return tuple(chain)
+
+
+def _require_same_anchor(entries: tuple[RescanHistoryEntry, ...]) -> None:
+    if len({entry.release_record_digest for entry in entries}) > 1:
+        raise OperationalError("Rescan history changes its release record anchor")
 
 
 def _require_latest(
@@ -292,6 +304,7 @@ def _entry(value: object) -> RescanHistoryEntry:
     try:
         return RescanHistoryEntry(
             record_digest=_string(value.get("recordDigest")),
+            release_record_digest=_string(value.get("releaseRecordDigest")),
             verified_at=parse_timestamp(
                 value.get("verifiedAt"), "Rescan history timestamp"
             ),

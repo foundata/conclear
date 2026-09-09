@@ -116,8 +116,9 @@ def test_signed_chain_reconstruction_rejects_malformed_or_foreign_records() -> N
         lambda value: value["payload"]["remediation"].update(findings={}),
         "malformed",
     )
-    with pytest.raises(OperationalError, match="duplicate results"):
-        history_from_records((record, json.loads(json.dumps(record))), SUBJECT)
+    assert history_from_records(
+        (record, json.loads(json.dumps(record))), SUBJECT
+    ) == history_from_records((record,), SUBJECT)
 
     chain = history_from_records((record,), SUBJECT)
     assert len(chain) == 1

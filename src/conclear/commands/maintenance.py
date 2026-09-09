@@ -534,6 +534,7 @@ def rescan_command(
                 subject,
                 RescanHistoryEntry(
                     record_digest=result.record_digest,
+                    release_record_digest=result.release_record_digest,
                     verified_at=parse_timestamp(
                         result.verified_at,
                         "Rescan verification time",
