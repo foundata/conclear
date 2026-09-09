@@ -36,7 +36,7 @@ class DatabaseObservation:
 
 @dataclass(frozen=True, slots=True)
 class ScanObservation:
-    """One raw Trivy report bound to its exact stored bytes."""
+    """One Trivy result bound to its exact stored bytes."""
 
     path: Path
     digest: str
@@ -226,8 +226,12 @@ class TrivyAdapter(ToolAdapter):
             ),
             output_path,
         )
-        validate_spdx_document(observation.value, label="Trivy SPDX document")
-        return observation
+        document = validate_spdx_document(
+            observation.value, label="Trivy SPDX document"
+        )
+        # Attestation envelopes preserve JSON values, not the scanner's formatting.
+        atomic_write_json(output_path, document, mode=0o644)
+        return ScanObservation(output_path, sha256_file(output_path), document)
 
     def scan_sbom(
         self,

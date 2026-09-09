@@ -1391,7 +1391,9 @@ ConClear deduplicates identical predicates and selects the earliest record
 matching the exact configuration, with the record digest breaking timestamp
 ties. Matching records must agree on source, platform, builder and signer
 identities. Each consumed SBOM must match its verified platform subject and a
-hash referenced by the selected record. A rescan records `releaseRecordDigest`;
+hash referenced by the selected record. SPDX files are canonical JSON before
+their hashes are recorded, so attestation reserialization preserves those
+identities. A rescan records `releaseRecordDigest`;
 later rescans retain that anchor and fail if its evidence is missing.
 
 An SBOM rescan is explicitly recorded as vulnerability matching against retained

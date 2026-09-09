@@ -29,6 +29,7 @@ from conclear.errors import (
     OperationalError,
     UnsupportedOperationError,
 )
+from conclear.jsonutil import canonical_json_bytes, sha256_bytes
 from conclear.process import (
     CommandRequest,
     ProcessEnvironment,
@@ -720,6 +721,44 @@ def test_skopeo_optional_resolution_accepts_only_registry_absence(
     ).create(SkopeoAdapter)
     with pytest.raises(CommandExecutionError, match="Skopeo inspect failed"):
         adapter.resolve_optional(reference)
+
+
+@pytest.mark.parametrize("indent,ensure_ascii", [(None, True), (2, True), (2, False)])
+def test_trivy_spdx_hash_survives_attestation_reserialization(
+    tmp_path: Path, indent: int | None, ensure_ascii: bool
+) -> None:
+    document: dict[str, object] = {
+        "spdxVersion": "SPDX-2.3",
+        "dataLicense": "CC0-1.0",
+        "SPDXID": "SPDXRef-DOCUMENT",
+        "name": "app-\u00e4",
+        "documentNamespace": "https://example.invalid/spdx/app",
+        "creationInfo": {
+            "creators": ["Tool: trivy"],
+            "created": "2026-01-01T00:00:00Z",
+        },
+    }
+    raw_output = json.dumps(document, indent=indent, ensure_ascii=ensure_ascii)
+    output = tmp_path / "sbom.json"
+
+    def generate(request: CommandRequest) -> ProcessResult:
+        assert request.argv[request.argv.index("--format") + 1] == "spdx-json"
+        output.write_text(raw_output, encoding="utf-8")
+        return result()
+
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, FakeRunner(generate)).create(
+        TrivyAdapter
+    )
+    observation = adapter.generate_spdx(
+        layout_path=tmp_path / "layout",
+        output_path=output,
+        cache_root=tmp_path / "cache",
+    )
+    signed_predicate = json.loads(json.dumps(document, sort_keys=True))
+    assert observation.digest == sha256_bytes(canonical_json_bytes(signed_predicate))
+    assert observation.digest != sha256_bytes(raw_output.encode("utf-8"))
+    assert output.read_bytes() == canonical_json_bytes(document)
+    assert observation.value == document
 
 
 def test_trivy_database_refresh_installs_content_addressed_snapshot(
