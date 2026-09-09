@@ -90,6 +90,12 @@ conclear version
 works as well. Release workflows also need the rootless container toolchain
 listed under [Supported tools](#supported-tools).
 
+The [native-tool installation recipe](./docs/native-tool-installation.md)
+covers verified Cosign and Trivy releases, root-owned `/usr/local/bin`
+activation and readiness checks. Host-tool discovery uses a fixed search path
+that excludes `~/.local/bin`; changing your shell's `PATH` does not select a
+different scanner for ConClear.
+
 Development happens in a source checkout as described in
 [`DEVELOPMENT.md`](./DEVELOPMENT.md). A checkout is enough to explore the
 commands and run the unit suite, but it cannot emit release evidence; only a
@@ -331,6 +337,10 @@ the toolchain. A run pins a tool from the first phase that resolves it: a
 qualification never needs Cosign, and a publication never needs Buildah,
 Podman, Hadolint or Trivy. `doctor --scope check|qualify|release` reports every
 missing or unsupported tool of a scope in one pass.
+
+See [native-tool installation](./docs/native-tool-installation.md) for verified
+downloads, activation on the fixed search path and troubleshooting older
+distribution packages.
 
 A tool may start a run when its version lies in the tool's accepted interval and
 is not an excluded version. The interval is a compatibility statement based on

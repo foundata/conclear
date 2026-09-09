@@ -573,6 +573,9 @@ create permanent public transparency-log entries, so they are opt-in by design.
 They remain the only check on behavior that fakes cannot reproduce. Run them at
 least once before trusting a production-signed release.
 
+The two current network tests cover individual tag immutability and an SPDX
+attestation round trip. They do not exercise a complete release or recovery.
+
 
 ## Generated conformance catalog<a id="conformance-catalog"></a>
 

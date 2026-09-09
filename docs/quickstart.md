@@ -52,11 +52,12 @@ accepts each tool within the accepted version interval listed under
 [Supported tools](../README.md#supported-tools) in the README, rejects the
 listed excluded versions, and records the exact version it used; the table
 also names the versions the real-tool tests exercised. A distribution package
-may lag behind an accepted line, Trivy in particular: install an official
-release build on the sanitized search path after verifying its checksum and
-Sigstore signature. Use rootless
-Buildah and Podman; ConClear creates isolated storage for each run and does not
-use the workstation's existing containers or images.
+may lag behind an accepted line, Trivy in particular. The
+[native-tool installation recipe](./native-tool-installation.md) provides
+verified release artifacts, the exact search path and installation diagnostics.
+An executable in `~/.local/bin` is outside ConClear's host-tool search path.
+Use rootless Buildah and Podman; ConClear creates isolated storage for each run
+and does not use the workstation's existing containers or images.
 
 
 ## 2. Prepare the repository
@@ -721,8 +722,12 @@ version; `latest` advances only after verification.
 `--scope qualify` needs no release profile and proves the static toolchain,
 run-owned rootless storage and an execution mode for every configured platform;
 the default `release` scope adds the release profile, the selected registry
-backend and the public Sigstore services. Every missing or unsupported tool of
-the scope is reported at once:
+backend and the public Sigstore services.
+
+Release-scope `doctor` currently probes a tag read and Sigstore initialization,
+not the required policy APIs or their enforcement. Its success does not replace
+the registry-control checks above or an owned complete release drill. Every
+missing or unsupported tool of the scope is reported at once:
 
 ```sh
 conclear doctor --config conclear.toml --scope qualify
