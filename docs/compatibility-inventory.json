@@ -1034,6 +1034,83 @@
       ]
     },
     {
+      "group": true,
+      "help": "Inspect repository configuration without building or publishing.",
+      "name": "config",
+      "parameters": []
+    },
+    {
+      "dependencies": {
+        "profile": "optional",
+        "registryAccess": "none",
+        "registryControl": false,
+        "signing": "none",
+        "tools": [],
+        "transparencyLog": false
+      },
+      "group": false,
+      "help": "Show effective values, defaults and decision reasons for each image.",
+      "name": "config show",
+      "parameters": [
+        {
+          "declarations": [
+            "--config"
+          ],
+          "default": "conclear.toml",
+          "kind": "option",
+          "multiple": false,
+          "name": "config_path",
+          "required": false,
+          "type": "path"
+        },
+        {
+          "declarations": [
+            "--image"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "image_id",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--version"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "version",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
       "dependencies": {
         "scopes": {
           "check": {
@@ -2141,7 +2218,8 @@
       "IP0034",
       "IP0035",
       "IP0036",
-      "IP0037"
+      "IP0037",
+      "IP0038"
     ]
   },
   "inventorySchemaVersion": 1,

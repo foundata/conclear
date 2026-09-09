@@ -1142,7 +1142,6 @@ def test_common_model_holds_only_build_facts() -> None:
         "repository",
         "release",
         "native_test_platforms",
-        "scanner",
         "rescan_scope",
         "test",
         "hooks",
@@ -1244,7 +1243,6 @@ def test_test_only_image_without_a_dependent_is_rejected(
     [
         ("", '[images.release]\nimmutable_tags = ["1"]\nmoving_tags = []\n', "release"),
         ('native_test_platforms = ["linux/amd64"]\n', "", "native_test_platforms"),
-        ('scanner = "trivy"\n', "", "scanner"),
         ('rescan_scope = "full-image"\n', "", "rescan_scope"),
         ("", '[[images.hooks]]\nname = "h"\ncommand = ["/bin/true"]\n', "hooks"),
         (

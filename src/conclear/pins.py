@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Protocol, override
 
 from conclear.config import ImageConfig, PinConfig, PinIntent
-from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.fileio import locked_file
+from conclear.containerfile import MAX_CONTAINERFILE_BYTES, parse_containerfile
+from conclear.errors import InvalidInvocationError, OperationalError, RuleRejectionError
+from conclear.fileio import locked_file, read_regular_file
 from conclear.jsonutil import atomic_write_json, load_json
 from conclear.presentation import Finding
 from conclear.records import format_timestamp, parse_timestamp
@@ -236,7 +237,22 @@ def check_image_pins(
     resolver: PinResolver,
     now: datetime,
 ) -> tuple[PinObservation, ...]:
-    """Run the pin gate for every declared pin of one image at one instant."""
+    """Check exact input coverage before resolving every declared pin."""
+    content = read_regular_file(
+        image.containerfile,
+        maximum_bytes=MAX_CONTAINERFILE_BYTES,
+        label="Containerfile",
+    )
+    source = parse_containerfile(content, path=image.containerfile)
+    declared = {str(pin.reference) for pin in image.pins}
+    observed = {item.reference for item in source.external_inputs}
+    if declared != observed:
+        raise RuleRejectionError(
+            "Declared pins and Containerfile inputs differ: "
+            f"undeclared {', '.join(sorted(observed - declared)) or 'none'}; "
+            f"unused {', '.join(sorted(declared - observed)) or 'none'}",
+            code="CC0203",
+        )
     return tuple(
         store.check(
             pin,

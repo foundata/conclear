@@ -109,6 +109,7 @@ conclear/
 │   ├── cli.py                    # Click entry point and error-to-exit mapping
 │   ├── identity.py               # Embedded tool and guide identity
 │   ├── config.py                 # Repository-owned conclear.toml
+│   ├── config_decisions.py       # Owner decisions and draft diagnostics
 │   ├── release_profile.py        # Maintainer-controlled release profiles
 │   ├── catalog.py                # CCnnnn check catalog loader
 │   ├── checks.py                 # Static Containerfile and context checks

@@ -41,7 +41,7 @@ class Occurrence:
     end: int
     reference: OCIReference
     image_id: str
-    tag_intent: PinIntent | None
+    tag_intent: PinIntent
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,8 +177,6 @@ def _consistent_intents(occurrences: Iterable[Occurrence]) -> dict[str, PinInten
     by_tag: dict[str, PinIntent] = {}
     intents: dict[str, PinIntent] = {}
     for occurrence in occurrences:
-        if occurrence.tag_intent is None:
-            continue
         tag = _readable(occurrence.reference)
         previous = by_tag.get(tag)
         if previous is not None and previous is not occurrence.tag_intent:

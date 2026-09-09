@@ -121,5 +121,5 @@ def assess_repository(
         for path, image_id in zip(paths, image_ids, strict=True)
     )
     suggestions, decisions = assessment_notes(project, images)
-    draft = render_draft(project, images, decisions)
+    draft = render_draft(project, images)
     return Assessment(resolved_root, project, images, suggestions, decisions, draft)

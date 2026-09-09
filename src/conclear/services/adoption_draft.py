@@ -2,30 +2,21 @@
 
 Suggestions only restate observed facts or conservative defaults; everything a
 maintainer must choose is a decision, and every unresolved draft value is a
-`DECIDE` placeholder next to an `[adopt]` table the configuration schema
-rejects.
+`DECIDE` placeholder that configuration validation reports together with the
+other unresolved inputs.
 """
 
 import json
 from dataclasses import dataclass
 
 from conclear.config import SYSTEMD_WRITABLE_MOUNTS
+from conclear.config_decisions import DECIDE, RESOURCE_DECISIONS
 from conclear.services.adoption_observation import (
     ContainerfileObservation,
     PinQuality,
     ProjectObservation,
     SourceStatus,
     UserKind,
-)
-
-DECIDE = "DECIDE"
-
-
-_SUGGESTED_RESOURCES = (
-    ("memory", '"512MiB"'),
-    ("cpus", "1.0"),
-    ("pids", "256"),
-    ("nofile", "1024"),
 )
 
 
@@ -45,13 +36,11 @@ class Note:
 def render_draft(
     project: ProjectObservation,
     images: tuple[ContainerfileObservation, ...],
-    decisions: tuple[Note, ...],
 ) -> str:
     """Render the draft `conclear.toml`; it stays invalid while decisions remain."""
     lines = [
-        "# Draft written by `conclear adopt`. Every DECIDE value names a maintainer",
-        "# decision; resolve all of them, then delete the [adopt] table at the end.",
-        "# Until then the draft is deliberately invalid for `check` and `qualify`.",
+        "# Draft written by `conclear adopt`. Resolve each DECIDE value from",
+        "# measurements or owner review; validation lists all unresolved inputs.",
         "schema_version = 1",
         "",
         "[project]",
@@ -71,7 +60,7 @@ def render_draft(
             )
         lines.extend(
             (
-                "# Releasable image: resolve repository and [images.release]. Test-only",
+                "# Releasable image: resolve repository and choose release tags. Test-only",
                 "# image: delete both, keep only the build inputs, and add this id to a",
                 "# depending image's [images.test] dependencies; a test-only image that",
                 "# no image depends on is invalid.",
@@ -111,7 +100,10 @@ def render_draft(
                 + ", ".join(_toml(item) for item in writable)
                 + "]"
             )
-        lines.extend(f"{key} = {value}" for key, value in _SUGGESTED_RESOURCES)
+        lines.extend(
+            f"{key} = {_toml(_decide(reason))}"
+            for key, reason in RESOURCE_DECISIONS.items()
+        )
         if image.user.kind is UserKind.ROOT or image.profile == "systemd":
             lines.extend(
                 (
@@ -147,17 +139,6 @@ def render_draft(
                     f"tag_intent = {_toml(_decide('immutable-version or moving-release-line'))}",
                 )
             )
-    lines.extend(
-        (
-            "",
-            "[adopt]",
-            "# Unknown to the configuration schema on purpose: delete this table only",
-            "# after every decision above is resolved.",
-            "required_decisions = [",
-            *(f"  {_toml(note_scope(note))}," for note in decisions),
-            "]",
-        )
-    )
     return "\n".join(lines) + "\n"
 
 
@@ -185,7 +166,7 @@ def assessment_notes(
             None,
             "release profile",
             "Trust roots, signing keys and registry credentials never enter conclear.toml; "
-            "create a release profile outside the repository before releasing.",
+            "reuse the organization's protected release profile outside the repository before releasing.",
         )
     )
     if len(images) > 1:
@@ -262,12 +243,9 @@ def assessment_notes(
                 ),
             )
         )
-        suggestions.append(
-            Note(
-                image.image_id,
-                "runtime.resources",
-                "Start with the conservative limits memory 512MiB, cpus 1.0, pids 256 and nofile 1024.",
-            )
+        decisions.extend(
+            Note(image.image_id, f"runtime.{key}", reason)
+            for key, reason in RESOURCE_DECISIONS.items()
         )
         _user_notes(image, suggestions, decisions)
         decisions.append(

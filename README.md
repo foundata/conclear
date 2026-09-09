@@ -110,7 +110,20 @@ An existing repository can start with the `conclear adopt` command, which
 observes its conventional Containerfiles and Git origin read-only, separates
 what it saw from what it suggests and from what only a maintainer can decide,
 and with `--output` writes a draft that stays deliberately invalid until every
-`DECIDE` value is resolved and its `[adopt]` table is removed.
+`DECIDE` value is resolved. Resource limits need measurements; the draft does
+not invent them. Configuration validation reports pending values together,
+without a second decision table to maintain.
+
+`conclear config show` lists effective defaults, runtime-profile mounts, pin
+limits and decision reasons without executing tools or contacting registries.
+Add `--version 1.2.3` to check rendered tags and `--profile foundata` to include
+the shared profile's public identity. Credential paths and contents are omitted.
+The view is a configuration summary, not a qualification result.
+
+Commands can omit `--image` when exactly one release image is configured;
+test-only dependencies do not make that selection ambiguous. Platforms remain
+explicit. Pin declarations name the readable tag and intent; the Containerfile
+is the sole source of its pinned digest.
 
 In short: repository behavior is declared in a reviewed `conclear.toml` at the
 selected source revision, which holds project facts and the exceptions the guide
@@ -352,6 +365,7 @@ no exposure to that advisory.
 | ------------------ | --------------------------------------------- | --------------- | ------------------------ |
 | `version`          | none                                          | none            | none                     |
 | `adopt`            | Git                                           | none            | none                     |
+| `config show`      | none                                          | optional        | none; only the profile's public identity is displayed |
 | `check`            | Hadolint                                      | none            | none                     |
 | `pins check`       | Skopeo                                        | optional        | registry reads with the profile's auth file |
 | `pins propose`     | Git, Skopeo                                   | optional        | registry reads with the profile's auth file |

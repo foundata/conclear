@@ -9,6 +9,7 @@ from typing import Any
 import click
 
 from conclear.commands.adopt import adopt_command
+from conclear.commands.configuration import config_group
 from conclear.commands.local import (
     assemble_command,
     build_command,
@@ -64,6 +65,7 @@ def root() -> None:
 
 root.add_command(version_command)
 root.add_command(adopt_command)
+root.add_command(config_group)
 root.add_command(doctor_command)
 root.add_command(check_command)
 root.add_command(pins_group)

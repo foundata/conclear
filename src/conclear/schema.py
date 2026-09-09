@@ -33,8 +33,10 @@ def validate_schema(name: str) -> None:
         ) from exc
 
 
-def validate_external(value: object, schema_name: str, *, label: str) -> None:
-    """Validate untrusted data and report the first deterministic error."""
+def validate_external(
+    value: object, schema_name: str, *, label: str, all_errors: bool = False
+) -> None:
+    """Validate untrusted data, optionally collecting configuration diagnostics."""
     if not structure_depth_is_bounded(value):
         raise InvalidInvocationError(f"Invalid {label}: nesting limit exceeded")
     validator = Draft202012Validator(load_schema(schema_name))
@@ -46,6 +48,12 @@ def validate_external(value: object, schema_name: str, *, label: str) -> None:
         ) from exc
     if not errors:
         return
+    if all_errors:
+        messages = [
+            f"  {'.'.join(str(part) for part in item.absolute_path) or '<root>'}: {item.message}"
+            for item in errors
+        ]
+        raise InvalidInvocationError(f"Invalid {label}:\n" + "\n".join(messages))
     error = errors[0]
     location = ".".join(str(part) for part in error.absolute_path) or "<root>"
     raise InvalidInvocationError(

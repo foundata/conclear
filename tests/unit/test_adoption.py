@@ -15,6 +15,7 @@ import conclear.commands.adopt as adopt_commands
 from conclear.adapters.git import SourceObservation
 from conclear.cli import main
 from conclear.config import load_repository_config
+from conclear.config_decisions import RESOURCE_DECISIONS
 from conclear.errors import ExitStatus, InvalidInvocationError, OperationalError
 from conclear.services.adoption import assess_repository
 from conclear.services.adoption_observation import (
@@ -83,6 +84,17 @@ def _assess(root: Path, *containerfiles: str, git: FakeGit | None = None) -> Any
 
 def _notes(notes: tuple[Any, ...], field: str) -> list[str]:
     return [note.text for note in notes if note.field == field]
+
+
+def _resolve_test_resources(draft: str) -> str:
+    for key, value in {
+        "memory": '"256MiB"',
+        "cpus": "1.0",
+        "pids": "128",
+        "nofile": "1024",
+    }.items():
+        draft = re.sub(rf'{key} = "DECIDE:[^"]*"', f"{key} = {value}", draft)
+    return draft
 
 
 def test_single_containerfile_observations_suggestions_and_decisions(
@@ -484,7 +496,7 @@ def test_draft_resolves_into_a_releasable_image_with_a_test_only_dependency(
     resolved = re.sub(
         r'"DECIDE: immutable-version[^"]*"', '"immutable-version"', resolved
     )
-    body = resolved.split("\n[adopt]")[0] + "\n"
+    body = _resolve_test_resources(resolved)
     app, helper = body.split("\n[[images]]\n")[1:]
     helper_lines = [
         line
@@ -561,8 +573,13 @@ def test_draft_is_invalid_until_every_decision_is_resolved(tmp_path: Path) -> No
     draft_path = root / "conclear.toml"
     draft_path.write_text(assessment.draft, encoding="utf-8")
 
-    with pytest.raises(InvalidInvocationError):
+    with pytest.raises(InvalidInvocationError) as caught:
         load_repository_config(draft_path)
+    assert "[adopt]" not in assessment.draft
+    for key, reason in RESOURCE_DECISIONS.items():
+        assert f"images.0.runtime.{key}: {reason}" in str(caught.value)
+        assert _notes(assessment.decisions, f"runtime.{key}") == [reason]
+    assert "images.0.repository" in str(caught.value)
 
     resolved = re.sub(
         r'"DECIDE: fully qualified[^"]*"', '"quay.io/example/app"', assessment.draft
@@ -571,17 +588,17 @@ def test_draft_is_invalid_until_every_decision_is_resolved(tmp_path: Path) -> No
     resolved = re.sub(
         r'"DECIDE: immutable-version[^"]*"', '"immutable-version"', resolved
     )
-    body = resolved.split("[adopt]")[0]
+    body = _resolve_test_resources(resolved)
     assert not [
         line
         for line in body.splitlines()
         if "DECIDE" in line and not line.startswith("#")
     ]
     draft_path.write_text(resolved, encoding="utf-8")
-    with pytest.raises(InvalidInvocationError, match="adopt"):
+    with pytest.raises(InvalidInvocationError, match=r"runtime\.memory"):
         load_repository_config(draft_path)
 
-    draft_path.write_text(resolved.split("\n[adopt]")[0] + "\n", encoding="utf-8")
+    draft_path.write_text(body, encoding="utf-8")
     config = load_repository_config(draft_path)
     image = config.release_image("example")
     assert image.runtime.user == 1001 and image.runtime.profile == "service"

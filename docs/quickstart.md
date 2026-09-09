@@ -170,11 +170,13 @@ exists only as a test dependency, and a project with several images carries a
 decision about which image depends on which; the draft explains that a test-only
 image drops `repository` and `[images.release]` and must be listed in a
 depending image's `[images.test]` dependencies. With `--output` the command
-writes a draft that stays deliberately invalid until every `DECIDE` value is
-resolved and its `[adopt]` table is removed, so the draft cannot pass `check` or
-`qualify` before you reviewed it.
+writes a draft whose unresolved values are marked `DECIDE`. Validation lists
+all pending values together. There is no separate adoption table to clear.
+Memory, CPU, process and open-file limits remain decisions until you supply
+measurements; observed facts and owner review remain distinct in text and JSON.
 
-This example declares one `linux/amd64` service image:
+This example declares one `linux/amd64` service image. Its resource numbers
+illustrate the syntax; replace them with measurements for your application:
 
 ```toml
 schema_version = 1
@@ -187,11 +189,10 @@ source = "https://git.example.com/foundata/example"
 id = "app"
 repository = "quay.io/foundata/example"
 platforms = ["linux/amd64"]
-scanner = "trivy"
 
 [images.release]
 immutable_tags = ["{version}"]
-moving_tags = ["stable"]
+moving_tags = ["latest"]
 
 [images.runtime]
 profile = "service"
@@ -204,16 +205,42 @@ nofile = 1024
 health_command = ["/usr/local/bin/app", "health"]
 
 [[images.pins]]
-reference = "quay.io/example/base:1@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+reference = "quay.io/example/base:1"
 tag_intent = "immutable-version"
 ```
 
 Every image must include `linux/amd64`; `linux/arm64` is optional.
 `containerfile` defaults to `Containerfile` and `context` to `.`, both relative
 to the repository root. `native_test_platforms` identifies platforms that must
-run without emulation and defaults to `["linux/amd64"]`. `scanner` is optional
-and currently accepts only `trivy`; it documents the gating scanner for the
-reader.
+run without emulation and defaults to `["linux/amd64"]`. Trivy is fixed policy;
+there is no `scanner` setting to repeat. Empty optional tables and arrays can be
+omitted. Each release needs at least one immutable or moving tag, but an unused
+tag class can be omitted. Keep `latest` in `moving_tags`, outside the registry's
+immutable-version policy. Version-dependent templates require `--version`;
+missing versions and rendered tag collisions fail before build or signing tools
+are resolved for a new source run.
+
+The Containerfile must contain the complete tagged digest reference, for example
+`quay.io/example/base:1@sha256:<digest>`. The pin declaration above supplies
+only tag intent. ConClear derives the digest from the Containerfile and rejects
+missing, unused, duplicate or ambiguous declarations at the configuration or pin
+gate. `FROM`, external `COPY --from` and `RUN --mount=from` inputs all need
+coverage; local stages and `scratch` do not.
+
+Inspect the resolved configuration before qualification:
+
+```sh
+conclear config show --version 1.2.3
+conclear config show --format json
+```
+
+The summary shows values, their origins, policy maxima and why measured or
+reviewed decisions are needed. Systemd-provided mounts are listed separately
+from the effective writable set. It executes no host tools, contacts no registry
+and makes no qualification claim. With several images it shows all of them;
+`--image` filters the view. Other commands infer the image only when exactly one
+release image exists, ignoring test-only dependencies. `--platform` is still
+required for a platform command and never defaults to the host architecture.
 
 Use `profile = "one-shot"` for a command that should exit. The test launch
 contract may set its expected exit status. The root filesystem defaults to
@@ -543,13 +570,14 @@ request or hosted writer. Qualification and release do not require an external
 updater either.
 
 `pins propose` resolves every declared readable tag exactly once, binds that
-digest to each `[[images.pins]]` declaration and each `FROM`, `COPY --from` and
+digest to each `FROM`, `COPY --from` and
 `RUN --mount=from` input that names the same reference, and writes one
 schema-validated proposal without touching the repository. The proposal records
 the ConClear and guide identity, the canonical repository and its current
 commit, the configuration digest, one lookup per pinned reference with old and
 new digest and resolution time, and every file with its digest and the exact
-byte spans that would change. Only the digest of a reference changes; registry,
+byte spans that would change. The intent-only `conclear.toml` is bound by its
+digest and remains unchanged. Only the digest of a reference changes; registry,
 repository and tag spelling stay as written. A change under an
 `immutable-version` tag is marked as requiring supply-chain review and reported
 as `CC0205`; ConClear never accepts it automatically and offers no way to skip
@@ -588,8 +616,11 @@ release prerequisite.
 ## 10. Create a release profile
 
 The complete release needs a maintainer-controlled profile outside the
-application repository. It holds trust roots, signing keys and registry
-credentials. For example, create `$XDG_CONFIG_HOME/conclear/foundata.toml`:
+application repository. Reuse one protected profile for the organization's
+shared build trust domain; adopting another image repository does not require
+another builder identity or copies of its keys. It holds trust roots, signing
+keys and registry credential locations. If it does not exist yet, create
+`$XDG_CONFIG_HOME/conclear/foundata.toml`:
 
 ```toml
 schema_version = 1
@@ -614,6 +645,14 @@ private permissions. `cosign_private_key` may instead name a supported KMS or
 HSM handle. CI may supply the signing passphrase through `--passphrase-fd`
 instead of a file. Secret values are never accepted through project
 configuration, command-line literals or inherited environment variables.
+
+Keep writer permissions scoped to the intended repositories wherever the
+registry's credential model allows it. A shared profile does not require broad
+organization-wide write access. Its auth file can hold the needed registry
+credentials; the separate Quay control token still needs the documented
+permissions on each destination. Do not copy either into `conclear.toml`.
+Use a separate profile when the trust domain or signing authority is genuinely
+different, not simply because the image repository has another name.
 
 `builder.id` names the complete build-platform trust domain and must be a
 public, credential-free HTTPS documentation URI. It identifies the documented

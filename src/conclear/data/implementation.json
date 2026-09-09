@@ -383,8 +383,17 @@
     {
       "id": "IP0037",
       "summary": "Assess an existing repository read-only and draft a deliberately invalid configuration that separates facts, suggestions and decisions",
-      "implementation": ["src/conclear/services/adoption.py", "src/conclear/services/adoption_observation.py", "src/conclear/services/adoption_draft.py", "src/conclear/commands/adopt.py", "src/conclear/fileio.py"],
+      "implementation": ["src/conclear/services/adoption.py", "src/conclear/services/adoption_observation.py", "src/conclear/services/adoption_draft.py", "src/conclear/config_decisions.py", "src/conclear/commands/adopt.py", "src/conclear/fileio.py"],
       "tests": [
+        {"path": "tests/unit/test_adoption.py", "tier": "unit"}
+      ]
+    },
+    {
+      "id": "IP0038",
+      "summary": "Explain effective configuration and aggregate unresolved owner decisions without executing tools or exposing credentials",
+      "implementation": ["src/conclear/commands/configuration.py", "src/conclear/services/configuration_view.py", "src/conclear/config_decisions.py", "src/conclear/config.py"],
+      "tests": [
+        {"path": "tests/unit/test_configuration_view.py", "tier": "unit"},
         {"path": "tests/unit/test_adoption.py", "tier": "unit"}
       ]
     }

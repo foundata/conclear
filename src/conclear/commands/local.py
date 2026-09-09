@@ -86,8 +86,9 @@ def _source_options[FC: Callable[..., Any]](function: FC) -> FC:
 def check_command(config_path: Path, image_id: str | None, output_format: str) -> None:
     """Run static Containerfile, context, metadata and pin-declaration checks."""
     repository = load_repository_config(config_path)
+    image = repository.image(image_id)
     with command_runtime(command_tools("check")) as runtime:
-        outcome = check_image(repository.image(image_id), runtime.hadolint())
+        outcome = check_image(image, runtime.hadolint())
     emit(
         CommandResult(
             "check",

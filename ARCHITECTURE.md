@@ -272,10 +272,6 @@ context = "."
 repository = "quay.io/foundata/example"
 platforms = ["linux/amd64", "linux/arm64"]
 native_test_platforms = ["linux/amd64"]
-scanner = "trivy"
-
-[images.limits]
-candidate_lifetime = "168h"
 
 [images.release]
 immutable_tags = ["{version}"]
@@ -291,19 +287,35 @@ nofile = 1024
 health_command = ["/usr/local/libexec/example-healthcheck"]
 
 [[images.pins]]
-reference = "quay.io/fedora/fedora-minimal:<release>@sha256:<digest>"
+reference = "quay.io/fedora/fedora-minimal:<release>"
 tag_intent = "moving-release-line"
 ```
 
 `containerfile`, `context` and `native_test_platforms` default to
-`Containerfile`, `.` and `["linux/amd64"]`. The optional `scanner` key names the
-gating scanner for the reader and accepts only the supported stack. The root
+`Containerfile`, `.` and `["linux/amd64"]`. Trivy is fixed policy rather than a
+repository option. Resource values are required measurements; these numbers
+illustrate syntax only. The root
 filesystem defaults to read-only; writable paths are declared individually. A
 `writable_root_requirement` with rationale, owner and review trigger permits a
 writable container root without granting writable host paths. Release tag
 templates may use only the documented
 `{version}` value; unversioned projects omit version-dependent templates.
 Candidate tags remain entirely ConClear-owned.
+
+Each release declares at least one final tag. Unused tag classes, optional
+tables and default limits may be omitted. Literal collisions fail during
+configuration loading. Source-run creation resolves the sole release image when
+`--image` is absent, records its ID, and validates version-dependent rendered
+tags before resolving the build or signing tools. Several release images
+require an explicit selection, even if only one supports the current host.
+Platform declarations and platform-command arguments remain explicit.
+
+Pin declarations contain a readable tag and its intent. Configuration loading
+derives the effective digest-bearing reference from the Containerfile; a tag
+with no matching digest, multiple digests or duplicate intent declarations is
+rejected. Static and pin checks also reject undeclared external inputs.
+Evidence records the full effective references; the source revision and source
+tree bind their authoritative Containerfile bytes.
 
 The configured runtime user is a numeric non-zero UID by default and must match
 the final Containerfile `USER`. UID 0 is accepted only when the runtime also
@@ -413,7 +425,7 @@ what a dependency uses, namely its build inputs, platforms, pins, pin limits,
 runtime contract and its own dependencies, and the keys that only a qualified
 image uses are rejected there. ConClear's typed model mirrors that split: the
 common build-image model holds exactly those facts, the release image type adds
-the destination, tags, native-test requirements, scanner and rescan policy,
+the destination, tags, native-test requirements, rescan policy,
 test inputs, hooks, vulnerability exceptions and release limits, and scanning,
 runtime qualification, assembly, publication and rescan accept only the
 release image type, so release-only state cannot exist on a test-only image.
@@ -571,8 +583,8 @@ pin-update contract without an external updater.
 ConClear's authenticated Skopeo resolution and binds that one observed digest to
 every occurrence of the tag. It derives the required occurrence set from the
 parsed repository configuration and the parsed Containerfiles, not from a
-caller-supplied list or a repository-wide text search: the `reference` value of
-every `[[images.pins]]` declaration and the exact external image input of every
+caller-supplied list or a repository-wide text search: intent comes from the
+`[[images.pins]]` declarations, and editable bytes come from every external
 `FROM`, `COPY --from` and `RUN --mount=from` instruction that names the same
 tagged and digest-pinned reference. A declared pin without a Containerfile
 occurrence, an undeclared Containerfile input, conflicting tag intents for one
@@ -662,7 +674,8 @@ the repository.
 | `doctor`           | Validate the environment for one scope without publishing content: `check` resolves the static toolchain, `qualify` adds run-owned rootless storage and an execution mode for every configured platform, and `release` adds trust inputs, selected registry access and public Sigstore transparency-service access. A profile is accepted for a scope only when it names every input the scope's commands use, so the release scope requires registry write authentication, the control-plane token and signing authority without performing a write or signature. Every missing or unsupported tool of the scope is reported at once. |
 | `check`            | Run static Containerfile, context, metadata, pin-declaration and repository-hygiene checks. |
 | `pins check`       | Resolve declared image references, update durable observations, report freshness and divergence, and never edit project files. |
-| `pins propose`     | Resolve each declared readable tag once, bind the observed digest to every configuration declaration and Containerfile occurrence, and write one schema-validated non-mutating proposal. |
+| `pins propose`     | Resolve each declared readable tag once, bind the observed digest to every Containerfile occurrence and the unchanged configuration digest, and write one schema-validated non-mutating proposal. |
+| `config show`      | Report effective defaults, runtime-profile mounts, limits and decision reasons without running tools or contacting external services; optionally show public release-profile identity without credential paths or values. |
 | `pins apply`       | Verify one proposal against the current worktree, Git revision and file digests, then replace only the proposed byte spans all-or-nothing without resolving, committing, building or publishing. |
 | `build`            | Build one platform into isolated Buildah storage and export an OCI layout plus build metadata. |
 | `test`             | Validate and import one layout, compare its imported digest, and run generic and repository-specific tests under the declared runtime constraints. |
@@ -1504,7 +1517,7 @@ agree. A build context is not observable; a conventional root Containerfile
 receives the repository root as a suggestion and any other selection leaves it a
 decision. Every result separates observed facts from suggestions and from
 required decisions. Suggestions are limited to image ids derived from file
-names, conservative resource limits, release tag templates, the runtime profile
+names, release tag templates, the runtime profile
 the entrypoint implies, the numeric user the Containerfile states and writable
 mounts equal to observed `VOLUME` destinations. It never invents a release
 destination, platforms, a root justification, application writable paths, health
@@ -1512,10 +1525,24 @@ behavior, test inputs, dependencies, hooks, exceptions or credentials; each of
 those is a listed decision, as is whether an image is released or exists only as
 a test dependency, and the draft states what a test-only image must drop and
 that an image no image depends on is invalid. The draft names every unresolved
-value with a `DECIDE` placeholder that fails the configuration schema and
-carries an `[adopt]` table the schema rejects, so an incomplete draft cannot
-pass `check` or `qualify`. The JSON result is a closed schema of observations,
+value with a reserved `DECIDE` placeholder. Resource limits are placeholders
+until measured; no plausible-looking defaults stand in for observations.
+Configuration loading collects every pending value before narrowing and reports
+schema errors together as well. There is no extra `[adopt]` table or decision
+ledger to remove. An incomplete draft cannot pass `check` or `qualify`.
+The JSON result is a closed schema of observations,
 suggestions, required decisions, findings and the draft text.
+
+<a id="promise-ip0038"></a>
+`config show` loads the validated configuration and reports a summary of its
+effective values, their origins, fixed limits and owner-decision reasons. It
+shows runtime-profile mounts separately from the complete writable set. It
+runs no host tools and contacts no external services. An optional protected
+release profile adds only its public name, builder identity, registry host and
+public-key digest; credential paths and values are never displayed. Unresolved
+`DECIDE` values are reported together instead of producing a partial effective
+configuration, and schema validation reports missing or invalid fields together.
+The summary is not an export format or a qualification result.
 
 
 ## Maintaining this document<a id="maintaining-this-document"></a>

@@ -71,6 +71,7 @@ _ALL_TOOLS = tuple(ToolName)
 COMMAND_DEPENDENCIES: Mapping[str, CommandDependencies] = {
     "version": CommandDependencies(tools=()),
     "adopt": CommandDependencies(tools=(ToolName.GIT,)),
+    "config show": CommandDependencies(tools=(), profile=ProfileUse.OPTIONAL),
     "check": CommandDependencies(tools=(ToolName.HADOLINT,)),
     "pins check": CommandDependencies(
         tools=(ToolName.SKOPEO,),

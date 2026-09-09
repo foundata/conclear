@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from conclear.config_decisions import unresolved_decisions
 from conclear.containerfile import MAX_CONTAINERFILE_BYTES, parse_containerfile
 from conclear.errors import InvalidInvocationError
 from conclear.fileio import read_regular_file
@@ -81,7 +82,7 @@ class ProjectConfig:
 
 @dataclass(frozen=True, slots=True)
 class PinConfig:
-    """One declared tagged and digest-pinned external image."""
+    """One effective digest-pinned input bound to its declared tag intent."""
 
     reference: OCIReference
     tag_intent: PinIntent
@@ -348,7 +349,7 @@ class ReleaseImageConfig(ImageConfig):
 
     This is the only kind of image ConClear scans, qualifies, assembles,
     publishes and rescans, so its destination, tags, native-test requirements,
-    scanner and rescan policy, complete test inputs, hooks, vulnerability
+    rescan policy, complete test inputs, hooks, vulnerability
     exceptions and release limits exist only here. It remains an
     `ImageConfig`, so a released image can also serve as a test dependency.
     """
@@ -356,7 +357,6 @@ class ReleaseImageConfig(ImageConfig):
     repository: OCIReference
     release: ReleaseTags
     native_test_platforms: tuple[Platform, ...]
-    scanner: str
     rescan_scope: str
     test: TestConfig
     hooks: tuple[HookConfig, ...]
@@ -446,8 +446,16 @@ def load_repository_config(path: Path) -> RepositoryConfig:
             f"Unable to read repository configuration {path}"
         ) from exc
     if isinstance(value, dict):
+        decisions = unresolved_decisions(value)
+        if decisions:
+            raise InvalidInvocationError(
+                "Unresolved configuration decisions:\n"
+                + "\n".join(f"  {item.field}: {item.reason}" for item in decisions)
+            )
         _reject_release_keys_without_repository(value)
-    validate_external(value, "config.schema.json", label="conclear.toml")
+    validate_external(
+        value, "config.schema.json", label="conclear.toml", all_errors=True
+    )
     if not isinstance(value, dict):
         raise InvalidInvocationError("conclear.toml must contain a table")
     source_root = path.parent.resolve(strict=True)
@@ -634,7 +642,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         repository=repository,
         release=_parse_release_tags(toml_table(value["release"])),
         native_test_platforms=native_platforms,
-        scanner=toml_string(value.get("scanner", "trivy")),
         rescan_scope=toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
         test=test,
         hooks=tuple(
@@ -659,7 +666,6 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
 _RELEASE_ONLY_KEYS = (
     "release",
     "native_test_platforms",
-    "scanner",
     "rescan_scope",
     "hooks",
     "vulnerability_exceptions",
@@ -1038,6 +1044,10 @@ def _require_unique_names(values: tuple[object, ...], label: str) -> None:
 def _parse_release_tags(value: dict[str, Any]) -> ReleaseTags:
     immutable_tags = tuple(_string_list(value.get("immutable_tags", [])))
     moving_tags = tuple(_string_list(value.get("moving_tags", [])))
+    if not immutable_tags and not moving_tags:
+        raise InvalidInvocationError(
+            "A release must declare at least one immutable or moving tag"
+        )
     reserved = tuple(
         tag for tag in (*immutable_tags, *moving_tags) if "-candidate." in tag
     )
