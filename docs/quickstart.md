@@ -234,13 +234,14 @@ alone does not raise that assurance level.
 ## 6. Release the committed revision
 
 ```sh
-conclear doctor --profile foundata
+conclear doctor --profile foundata --version "$version"
 conclear release --revision HEAD --version "$version" --profile foundata
 ```
 
-Release-scope `doctor` checks tools, profile, registry tag access and Sigstore
-initialization. It does not test policy enforcement or replace a complete
-release drill. `release` qualifies all declared platforms, assembles the
+Release-scope `doctor` checks tools, profile, selected registry-policy APIs and
+Sigstore initialization. Its `checked`, `notChecked` and `failed` results
+separate observations from untested writes and enforcement. It does not replace
+a release drill. `release` qualifies all declared platforms, assembles the
 candidate, publishes, signs, verifies and promotes only the verified digest.
 
 For the example, `1.2.3` becomes a version tag and `latest` moves to the same

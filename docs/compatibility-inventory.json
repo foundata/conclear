@@ -1198,6 +1198,16 @@
           "type": "text"
         },
         {
+          "declarations": [
+            "--version"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "version",
+          "required": false,
+          "type": "text"
+        },
+        {
           "choices": [
             "human",
             "json"

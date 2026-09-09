@@ -60,6 +60,12 @@ class RegistryControl(Protocol):
         """Establish independent retention for future candidates before any upload."""
         ...
 
+    def observe_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation | None:
+        """Read candidate retention without creating or changing a policy."""
+        ...
+
     def ensure_tag_immutable(
         self, repository: OCIReference, tag: str
     ) -> TagObservation:

@@ -384,6 +384,13 @@ class FakeRegistryControl:
             repository, "policy-id", CANDIDATE_TAG_PATTERN, maximum_age
         )
 
+    def observe_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation | None:
+        return CandidateRetentionObservation(
+            repository, "policy-id", CANDIDATE_TAG_PATTERN, maximum_age
+        )
+
     def ensure_tag_immutable(
         self, repository: OCIReference, tag: str
     ) -> TagObservation:

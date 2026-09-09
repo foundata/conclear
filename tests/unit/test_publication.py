@@ -252,6 +252,11 @@ class FakeRegistryControl:
         )
         return self.retention
 
+    def observe_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation | None:
+        return self.retention
+
     def ensure_tag_immutable(
         self, repository: OCIReference, tag: str
     ) -> TagObservation:

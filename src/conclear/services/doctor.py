@@ -3,7 +3,6 @@
 import platform as host_platform
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
 
 from conclear.config import RepositoryConfig
 from conclear.dependencies import (
@@ -13,10 +12,15 @@ from conclear.dependencies import (
 )
 from conclear.emulation import binfmt_handler, normalize_architecture
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.registry_control import TagObservation
 from conclear.release_profile import ReleaseProfile
 from conclear.runtime import ApplicationRuntime
-from conclear.values import OCIReference
+from conclear.services.registry_diagnostics import (
+    DiagnosticStatus,
+    RegistryCheck,
+    RegistryDiagnostic,
+    diagnose_registry,
+)
+from conclear.values import validate_release_version
 
 
 class DoctorScope(StrEnum):
@@ -30,19 +34,6 @@ class DoctorScope(StrEnum):
 assert tuple(item.value for item in DoctorScope) == tuple(DOCTOR_SCOPES)
 
 
-class RegistryDiagnostic(Protocol):
-    """Read-only registry controls exercised by doctor."""
-
-    @property
-    def provider(self) -> str:
-        """Return the compiled registry backend identifier."""
-        ...
-
-    def observe_tag(self, repository: OCIReference, tag: str) -> TagObservation | None:
-        """Observe one exact probe tag."""
-        ...
-
-
 @dataclass(frozen=True, slots=True)
 class DoctorObservation:
     """Validated tool, storage, execution, trust and service observations."""
@@ -54,6 +45,7 @@ class DoctorObservation:
     registry_provider: str | None
     registry_access: bool
     sigstore_access: bool
+    registry_checks: tuple[RegistryCheck, ...] = ()
 
 
 def diagnose_environment(
@@ -63,15 +55,22 @@ def diagnose_environment(
     scope: DoctorScope,
     profile: ReleaseProfile | None = None,
     registry_control: RegistryDiagnostic | None = None,
+    version: str | None = None,
 ) -> DoctorObservation:
     """Exercise the read-only prerequisites of one scope without mutating anything.
 
     `check` proves the static toolchain. `qualify` adds run-owned rootless
     storage and an execution mode for every configured platform. `release` adds
     the selected registry backend and the public Sigstore services. A profile is
-    first checked for every input the scope's commands will use, so readiness
-    is never reported for a profile that cannot write or sign.
+    first checked for the credential inputs the scope's commands will use.
+    Their presence does not prove write permissions or signing capability.
     """
+    if version is not None:
+        if scope is not DoctorScope.RELEASE:
+            raise InvalidInvocationError("--version applies only to --scope release")
+        validate_release_version(version)
+        for image in repository.release_images:
+            image.release.render_versions(version)
     if profile is not None:
         require_profile_capabilities(profile, scope_dependencies(scope.value))
     native = normalize_architecture(host_platform.machine())
@@ -95,13 +94,19 @@ def diagnose_environment(
                 "No enabled binfmt handler was observed for: " + ", ".join(unavailable)
             )
     registry_provider: str | None = None
+    registry_checks: tuple[RegistryCheck, ...] = ()
     if scope is DoctorScope.RELEASE:
         if profile is None or registry_control is None:
             raise InvalidInvocationError(
                 "Release scope diagnosis needs a release profile and registry backend"
             )
-        for image in repository.release_images:
-            registry_control.observe_tag(image.repository, "conclear-doctor-read-probe")
+        registry_checks = tuple(
+            check
+            for image in repository.release_images
+            for check in diagnose_registry(
+                image, profile.registry.policy, registry_control, version=version
+            )
+        )
         registry_provider = registry_control.provider
         runtime.cosign().initialize()
     runtime.assert_unchanged()
@@ -111,6 +116,12 @@ def diagnose_environment(
         native_architecture=native,
         emulated_architectures=emulated,
         registry_provider=registry_provider,
-        registry_access=scope is DoctorScope.RELEASE,
+        registry_access=scope is DoctorScope.RELEASE
+        and all(
+            item.status is DiagnosticStatus.CHECKED
+            for item in registry_checks
+            if item.name == "tagRead"
+        ),
         sigstore_access=scope is DoctorScope.RELEASE,
+        registry_checks=registry_checks,
     )

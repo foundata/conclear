@@ -125,7 +125,7 @@ class QuayAdapter:
         namespace, name = self._repository_parts(repository)
         path = f"/repository/{namespace}/{name}/autoprunepolicy/"
         try:
-            observed = self._candidate_retention(repository, path, maximum_age)
+            observed = self.observe_candidate_retention(repository, maximum_age)
             if observed is not None:
                 return observed
             try:
@@ -144,7 +144,7 @@ class QuayAdapter:
             except _QuayAPIError as exc:
                 if exc.status_code not in {400, 409}:
                     raise
-            observed = self._candidate_retention(repository, path, maximum_age)
+            observed = self.observe_candidate_retention(repository, maximum_age)
             if observed is None:
                 raise OperationalError(
                     "Quay did not retain the required candidate retention policy",
@@ -161,6 +161,31 @@ class QuayAdapter:
         except httpx.TransportError as exc:
             raise OperationalError(
                 "Unable to verify Quay candidate retention", code="CC0603"
+            ) from exc
+
+    def observe_candidate_retention(
+        self, repository: OCIReference, maximum_age: timedelta
+    ) -> CandidateRetentionObservation | None:
+        """Read the same retention policy publication uses, without a write."""
+        seconds = int(maximum_age.total_seconds())
+        if seconds <= 0 or maximum_age != timedelta(seconds=seconds):
+            raise InvalidInvocationError(
+                "Candidate retention needs positive whole seconds"
+            )
+        namespace, name = self._repository_parts(repository)
+        path = f"/repository/{namespace}/{name}/autoprunepolicy/"
+        try:
+            return self._candidate_retention(repository, path, maximum_age)
+        except _QuayAPIError as exc:
+            if exc.status_code in {401, 403, 404, 405}:
+                raise UnsupportedOperationError(
+                    "Quay candidate-retention policies are unavailable or unauthorized",
+                    code="CC0603",
+                ) from exc
+            raise
+        except httpx.TransportError as exc:
+            raise OperationalError(
+                "Unable to read Quay candidate retention", code="CC0603"
             ) from exc
 
     def _candidate_retention(

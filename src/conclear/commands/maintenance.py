@@ -29,7 +29,7 @@ from conclear.pin_updates import (
     propose_pin_updates,
 )
 from conclear.pins import PinStore, check_image_pins
-from conclear.presentation import CommandResult, ResultStatus
+from conclear.presentation import CommandResult, Finding, ResultStatus
 from conclear.records import SourceIdentity, parse_timestamp, utc_now
 from conclear.registry_control import RegistryControl
 from conclear.registry_policy import policy_findings
@@ -37,6 +37,7 @@ from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime, ToolProblem
 from conclear.services.cleanup import cleanup_run
 from conclear.services.doctor import DoctorScope, diagnose_environment
+from conclear.services.registry_diagnostics import DiagnosticStatus
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
 from conclear.services.rescan import (
     RescanSigning,
@@ -45,7 +46,7 @@ from conclear.services.rescan import (
 )
 from conclear.tools import ToolName
 from conclear.triage import load_triage
-from conclear.values import OCIReference
+from conclear.values import OCIReference, validate_release_version
 from conclear.workspace import RunWorkspace
 
 from .common import (
@@ -81,9 +82,18 @@ from .common import (
     ),
 )
 @profile_option
+@click.option(
+    "version",
+    "--version",
+    help="Release version used to check version-tag policy coverage.",
+)
 @format_option
 def doctor_command(
-    config_path: Path, scope_text: str, profile_name: str | None, output_format: str
+    config_path: Path,
+    scope_text: str,
+    profile_name: str | None,
+    output_format: str,
+    version: str | None,
 ) -> None:
     """Validate the environment for one command scope without publishing or signing."""
     scope = DoctorScope(scope_text)
@@ -94,6 +104,12 @@ def doctor_command(
             f"{DoctorScope.QUALIFY.value} without a release profile"
         )
     repository = load_repository_config(config_path)
+    if version is not None:
+        if scope is not DoctorScope.RELEASE:
+            raise click.UsageError("--version applies only to --scope release")
+        validate_release_version(version)
+        for image in repository.release_images:
+            image.release.render_versions(version)
     selected = profile(profile_name) if profile_name else None
     if selected is not None:
         require_profile_capabilities(selected, dependencies)
@@ -113,6 +129,7 @@ def doctor_command(
                 scope=scope,
                 profile=selected,
                 registry_control=registry_control,
+                version=version,
             )
     finally:
         if registry_control is not None:
@@ -132,18 +149,37 @@ def doctor_command(
         if isinstance(observed_ci, ObservedCIContext):
             data["ciProvider"] = observed_ci.provider
     if scope is DoctorScope.RELEASE:
+        if version is not None:
+            data["version"] = version
         data["registryProvider"] = observation.registry_provider
         data["registryAccess"] = observation.registry_access
         data["sigstoreAccess"] = observation.sigstore_access
+        data["registryChecks"] = [
+            item.to_dict() for item in observation.registry_checks
+        ]
+    checks = observation.registry_checks if scope is DoctorScope.RELEASE else ()
+    failed = tuple(item for item in checks if item.status is DiagnosticStatus.FAILED)
+    findings = () if selected is None else policy_findings(selected.registry.policy)
+    findings += tuple(
+        Finding(item.code, "error", item.message, location=item.repository)
+        for item in failed
+        if item.code is not None
+    )
     emit(
         CommandResult(
             "doctor",
-            ResultStatus.SUCCESS,
-            f"Environment is ready for {scope.value}",
-            findings=()
-            if selected is None
-            else policy_findings(selected.registry.policy),
+            ResultStatus.OPERATIONAL_FAILURE if failed else ResultStatus.SUCCESS,
+            "Release prerequisites failed read-only checks"
+            if failed
+            else "Read-only release checks completed; writes and enforcement are not verified"
+            if scope is DoctorScope.RELEASE
+            else f"Environment is ready for {scope.value}",
+            findings=findings,
             data=data,
+            details=tuple(
+                f"{item.repository} {item.name}: {item.status.value}: {item.message}"
+                for item in checks
+            ),
         ),
         output_format,
     )

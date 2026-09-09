@@ -2,7 +2,7 @@ import platform
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, cast, override
 
 import pytest
 
@@ -12,6 +12,8 @@ from conclear.dependencies import DOCTOR_SCOPES
 from conclear.errors import ExitStatus, InvalidInvocationError, OperationalError
 from conclear.services.doctor import DoctorScope, diagnose_environment
 from conclear.values import Platform
+from tests.registry_policy_fixtures import STRICT_POLICY
+from tests.release_fakes import FakeRegistryControl
 
 
 class _FakeTool:
@@ -57,14 +59,12 @@ class _UnexpectedRegistryControl:
         pytest.fail("doctor must not probe the registry in this scope")
 
 
-class _FakeRegistryControl:
+class _FakeRegistryControl(FakeRegistryControl):
     def __init__(self) -> None:
+        super().__init__({})
         self.observed = 0
 
-    @property
-    def provider(self) -> str:
-        return "quay"
-
+    @override
     def observe_tag(self, repository: object, tag: str) -> None:
         del repository, tag
         self.observed += 1
@@ -75,7 +75,9 @@ def _profile(**changes: Any) -> Any:
         "name": "production",
         "auth_file": Path("/secure/auth.json"),
         "cosign_private_key": "/secure/cosign.key",
-        "registry": SimpleNamespace(token_file=Path("/secure/quay.token")),
+        "registry": SimpleNamespace(
+            token_file=Path("/secure/quay.token"), policy=STRICT_POLICY
+        ),
     }
     values.update(changes)
     return SimpleNamespace(**values)
@@ -137,6 +139,7 @@ def test_release_scope_probes_registry_and_sigstore(
         scope=DoctorScope.RELEASE,
         profile=_profile(),
         registry_control=cast(Any, registry_control),
+        version="1.2.3",
     )
 
     assert observation.scope is DoctorScope.RELEASE

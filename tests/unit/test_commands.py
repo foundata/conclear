@@ -44,6 +44,7 @@ from conclear.release_profile import (
 )
 from conclear.runtime import ToolProblem
 from conclear.services.doctor import DoctorScope
+from conclear.services.registry_diagnostics import DiagnosticStatus, RegistryCheck
 from conclear.tools import ToolName
 from conclear.values import Digest
 from conclear.workspace import RunState, RunWorkspace
@@ -1039,11 +1040,13 @@ def test_release_command_validates_selection_and_reports_promotion(
     assert resumed == [run.workspace.run_id]
 
 
+@pytest.mark.parametrize("status", list(DiagnosticStatus))
 def test_doctor_reports_environment_observations(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     invoke: Callable[[list[str]], tuple[int, Any, str]],
+    status: DiagnosticStatus,
 ) -> None:
     root = repository_factory()
     profile = release_profile(tmp_path)
@@ -1054,35 +1057,89 @@ def test_doctor_reports_environment_observations(
         maintenance_commands, "create_registry_control", lambda *a, **k: control
     )
     requested: list[tuple[ToolName, ...]] = []
+    versions: list[str | None] = []
+    check = RegistryCheck(
+        "quay.io/example/app", "tagPolicy", status, "Policy observation", "CC0604"
+    )
     monkeypatch.setattr(
         maintenance_commands, "diagnostic_runtime", _recording_runtime(requested)
     )
-    monkeypatch.setattr(
-        maintenance_commands,
-        "diagnose_environment",
-        lambda *args, **kwargs: SimpleNamespace(
+
+    def diagnose(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        versions.append(kwargs["version"])
+        return SimpleNamespace(
             tools=({"name": "git", "version": "2.55.0"},),
             native_architecture="amd64",
             emulated_architectures=(),
             registry_provider="quay",
             registry_access=True,
             sigstore_access=True,
-        ),
-    )
+            registry_checks=(check,),
+        )
+
+    monkeypatch.setattr(maintenance_commands, "diagnose_environment", diagnose)
     monkeypatch.setattr(maintenance_commands, "ci_context", lambda selected: None)
 
     code, value, _ = invoke(
-        ["doctor", "--config", str(root / "conclear.toml"), "--profile", "production"]
+        [
+            "doctor",
+            "--config",
+            str(root / "conclear.toml"),
+            "--profile",
+            "production",
+            "--version",
+            "1.2.3",
+        ]
     )
 
-    assert code == 0
-    assert value["message"] == "Environment is ready for release"
+    assert code == (1 if status is DiagnosticStatus.FAILED else 0)
+    assert value["message"] == (
+        "Release prerequisites failed read-only checks"
+        if status is DiagnosticStatus.FAILED
+        else "Read-only release checks completed; writes and enforcement are not verified"
+    )
     assert value["data"]["scope"] == "release"
     assert value["data"]["profile"] == "production"
     assert value["data"]["registryProvider"] == "quay"
     assert value["data"]["ciContextObserved"] is False
+    assert value["data"]["registryChecks"] == [check.to_dict()]
+    assert value["data"]["version"] == "1.2.3"
+    assert versions == ["1.2.3"]
     assert closed == [True]
     assert requested == [scope_dependencies("release").tools]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (["--profile", "production", "--version", "bad/tag"], "version"),
+        (["--profile", "production", "--version", "stable"], "must be disjoint"),
+        (["--scope", "check", "--version", "1.2.3"], "only to --scope release"),
+    ],
+)
+def test_doctor_rejects_invalid_versions_before_tools_or_credentials(
+    repository_factory: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    arguments: list[str],
+    message: str,
+) -> None:
+    root = repository_factory()
+    monkeypatch.setattr(
+        maintenance_commands,
+        "profile",
+        lambda _: pytest.fail("must not read credentials"),
+    )
+    monkeypatch.setattr(
+        maintenance_commands,
+        "diagnostic_runtime",
+        lambda _: pytest.fail("must not start tools"),
+    )
+    code, value, _ = invoke(
+        ["doctor", "--config", str(root / "conclear.toml"), *arguments]
+    )
+    assert code == 64
+    assert message in value["message"]
 
 
 def test_doctor_qualify_scope_needs_no_profile_registry_or_signing(

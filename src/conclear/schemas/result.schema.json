@@ -527,6 +527,12 @@
               "registryAccess": {
                 "type": "boolean"
               },
+              "registryChecks": {
+                "$ref": "#/$defs/registry-checks"
+              },
+              "version": {
+                "$ref": "#/$defs/text"
+              },
               "sigstoreAccess": {
                 "type": "boolean"
               },
@@ -1838,6 +1844,51 @@
         "transports"
       ]
     },
+    "registry-checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "repository": {
+            "$ref": "#/$defs/text"
+          },
+          "name": {
+            "enum": [
+              "tagRead",
+              "tagPolicy",
+              "candidateRetention",
+              "tagExpiration",
+              "registryWrites",
+              "policyEnforcement"
+            ]
+          },
+          "status": {
+            "enum": [
+              "checked",
+              "notChecked",
+              "failed"
+            ]
+          },
+          "message": {
+            "$ref": "#/$defs/text"
+          },
+          "checkId": {
+            "type": "string",
+            "pattern": "^CC[0-9]{4}$"
+          },
+          "policyCreationRequired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repository",
+          "name",
+          "status",
+          "message"
+        ]
+      }
+    },
     "doctor-data": {
       "type": "object",
       "additionalProperties": false,
@@ -1875,6 +1926,12 @@
         },
         "registryAccess": {
           "type": "boolean"
+        },
+        "registryChecks": {
+          "$ref": "#/$defs/registry-checks"
+        },
+        "version": {
+          "$ref": "#/$defs/text"
         },
         "sigstoreAccess": {
           "type": "boolean"
