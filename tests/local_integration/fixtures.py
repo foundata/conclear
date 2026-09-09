@@ -237,12 +237,11 @@ def runtime_config(*, profile: str) -> RuntimeConfig:
 
 
 def tool_locator(name: str, search_path: str) -> str | None:
-    """Locate a tool on the sanitized path, honoring the Trivy release override.
+    """Locate a tool, honoring the Trivy release override.
 
     `CONCLEAR_TEST_TRIVY` names the absolute path of a verified Trivy release
     build inside the manifest-owned workspace, so the tier can exercise a
     version the workstation does not install without replacing the host tool.
-    Every other tool comes from the sanitized search path.
     """
     override = os.environ.get("CONCLEAR_TEST_TRIVY")
     if name == ToolName.TRIVY.value and override:

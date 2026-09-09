@@ -5,9 +5,49 @@ from typing import cast
 import pytest
 
 from conclear.errors import OperationalError, RuleRejectionError
-from conclear.process import ProcessRunner
+from conclear.process import CommandRequest, ProcessResult, ProcessRunner
 from conclear.runtime import ApplicationRuntime
 from conclear.tools import ResolvedTool, ToolName, ToolResolver
+
+
+@pytest.mark.parametrize("order", [("local", "system"), ("system", "local")])
+def test_runtime_discovers_tools_in_caller_path_order_and_passes_it_to_children(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, order: tuple[str, str]
+) -> None:
+    directories = [tmp_path / name for name in order]
+    for directory in directories:
+        directory.mkdir()
+        executable = directory / "git"
+        executable.write_bytes(b"test executable")
+        executable.chmod(0o700)
+    search_path = ":".join(str(directory) for directory in directories)
+    monkeypatch.setenv("PATH", search_path)
+    requests: list[CommandRequest] = []
+
+    def observe(_runner: ProcessRunner, request: CommandRequest) -> ProcessResult:
+        requests.append(request)
+        return ProcessResult(
+            request.argv, 0, "git version 2.43.0", "", 0.0, 1, False, False
+        )
+
+    monkeypatch.setattr(ProcessRunner, "run", observe)
+    runtime = ApplicationRuntime.create(tmp_path / "environment", names=(ToolName.GIT,))
+
+    assert runtime.tools[ToolName.GIT].path == directories[0] / "git"
+    assert runtime.environment["PATH"] == search_path
+    assert len(requests) == 1
+    assert requests[0].argv == (str(directories[0] / "git"), "--version")
+    assert requests[0].environment["PATH"] == search_path
+    runtime.assert_unchanged()
+
+
+def test_runtime_does_not_fall_back_when_a_nonempty_path_has_no_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "missing"))
+
+    with pytest.raises(OperationalError, match="Required tool is unavailable: git"):
+        ApplicationRuntime.create(tmp_path / "environment", names=(ToolName.GIT,))
 
 
 def test_runtime_reuses_adapter_instances_for_monotonic_evidence_logs(

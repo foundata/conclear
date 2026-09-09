@@ -542,15 +542,15 @@ digest in the run manifest and remove it when the run ends.
 The workstation's Trivy package may lag behind the accepted line.
 `CONCLEAR_TEST_TRIVY` names the absolute path of a verified official Trivy
 release build inside the run workspace; the tier then resolves Trivy from that
-path instead of the sanitized search path and leaves the host installation
+path instead of normal tool discovery and leaves the host installation
 untouched. Download the release tarball, its checksums file and the checksums'
 Sigstore bundle into the manifest-owned workspace, verify the tarball's SHA-256
 against the checksums file, verify the checksums file with `cosign verify-blob
 --bundle`, the GitHub Actions OIDC issuer and the `aquasecurity/trivy` workflow
 identity, and record the executable path and digest in the manifest. The CLI
-transport scenario cannot use the override, because the installed `conclear`
-entry point resolves Trivy from the sanitized search path; it needs an accepted
-Trivy installed there. `CONCLEAR_TEST_QUALIFICATION_ULID` supplies the
+transport scenario needs an accepted Trivy available to the installed
+`conclear` command; it does not use this test-only override.
+`CONCLEAR_TEST_QUALIFICATION_ULID` supplies the
 manifest-owned lowercase ULID of the workspace that the real-Trivy qualification
 case creates.
 

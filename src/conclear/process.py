@@ -20,7 +20,7 @@ from conclear.errors import (
 )
 from conclear.jsonutil import atomic_write_json
 
-_SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+_DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 _SENSITIVE_FLAG = re.compile(
     r"^(?:--?(?:password|passphrase|token|secret|auth|authfile|key))(?:=|$)",
     re.IGNORECASE,
@@ -52,9 +52,9 @@ class ProcessEnvironment:
     runtime_dir: Path
 
     def values(self, extra: Mapping[str, str] | None = None) -> dict[str, str]:
-        """Return an allowlisted environment without ambient process values."""
+        """Return an allowlisted environment with the caller's executable search path."""
         environment = {
-            "PATH": _SAFE_PATH,
+            "PATH": os.environ.get("PATH") or _DEFAULT_PATH,
             "HOME": str(self.home),
             "LANG": "C.UTF-8",
             "LC_ALL": "C.UTF-8",

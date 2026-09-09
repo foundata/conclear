@@ -18,8 +18,7 @@ Replace the wheel path with your reviewed distribution. A development checkout
 identifies itself as `development-source-tree` and cannot emit release evidence.
 See [development and packaging](../DEVELOPMENT.md#releases) for building a
 wheel. Install the [supported host tools](./native-tool-installation.md),
-including rootless Buildah and Podman. Host-tool discovery ignores your shell's
-`PATH` and excludes `~/.local/bin`.
+including rootless Buildah and Podman.
 
 ## 2. Add repository configuration
 

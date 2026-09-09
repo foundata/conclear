@@ -77,7 +77,12 @@ def request(tmp_path: Path, **changes: Any) -> CommandRequest:
     return CommandRequest(**values)
 
 
-def test_process_environment_does_not_inherit_ambient_secrets(tmp_path: Path) -> None:
+def test_process_environment_does_not_inherit_ambient_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("QUAY_TOKEN", "ambient-secret")
+    monkeypatch.setenv("TRIVY_CONFIG", "/ambient/trivy.yaml")
+    monkeypatch.setenv("LD_PRELOAD", "/ambient/library.so")
     environment = ProcessEnvironment(
         home=tmp_path / "home",
         config_home=tmp_path / "config",
@@ -97,6 +102,32 @@ def test_process_environment_does_not_inherit_ambient_secrets(tmp_path: Path) ->
         "XDG_RUNTIME_DIR",
         "COSIGN_PASSWORD",
     }
+
+
+@pytest.mark.parametrize(
+    "search_path",
+    [None, "", "/home/example/.local/bin:/usr/bin", ":./tools:", " ", "/missing"],
+)
+def test_process_environment_preserves_path_with_an_empty_or_unset_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, search_path: str | None
+) -> None:
+    if search_path is None:
+        monkeypatch.delenv("PATH", raising=False)
+    else:
+        monkeypatch.setenv("PATH", search_path)
+
+    environment = ProcessEnvironment(
+        home=tmp_path / "home",
+        config_home=tmp_path / "config",
+        cache_home=tmp_path / "cache",
+        state_home=tmp_path / "state",
+        runtime_dir=tmp_path / "runtime",
+    ).values()
+
+    expected = (
+        search_path or "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    )
+    assert environment["PATH"] == expected
 
 
 def test_process_environment_rejects_sanitized_variable_override(

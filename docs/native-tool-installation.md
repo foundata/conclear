@@ -5,20 +5,8 @@ ConClear. Use a native host or VM with working rootless Podman/Buildah. Finish
 active ConClear runs before installing or updating tools; run ConClear without
 `sudo`. No CI or registry credentials are needed.
 
-ConClear finds host tools on this fixed path, ignoring the caller's `PATH`:
-
-```text
-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-```
-
-`~/.local/bin` is fine for the `conclear` entry point, but not its host tools.
 The recipe installs root-owned binaries under `/usr/local/libexec` and links
 them into `/usr/local/bin`, leaving distribution binaries unchanged.
-
-The fixed path excludes repository executables and shell shims, including from
-helper lookup inside host tools. Version and hash checks detect unsupported
-or changed binaries; they do not authenticate an installation. The host and
-its tool directories still need to be trusted.
 
 ## Install distribution tools
 
@@ -118,9 +106,8 @@ sudo install -o root -g root -m 0755 unpacked/trivy "$trivy_dir/trivy"
 sudo ln -sT "$cosign_dir/cosign" /usr/local/bin/cosign
 sudo ln -sT "$trivy_dir/trivy" /usr/local/bin/trivy
 
-tool_path='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-env PATH="$tool_path" trivy --version
-env PATH="$tool_path" cosign version
+trivy --version
+cosign version
 ```
 
 From your image repository, with a valid `conclear.toml`:
@@ -129,9 +116,8 @@ From your image repository, with a valid `conclear.toml`:
 conclear doctor --config conclear.toml --scope qualify --format json
 ```
 
-`CC0301` reports unsupported versions. Check for older binaries earlier on the
-fixed path; changing your shell's `PATH` cannot fix selection. Qualification
-diagnostics check local tools and rootless storage; Cosign and
+`CC0301` reports unsupported versions. Qualification diagnostics check local
+tools and rootless storage; Cosign and
 [external release prerequisites](./quickstart.md#5-prepare-release-access)
 need release-scope checks. A passing diagnostic is not a complete release drill.
 
@@ -147,7 +133,7 @@ For updates, verify a supported release, install a new root-owned version
 directory, switch its activation link and rerun diagnostics. Never change tools
 during an active or resumable release.
 
-Installation, PATH isolation, refusal checks and reboot persistence were tested
-on Fedora 44 x86_64 (2026-09-09, run `20260909T012036Z-tool-bootstrap`). Release
-discovery, signatures and invalid metadata rejection were retested in an
-isolated workspace (run `20260909T074959Z-tool-discovery`).
+Installation, refusal checks and reboot persistence were tested on Fedora 44
+x86_64 (2026-09-09, run `20260909T012036Z-tool-bootstrap`). Release discovery,
+signatures and invalid metadata rejection were retested in an isolated workspace
+(run `20260909T074959Z-tool-discovery`).
