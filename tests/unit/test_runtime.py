@@ -1,4 +1,5 @@
 import hashlib
+import socket
 from pathlib import Path
 from typing import cast
 
@@ -166,6 +167,33 @@ def test_container_tools_use_login_runtime_and_command_close_removes_it(
     runtime.close()
     assert not path.exists()
     assert login_runtime.is_dir()
+
+
+@pytest.mark.parametrize("tool", [ToolName.BUILDAH, ToolName.PODMAN, ToolName.GIT])
+def test_only_container_tools_receive_the_local_login_bus(
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    tool: ToolName,
+) -> None:
+    login_runtime = tmp_path_factory.mktemp("bus")
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(login_runtime))
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "tcp:host=untrusted,port=1234")
+    with socket.socket(socket.AF_UNIX) as bus:
+        bus.bind(str(login_runtime / "bus"))
+        runtime = ApplicationRuntime.create(
+            tmp_path / "environment",
+            names=(tool,),
+            resolver=cast(ToolResolver, _Resolver({}, tmp_path)),
+        )
+        if tool is ToolName.GIT:
+            assert "DBUS_SESSION_BUS_ADDRESS" not in runtime.environment
+        else:
+            assert runtime.environment["DBUS_SESSION_BUS_ADDRESS"] == (
+                f"unix:path={login_runtime}/bus"
+            )
+        runtime.close()
+        assert (login_runtime / "bus").is_socket()
 
 
 def test_tool_resolution_failure_removes_command_runtime_files(

@@ -17,6 +17,7 @@ from conclear.records import ToolIdentity
 from conclear.runtime_directory import (
     prepare_runtime_directory,
     remove_runtime_directory,
+    session_bus_environment,
 )
 from conclear.tools import ResolvedTool, ToolName, ToolResolver
 from conclear.workspace import ResourceJournal
@@ -124,9 +125,10 @@ class ApplicationRuntime:
         }
         for path in paths.values():
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        container_tools = bool({ToolName.BUILDAH, ToolName.PODMAN} & set(names))
         runtime_dir = prepare_runtime_directory(
             root,
-            required=bool({ToolName.BUILDAH, ToolName.PODMAN} & set(names)),
+            required=container_tools,
             journal=journal,
         )
         environment = ProcessEnvironment(
@@ -135,7 +137,7 @@ class ApplicationRuntime:
             cache_home=paths["cache"],
             state_home=paths["state"],
             runtime_dir=runtime_dir,
-        ).values()
+        ).values(session_bus_environment(runtime_dir) if container_tools else None)
         return environment, ProcessRunner()
 
     def close(self) -> None:

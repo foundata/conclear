@@ -1,4 +1,6 @@
+import os
 import shutil
+import socket
 from pathlib import Path
 from typing import override
 
@@ -11,6 +13,7 @@ from conclear.runtime_directory import (
     OWNERSHIP_FILE,
     prepare_runtime_directory,
     remove_runtime_directory,
+    session_bus_environment,
 )
 from conclear.services.cleanup import cleanup_run
 from conclear.workspace import ResourceKind, ResourceStatus
@@ -23,6 +26,52 @@ def runtime_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     path.mkdir(mode=0o700)
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(path))
     return path
+
+
+def test_missing_login_bus_remains_optional(runtime_home: Path) -> None:
+    assert session_bus_environment(runtime_home / "private") == {}
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink", "foreign-owner", "unreadable"])
+def test_login_bus_refuses_unsafe_socket_paths(
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    login = tmp_path_factory.mktemp("bus")
+    path = login / "bus"
+    original_lstat = Path.lstat
+    with socket.socket(socket.AF_UNIX) as bus:
+        if kind == "file":
+            path.write_bytes(b"not a socket")
+        elif kind == "symlink":
+            bus.bind(str(login / "other"))
+            path.symlink_to(login / "other")
+        else:
+            bus.bind(str(path))
+
+            def altered_lstat(selected: Path) -> os.stat_result:
+                if selected == path:
+                    if kind == "unreadable":
+                        raise PermissionError("denied")
+                    fields = list(original_lstat(selected))
+                    fields[4] += 1
+                    return os.stat_result(fields)
+                return original_lstat(selected)
+
+            monkeypatch.setattr(Path, "lstat", altered_lstat)
+        with pytest.raises(OperationalError, match=r"[Ll]ogin session bus"):
+            session_bus_environment(login / "private")
+
+
+def test_login_bus_address_escapes_delimiters(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    login = tmp_path_factory.mktemp("bus,addr")
+    with socket.socket(socket.AF_UNIX) as bus:
+        bus.bind(str(login / "bus"))
+        address = session_bus_environment(login / "private")["DBUS_SESSION_BUS_ADDRESS"]
+        assert address == f"unix:path={str(login).replace(',', '%2C')}/bus"
 
 
 def test_runtime_directories_are_private_isolated_and_journaled_before_use(

@@ -4,6 +4,7 @@ import os
 import shutil
 import stat
 from pathlib import Path
+from urllib.parse import quote
 from uuid import uuid4
 
 from conclear.errors import OperationalError
@@ -15,6 +16,22 @@ from conclear.workspace import ResourceJournal, ResourceKind, ResourceStatus
 OWNERSHIP_FILE = "runtime-directory.json"
 OWNER_MARKER = ".conclear-owner.json"
 RESOURCE_ID = "runtime-directory"
+
+
+def session_bus_environment(runtime_directory: Path) -> dict[str, str]:
+    """Locate the login bus without importing an ambient D-Bus address."""
+    login_directory = runtime_directory.parent
+    _private_directory(login_directory)
+    bus = login_directory / "bus"
+    try:
+        observed = bus.lstat()
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        raise OperationalError("Unable to inspect the login session bus") from exc
+    if not stat.S_ISSOCK(observed.st_mode) or observed.st_uid != os.getuid():
+        raise OperationalError("Login session bus must be a user-owned socket")
+    return {"DBUS_SESSION_BUS_ADDRESS": f"unix:path={quote(str(bus), safe='/')}"}
 
 
 def prepare_runtime_directory(

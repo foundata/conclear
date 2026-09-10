@@ -169,6 +169,8 @@ installation steps with supported versions. Finish active runs before updating.
 - Run ConClear as a normal user with working rootless Podman and Buildah.
 - Use a Linux login session with a user-owned, mode-0700 `XDG_RUNTIME_DIR`,
   normally `/run/user/<uid>`.
+- For systemd targets on SELinux hosts, enable cgroup management with
+  `sudo setsebool -P container_manage_cgroup on`.
 - From a configured image repository, run `conclear doctor --scope qualify` to
   check local prerequisites. Use the [release check](#usage-release) for signing
   and registry access.

@@ -134,6 +134,10 @@ def test_real_rootless_storage_and_local_analysis_are_run_owned(
     assert runtime.buildah().info(root=buildah_root, runroot=buildah_runroot)
     podman_info = runtime.podman().info(root=podman_root, runroot=podman_runroot)
     assert podman_info
+    if "DBUS_SESSION_BUS_ADDRESS" in runtime.environment:
+        host = podman_info["host"]
+        assert isinstance(host, dict)
+        assert host["cgroupManager"] == "systemd"
     assert buildah_root.is_relative_to(root)
     assert podman_root.is_relative_to(root)
 
