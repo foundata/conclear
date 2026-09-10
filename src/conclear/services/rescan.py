@@ -20,7 +20,7 @@ from conclear.attestations import (
 )
 from conclear.config import MAX_REMEDIATION, RuntimeConfig, VulnerabilityException
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.jsonutil import atomic_write_json
+from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.parsing import object_value, string_value
 from conclear.records import (
     RecordEnvelope,
@@ -292,6 +292,7 @@ def rescan_release(
         raise OperationalError("Release SBOM references are malformed")
     sbom_digests = frozenset(string_value(item, "SBOM digest") for item in raw_sboms)
     consumed_sboms: set[str] = set()
+    scan_results: list[dict[str, object]] = []
     for platform, digest in sorted(manifest_map.items()):
         if platform is None:
             raise OperationalError(
@@ -335,6 +336,13 @@ def rescan_release(
                 report_path=report_path,
                 cache_root=database.path,
             )
+        scan_results.append(
+            {
+                "platform": str(platform),
+                "sbomDigest": sha256_file(sbom_path),
+                "reportDigest": sha256_file(report_path),
+            }
+        )
         evaluation = evaluate_trivy_report(
             scan.value,
             image_id=image_id,
@@ -433,6 +441,12 @@ def rescan_release(
             "scanner": _scanner_identity(tools),
             "databaseDigest": database.digest,
             "databaseMetadata": database.metadata,
+            "scanResults": scan_results,
+            **{
+                name: input_digest
+                for name, input_digest in workspace.load().immutable_inputs.items()
+                if name in {"sourceTreeDigest", "releaseArchiveDigest"}
+            },
             "scope": scope,
             "findings": findings,
             "appliedExceptions": applied_exceptions,

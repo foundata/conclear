@@ -20,7 +20,12 @@ def repeat_release_and_rescan(
     observe_tags: Callable[[], dict[str, str | None]],
 ) -> str:
     """Keep one release/SBOM anchor across a same-digest release and two later rescans."""
-    first = cli.run("release", *source_arguments, "--profile", profile)["data"]
+    archive_directory = config.parent.parent / "archives"
+    archive_directory.mkdir(exist_ok=True)
+    archive_arguments = ("--archive-dir", str(archive_directory))
+    first = cli.run(
+        "release", *source_arguments, "--profile", profile, *archive_arguments
+    )["data"]
     _promoted(first, observe_tags())
     subject = first["subject"]
     assert isinstance(subject, str)
@@ -33,13 +38,16 @@ def repeat_release_and_rescan(
         "--profile",
         profile,
         "--authoritative",
+        *archive_arguments,
     )
     initial = cli.run(*arguments)["data"]
     anchor = _rescan_payload(initial)["releaseRecordDigest"]
     assert anchor == sha256_file(
         Path(first["workspace"]) / "records" / "release-verification.json"
     )
-    second = cli.run("release", *source_arguments, "--profile", profile)["data"]
+    second = cli.run(
+        "release", *source_arguments, "--profile", profile, *archive_arguments
+    )["data"]
     assert second["runId"] != first["runId"]
     assert second["subject"] == subject, "fixture must reproduce the same image digest"
     _promoted(second, observe_tags())
@@ -71,6 +79,8 @@ def resume_published_candidate(
     This exercises process-to-process recovery, not a crash during a provider write.
     """
     transports: list[str] = []
+    archive_directory = directory / "archives"
+    archive_directory.mkdir(exist_ok=True)
     snapshot: tuple[str, ...] = ()
     for index, platform in enumerate(platforms):
         qualified = cli.run(
@@ -122,6 +132,8 @@ def resume_published_candidate(
         run_id,
         "--profile",
         profile,
+        "--archive-dir",
+        str(archive_directory),
     )["data"]
     assert resumed["runId"] == run_id
     assert resumed["subject"] == expected_subject
@@ -143,6 +155,8 @@ def resume_published_candidate(
         run_id,
         "--profile",
         profile,
+        "--archive-dir",
+        str(archive_directory),
         expect=64,
     )
     assert observe_tags() == after, "terminal resume must not mutate tags"

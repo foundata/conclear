@@ -97,6 +97,22 @@ def required_profile_option[FC: Callable[..., Any]](function: FC) -> FC:
     return click.option("profile_name", "--profile", required=True)(function)
 
 
+def archive_options[FC: Callable[..., Any]](function: FC) -> FC:
+    """Require durable archive storage and make image-layer retention explicit."""
+    function = click.option(
+        "archive_directory",
+        "--archive-dir",
+        required=True,
+        type=click.Path(path_type=Path, file_okay=False),
+        help="Existing durable directory for the completed evidence tarball.",
+    )(function)
+    return click.option(
+        "--include-image-layers",
+        is_flag=True,
+        help="Include image filesystem layers in the archive.",
+    )(function)
+
+
 def platform_option[FC: Callable[..., Any]](function: FC) -> FC:
     """Add the required target platform selector."""
     return click.option("platform_text", "--platform", required=True)(function)

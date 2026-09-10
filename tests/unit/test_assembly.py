@@ -184,6 +184,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             "sourceRevision": "b" * 40,
             "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "sourceTreeDigest": "sha256:" + "d" * 64,
             "image": "app",
             "version": "1.2.3",
         },
@@ -209,6 +210,7 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
         verdict=Verdict.ACCEPTED,
         payload={
             "imageId": "app",
+            "sourceTreeDigest": digest,
             "platform": "linux/amd64",
             "layoutDescriptor": graph.root.to_dict(),
             "manifestDigest": str(graph.manifests[0].descriptor.digest),

@@ -1,38 +1,38 @@
 # Backup
 
-Criticality describes the impact of loss, not a mandatory retention period.
+Point `--archive-dir` at durable, backed-up storage. Keep the tarballs while
+releases are supported and for your chosen review period afterward. Keep
+referenced source archives beside their rescans and test retrieval with
+`conclear archive verify`. See [archive usage](./evidence-retention.md).
 
-|               What               |                                                                        What to preserve                                                                         |                               Needed for                               |                                    Criticality                                    | When to clean up / what gets lost |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- | --------------------------------- |
-| Signing keys                     | Cosign private key, trusted public keys and recoverable passphrase. Encrypt private-key backups; protect passphrase recovery separately.                        | Signing with the same identity and verifying historical releases.      | Critical for an active signing identity.                                          | Delete private keys only when no release or rescan requires them. Loss prevents signing with that identity. Keep public keys while historical verification matters. |
-| Release profiles and credentials | `~/.config/conclear/` plus referenced external files.                                                                                                           | Restoring release access and trusted configuration.                    | High; credentials can be reissued.                                                | Revoke replaced credentials; remove obsolete copies after your recovery window. Delete profiles when no workflow needs them. Loss requires rebuilding configuration and restoring access. |
-| Release evidence bundles         | Platform transports/export JSON, release records, reports, checksums, complete original source with unchanged `conclear.toml`, rescan results and triage files. | Release review, troubleshooting and historical rescans.                | High while supported; afterward depends on review needs.                          | Reduce or delete after support and your review period end. Deleting reports loses detailed test and scan evidence. Losing the only original source/configuration copy can prevent rescans. Full bundles are unnecessary for rescans if original source/configuration and registry evidence remain available. |
-| Persistent state                 | `~/.local/state/conclear/`: `pins/`, `rescans/` and `runs/`. Treat it as sensitive.                                                                             | Pin-observation continuity, interrupted-run recovery and cleanup.      | High for pin history and unfinished runs; lower for reconstructible rescan state. | Delete run workspaces after retaining needed evidence and successful cleanup. Losing `pins/` loses observations; losing run journals complicates recovery and ownership checks. Local rescan history can be reconstructed from intact signed registry history. |
-| Operator records                 | Supported-release inventory, bundle locations, latest rescan digests, schedules, owners and recovery instructions.                                              | Tracking support, scheduling assessments and assigning follow-up work. | High for supported releases.                                                      | Retire scheduling entries when support ends, recording that decision. Keep historical entries while images or evidence remain retained. Loss leaves support status, obligations and archive locations uncertain. |
-| Registry content                 | Released manifests/layers, signatures and all attestations/referrers, including rescan history.                                                                 | Image pulls, evidence verification and later rescans.                  | Critical for release continuity; backup optional if rebuilding is acceptable.     | Keep supported digests available while promised. Delete when support and download/verification commitments end. Without another copy, loss may require a new release and updated consumer pins; original verification and rescans can be lost. |
+Release/rescan archives exclude signing keys, credentials and raw logs. Source
+and reports may still be sensitive. Back up keys and durable state separately:
 
-Paths above use defaults; honor `XDG_CONFIG_HOME` and `XDG_STATE_HOME` when set.
-Use support status and review needs to set retention, not a blanket one-year
-cutoff. See [evidence retention](./evidence-retention.md) to export bundles.
+|          What           |                        What to preserve                        |              Needed for               |           Criticality           | When to clean up / what gets lost |
+| ----------------------- | -------------------------------------------------------------- | ------------------------------------- | ------------------------------- | --------------------------------- |
+| Release/rescan archives | Tarballs in `--archive-dir`                                    | Review and historical rescans         | High while supported            | After support and review needs end. Loss removes evidence and possibly the only original source/configuration. |
+| Keys and access         | `~/.config/conclear/` and referenced external keys/credentials | Signing identity and release access   | Critical for active keys        | Retire private keys when signing no longer needs them; keep trusted public keys for historical verification. Credentials can be reissued. |
+| Durable state           | `pins/` and `rescans/` under `~/.local/state/conclear/`        | Pin continuity and rescan checkpoints | High for pin history            | Remove obsolete subjects after support ends. Lost pin observations cannot be reconstructed; intact signed registry history can reconstruct rescan state. |
+| Registry content        | Images, signatures and attestations/referrers                  | Existing digest pulls and rescans     | Critical for release continuity | Keep supported digests available. Loss may require a replacement release and updated consumer pins. |
+
+Honor `XDG_CONFIG_HOME` and `XDG_STATE_HOME` when set. Keep support inventory,
+owners and schedules in your usual operational records.
 
 ## Registry backup
 
-Registry backup is optional when rebuilding and updating consumers is an
-acceptable recovery strategy. Keep supported releases available in the registry.
-Use a separate backup if existing digests and their signed evidence must
-survive registry loss. Rebuilding can change the digest and does not restore
-the original signed evidence or rescan history.
+Registry backup is optional when rebuilding and updating consumers is
+acceptable. Rebuilding can change the digest and does not restore original
+signatures or rescan history. `--include-image-layers` preserves exact image
+bytes, but the archive is not a complete registry backup or an automatic
+registry-restoration command.
 
-## Daily local archive
+## Daily local backup
 
-Set `secure_storage`, `evidence_dir` and `operations_dir` to existing absolute
-directories. The target must already be secure/encrypted and outside the
-selected sources. Add external keys, credentials and other operator files to
-`paths`; symbolic-link targets are not followed automatically.
-
-Run with Bash and GNU tools, with read access to all selected files. Schedule
-daily while ConClear jobs and evidence exports are idle. This backs up local
-files only.
+Set `secure_storage` to an existing absolute secure/encrypted directory outside
+the selected sources. Add external keys and credentials to `paths`; symlink
+targets are not followed. Keep passphrase recovery separate from private keys.
+Schedule this Bash/GNU-tools snippet while ConClear jobs are idle. Archive
+storage has its own backup policy; this saves local settings and durable state.
 
 ```bash
 set -euo pipefail
@@ -44,11 +44,12 @@ secure_storage="$(realpath -e -- "${secure_storage}")"
 
 paths=(
   "${XDG_CONFIG_HOME:-${HOME}/.config}/conclear"
-  "${XDG_STATE_HOME:-${HOME}/.local/state}/conclear"
-  "${evidence_dir:?Set evidence_dir to the retained evidence directory}"
-  "${operations_dir:?Set operations_dir to the operator records directory}"
-  # Add absolute paths to external keys, credentials and other required files.
+  # Add absolute paths to external keys and credentials.
 )
+for name in pins rescans; do
+  path="${XDG_STATE_HOME:-${HOME}/.local/state}/conclear/${name}"
+  if [[ -d "${path}" ]]; then paths+=("${path}"); fi
+done
 members=()
 for path in "${paths[@]}"; do
   [[ "${path}" = /* ]]
@@ -79,26 +80,20 @@ trap - EXIT HUP INT TERM
 printf 'Backup: %s\n' "${backup}"
 ```
 
-Each run creates a new dated directory containing `local.tar.gz` and
-`SHA256SUMS`. Failures exit nonzero; alert on failed or missed backups. The
-archive is a full copy of the selected sources at that time. Earlier versions
-of changed or deleted files survive only in older backups. Keep these archives
-private: they can contain signing keys, passphrases and logs.
+Each backup is a full copy of the selected files. Deleted or replaced versions
+survive only in older backups. Alert on failures and periodically test a restore
+into an empty directory, preserving ownership and permissions. These backups
+contain secrets: keep them private.
 
-Check `SHA256SUMS` after copying. Periodically extract into an empty directory
-and test recovery, preserving ownership and permissions. Archive paths omit
-the leading `/`; never test by extracting over the live filesystem.
+Run workspaces and caches are excluded. Recovering an unfinished release also
+requires its workspace, original inputs/tools and unexpired deadlines.
 
-The default database cache is excluded. Add its selected snapshot if recovering
-an unfinished release matters. Resume still needs the original inputs/tools
-and unexpired deadlines; a file archive is not a running-host snapshot.
+## Remove older local backups
 
-## Remove older backups
-
-After a successful backup, use this to keep the newest `keep` complete backups
-(default: 7), ordered by directory modification time. Run without concurrent
-backup or cleanup jobs. It verifies retained archives before deleting older
-ones and ignores unfinished directories, symbolic links and unrelated names.
+After a successful backup, keep the newest `keep` copies (default: 7), ordered
+by directory modification time. Run without concurrent backup/cleanup jobs.
+This verifies retained copies before deleting older ones; it does not remove
+release or rescan tarballs.
 
 ```bash
 set -euo pipefail
@@ -126,9 +121,7 @@ while read -r timestamp name; do
   fi
 done <<< "${listing}"
 
-if (( ${#backups[@]} <= keep )); then
-  exit 0
-fi
+if (( ${#backups[@]} <= keep )); then exit 0; fi
 for directory in "${backups[@]:0:keep}"; do
   (cd -- "${directory}" && sha256sum --check SHA256SUMS)
 done

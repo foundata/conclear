@@ -6,6 +6,8 @@ import click
 
 from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.registry_backends import create_registry_control
+from conclear.archive import prepare_archive_directory
+from conclear.archive_source import copy_source
 from conclear.config import load_repository_config, normalize_observed_source_url
 from conclear.database import select_fresh_database, trivy_cache_root
 from conclear.dependencies import (
@@ -33,8 +35,10 @@ from conclear.presentation import CommandResult, Finding, ResultStatus
 from conclear.records import SourceIdentity, parse_timestamp, utc_now
 from conclear.registry_control import RegistryControl
 from conclear.registry_policy import policy_findings
+from conclear.release_profile import ReleaseProfile
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime, ToolProblem
+from conclear.services.archive_rescan import ArchiveRescanInput, archived_rescan_input
 from conclear.services.cleanup import cleanup_run
 from conclear.services.doctor import DoctorScope, diagnose_environment
 from conclear.services.registry_diagnostics import DiagnosticStatus
@@ -47,9 +51,11 @@ from conclear.services.rescan import (
 from conclear.tools import ToolName
 from conclear.triage import load_triage
 from conclear.values import OCIReference, validate_release_version
-from conclear.workspace import RunWorkspace
+from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
 
+from .archive import archive_completed_run, archive_details
 from .common import (
+    archive_options,
     cache_home,
     ci_context,
     command_runtime,
@@ -453,17 +459,23 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
 
 
 @click.command("rescan")
-@click.option("subject_text", "--subject", required=True)
+@click.option("subject_text", "--subject")
+@click.option(
+    "archive_path",
+    "--archive",
+    type=click.Path(path_type=Path, dir_okay=False),
+)
 @config_option
 @click.option("image_id", "--image")
 @required_profile_option
+@archive_options
 @click.option("authoritative", "--authoritative", is_flag=True)
 @passphrase_option
 @click.option("previous_result", "--previous-result")
 @click.option("triage_path", "--triage-file", type=click.Path(path_type=Path))
 @format_option
 def rescan_command(
-    subject_text: str,
+    subject_text: str | None,
     config_path: Path,
     image_id: str | None,
     profile_name: str,
@@ -472,14 +484,88 @@ def rescan_command(
     previous_result: str | None,
     triage_path: Path | None,
     output_format: str,
+    archive_path: Path | None,
+    archive_directory: Path,
+    include_image_layers: bool,
 ) -> None:
-    """Re-evaluate retained SBOMs for one immutable released subject."""
+    """Rescan a released digest and retain its assessment in a compressed archive."""
+    selected = profile(profile_name)
+    archive_directory = prepare_archive_directory(
+        archive_directory,
+        excluded=(
+            state_home() / "conclear",
+            cache_home() / "conclear",
+            *((config_path.resolve().parent,) if archive_path is None else ()),
+        ),
+    )
+    if archive_path is not None:
+        if (
+            subject_text is not None
+            or image_id is not None
+            or click.get_current_context().get_parameter_source("config_path")
+            is click.core.ParameterSource.COMMANDLINE
+        ):
+            raise click.UsageError("--archive supplies --subject, --config and --image")
+        with command_runtime(command_tools("archive verify")) as runtime:
+            with archived_rescan_input(
+                archive_path,
+                signer=runtime.cosign(),
+                public_key=selected.cosign_public_key,
+            ) as archived:
+                _execute_rescan(
+                    subject_text=str(archived.subject),
+                    config_path=archived.configuration,
+                    image_id=archived.image_id,
+                    selected=selected,
+                    authoritative=authoritative,
+                    passphrase_fd=passphrase_fd,
+                    previous_result=previous_result,
+                    triage_path=triage_path,
+                    output_format=output_format,
+                    archive_directory=archive_directory,
+                    include_image_layers=include_image_layers,
+                    archived=archived,
+                )
+        return
+    if subject_text is None:
+        raise click.UsageError("Provide --archive or --subject")
+    _execute_rescan(
+        subject_text=subject_text,
+        config_path=config_path,
+        image_id=image_id,
+        selected=selected,
+        authoritative=authoritative,
+        passphrase_fd=passphrase_fd,
+        previous_result=previous_result,
+        triage_path=triage_path,
+        output_format=output_format,
+        archive_directory=archive_directory,
+        include_image_layers=include_image_layers,
+    )
+
+
+def _execute_rescan(
+    *,
+    subject_text: str,
+    config_path: Path,
+    image_id: str | None,
+    selected: ReleaseProfile,
+    authoritative: bool,
+    passphrase_fd: int | None,
+    previous_result: str | None,
+    triage_path: Path | None,
+    output_format: str,
+    archive_directory: Path,
+    include_image_layers: bool,
+    archived: ArchiveRescanInput | None = None,
+) -> None:
     subject = OCIReference.parse(
         subject_text, require_digest=True, allow_localhost=False
     )
     if subject.tag is not None:
         raise InvalidInvocationError("Rescan subject cannot include a tag")
-    selected = profile(profile_name)
+    if config_path.name != "conclear.toml":
+        raise InvalidInvocationError("Rescans require the configuration conclear.toml")
     repository = load_repository_config(config_path)
     image = repository.release_image(image_id)
     image_id = image.image_id
@@ -505,6 +591,27 @@ def rescan_command(
         },
     )
     with owned_run(workspace):
+        source = workspace.root / "source"
+        workspace.journal.plan(
+            resource_id="rescan-source",
+            kind=ResourceKind.LOCAL_PATH,
+            identifier=str(source),
+            ephemeral=True,
+        )
+        source_digest = copy_source(config_path.resolve().parent, source)
+        workspace.journal.update("rescan-source", ResourceStatus.CREATED)
+        if (source / "conclear.toml").read_bytes() != repository.raw_bytes:
+            raise InvalidInvocationError("Rescan configuration changed while copying")
+        workspace.bind_immutable_inputs(
+            {
+                "sourceTreeDigest": source_digest,
+                **(
+                    {"releaseArchiveDigest": archived.release_archive_digest}
+                    if archived is not None
+                    else {}
+                ),
+            }
+        )
         runtime = ApplicationRuntime.create(
             workspace.root / "environment",
             names=dependencies.tools,
@@ -522,6 +629,19 @@ def rescan_command(
             signer=runtime.cosign(auth_file=selected.auth_file),
             public_key=selected.cosign_public_key,
         )
+        if archived is not None:
+            if (
+                archived.history_checkpoint is not None
+                and archived.history_checkpoint
+                not in {item.record_digest for item in attested_history}
+            ):
+                raise OperationalError(
+                    "Registry rescan history is missing the archived checkpoint"
+                )
+            if previous_result is None:
+                previous_result = (
+                    attested_history[-1].record_digest if attested_history else None
+                )
         remediation_history = history_store.synchronize(
             subject,
             attested_history,
@@ -582,6 +702,12 @@ def rescan_command(
                 ),
                 expected_previous=previous_result,
             )
+        archive = archive_completed_run(
+            workspace.run_id,
+            selected=selected,
+            directory=archive_directory,
+            include_image_layers=include_image_layers,
+        )
         emit(
             CommandResult(
                 "rescan",
@@ -591,7 +717,9 @@ def rescan_command(
                     else ResultStatus.RULE_REJECTION
                 ),
                 "Released subject rescan completed",
+                details=archive_details(archive),
                 data={
+                    "archive": archive.to_dict(),
                     "runId": workspace.run_id,
                     "record": str(result.record_path),
                     "recordDigest": result.record_digest,

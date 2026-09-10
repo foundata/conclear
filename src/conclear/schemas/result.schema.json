@@ -985,6 +985,7 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "archive": {"$ref": "#/$defs/archive-result"},
               "runId": {
                 "$ref": "#/$defs/runId"
               },
@@ -1274,6 +1275,7 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "archive": {"$ref": "#/$defs/archive-result"},
               "runId": {
                 "$ref": "#/$defs/runId"
               },
@@ -1334,6 +1336,7 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "archive": {"$ref": "#/$defs/archive-result"},
               "runId": {
                 "$ref": "#/$defs/runId"
               },
@@ -1451,6 +1454,16 @@
     }
   ],
   "$defs": {
+    "archive-result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "digest", "size", "manifestDigest"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "digest": {"$ref": "#/$defs/digest"},
+        "size": {"type": "integer", "minimum": 0},
+        "manifestDigest": {"$ref": "#/$defs/digest"}
+      }
+    },
     "registryPolicy": {
       "type": "object",
       "additionalProperties": false,
@@ -2207,6 +2220,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "archive": {"$ref": "#/$defs/archive-result"},
         "runId": {
           "$ref": "#/$defs/runId"
         },
@@ -2231,6 +2245,7 @@
         }
       },
       "required": [
+        "archive",
         "authoritative",
         "record",
         "recordDigest",
@@ -2314,6 +2329,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "archive": {"$ref": "#/$defs/archive-result"},
+        "runId": {"$ref": "#/$defs/runId"},
         "tags": {
           "$ref": "#/$defs/tagAssignments"
         },
@@ -2328,6 +2345,8 @@
         }
       },
       "required": [
+        "archive",
+        "runId",
         "candidateDeleted",
         "registryPolicy",
         "immutabilityEnabled",
@@ -2338,6 +2357,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "archive": {"$ref": "#/$defs/archive-result"},
         "runId": {
           "$ref": "#/$defs/runId"
         },
@@ -2361,6 +2381,7 @@
         }
       },
       "required": [
+        "archive",
         "candidateDeleted",
         "registryPolicy",
         "immutabilityEnabled",

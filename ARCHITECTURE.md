@@ -659,7 +659,8 @@ conclear release \
   --image example \
   --revision v1.8.2 \
   --version 1.8.2 \
-  --profile foundata
+  --profile foundata \
+  --archive-dir /srv/archives/conclear
 ```
 
 `--revision` is a Git selector that ConClear resolves and observes; `--version`
@@ -686,9 +687,11 @@ the repository.
 | `publish`          | Record candidate authorization, copy the accepted subject, apply selected cleanup controls and compare the remote digest graph. |
 | `attest`           | Attach platform SBOMs and provenance and sign the index and every platform manifest. |
 | `verify`           | Verify the remote graph, signatures, attestations, identities and guide evidence and attach a signed release-verification result. |
-| `promote`          | Apply configured version and moving tags to the verified digest, verify each tag and attempt candidate deletion. |
-| `release`          | Create an isolated checkout and execute the complete workflow through promotion, locally or in CI. |
-| `rescan`           | Re-evaluate a released digest from retained SBOMs or immutable image content and emit a new linked rescan result. |
+| `promote`          | Apply configured version and moving tags to the verified digest, verify each tag, attempt candidate deletion and write a verified evidence archive. |
+| `release`          | Create an isolated checkout and execute the complete workflow through promotion and archival, locally or in CI. |
+| `rescan`           | Re-evaluate a released digest using current scanner data and emit a linked rescan result with an evidence archive. `--archive` restores the exact configuration and an authoritative history checkpoint. |
+| `archive create`   | Retry archival of a completed release or rescan without repeating registry writes. |
+| `archive verify`   | Check retained member bytes, evidence bindings and Sigstore bundles against an independently trusted profile key without retrieving registry attestations. |
 | `cleanup`          | Resume cleanup of resources recorded as owned by one release run. |
 
 A command that writes to the registry or signs refuses a release profile that
@@ -819,13 +822,26 @@ Rejected runs retain reports with `verdict: rejected`. Interrupted runs are
 retained, but ConClear never presents its local state directory as an archive or
 registry backup.
 
-The [evidence-retention recipe](./docs/evidence-retention.md) exports each
-platform's recorded payload bytes through the existing transport format and
-preserves selected release records and the exact source checkout separately.
-Imported qualifications remain worker-owned; distributed releases retain the
-original worker transports. Protected command logs and secret material are not
-part of the shareable bundle. Archive access, signed digest-binding checks,
-backups and restore tests remain operator responsibilities.
+`release`, `promote` and `rescan` require `--archive-dir` and write a compressed
+evidence archive after completion. The allowlisted members include records,
+reports, OCI metadata and retained Sigstore bundles; releases also include exact
+source. Non-secret test outputs travel as a digest-bound qualification payload.
+Image layers are opt-in. Profiles, credentials, keys, raw logs and private test
+outputs are excluded, but source and reports still require disclosure review.
+
+Archive writes are checked before atomic, non-overwriting publication. Failure
+preserves the run and does not undo registry publication; `archive create`
+retries export without publishing. `archive verify` checks content relationships
+and verifies retained Sigstore bundles against the protected profile key,
+without registry reads. Its manifest is unsigned; these checks do not sign
+supplemental files or make diagnostic rescans authoritative.
+
+`rescan --archive` restores source into a private temporary directory. Rescan
+archives reference their source archive by SHA-256; retain it alongside them.
+Current signed registry history supplies the next predecessor, and an archived
+authoritative checkpoint must remain present. No completed run is reactivated.
+Archive storage, support inventory, schedules and backups remain operator
+duties. See [archive usage](./docs/evidence-retention.md).
 
 
 ## Tool execution<a id="tool-execution"></a>

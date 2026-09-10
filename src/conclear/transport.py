@@ -65,7 +65,7 @@ MAX_TRANSPORT_MEMBERS = 4096
 MAX_TRANSPORT_BYTES = MAX_ARCHIVE_CONTENT_BYTES
 TRANSPORT_CHECK = "CC0306"
 
-_REPORT_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*\.json$")
+_REPORT_NAME_PATTERN = re.compile(r"^(?:[a-z0-9][a-z0-9-]*\.json|test-outputs\.tar)$")
 _BLOB_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -611,6 +611,15 @@ def _payload_member_names(payload: dict[str, object], key: str) -> tuple[str, ..
         if _REPORT_NAME_PATTERN.fullmatch(name) is None:
             raise InvalidInvocationError(f"Qualification scan path is unsafe: {name}")
         names.append(f"reports/{key}/{name}")
+    if payload.get("testOutputArchive") is not None:
+        output = _narrow.object_value(
+            payload["testOutputArchive"], "test output archive"
+        )
+        if output.get("path") != "test-outputs.tar":
+            raise InvalidInvocationError(
+                "Qualification test output archive path is unsafe"
+            )
+        names.append(f"reports/{key}/test-outputs.tar")
     if len(names) != len(set(names)):
         raise InvalidInvocationError("Qualification repeats a payload path")
     return tuple(sorted(names))

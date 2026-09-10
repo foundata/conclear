@@ -371,17 +371,22 @@ def qualify_platform(
     else:
         verdict = Verdict.ACCEPTED
     manifest = build.observation.graph.manifests[0]
+    output_archive = runtime_evidence.output_archive
     payload_digests = tuple(
         sorted(
             {
                 runtime_evidence.test_report_digest,
                 scan_evidence.sbom.digest,
                 *(scan.digest for scan in scan_evidence.scans),
+                *((sha256_file(output_archive),) if output_archive is not None else ()),
             }
         )
     )
     payload: dict[str, object] = {
         "imageId": inputs.image.image_id,
+        "sourceTreeDigest": inputs.workspace.load().immutable_inputs[
+            "sourceTreeDigest"
+        ],
         "platform": str(inputs.platform),
         "layoutDescriptor": build.observation.graph.root.to_dict(),
         "manifestDigest": str(manifest.descriptor.digest),
@@ -418,6 +423,11 @@ def qualify_platform(
         window = evidence_window(payload)
         window.require_current(completed_at, phase="qualification completion")
         payload["qualificationWindow"] = window.to_dict()
+    if output_archive is not None:
+        payload["testOutputArchive"] = {
+            "path": output_archive.name,
+            "digest": sha256_file(output_archive),
+        }
     record = RecordEnvelope(
         record_type="platformQualification",
         created_at=completed_at,

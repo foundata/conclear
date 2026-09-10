@@ -676,6 +676,137 @@
       ]
     },
     {
+      "group": true,
+      "help": "Create and verify compressed release and rescan evidence.",
+      "name": "archive",
+      "parameters": []
+    },
+    {
+      "dependencies": {
+        "profile": "required",
+        "registryAccess": "read",
+        "registryControl": false,
+        "signing": "verify",
+        "tools": [
+          "cosign"
+        ],
+        "transparencyLog": true
+      },
+      "group": false,
+      "help": "Retry archival of a completed run without publishing or rescanning.",
+      "name": "archive create",
+      "parameters": [
+        {
+          "declarations": [
+            "run_id"
+          ],
+          "kind": "argument",
+          "multiple": false,
+          "name": "run_id",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "declarations": [
+            "--include-image-layers"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_image_layers",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "declarations": [
+            "--archive-dir"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "archive_directory",
+          "required": true,
+          "type": "directory"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
+      "dependencies": {
+        "profile": "required",
+        "registryAccess": "none",
+        "registryControl": false,
+        "signing": "verify",
+        "tools": [
+          "cosign"
+        ],
+        "transparencyLog": true
+      },
+      "group": false,
+      "help": "Verify archive checksums, image metadata and retained Sigstore attestations.",
+      "name": "archive verify",
+      "parameters": [
+        {
+          "declarations": [
+            "path"
+          ],
+          "kind": "argument",
+          "multiple": false,
+          "name": "path",
+          "required": true,
+          "type": "file"
+        },
+        {
+          "declarations": [
+            "--profile"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "profile_name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "choices": [
+            "human",
+            "json"
+          ],
+          "declarations": [
+            "--format"
+          ],
+          "default": "human",
+          "kind": "option",
+          "multiple": false,
+          "name": "output_format",
+          "required": false,
+          "type": "choice"
+        }
+      ]
+    },
+    {
       "dependencies": {
         "profile": "optional",
         "registryAccess": "none",
@@ -1468,6 +1599,27 @@
           "type": "text"
         },
         {
+          "declarations": [
+            "--include-image-layers"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_image_layers",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "declarations": [
+            "--archive-dir"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "archive_directory",
+          "required": true,
+          "type": "directory"
+        },
+        {
           "choices": [
             "human",
             "json"
@@ -1771,6 +1923,27 @@
         },
         {
           "declarations": [
+            "--include-image-layers"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_image_layers",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "declarations": [
+            "--archive-dir"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "archive_directory",
+          "required": true,
+          "type": "directory"
+        },
+        {
+          "declarations": [
             "--resume"
           ],
           "kind": "option",
@@ -1834,7 +2007,7 @@
         "transparencyLog": true
       },
       "group": false,
-      "help": "Re-evaluate retained SBOMs for one immutable released subject.",
+      "help": "Rescan a released digest and retain its assessment in a compressed archive.",
       "name": "rescan",
       "parameters": [
         {
@@ -1844,8 +2017,18 @@
           "kind": "option",
           "multiple": false,
           "name": "subject_text",
-          "required": true,
+          "required": false,
           "type": "text"
+        },
+        {
+          "declarations": [
+            "--archive"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "archive_path",
+          "required": false,
+          "type": "file"
         },
         {
           "declarations": [
@@ -1877,6 +2060,27 @@
           "name": "profile_name",
           "required": true,
           "type": "text"
+        },
+        {
+          "declarations": [
+            "--include-image-layers"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_image_layers",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "declarations": [
+            "--archive-dir"
+          ],
+          "kind": "option",
+          "multiple": false,
+          "name": "archive_directory",
+          "required": true,
+          "type": "directory"
         },
         {
           "declarations": [
@@ -2249,6 +2453,13 @@
     "success": 0
   },
   "schemas": [
+    {
+      "dialect": "https://json-schema.org/draft/2020-12/schema",
+      "file": "archive.schema.json",
+      "id": "https://github.com/foundata/conclear/schemas/archive.schema.json",
+      "schemaVersion": 1,
+      "title": "ConClear evidence archive manifest"
+    },
     {
       "dialect": "https://json-schema.org/draft/2020-12/schema",
       "file": "config.schema.json",

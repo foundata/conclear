@@ -57,16 +57,12 @@ def _environment(root: Path, *, xdg: bool = False) -> dict[str, str]:
         "XDG_CONFIG_HOME": str(config) if xdg else "",
         "XDG_STATE_HOME": str(state) if xdg else "",
         "secure_storage": str(root / "secure storage"),
-        "evidence_dir": str(root / "evidence"),
-        "operations_dir": str(root / "operations"),
         "TAR_OPTIONS": "--exclude=*",
     }
     environment.pop("keep", None)
     for directory in (
         config / "conclear",
         state / "conclear" / "pins",
-        Path(environment["evidence_dir"]),
-        Path(environment["operations_dir"]),
     ):
         directory.mkdir(parents=True)
         (directory / "record").write_text("preserved\n", encoding="utf-8")
@@ -119,7 +115,7 @@ def test_backup_restores_files_modes_and_links_without_overwriting_previous_arch
         with tarfile.open(archive) as content:
             assert all(not member.name.startswith("/") for member in content)
             content.extractall(restored, filter="data")
-        assert len(list(restored.rglob("record"))) == 4
+        assert len(list(restored.rglob("record"))) == 2
         key = next(restored.rglob("cosign.key"))
         assert key.read_text(encoding="utf-8") == "test signing key\n"
         assert key.stat().st_mode & 0o777 == 0o600
@@ -127,7 +123,7 @@ def test_backup_restores_files_modes_and_links_without_overwriting_previous_arch
         assert key.with_name("key-link").readlink() == Path("cosign.key")
 
 
-@pytest.mark.parametrize("missing", ["evidence_dir", "secure_storage"])
+@pytest.mark.parametrize("missing", ["XDG_CONFIG_HOME", "secure_storage"])
 def test_backup_rejects_missing_sources_or_storage(
     tmp_path: Path, backup_script: str, missing: str
 ) -> None:
@@ -146,7 +142,7 @@ def test_backup_rejects_destination_inside_a_source(
     tmp_path: Path, backup_script: str, nested: bool
 ) -> None:
     environment = _environment(tmp_path)
-    destination = Path(environment["evidence_dir"])
+    destination = Path(environment["HOME"]) / ".config/conclear"
     if nested:
         destination /= "backups"
         destination.mkdir()

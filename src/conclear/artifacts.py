@@ -609,6 +609,18 @@ def _qualification_payload_paths(
         if Path(name).name != name:
             raise InvalidInvocationError("Qualification scan path is unsafe")
         paths.append(report_root / name)
+    if payload.get("testOutputArchive") is not None:
+        output = _narrow.object_value(
+            payload["testOutputArchive"], "test output archive"
+        )
+        if output.get("path") != "test-outputs.tar":
+            raise InvalidInvocationError(
+                "Qualification test output archive path is unsafe"
+            )
+        path = report_root / "test-outputs.tar"
+        if sha256_file(path) != output.get("digest"):
+            raise InvalidInvocationError("Qualification test output archive changed")
+        paths.append(path)
     return tuple(paths)
 
 

@@ -54,6 +54,7 @@ from conclear.test_inputs import (
     preparation_declaration,
     remove_materialized_test_inputs,
 )
+from conclear.test_output_archive import retain_test_outputs
 from conclear.workspace import (
     ResourceKind,
     ResourceStatus,
@@ -75,6 +76,7 @@ class RuntimeEvidence:
     incomplete: bool
     test_inputs: dict[str, object]
     dependencies: tuple[dict[str, object], ...]
+    output_archive: Path | None = None
 
 
 def test_platform(
@@ -273,6 +275,7 @@ def test_platform(
         dependency_values = tuple(
             {**value, "testResultDigest": report_digest} for value in dependency_values
         )
+        output_archive = retain_test_outputs(report_path.parent, input_observation)
     except BaseException:
         inputs.workspace.journal.mark_failed(resource_id)
         _cleanup_test_session(
@@ -307,6 +310,7 @@ def test_platform(
         incomplete=incomplete,
         test_inputs=input_observation,
         dependencies=dependency_values,
+        output_archive=output_archive,
     )
 
 

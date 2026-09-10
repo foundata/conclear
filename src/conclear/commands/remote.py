@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 
 from conclear.adapters.registry_backends import create_registry_control
+from conclear.archive import prepare_archive_directory
 from conclear.artifacts import (
     load_candidate,
     load_published,
@@ -39,7 +40,9 @@ from conclear.services.run_context import SourceRun, open_source_run
 from conclear.services.verification import verify_candidate
 from conclear.workspace import RunState
 
+from .archive import archive_completed_run, archive_details
 from .common import (
+    archive_options,
     cache_home,
     ci_context,
     emit,
@@ -236,15 +239,26 @@ def verify_command(
 @click.argument("run_id")
 @click.option("release_version", "--version")
 @required_profile_option
+@archive_options
 @format_option
 def promote_command(
     run_id: str,
     release_version: str | None,
     profile_name: str,
     output_format: str,
+    archive_directory: Path,
+    include_image_layers: bool,
 ) -> None:
     """Apply release tags to only the verified digest and remove the candidate."""
     source_run, selected = _remote_run(run_id, profile_name, "promote")
+    archive_directory = prepare_archive_directory(
+        archive_directory,
+        excluded=(
+            source_run.repository.path.parent,
+            state_home() / "conclear",
+            cache_home() / "conclear",
+        ),
+    )
     image = _image(source_run)
     candidate = load_candidate(source_run.workspace, image)
     published = load_published(source_run.workspace, candidate, image)
@@ -276,6 +290,12 @@ def promote_command(
         )
     finally:
         registry_control.close()
+    archive = archive_completed_run(
+        run_id,
+        selected=selected,
+        directory=archive_directory,
+        include_image_layers=include_image_layers,
+    )
     emit(
         CommandResult(
             "promote",
@@ -286,7 +306,10 @@ def promote_command(
                 else "Verified digest promoted; candidate cleanup failed"
             ),
             findings=result.findings,
+            details=archive_details(archive),
             data={
+                "runId": run_id,
+                "archive": archive.to_dict(),
                 "tags": [
                     {"tag": tag, "digest": str(digest)} for tag, digest in result.tags
                 ],
@@ -311,6 +334,7 @@ def promote_command(
 @click.option("image_id", "--image")
 @click.option("release_version", "--version")
 @required_profile_option
+@archive_options
 @click.option("resume_id", "--resume")
 @passphrase_option
 @format_option
@@ -323,9 +347,19 @@ def release_command(
     resume_id: str | None,
     passphrase_fd: int | None,
     output_format: str,
+    archive_directory: Path,
+    include_image_layers: bool,
 ) -> None:
     """Execute or resume the complete isolated release through promotion."""
     selected = profile(profile_name)
+    archive_directory = prepare_archive_directory(
+        archive_directory,
+        excluded=(
+            source_root,
+            state_home() / "conclear",
+            cache_home() / "conclear",
+        ),
+    )
     require_profile_capabilities(selected, COMMAND_DEPENDENCIES["release"])
     _private_key(selected)
     passphrase = signing_passphrase(selected, passphrase_fd, required=True)
@@ -360,6 +394,12 @@ def release_command(
                 ci_context=observed_ci,
             )
         )
+    archive = archive_completed_run(
+        result.run_id,
+        selected=selected,
+        directory=archive_directory,
+        include_image_layers=include_image_layers,
+    )
     emit(
         CommandResult(
             "release",
@@ -370,7 +410,9 @@ def release_command(
                 else "Verified digest promoted; candidate cleanup failed"
             ),
             findings=result.findings,
+            details=archive_details(archive),
             data={
+                "archive": archive.to_dict(),
                 "runId": result.run_id,
                 "workspace": str(result.workspace),
                 "subject": result.subject,

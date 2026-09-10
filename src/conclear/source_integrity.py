@@ -17,6 +17,11 @@ def source_tree_digest(root: Path) -> str:
     but symlinks are never followed. Git index flags and clean filters cannot
     hide byte changes from this observation.
     """
+    return sha256_bytes(canonical_json_bytes(source_tree_entries(root)))
+
+
+def source_tree_entries(root: Path) -> list[dict[str, object]]:
+    """Describe checkout bytes, modes and links without following symbolic links."""
     if root.is_symlink() or not root.is_dir():
         raise InvalidInvocationError("Source checkout is not a regular directory")
     entries: list[dict[str, object]] = []
@@ -70,9 +75,7 @@ def source_tree_digest(root: Path) -> str:
                 entries.append(entry)
     except OSError as exc:
         raise OperationalError("Unable to hash source checkout") from exc
-    return sha256_bytes(
-        canonical_json_bytes(sorted(entries, key=lambda entry: str(entry["path"])))
-    )
+    return sorted(entries, key=lambda entry: str(entry["path"]))
 
 
 def require_source_integrity(workspace: RunWorkspace, root: Path) -> None:

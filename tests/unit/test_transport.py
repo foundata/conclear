@@ -218,6 +218,7 @@ def coordinator_workspace(
             "sourceRevision": source_revision,
             "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "sourceTreeDigest": source_tree_digest(source_root),
             "image": "app",
             "version": version or "",
         },
@@ -445,6 +446,34 @@ def test_export_reports_digests_and_excludes_run_internals(
     assert manifest["recordType"] == "qualificationTransport"
     assert manifest["runId"] == WORKER_IDS[AMD64]
     assert manifest["payload"]["qualificationRecordDigest"] == amd64.record_digest
+
+
+def test_declared_output_archive_survives_worker_transport(
+    tmp_path: Path, setup: Setup
+) -> None:
+    worker = setup.amd64
+    path = worker.workspace.root / "reports/app/linux-amd64/test-outputs.tar"
+    with tarfile.open(path, "w") as archive:
+        header = tarfile.TarInfo("result/data.json")
+        header.size = 2
+        archive.addfile(header, io.BytesIO(b"{}"))
+    digest = sha256_file(path)
+
+    def declare(record: dict[str, Any]) -> None:
+        record["payload"]["testOutputArchive"] = {"path": path.name, "digest": digest}
+        record["payload"]["payloadDigests"].append(digest)
+
+    worker.rewrite_record(declare)
+    exported = export(worker, tmp_path / "outputs.tar")
+    assert (
+        _tar_member(exported.path, "reports/linux-amd64/test-outputs.tar")
+        == path.read_bytes()
+    )
+    imported = _import(tmp_path, setup, exported.path, exported.transport_digest)
+    retained = next(
+        item for item in imported.transport.payload_paths if item.name == path.name
+    )
+    assert retained.read_bytes() == path.read_bytes()
 
 
 def test_export_refuses_existing_destinations_and_unaccepted_qualifications(

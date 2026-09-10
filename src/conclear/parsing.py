@@ -86,11 +86,11 @@ def toml_integer(value: object) -> int:
     return value
 
 
-def json_value(text: str, *, label: str) -> object:
+def json_value(text: str | bytes, *, label: str) -> object:
     """Decode tool JSON output without claiming a trusted type."""
     try:
         value: object = json.loads(text)
-    except (json.JSONDecodeError, RecursionError) as exc:
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise OperationalError(f"{label} did not return valid JSON") from exc
     if not structure_depth_is_bounded(value):
         raise OperationalError(f"{label} JSON exceeds the nesting limit")

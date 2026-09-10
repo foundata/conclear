@@ -421,6 +421,12 @@ virtual-machine resources.
 CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration
 ```
 
+The native archive-signature test also requires
+`CONCLEAR_TEST_PUBLIC_SIGSTORE=1`. It generates a disposable key, writes
+synthetic non-secret statements to the public transparency log and verifies
+saved bundles without registry access. The test removes its private key;
+transparency entries are permanent.
+
 The run ID becomes part of an OCI repository name, so it must be lowercase.
 
 On SELinux hosts, label the manifest-owned parent of `--basetemp` as

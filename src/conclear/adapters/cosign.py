@@ -299,6 +299,47 @@ class CosignAdapter(ToolAdapter):
                 values.append(json_value(line, label="Cosign signature"))
         return tuple(values)
 
+    def verify_attestation_bundle(
+        self,
+        *,
+        bundle: Path,
+        subject: OCIReference,
+        public_key: Path,
+        predicate_type: str,
+    ) -> VerificationObservation:
+        """Verify retained Sigstore material without retrieving registry evidence."""
+        self._require_digest(subject)
+        before = read_regular_file(
+            bundle, maximum_bytes=MAX_COSIGN_RESPONSE_BYTES, label="attestation bundle"
+        )
+        self._execute_release(
+            (
+                "verify-blob-attestation",
+                "--bundle",
+                str(bundle),
+                "--key",
+                str(public_key),
+                "--digest",
+                str(subject.digest).removeprefix("sha256:"),
+                "--digestAlg",
+                "sha256",
+                "--type",
+                "spdxjson"
+                if predicate_type == "https://spdx.dev/Document"
+                else predicate_type,
+            ),
+            secret_paths=(public_key,),
+            check_code="CC0701",
+        )
+        after = read_regular_file(
+            bundle, maximum_bytes=MAX_COSIGN_RESPONSE_BYTES, label="attestation bundle"
+        )
+        if before != after:
+            raise OperationalError("Attestation bundle changed during verification")
+        return VerificationObservation(
+            subject, (json_value(before, label="attestation bundle"),)
+        )
+
     def _cosign_write(
         self,
         arguments: tuple[str, ...],

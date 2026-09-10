@@ -42,6 +42,7 @@ from conclear.tools import SUPPORTED_TOOLS, ToolName
 INVENTORY_SCHEMA_VERSION = 1
 INVENTORY_PATH = Path("docs/compatibility-inventory.json")
 SCHEMA_NAMES = (
+    "archive",
     "config",
     "profile",
     "proposal",

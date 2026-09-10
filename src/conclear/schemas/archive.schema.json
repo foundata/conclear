@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/foundata/conclear/schemas/archive.schema.json",
+  "title": "ConClear evidence archive manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "runId", "subject", "imageId", "members", "configurationDigest", "recordPath", "source", "imageLayers", "releaseArchiveDigest", "signedEvidence"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"enum": ["release", "rescan"]},
+    "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"},
+    "subject": {"type": "string", "minLength": 1},
+    "imageId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+    "configurationDigest": {"$ref": "#/$defs/digest"},
+    "recordPath": {"enum": ["records/release-verification.json", "records/rescan-result.json"]},
+    "source": {"type": "boolean"},
+    "imageLayers": {"type": "boolean"},
+    "releaseArchiveDigest": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+    "members": {"type": "array", "minItems": 1, "maxItems": 99999, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "size", "digest"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size": {"type": "integer", "minimum": 0},
+        "digest": {"$ref": "#/$defs/digest"}
+      }
+    }},
+    "signedEvidence": {"type": "array", "minItems": 1, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "subject", "predicateType"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^signatures/[a-f0-9]{64}\\.sigstore\\.json$"},
+        "subject": {"type": "string", "minLength": 1},
+        "predicateType": {"type": "string", "pattern": "^https://"}
+      }
+    }}
+  },
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}}
+}

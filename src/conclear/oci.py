@@ -6,6 +6,7 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import override
 
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import structure_depth_is_bounded
@@ -303,7 +304,7 @@ class LayoutValidator:
         for layer in layers:
             existing = self._check_descriptor(layer)
             if existing is None:
-                self._read_blob(layer, retain=False)
+                self._verify_layer(layer)
                 self._remember_descriptor(layer)
         self._manifests[descriptor.digest] = ManifestObservation(
             descriptor=descriptor,
@@ -312,6 +313,9 @@ class LayoutValidator:
             layers=layers,
             config_data=config_value,
         )
+
+    def _verify_layer(self, descriptor: Descriptor) -> None:
+        self._read_blob(descriptor, retain=False)
 
     def _read_blob(self, descriptor: Descriptor, *, retain: bool) -> bytes:
         path = (
@@ -436,6 +440,21 @@ def graph_fingerprint(graph: OCIGraph) -> tuple[tuple[object, ...], ...]:
 def validate_layout(layout_path: Path, *, reference: str | None = None) -> OCIGraph:
     """Validate an OCI image layout and return its verified graph."""
     return LayoutValidator(layout_path).validate(reference=reference)
+
+
+class _MetadataValidator(LayoutValidator):
+    @override
+    def _verify_layer(self, descriptor: Descriptor) -> None:
+        pass
+
+
+def validate_layout_metadata(layout_path: Path) -> OCIGraph:
+    """Check archived manifests/configuration, without asserting layer availability.
+
+    This is only for evidence inspection. Release, import and rescan paths use
+    `validate_layout`, which requires every referenced layer's bytes.
+    """
+    return _MetadataValidator(layout_path).validate()
 
 
 def _decode_json(content: bytes, digest: Digest) -> object:

@@ -20,6 +20,7 @@ import conclear.commands.remote as remote_commands
 import conclear.commands.transport as transport_commands
 import conclear.services.preflight as preflight_module
 import conclear.services.release as release_module
+from conclear.archive import ArchiveResult
 from conclear.cli import main
 from conclear.config import load_repository_config
 from conclear.dependencies import (
@@ -153,8 +154,25 @@ class FakeSourceRun:
 @pytest.fixture
 def invoke(
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Callable[[list[str]], tuple[int, Any, str]]:
+    archives = tmp_path / "archives"
+    archives.mkdir()
+    result = ArchiveResult(archives / "evidence.tar.gz", DIGEST, 100, DIGEST)
+    monkeypatch.setattr(
+        remote_commands, "archive_completed_run", lambda *args, **kwargs: result
+    )
+    monkeypatch.setattr(
+        maintenance_commands, "archive_completed_run", lambda *args, **kwargs: result
+    )
+
     def run(arguments: list[str]) -> tuple[int, Any, str]:
+        if (
+            arguments[0] in {"release", "promote", "rescan"}
+            and "--archive-dir" not in arguments
+        ):
+            arguments = [*arguments, "--archive-dir", str(archives)]
         capsys.readouterr()
         exit_code = main([*arguments, "--format", "json"])
         captured = capsys.readouterr()
@@ -945,7 +963,7 @@ def test_publish_attest_verify_and_promote_report_their_observations(
     assert code == 64
 
     code, value, _ = invoke(["promote", run_id, "--profile", "production"])
-    assert code == 0
+    assert code == 0, value
     assert value["message"].endswith("candidate cleanup failed")
     assert value["data"]["candidateDeleted"] is False
     assert value["data"]["immutabilityEnabled"] is False
@@ -1027,7 +1045,7 @@ def test_release_command_validates_selection_and_reports_promotion(
     code, value, _ = invoke(
         ["release", "--profile", "production", "--revision", "v1", "--image", "app"]
     )
-    assert code == 0
+    assert code == 0, value
     assert value["message"].startswith("Release completed")
     assert value["data"]["subject"] == result.subject
     assert executed[0].revision == "v1"

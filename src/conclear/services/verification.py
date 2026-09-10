@@ -196,8 +196,8 @@ def verify_candidate(
         "signer": {"mode": signer_mode, "keyId": signer_key_id},
         "evidence": {
             "platformQualifications": list(evidence.qualification_digests),
-            "scanResults": list(evidence.scan_digests),
-            "sboms": [digest for _platform, _path, digest in evidence.sboms],
+            "scanResults": sorted(set(evidence.scan_digests)),
+            "sboms": sorted({digest for _platform, _path, digest in evidence.sboms}),
             "provenance": evidence.provenance_digest,
             "candidateRecord": evidence.candidate_record_digest,
         },

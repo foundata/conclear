@@ -98,6 +98,7 @@ class _Qualification:
     payload_digests: tuple[str, ...]
     source: SourceIdentity
     configuration_digest: str
+    source_tree_digest: str
     ruleset: dict[str, object]
     tools: tuple[tuple[str, str], ...]
     database_digest: str
@@ -179,6 +180,13 @@ def assemble_candidate(
     if first.configuration_digest != sha256_bytes(repository.raw_bytes):
         raise InvalidInvocationError(
             "Qualifications do not match the selected repository configuration"
+        )
+    if any(
+        item.source_tree_digest != snapshot.immutable_inputs.get("sourceTreeDigest")
+        for item in qualifications
+    ):
+        raise InvalidInvocationError(
+            "Qualifications do not match the release-run source bytes"
         )
     for item in qualifications[1:]:
         if item.source != first.source:
@@ -475,6 +483,9 @@ def _read_qualification(
             revision=source_revision,
         ),
         configuration_digest=configuration_digest,
+        source_tree_digest=_narrow.string_value(
+            payload.get("sourceTreeDigest"), "source tree digest"
+        ),
         ruleset=ruleset,
         tools=tuple(sorted(normalized_tools)),
         database_digest=database_digest,

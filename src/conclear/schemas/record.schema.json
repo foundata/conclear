@@ -559,8 +559,9 @@
     "platformQualification": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageId", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "buildExecution", "testExecution", "runtimeConstraints", "testInputs", "testImageDependencies", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest", "databaseMetadata", "qualificationWindow", "findings"],
+      "required": ["imageId", "sourceTreeDigest", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "buildExecution", "testExecution", "runtimeConstraints", "testInputs", "testImageDependencies", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest", "databaseMetadata", "qualificationWindow", "findings"],
       "properties": {
+        "sourceTreeDigest": {"$ref": "#/$defs/digest"},
         "imageId": {"type": "string"},
         "platform": {"$ref": "#/$defs/platform"},
         "layoutDescriptor": {"$ref": "#/$defs/descriptor"},
@@ -577,6 +578,7 @@
         "testInputs": {"$ref": "#/$defs/testInputs"},
         "testImageDependencies": {"type": "array", "items": {"$ref": "#/$defs/testImageDependency"}},
         "testResults": {"type": "array", "items": {"$ref": "#/$defs/testResult"}},
+        "testOutputArchive": {"type": "object", "additionalProperties": false, "required": ["path", "digest"], "properties": {"path": {"const": "test-outputs.tar"}, "digest": {"$ref": "#/$defs/digest"}}},
         "sbom": {"type": "object", "additionalProperties": false, "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"const": "SPDX-2.3"}}},
         "scans": {"type": "array", "items": {"$ref": "#/$defs/scan"}},
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
@@ -707,9 +709,12 @@
       "additionalProperties": false,
       "required": ["subject", "releaseRecordDigest", "platformManifests", "scanner", "databaseDigest", "databaseMetadata", "scope", "findings", "appliedExceptions", "triage", "previousResultDigest", "authoritative", "remediation"],
       "properties": {
+        "sourceTreeDigest": {"$ref": "#/$defs/digest"},
+        "releaseArchiveDigest": {"$ref": "#/$defs/digest"},
         "subject": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
         "releaseRecordDigest": {"$ref": "#/$defs/digest"},
         "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
+        "scanResults": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "sbomDigest", "reportDigest"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "sbomDigest": {"$ref": "#/$defs/digest"}, "reportDigest": {"$ref": "#/$defs/digest"}}}},
         "scanner": {"type": "string"},
         "databaseDigest": {"$ref": "#/$defs/digest"},
         "databaseMetadata": {"$ref": "#/$defs/databaseMetadata"},

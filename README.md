@@ -353,8 +353,11 @@ Policy descriptions appear in public release evidence.**
 
 ```sh
 version=1.2.3
+archives=/srv/archives/conclear
+mkdir -p "$archives"
 conclear doctor --profile foundata --version "$version"
-conclear release --revision HEAD --version "$version" --profile foundata
+conclear release --revision HEAD --version "$version" --profile foundata \
+  --archive-dir "$archives"
 ```
 
 Replace `HEAD` with a Git tag or commit to release another revision. With the
@@ -362,10 +365,14 @@ configuration above, a successful release creates `1.2.3` and updates `latest`
 to the same digest. Use a new version if its final tag already names different
 image bytes.
 
-Keep the reported run ID for evidence export, cleanup or resuming an interrupted
-run. Optionally [retain the release evidence](./docs/evidence-retention.md) so
-you can review its test and scan reports and rescan the image later. Then remove
-the run's temporary resources and candidate tag:
+Every release writes a verified `.tar.gz` to the required `--archive-dir`.
+Use durable, backed-up storage outside the image repository. Keep the archives
+while the release is supported and for as long as you need its evidence.
+They contain source, reports, image metadata and signed attestations; signing
+keys, credentials and raw logs are excluded. Review source and reports before
+sharing. Add `--include-image-layers` to retain the image filesystem too.
+
+After checking that the archive is safely retained, clean up the reported run:
 
 ```sh
 conclear cleanup "<run-id>" --profile foundata
@@ -377,12 +384,19 @@ conclear cleanup "<run-id>" --profile foundata
 From the same repository, with the original profile and tools:
 
 ```sh
-conclear release --resume "<run-id>" --profile foundata
+conclear release --resume "<run-id>" --profile foundata --archive-dir "$archives"
 ```
 
 If the qualification or candidate has expired, or required inputs have changed,
 start a new `release`. Clean up the abandoned run after retaining needed
 evidence.
+
+If publication succeeded but archiving failed, keep the workspace and retry
+only the archive:
+
+```sh
+conclear archive create "<run-id>" --profile foundata --archive-dir "$archives"
+```
 
 
 ### Updating image pins<a id="usage-pins"></a>
@@ -410,8 +424,8 @@ Run project tests and commit the Containerfile changes before releasing.
 Rescan a published image to check for newly disclosed vulnerabilities without
 rebuilding it. Use triage to record whether findings apply and track
 remediation. See
-[restore and rescan](./docs/evidence-retention.md#restore-and-rescan) for
-commands and [scheduling](./docs/evidence-retention.md#operate-the-schedule) for
+[restore and rescan](./docs/evidence-retention.md#rescan-on-a-restored-host) for
+commands and [scheduling](./docs/evidence-retention.md#scheduled-operation) for
 ongoing checks.
 
 
@@ -448,8 +462,8 @@ stderr.
 
 The [JSON schemas](./src/conclear/schemas/) define configuration, profiles,
 command results and release records. Follow the
-[retention recipe](./docs/evidence-retention.md) to archive reports and source
-for release reviews, troubleshooting and later rescans.
+[archive usage](./docs/evidence-retention.md) to verify retained reports and
+source for release reviews, troubleshooting and later rescans.
 
 
 ## Backup<a id="backup"></a>

@@ -47,10 +47,12 @@ repository, assemble and finish the release:
 conclear assemble --revision v1.2.3 --version 1.2.3 --profile foundata \
   --transport ./app-linux-amd64.tar "sha256:<transport-digest-a>" \
   --transport ./app-linux-arm64.tar "sha256:<transport-digest-b>" --format json
-conclear release --resume "<coordinator-run-id>" --profile foundata
+conclear release --resume "<coordinator-run-id>" --profile foundata \
+  --archive-dir "$archives"
 ```
 
 Use the `data.runId` returned by `assemble`. Complete the release before the
 reported qualification deadline; after expiry, qualify again with a fresh
-database. [Retain the release evidence](./evidence-retention.md), including
-worker archives and export JSON, before cleaning up the runs.
+database. Set `$archives` to existing durable storage outside the repository.
+The release tarball includes every platform's evidence and declared non-secret
+test outputs. Keep it before cleaning up the coordinator and workers.

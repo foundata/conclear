@@ -58,6 +58,7 @@ class Scenario:
                 "sourceRevision": "b" * 40,
                 "sourceRepository": self.repository.project.source,
                 "configurationDigest": sha256_bytes(self.repository.raw_bytes),
+                "sourceTreeDigest": DIGEST,
                 "image": "app",
                 "version": "1.2.3",
             },
@@ -77,6 +78,7 @@ class Scenario:
         pin = self.image.pins[0].reference
         value: dict[str, Any] = {
             "imageId": "app",
+            "sourceTreeDigest": DIGEST,
             "platform": "linux/amd64",
             "layoutDescriptor": self.graph.root.to_dict(),
             "manifestDigest": str(self.graph.manifests[0].descriptor.digest),

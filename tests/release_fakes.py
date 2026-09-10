@@ -58,6 +58,9 @@ def _write_blob(layout: Path, content: bytes) -> tuple[str, int]:
 class FakeBuilder:
     """Produce one valid OCI layout from observed build inputs."""
 
+    def __init__(self, *, layer: bytes | None = None) -> None:
+        self.layer = layer
+
     def build(self, **values: Any) -> BuildObservation:
         layout = values["layout_path"]
         platform = values["platform"]
@@ -80,6 +83,16 @@ class FakeBuilder:
             "org.opencontainers.image.licenses": "GPL-3.0-or-later",
             "org.opencontainers.image.title": "Example",
         }
+        layers: list[dict[str, object]] = []
+        if self.layer is not None:
+            digest, size = _write_blob(layout, self.layer)
+            layers.append(
+                {
+                    "mediaType": "application/vnd.oci.image.layer.v1.tar",
+                    "digest": digest,
+                    "size": size,
+                }
+            )
         config, config_size = _write_blob(
             layout,
             canonical_json_bytes(
@@ -87,7 +100,10 @@ class FakeBuilder:
                     "architecture": platform.architecture,
                     "os": platform.os,
                     "config": {"User": "10001", "Labels": labels},
-                    "rootfs": {"type": "layers", "diff_ids": []},
+                    "rootfs": {
+                        "type": "layers",
+                        "diff_ids": [item["digest"] for item in layers],
+                    },
                 }
             ),
         )
@@ -102,7 +118,7 @@ class FakeBuilder:
                         "digest": config,
                         "size": config_size,
                     },
-                    "layers": [],
+                    "layers": layers,
                 }
             ),
         )
@@ -226,14 +242,15 @@ class FakeTrivy:
         )
 
     def generate_spdx(self, **values: Any) -> ScanObservation:
+        platform = validate_layout(values["layout_path"]).platforms[0]
         return self._write(
             values["output_path"],
             {
                 "spdxVersion": "SPDX-2.3",
                 "dataLicense": "CC0-1.0",
                 "SPDXID": "SPDXRef-DOCUMENT",
-                "name": "app",
-                "documentNamespace": "https://example.invalid/spdx/app",
+                "name": f"app-{platform.key}",
+                "documentNamespace": f"https://example.invalid/spdx/app/{platform.key}",
                 "creationInfo": {
                     "creators": ["Tool: test"],
                     "created": "2026-01-01T00:00:00Z",
@@ -551,6 +568,25 @@ class FakeSigner(CosignAdapter):
             if str(subject) in self.signatures
             else ()
         )
+
+    @override
+    def verify_attestation_bundle(
+        self,
+        *,
+        bundle: Path,
+        subject: OCIReference,
+        public_key: Path,
+        predicate_type: str,
+    ) -> VerificationObservation:
+        value = load_json(bundle)
+        expected = self.verify_attestation(
+            subject=subject,
+            public_key=public_key,
+            predicate_type=predicate_type,
+        )
+        if value not in expected.entries:
+            raise OperationalError("Fake archive bundle signature verification failed")
+        return VerificationObservation(subject, (value,))
 
     def _store(
         self, subject: OCIReference, predicate_type: str, predicate: object

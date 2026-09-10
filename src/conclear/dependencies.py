@@ -103,6 +103,19 @@ COMMAND_DEPENDENCIES: Mapping[str, CommandDependencies] = {
         registry_access=RegistryAccess.READ,
     ),
     "transport export": CommandDependencies(tools=(ToolName.GIT,)),
+    "archive create": CommandDependencies(
+        tools=(ToolName.COSIGN,),
+        profile=ProfileUse.REQUIRED,
+        registry_access=RegistryAccess.READ,
+        signing=SigningUse.VERIFY,
+        transparency_log=True,
+    ),
+    "archive verify": CommandDependencies(
+        tools=(ToolName.COSIGN,),
+        profile=ProfileUse.REQUIRED,
+        signing=SigningUse.VERIFY,
+        transparency_log=True,
+    ),
     "assemble": CommandDependencies(tools=(ToolName.GIT,), profile=ProfileUse.OPTIONAL),
     "provenance": CommandDependencies(tools=(ToolName.GIT,)),
     "publish": CommandDependencies(
