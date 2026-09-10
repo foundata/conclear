@@ -94,7 +94,12 @@ def test_real_trivy_database_snapshot_layout_scan_and_spdx(
             layout_path=root / "layouts" / "amd64",
             layout_reference="fixture",
             source_epoch=946684800,
-            build_arguments={},
+            build_arguments={
+                "IMAGE_CREATED": "2000-01-01T00:00:00Z",
+                "IMAGE_REVISION": "a" * 40,
+                "IMAGE_SOURCE": "https://github.com/foundata/conclear",
+                "IMAGE_VERSION": "integration",
+            },
             auth_file=None,
         )
     finally:

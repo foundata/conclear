@@ -215,6 +215,7 @@ def compile_fixture(
             operation=OperationKind.WRITE,
         )
     )
+    (context / "conclear-fixture").chmod(0o755)
     return context
 
 

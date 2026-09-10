@@ -27,6 +27,7 @@ from conclear.services.qualification import (
 )
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.services.runtime_tests import test_platform as run_platform_tests
+from conclear.source_integrity import source_tree_digest
 from conclear.tools import SUPPORTED_TOOLS, ToolName, ToolResolver, ToolVersion
 from conclear.values import Platform
 from conclear.workspace import RunWorkspace
@@ -415,6 +416,7 @@ def test_real_exact_image_preparation_and_launch_inputs(
             "sourceRevision": "a" * 40,
             "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
+            "sourceTreeDigest": source_tree_digest(context),
             "image": "runtime",
             "version": "integration",
         },

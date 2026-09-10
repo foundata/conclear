@@ -276,11 +276,12 @@ def _scenario(
             "XDG_STATE_HOME": str(state_home),
             "XDG_CACHE_HOME": str(cache_home),
             "XDG_CONFIG_HOME": str(root / "config"),
-            "XDG_RUNTIME_DIR": str(root / "runtime"),
+            "XDG_RUNTIME_DIR": os.environ.get(
+                "XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"
+            ),
         },
     )
     (root / "home").mkdir(mode=0o700)
-    (root / "runtime").mkdir(mode=0o700)
     version = "0.0.1"
     run_ids: list[str] = []
     rejected_runs: list[str] = []
