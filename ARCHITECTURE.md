@@ -5,9 +5,10 @@ implemented by ConClear. It contains no planned or speculative behavior; future
 changes belong in [GitHub issues](https://github.com/foundata/conclear/issues)
 until their implementation and tests land with the contract change.
 
-Current implementation promises are marked with stable `IPnnnn` anchors. The
-generated [implementation matrix](./docs/implementation-1.0.0.md) links every
-promise to its production code and verification tests for this ConClear version.
+Current implementation promises are marked with stable implementation promise
+(IP) `IPnnnn` anchors. The generated
+[implementation matrix](./docs/implementation-1.0.0.md) links every promise to
+its production code and verification tests for this ConClear version.
 
 The
 [foundata OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
