@@ -7,7 +7,7 @@ until their implementation and tests land with the contract change.
 
 Current implementation promises are marked with stable implementation promise
 (IP) `IPnnnn` anchors. The generated
-[implementation matrix](./docs/implementation-1.0.0.md) links every promise to
+[implementation matrix](./docs/implementation.md) links every promise to
 its production code and verification tests for this ConClear version.
 
 The

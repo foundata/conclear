@@ -17,7 +17,7 @@ from conclear.identity import VERSION
 from conclear.jsonutil import atomic_write_bytes, structure_depth_is_bounded
 
 MATRIX_SCHEMA_VERSION = 1
-MATRIX_PATH = Path(f"docs/implementation-{VERSION}.md")
+MATRIX_PATH = Path("docs/implementation.md")
 ARCHITECTURE_PATH = Path("ARCHITECTURE.md")
 MATRIX_REFERENCE_PATHS = (
     ARCHITECTURE_PATH,

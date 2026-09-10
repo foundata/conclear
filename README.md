@@ -535,7 +535,7 @@ controls. The [guide-option inventory](./docs/guide-options-1.0.0.md) lists
 supported and unsupported choices.
 
 For implementation details, see [ARCHITECTURE.md](./ARCHITECTURE.md), the
-[implementation matrix](./docs/implementation-1.0.0.md) and the
+[implementation matrix](./docs/implementation.md) and the
 [compatibility inventory](./docs/compatibility-inventory.json).
 
 

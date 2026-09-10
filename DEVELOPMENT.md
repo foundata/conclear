@@ -101,7 +101,7 @@ conclear/
 │   ├── conformance.md            # Generated check catalog (do not edit by hand)
 │   ├── guide-options-1.0.0.md    # Generated guide-option support inventory
 │   ├── compatibility-inventory.json # Generated internal compatibility inventory
-│   ├── implementation-1.0.0.md   # Generated release-specific promise matrix
+│   ├── implementation.md         # Generated implementation promise matrix
 │   └── backup.md                 # Backup and archive retention
 ├── pyproject.toml                # Project configuration
 ├── uv.lock                       # Dependency lock file
@@ -808,8 +808,8 @@ stable `IPnnnn` promises marked in `ARCHITECTURE.md`. Its integer
 `schemaVersion` describes the internal matrix structure, while `productVersion`
 identifies the exact ConClear SemVer. Each entry summarizes one current behavior
 and links it to production modules and verification tests. The generated
-`docs/implementation-<product-version>.md` makes those links reviewable for one
-exact ConClear version. Never edit the generated Markdown by hand.
+`docs/implementation.md` makes those links reviewable for the ConClear version
+it names in its heading. Never edit the generated Markdown by hand.
 
 ```sh
 # Regenerate the matrix for the current package version
@@ -821,7 +821,7 @@ uv run python -m conclear.implementation --check
 
 Update the catalog when a promise, its implementation ownership or its
 verification changes. A package-version change also updates the catalog's
-`productVersion`, the versioned document path and links to it. The unit suite
+`productVersion` and the version named in the generated heading. The unit suite
 and release gate reject stale output, absent or unsafe paths, mismatched
 versions, duplicate identifiers and architecture promises missing from either
 side of the mapping.
@@ -923,7 +923,7 @@ uv run python -m conclear.guide_requirements --check
 # 8. Verify the generated compatibility inventory is current
 uv run python -m conclear.compatibility_inventory --check
 
-# 9. Verify the release-specific implementation matrix is current
+# 9. Verify the implementation promise matrix is current
 uv run python -m conclear.implementation --check
 
 # 10. Verify the supported-tools table is current
@@ -979,7 +979,8 @@ test workspaces and resource manifests outside the repository.
    `src/conclear/data/implementation.json` and
    `src/conclear/data/guide-options.json` aligned. Review version-specific prose
    and links in `README.md`, `ARCHITECTURE.md`, `DEVELOPMENT.md` and `docs/`.
-   Preserve earlier release-specific matrices as historical documents.
+   Each released tag carries the generated documents of its own revision, so no
+   earlier copy is kept in the working tree.
 
    Regenerate the lock file and every version-dependent document rather than
    editing generated output:

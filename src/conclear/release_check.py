@@ -335,7 +335,7 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
             "docs/compatibility-inventory.json",
             "docs/conformance.md",
             f"docs/guide-options-{VERSION}.md",
-            f"docs/implementation-{VERSION}.md",
+            "docs/implementation.md",
             "LICENSES/GPL-3.0-or-later.txt",
             "src/conclear/_embedded_identity.py",
         }

@@ -151,7 +151,7 @@ REQUIRED_SDIST = [
     "conclear-1.0.0/docs/compatibility-inventory.json",
     "conclear-1.0.0/docs/conformance.md",
     "conclear-1.0.0/docs/guide-options-1.0.0.md",
-    "conclear-1.0.0/docs/implementation-1.0.0.md",
+    "conclear-1.0.0/docs/implementation.md",
     "conclear-1.0.0/LICENSES/GPL-3.0-or-later.txt",
     "conclear-1.0.0/src/conclear/_embedded_identity.py",
 ]
