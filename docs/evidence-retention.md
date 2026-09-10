@@ -27,8 +27,10 @@ workspace or `reports/` tree.
 
 Checksums detect changed bytes. To verify publisher identity, use the signed
 registry attestations and an independently trusted public key. The bundle's
-local statement is unsigned. Back up registry signatures and referrers
-separately; neither this bundle nor `skopeo copy --all` preserves them all.
+local statement is unsigned. If you need
+[registry backup](./backup.md#registry-backup), preserve signatures and
+referrers separately; neither this bundle nor `skopeo copy --all` preserves them
+all.
 
 ## Export before cleanup
 

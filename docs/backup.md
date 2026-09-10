@@ -9,11 +9,19 @@ Criticality describes the impact of loss, not a mandatory retention period.
 | Release evidence bundles         | Platform transports/export JSON, release records, reports, checksums, complete original source with unchanged `conclear.toml`, rescan results and triage files. | Release review, troubleshooting and historical rescans.                | High while supported; afterward depends on review needs.                          | Reduce or delete after support and your review period end. Deleting reports loses detailed test and scan evidence. Losing the only original source/configuration copy can prevent rescans. Full bundles are unnecessary for rescans if original source/configuration and registry evidence remain available. |
 | Persistent state                 | `~/.local/state/conclear/`: `pins/`, `rescans/` and `runs/`. Treat it as sensitive.                                                                             | Pin-observation continuity, interrupted-run recovery and cleanup.      | High for pin history and unfinished runs; lower for reconstructible rescan state. | Delete run workspaces after retaining needed evidence and successful cleanup. Losing `pins/` loses observations; losing run journals complicates recovery and ownership checks. Local rescan history can be reconstructed from intact signed registry history. |
 | Operator records                 | Supported-release inventory, bundle locations, latest rescan digests, schedules, owners and recovery instructions.                                              | Tracking support, scheduling assessments and assigning follow-up work. | High for supported releases.                                                      | Retire scheduling entries when support ends, recording that decision. Keep historical entries while images or evidence remain retained. Loss leaves support status, obligations and archive locations uncertain. |
-| Registry content                 | Released manifests/layers, signatures and all attestations/referrers, including rescan history.                                                                 | Image pulls, evidence verification and later rescans.                  | Critical for those workflows.                                                     | Delete after support and download/verification commitments end, or after testing a complete backup restoration. Loss can prevent pulls, verification and rescans. Local evidence bundles do not replace registry content. |
+| Registry content                 | Released manifests/layers, signatures and all attestations/referrers, including rescan history.                                                                 | Image pulls, evidence verification and later rescans.                  | Critical for release continuity; backup optional if rebuilding is acceptable.     | Keep supported digests available while promised. Delete when support and download/verification commitments end. Without another copy, loss may require a new release and updated consumer pins; original verification and rescans can be lost. |
 
 Paths above use defaults; honor `XDG_CONFIG_HOME` and `XDG_STATE_HOME` when set.
 Use support status and review needs to set retention, not a blanket one-year
 cutoff. See [evidence retention](./evidence-retention.md) to export bundles.
+
+## Registry backup
+
+Registry backup is optional when rebuilding and updating consumers is an
+acceptable recovery strategy. Keep supported releases available in the registry.
+Use a separate backup if existing digests and their signed evidence must
+survive registry loss. Rebuilding can change the digest and does not restore
+the original signed evidence or rescan history.
 
 ## Daily local archive
 
@@ -24,7 +32,7 @@ selected sources. Add external keys, credentials and other operator files to
 
 Run with Bash and GNU tools, with read access to all selected files. Schedule
 daily while ConClear jobs and evidence exports are idle. This backs up local
-files only; arrange registry backup separately.
+files only.
 
 ```bash
 set -euo pipefail
