@@ -1,13 +1,13 @@
-# ConClear — container clearance before promotion
+# ConClear (container clearance before promotion)
 
 ConClear builds, tests and scans OCI container images, then signs and releases
 the digest that passed its checks. It applies the technical requirements of
 [foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
 without requiring you to maintain your own release scripts or CI service.
 
-Add a `conclear.toml` to your image repository and run `conclear release` from a
-Linux workstation or VM.
-
+> **Important:** ConClear is built for foundata's release process. You are
+> welcome to use it if you adopt the linked guide's requirements. Pull requests
+> to adapt ConClear to different release policies are out of scope.
 
 <!-- rumdl-disable MD033 -->
 <!-- HTML for consistent rendering across limited platform parsers -->
@@ -347,8 +347,10 @@ configuration above, a successful release creates `1.2.3` and updates `latest`
 to the same digest. Use a new version if its final tag already names different
 image bytes.
 
-Keep the reported run ID. [Retain its evidence](./docs/evidence-retention.md)
-before cleanup:
+Keep the reported run ID for evidence export, cleanup or resuming an interrupted
+run. [Retain the release evidence](./docs/evidence-retention.md) so you can
+review its test and scan reports and rescan the image later. Then remove the
+run's temporary resources and candidate tag:
 
 ```sh
 conclear cleanup "<run-id>" --profile foundata
@@ -390,67 +392,19 @@ Run project tests and commit the Containerfile changes before releasing.
 
 ### Rescans and triage<a id="usage-rescan-triage"></a>
 
-Use the released digest and the
-[retained source checkout](./docs/evidence-retention.md#restore-and-rescan) with
-its unchanged `conclear.toml`:
-
-```sh
-conclear rescan --subject "quay.io/foundata/example@sha256:<digest>" \
-  --config /path/to/retained-source/conclear.toml \
-  --profile foundata --authoritative --format json
-```
-
-`--authoritative` signs and publishes the result; omit it for a local
-diagnostic. For later rescans, add `--previous-result <recordDigest>` using the
-latest authoritative result's `data.recordDigest`.
-
-Add `--triage-file triage.json` to record vulnerability decisions using the
-[triage schema](./src/conclear/schemas/triage.schema.json). Each decision must
-name the exact subject, platform, component and advisory. See
-[evidence retention and scheduling](./docs/evidence-retention.md) for ongoing
-operation.
+Rescan a published image to check for newly disclosed vulnerabilities without
+rebuilding it. Use triage to record whether findings apply and track
+remediation. See
+[restore and rescan](./docs/evidence-retention.md#restore-and-rescan) for
+commands and [scheduling](./docs/evidence-retention.md#operate-the-schedule) for
+ongoing checks.
 
 
 ### Distributed qualification<a id="usage-distributed"></a>
 
-Declare both `linux/amd64` and `linux/arm64` in `images.platforms`. Use the same
-source revision, release version, ConClear and host-tool versions on every
-worker. Qualify and export the first platform:
-
-```sh
-conclear qualify --revision v1.2.3 --version 1.2.3 \
-  --platform linux/amd64 --format json
-conclear transport export "<worker-run-a>" --platform linux/amd64 \
-  --output ./app-linux-amd64.tar --format json
-```
-
-Take `data.databaseDigest` and `data.qualificationWindow.startedAt` from the
-qualification result. Copy its database snapshot from
-`${XDG_CACHE_HOME:-$HOME/.cache}/conclear/trivy/snapshots/<digest-without-sha256-prefix>`
-to the same cache-relative path on the next worker:
-
-```sh
-conclear qualify --revision v1.2.3 --version 1.2.3 \
-  --platform linux/arm64 --database-digest "sha256:<database-digest>" \
-  --qualification-started-at "<startedAt>" --format json
-conclear transport export "<worker-run-b>" --platform linux/arm64 \
-  --output ./app-linux-arm64.tar --format json
-```
-
-Copy both archives to the release machine. Obtain each `data.transportDigest`
-directly from its worker, separately from the archive. From the matching source
-repository, assemble and finish the release:
-
-```sh
-conclear assemble --revision v1.2.3 --version 1.2.3 --profile foundata \
-  --transport ./app-linux-amd64.tar "sha256:<transport-digest-a>" \
-  --transport ./app-linux-arm64.tar "sha256:<transport-digest-b>" --format json
-conclear release --resume "<coordinator-run-id>" --profile foundata
-```
-
-Use the `data.runId` returned by `assemble`. Complete the release before the
-reported qualification deadline; after expiry, qualify again with a fresh
-database. Retain the worker archives before cleaning up their runs.
+To build and test platforms on separate machines, follow
+[distributed qualification](./docs/distributed-qualification.md), then assemble
+and release the combined image from one machine.
 
 
 ### Command help<a id="usage-commands"></a>
@@ -480,7 +434,7 @@ stderr.
 The [JSON schemas](./src/conclear/schemas/) define configuration, profiles,
 command results and release records. Follow the
 [retention recipe](./docs/evidence-retention.md) to archive reports and source
-alongside signed registry evidence.
+for release reviews, troubleshooting and later rescans.
 
 
 ## Conformance<a id="conformance"></a>

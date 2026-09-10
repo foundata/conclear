@@ -1,4 +1,4 @@
-"""Keep the README's configuration and command examples usable."""
+"""Keep the user guides' configuration and command examples usable."""
 
 import re
 import shlex
@@ -16,10 +16,10 @@ from conclear.release_profile import load_release_profile
 README = Path(__file__).resolve().parents[2] / "README.md"
 
 
-def _blocks(language: str) -> list[str]:
+def _blocks(language: str, *, document: Path = README) -> list[str]:
     return re.findall(
         rf"^```{language}\n(.*?)^```$",
-        README.read_text(encoding="utf-8"),
+        document.read_text(encoding="utf-8"),
         re.MULTILINE | re.DOTALL,
     )
 
@@ -61,8 +61,21 @@ def test_readme_release_profile_loads_with_protected_credentials(
     assert profile.cosign_private_key == str(directory / "cosign.key")
 
 
-def test_readme_conclear_commands_parse_without_invoking_operations() -> None:
-    for block in (*_blocks("sh"), *_blocks("bash")):
+@pytest.mark.parametrize(
+    ("relative_path", "language"),
+    [
+        ("README.md", "sh"),
+        ("README.md", "bash"),
+        ("docs/distributed-qualification.md", "sh"),
+        ("docs/evidence-retention.md", "sh"),
+    ],
+)
+def test_documented_conclear_commands_parse_without_invoking_operations(
+    relative_path: str, language: str
+) -> None:
+    blocks = _blocks(language, document=README.parent / relative_path)
+    assert blocks
+    for block in blocks:
         for line in block.replace("\\\n", " ").splitlines():
             if not line.startswith("conclear "):
                 continue

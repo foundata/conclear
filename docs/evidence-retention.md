@@ -130,9 +130,11 @@ qualification is allowed. `--authoritative` signs and publishes the result;
 omit it for a local diagnostic.
 
 For later rescans, add `--previous-result` with the latest verified
-authoritative `data.recordDigest`. Use `--triage-file` for new vulnerability
-decisions instead of editing the retained configuration. Keep each rescan's
-JSON result and non-secret `rescan-result.json`, scans and SBOMs.
+authoritative `data.recordDigest`. Add `--triage-file triage.json` for new
+vulnerability decisions instead of editing the retained configuration. Follow
+the [triage schema](../src/conclear/schemas/triage.schema.json); each decision
+must name the exact subject, platform, component and advisory. Keep each
+rescan's JSON result and non-secret `rescan-result.json`, scans and SBOMs.
 
 See the [rescan reference](../ARCHITECTURE.md#rescans) for verification rules
 and scan scopes.
