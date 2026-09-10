@@ -1,8 +1,6 @@
 # Release evidence and later rescans
 
-This recipe uses existing ConClear commands and ordinary files on a managed
-host. It needs no CI service. The operator owns the archive location, access
-permissions, backups, supported-release inventory and rescan schedule.
+Archive each release before cleanup. Use its retained source for later rescans.
 
 ## Contents
 
@@ -13,49 +11,39 @@ permissions, backups, supported-release inventory and rescan schedule.
 
 ## What to retain
 
-Keep a bundle for each released repository and digest. A version or `latest`
-alone is not a stable archive key. The bundle contains:
+Keep one bundle per repository and released digest, containing:
 
-- One accepted qualification transport per platform, with its export result.
-  Each transport includes the exact qualification, OCI layout, SBOM, raw scan
-  reports and test report named by the qualification, plus a member manifest.
-- The candidate record, provenance statement, release-verification record and
-  its statement, and the release summary naming the promoted digest and tags.
-- The reviewed source checkout, including the exact `conclear.toml`,
-  Containerfiles, build contexts, test fixtures and hook scripts.
-- Selected non-secret generated test artifacts when a reviewer needs their
-  bytes. The standard transport includes their observations and content
-  digests, not every generated output directory.
+- A qualification transport and export JSON per platform: image, SBOM, scans
+  and test report.
+- Release records and summary.
+- The complete release source, including its unchanged `conclear.toml`.
+- Any needed non-secret generated test outputs; transports retain their hashes,
+  not all output files.
 
-Qualification and predicate hashes do not replace these files. Preserve the
-ConClear and guide identities recorded in the evidence, and access to a
-ConClear distribution that can read those record schemas.
+Keep access to a compatible ConClear distribution. Store logs, release profiles,
+keys, credentials, environment directories and secret inputs separately with
+restricted access. Review the bundle before sharing; never publish a whole run
+workspace or `reports/` tree.
 
-Keep command logs, release profiles, private keys, registry authentication,
-environment directories and secret test inputs outside the bundle. Logs can
-contain application output even when ConClear redacts its own secrets. The
-archive starts private; review its source, scan reports and test content before
-sharing it. Do not recursively publish a run workspace or its `reports/` tree.
-
-The local release-verification statement is an unsigned convenience copy of
-the statement signed in the registry. A checksum manifest detects changed
-archive bytes; it does not establish publisher identity. Consumers obtain the
-trusted public key independently and verify the registry attestations that
-authenticate the evidence digests. Registry backups must separately preserve
-the signed envelopes, verification material and every subject's referrers;
-neither this bundle nor `skopeo copy --all` is a complete registry backup.
+Checksums detect changed bytes. To verify publisher identity, use the signed
+registry attestations and an independently trusted public key. The bundle's
+local statement is unsigned. Back up registry signatures and referrers
+separately; neither this bundle nor `skopeo copy --all` preserves them all.
 
 ## Export before cleanup
 
-Run this while the successful release workspace, source checkout and selected
-Git executable are still available and unchanged. `transport export` rechecks
-the source and recorded tool identity; it does not impose a new qualification
-age limit. Stop other work on the run while collecting its files.
+Keep the release workspace, source and recorded Git executable unchanged until
+export finishes. Stop concurrent work on the run.
 
-For a single-host release with `linux/amd64`, set `RUN_ID` to the successful
-release run and `BUNDLE` to a new absolute directory under your retention
-location. Its parent directory must already exist. The following Bash commands
-refuse an existing destination:
+For a single-host release, set `RUN_ID` to the completed run and `BUNDLE` to a
+new absolute directory whose parent exists. The Bash example below exports
+`linux/amd64`; repeat the export for every platform, adjusting filenames.
+
+For distributed releases, replace the export command with copies of the
+original worker transports and export JSON, using the filenames below. Check
+their transport digests against the coordinator's candidate record. Use the
+coordinator's `RUN_ID` for the remaining files; it cannot re-export imported
+qualifications.
 
 ```bash
 set -euo pipefail
@@ -82,35 +70,12 @@ tar --exclude='./.git' -C "${run}/source" \
   -cf "${BUNDLE}/source.tar" .
 ```
 
-Repeat the export for every required platform before finalizing the archive.
-Use the platform key in the filenames, for example `platform-linux-arm64.tar`.
-Keep the JSON result: `data.transportDigest` identifies the archive and
-`data.recordDigest` identifies the qualification bound by the candidate.
+If needed, review and add outputs declared non-secret from the worker's
+`reports/<image>/<platform>/test-inputs/outputs/<name>/`. Preserve paths and
+executable modes without following links outside that output. Include any
+extra archives in the checksum list below.
 
-For distributed qualification, retain the original transport from each worker
-and its export result when it is sent to the coordinator. Check its recorded
-transport digest against the coordinator's candidate record. Imported
-qualifications retain their worker run IDs, so a coordinator cannot re-export
-them as its own qualifications. Copy the coordinator's selected release
-records, summary and source checkout as above; do not copy its whole workspace.
-
-Non-secret generated test outputs, when needed, live below
-`reports/<image>/<platform>/test-inputs/outputs/<name>/` in the worker run.
-Select only outputs declared non-secret, review their contents and copy their
-files without following links outside that output. Preserve their paths,
-executable modes and the recorded tree-digest observation. Secret outputs are
-deliberately destroyed and have no place in this bundle. Add any supplementary
-artifact archives to the checksum list below.
-
-The copied source tree, unlike a new export from today's working checkout,
-contains the configuration that the release actually used. Verify its recorded
-digest after restoration. The transport verifies its qualification's payload
-bytes during export; release verification binds the candidate, qualifications,
-scans, SBOMs and provenance. Check those bindings when reviewing a restored
-bundle against the signed registry statement, not just the local statement.
-
-After all exports and reviewed additions are present, create and verify the
-archive checksums:
+After collecting every platform, create and verify the checksums:
 
 ```bash
 (
@@ -121,19 +86,16 @@ archive checksums:
 )
 ```
 
-Copy the completed bundle to the retained location and check `SHA256SUMS`
-there. Test retrieval and source restoration before running ConClear cleanup
-or deleting the worker and coordinator workspaces. Record the archive location
-and a protected copy of its checksum manifest in the supported-release
-inventory. Publish the reviewed bundle through an existing release-asset or
-download location when consumers need it; recording a path on a maintainer's
-laptop does not make the files accessible to them.
+Back up the bundle, verify `SHA256SUMS` at its destination and test restoration
+before cleanup. Record its location and a protected checksum manifest in your
+supported-release inventory. Share reviewed bundles through your release or
+download location when consumers need access.
 
 ## Restore and rescan
 
-Restore only an archive you trust, into a new directory separate from the
-current image checkout. `RESTORED` below is that new absolute directory, with an
-existing parent. Keep the restored files unchanged:
+Use a trusted bundle. Set `RESTORED` to a new absolute directory whose parent
+exists. Restore the complete source and keep it unchanged; `conclear.toml`
+alone is insufficient.
 
 ```bash
 set -euo pipefail
@@ -153,10 +115,9 @@ actual="$(sha256sum "${RESTORED}/conclear.toml" | cut -d ' ' -f 1)"
 test "sha256:${actual}" = "${expected}"
 ```
 
-Take `SUBJECT` from the protected supported-release inventory and confirm it
-matches the bundle's summary. It is a tag-free reference such as
-`quay.io/example/app@sha256:<digest>`. For an image named `app` and protected
-profile named `foundata`, its first authoritative rescan is:
+Set `SUBJECT` from your protected inventory and check it against the bundle's
+summary. Use a digest reference such as `quay.io/example/app@sha256:<digest>`.
+For image `app` and profile `foundata`, run the first authoritative rescan:
 
 ```sh
 conclear rescan --subject "${SUBJECT}" \
@@ -164,73 +125,45 @@ conclear rescan --subject "${SUBJECT}" \
   --profile foundata --authoritative --format json
 ```
 
-This command verifies the original signed registry evidence and its
-configuration digest. It selects a fresh Trivy database, assesses every
-platform and signs a new result without rebuilding or executing the old source.
-The original qualification can be expired. An SBOM-only scope performs current
-vulnerability matching, while `full-image` also repeats secret and configuration
-scans. Both currently retrieve the released image graph from the registry, so
-the command needs registry availability even when the bundle is local.
+Rescans need registry access, even with a local bundle. An expired original
+qualification is allowed. `--authoritative` signs and publishes the result;
+omit it for a local diagnostic.
 
-A digest can have several valid release records after a repeat release. The
-first rescan selects the earliest accepted record matching the retained
-configuration, with its content digest breaking timestamp ties. Each platform
-SBOM must match both its signed image subject and a hash in that release record.
-Identical attestations are deduplicated; conflicting source, platform, builder
-or signer identities stop the rescan. The signed result records
-`releaseRecordDigest`, which all later rescans keep, even if another release
-record appears. Missing anchored evidence stops the rescan.
+For later rescans, add `--previous-result` with the latest verified
+authoritative `data.recordDigest`. Use `--triage-file` for new vulnerability
+decisions instead of editing the retained configuration. Keep each rescan's
+JSON result and non-secret `rescan-result.json`, scans and SBOMs.
 
-The complete retained checkout matters: configuration loading checks referenced
-Containerfiles, contexts and test files even though a rescan does not build
-them. Copying only `conclear.toml` may fail. Editing it, including changing an
-exception or rescan scope, changes its digest and is not a way to rescan the old
-release. Triage decisions use the separately supported `--triage-file` input.
-
-Keep the rescan's JSON result and non-secret `rescan-result.json`, scans and
-SBOMs from its run. For each later rescan, pass the latest verified
-authoritative `data.recordDigest` as `--previous-result` in addition to the
-arguments above. ConClear verifies that it is the signed history's current
-head. Omitting it cannot start a new clock for an already observed finding.
-Retain the signed history and protected local state across scheduler jobs.
+See the [rescan reference](../ARCHITECTURE.md#rescans) for verification rules
+and scan scopes.
 
 ## Operate the schedule
 
-Keep the cleanup owner and procedure in the protected profile current. Review
-abandoned runs regularly, including uploads whose acknowledgement was lost.
-After retaining their evidence, run `conclear cleanup RUN_ID --profile foundata`
-and check the reported result before discarding local ownership state. Native
-expiration and auto-prune reduce dependence on this review, but their workers
-still need monitoring. Manual cleanup mode requires no registry policy API.
+Use a systemd timer or cron job on a managed host; no CI service is needed.
+Serialize rescans for each digest. Provide retained source, supported tools,
+protected credentials, persistent `XDG_STATE_HOME`, cache space and network
+access. Assign owners for triage, rebuilds and cleanup.
 
-If ownership state is lost, reconcile candidate tags with retained run records
-before deleting them. Do not sweep version tags, moving tags or referrers for
-supported digests. An expired authorization prevents ConClear promotion; it
-does not prove that the registry has deleted the tag or collected its content.
+Only accept a new history head when the result has `data.authoritative = true`
+and a non-null `data.verifiedAt`:
 
-A systemd timer or cron job can run one authoritative rescan per due digest
-under an existing managed account. Serialize work for the same digest. The
-account needs the retained configuration, supported tools, protected release
-credentials, a persistent `XDG_STATE_HOME`, database cache space and network
-access. The timer or cron entry does not provide failure notifications by
-itself; arrange monitoring and a named responder.
+|                Outcome                | Action |
+| ------------------------------------- | ------ |
+| Exit 0, verified authoritative result | Retain the result; update the inventory's history head and assessment time. |
+| Exit 2, verified authoritative result | Make the same updates; alert the triage owner and track remediation. |
+| Failure or interruption               | Keep the previous head and assessment time; retain protected diagnostics and recover. |
 
-Handle the result before updating the inventory:
+After an interrupted publication or a rescan on another host, reconcile with
+verified registry history before retrying `--previous-result`. Preserve signed
+history and protected local state; test recovery of that state and keys.
 
-|                         Outcome                         | Operator action |
-| ------------------------------------------------------- | --------------- |
-| Exit 0 with a verified authoritative result             | Retain the result, advance the history head and last-assessment time, and schedule the next assessment. |
-| Exit 2 with a verified authoritative result             | Retain and advance the same fields, alert the triage owner and track remediation. A rejecting verdict is still a completed assessment. |
-| Operational failure, invalid invocation or interruption | Keep the prior completed-assessment time and history head, retain protected diagnostics and arrange recovery. |
+Monitor failed jobs and overdue releases. Keep the inventory's next assessment
+date, support status and replacement digest current. Arrange alerts to a named
+responder; ConClear does not schedule work, send advisories or rebuild images.
 
-Require `data.authoritative = true` and a non-null `data.verifiedAt` before
-accepting a new history head. A diagnostic rescan never advances it. If a
-process died after attaching a result, or another authorized host rescanned the
-digest, reconcile with the verified registry history instead of discarding
-state or repeatedly retrying an obsolete `--previous-result`.
-
-Monitor overdue inventory entries as well as failed processes. A powered-off
-host produces neither a clean verdict nor a process failure notification.
-Preserve and test recovery of pin observations, rescan history and keys; record
-support termination and replacement digests explicitly. ConClear does not
-operate this schedule, send advisories or release a corrected image on its own.
+Review abandoned runs regularly. After retaining their evidence, run
+`conclear cleanup RUN_ID --profile foundata` and verify success before deleting
+local state. Monitor registry expiration and auto-prune too; expiration alone
+does not confirm deletion. If ownership state is lost, reconcile candidate tags
+with retained run records before deletion. Never sweep release tags, moving
+tags or referrers for supported digests.
