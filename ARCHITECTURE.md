@@ -841,7 +841,7 @@ archives reference their source archive by SHA-256; retain it alongside them.
 Current signed registry history supplies the next predecessor, and an archived
 authoritative checkpoint must remain present. No completed run is reactivated.
 Archive storage, support inventory, schedules and backups remain operator
-duties. See [archive usage](./docs/evidence-retention.md).
+duties. See [archive usage](./README.md#usage-archives).
 
 
 ## Tool execution<a id="tool-execution"></a>

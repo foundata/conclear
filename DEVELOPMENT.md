@@ -102,7 +102,7 @@ conclear/
 │   ├── guide-options-1.0.0.md    # Generated guide-option support inventory
 │   ├── compatibility-inventory.json # Generated internal compatibility inventory
 │   ├── implementation-1.0.0.md   # Generated release-specific promise matrix
-│   └── evidence-retention.md     # Evidence export and historical rescans
+│   └── backup.md                 # Backup and archive retention
 ├── pyproject.toml                # Project configuration
 ├── uv.lock                       # Dependency lock file
 ├── src/conclear/                 # Main package

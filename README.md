@@ -32,16 +32,18 @@ without requiring you to maintain your own release scripts or CI service.
   - [Updating](#installation-update)
   - [Miscellaneous notes](#installation-misc)
 - [Usage](#usage)
-  - [Getting started](#usage-getting-started)
-  - [Checking locally](#usage-check)
-  - [Setting up release access](#usage-access)
-  - [Running a release](#usage-release)
-  - [Resuming an interrupted run](#usage-resume)
-  - [Updating image pins](#usage-pins)
-  - [Rescans and triage](#usage-rescan-triage)
-  - [Distributed qualification](#usage-distributed)
-  - [Command help](#usage-commands)
-  - [JSON output and exit codes](#usage-json-exit-codes)
+  - [Configuration (Host)](#usage-host-config)
+  - [Configuration (Container repos)](#usage-repo-config)
+  - [Quick start: Running a release](#usage-release)
+  - [Advanced](#usage-advanced)
+    - [Checking locally](#usage-check)
+    - [Resuming an interrupted run](#usage-resume)
+    - [Archives](#usage-archives)
+    - [Updating image pins](#usage-pins)
+    - [Rescans and triage](#usage-rescan-triage)
+    - [Distributed qualification](#usage-distributed)
+    - [Command help](#usage-commands)
+    - [JSON output and exit codes](#usage-json-exit-codes)
 - [Records and schemas](#records-schemas)
 - [Backup](#backup)
 - [Conformance](#conformance)
@@ -166,17 +168,24 @@ installation steps with supported versions. Finish active runs before updating.
 
 ### Miscellaneous notes<a id="installation-misc"></a>
 
-- Run ConClear as a normal user with working rootless Podman and Buildah.
-- Use a Linux login session with a user-owned, mode-0700 `XDG_RUNTIME_DIR`,
-  normally `/run/user/<uid>`.
-- For systemd targets on SELinux hosts, enable cgroup management with
-  `sudo setsebool -P container_manage_cgroup on`.
-- From a configured image repository, run `conclear doctor --scope qualify` to
-  check local prerequisites. Use the [release check](#usage-release) for signing
-  and registry access.
+ConClear runs on a native Linux host with rootless Podman and Buildah. Continue
+with [host configuration](#usage-host-config) before your first release.
+
+
+## Usage<a id="usage"></a>
+
+The examples use a release profile named `foundata`. Run repository commands
+from the image repository's root; add `--image <id>` when it has multiple
+release images.
+
+
+### Configuration (Host)<a id="usage-host-config"></a>
+
+Use a normal user account and a Linux login session with a user-owned,
+mode-0700 `XDG_RUNTIME_DIR`, normally `/run/user/<uid>`.
 
 On SELinux hosts, label ConClear's private state directory for container storage
-before the first build. Keep SELinux enforcing:
+before the first build:
 
 ```sh
 state="${XDG_STATE_HOME:-$HOME/.local/state}/conclear"
@@ -184,19 +193,83 @@ install -d -m 0700 "$state"
 chcon -t container_file_t "$state"
 ```
 
-Repeat the label setup after a filesystem relabel or when changing the state
-directory. Do not relabel your entire home directory.
+Keep SELinux enforcing. Repeat this after a filesystem relabel or state path
+change; do not relabel your entire home directory. For systemd targets, also run
+`sudo setsebool -P container_manage_cgroup on`.
+
+Reuse your organization's release profile and signing key if available.
+Otherwise, create credentials and an encrypted key outside source repositories:
+
+```sh
+umask 077
+install -d -m 0700 "$HOME/.config/conclear"
+podman login --authfile "$HOME/.config/conclear/auth.json" quay.io
+cosign generate-key-pair --output-key-prefix "$HOME/.config/conclear/cosign"
+```
+
+Obtain a Quay API token with tag read, write and delete access and store it in
+`~/.config/conclear/quay.token`. Create `~/.config/conclear/foundata.toml`
+(or `$XDG_CONFIG_HOME/conclear/foundata.toml` if set), adjusting paths,
+ownership and policy choices:
+
+```toml
+schema_version = 1
+ci_context = "observe"
+auth_file = "~/.config/conclear/auth.json"
+cosign_private_key = "~/.config/conclear/cosign.key"
+cosign_public_key = "~/.config/conclear/cosign.pub"
+
+[builder]
+id = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+
+[registry]
+provider = "quay"
+host = "quay.io"
+api_url = "https://quay.io/api/v1"
+token_file = "~/.config/conclear/quay.token"
+
+[registry.tag_protection]
+mode = "not-enforced"
+rationale = "Selective version-tag protection is unavailable on this deployment."
+owner = "Release maintainer"
+
+[registry.candidate_cleanup]
+mode = "tag-expiration"
+owner = "Release maintainer"
+procedure = "Review abandoned runs daily; run conclear cleanup before discarding state."
+```
+
+Keep the profile and secret files owned by your user with mode `0600`.
+Reuse the profile across repositories. Set `builder.id` to the URL documenting
+your build environment; use foundata's identity only for that environment.
+
+Where selective tag protection is available, enable it for version tags,
+exclude `latest` and candidates, and set `tag_protection.mode = "required"`
+without `rationale` or `owner`. This also needs repository and organization
+policy-read access. Cleanup can use `manual` or `auto-prune` instead of
+`tag-expiration`; keep an owner and procedure in every case. See
+[registry options](./ARCHITECTURE.md#publication-and-promotion).
+
+ConClear prompts for the signing passphrase. For automation, configure a
+protected `passphrase_file` or use `--passphrase-fd`. **Never put secrets in
+command-line values, ordinary environment variables or repository files.
+Policy descriptions appear in public release evidence.**
+
+Create an archive directory on durable, backed-up storage writable by your
+release user, outside source repositories and ConClear working directories:
+
+```sh
+archives=/srv/archives/conclear
+install -d -m 0700 "$archives"
+```
+
+Back up keys and host settings separately; see [backup](./docs/backup.md).
 
 
-## Usage<a id="usage"></a>
+### Configuration (Container repos)<a id="usage-repo-config"></a>
 
-Run these commands from your image repository's root. With multiple release
-images, add `--image <id>` to select one.
-
-
-### Getting started<a id="usage-getting-started"></a>
-
-Generate a configuration from your existing Containerfile:
+Create a Quay destination repository and grant your release account writer
+access. From your source repository's root, generate a configuration:
 
 ```sh
 conclear adopt --output conclear.toml
@@ -263,8 +336,38 @@ Use `one-shot` or `systemd` instead of `service` where appropriate. For root,
 sudo, writable-root requirements or test fixtures, use the
 [configuration reference](./ARCHITECTURE.md#configuration-and-trust-inputs).
 
+Commit the configuration, Containerfile and test inputs. Builds use the selected
+Git revision, not uncommitted changes. You can [check locally](#usage-check)
+before releasing.
 
-### Checking locally<a id="usage-check"></a>
+
+### Quick start: Running a release<a id="usage-release"></a>
+
+From a configured repository on your configured host:
+
+```sh
+version=1.2.3
+archives=/srv/archives/conclear
+conclear doctor --profile foundata --version "$version"
+conclear release --revision HEAD --version "$version" --profile foundata \
+  --archive-dir "$archives"
+```
+
+Replace `HEAD` with a Git tag or commit to release another revision. With the
+configuration above, this publishes `1.2.3`, updates `latest` to the same digest
+and writes a verified `.tar.gz` to `--archive-dir`. Use a new version if its
+final tag already names different image bytes.
+
+After checking that the archive is safely retained, clean up the reported run:
+
+```sh
+conclear cleanup "<run-id>" --profile foundata
+```
+
+
+### Advanced<a id="usage-advanced"></a>
+
+#### Checking locally<a id="usage-check"></a>
 
 ```sh
 version=1.2.3
@@ -274,10 +377,8 @@ conclear pins check
 conclear doctor --scope qualify
 ```
 
-Fix reported errors, then commit the configuration, Containerfile and test
-inputs. Builds use the selected Git revision, not uncommitted changes.
-
-To build, test and scan one platform without publishing:
+Fix errors and commit changes. To build, test and scan one platform without
+publishing:
 
 ```sh
 conclear qualify --revision HEAD --version "$version" --platform linux/amd64
@@ -286,100 +387,7 @@ conclear qualify --revision HEAD --version "$version" --platform linux/amd64
 This separate qualification is optional; `release` runs its own checks.
 
 
-### Setting up release access<a id="usage-access"></a>
-
-Create a Quay destination repository and grant your release account writer
-access. Obtain a Quay API token with tag read, write and delete access.
-
-Reuse your organization's release profile and key if available. For first-time
-setup, create credentials and a new encrypted key outside the image repository:
-
-```sh
-umask 077
-install -d -m 0700 "$HOME/.config/conclear"
-podman login --authfile "$HOME/.config/conclear/auth.json" quay.io
-cosign generate-key-pair --output-key-prefix "$HOME/.config/conclear/cosign"
-```
-
-Store the API token in `~/.config/conclear/quay.token`. Create
-`~/.config/conclear/foundata.toml` (or `$XDG_CONFIG_HOME/conclear/foundata.toml`
-if set), adjusting paths, ownership and policy choices:
-
-```toml
-schema_version = 1
-ci_context = "observe"
-auth_file = "~/.config/conclear/auth.json"
-cosign_private_key = "~/.config/conclear/cosign.key"
-cosign_public_key = "~/.config/conclear/cosign.pub"
-
-[builder]
-id = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
-
-[registry]
-provider = "quay"
-host = "quay.io"
-api_url = "https://quay.io/api/v1"
-token_file = "~/.config/conclear/quay.token"
-
-[registry.tag_protection]
-mode = "not-enforced"
-rationale = "Selective version-tag protection is unavailable on this deployment."
-owner = "Release maintainer"
-
-[registry.candidate_cleanup]
-mode = "tag-expiration"
-owner = "Release maintainer"
-procedure = "Review abandoned runs daily; run conclear cleanup before discarding state."
-```
-
-Keep the profile and secret files owned by your user with mode `0600`.
-Reuse the profile across repositories. Set `builder.id` to the URL documenting
-your build environment; use foundata's identity only for that environment.
-
-Where selective tag protection is available, enable it for version tags,
-exclude `latest` and candidates, and set `tag_protection.mode = "required"`
-without `rationale` or `owner`. This also needs repository and organization
-policy-read access. Cleanup can use `manual` or `auto-prune` instead of
-`tag-expiration`; keep an owner and procedure in every case. See
-[registry options](./ARCHITECTURE.md#publication-and-promotion).
-
-ConClear prompts for the signing passphrase. For automation, configure a
-protected `passphrase_file` or use `--passphrase-fd`. **Never put secrets in
-command-line values, ordinary environment variables or repository files.
-Policy descriptions appear in public release evidence.**
-
-
-### Running a release<a id="usage-release"></a>
-
-```sh
-version=1.2.3
-archives=/srv/archives/conclear
-mkdir -p "$archives"
-conclear doctor --profile foundata --version "$version"
-conclear release --revision HEAD --version "$version" --profile foundata \
-  --archive-dir "$archives"
-```
-
-Replace `HEAD` with a Git tag or commit to release another revision. With the
-configuration above, a successful release creates `1.2.3` and updates `latest`
-to the same digest. Use a new version if its final tag already names different
-image bytes.
-
-Every release writes a verified `.tar.gz` to the required `--archive-dir`.
-Use durable, backed-up storage outside the image repository. Keep the archives
-while the release is supported and for as long as you need its evidence.
-They contain source, reports, image metadata and signed attestations; signing
-keys, credentials and raw logs are excluded. Review source and reports before
-sharing. Add `--include-image-layers` to retain the image filesystem too.
-
-After checking that the archive is safely retained, clean up the reported run:
-
-```sh
-conclear cleanup "<run-id>" --profile foundata
-```
-
-
-### Resuming an interrupted run<a id="usage-resume"></a>
+#### Resuming an interrupted run<a id="usage-resume"></a>
 
 From the same repository, with the original profile and tools:
 
@@ -391,15 +399,43 @@ If the qualification or candidate has expired, or required inputs have changed,
 start a new `release`. Clean up the abandoned run after retaining needed
 evidence.
 
-If publication succeeded but archiving failed, keep the workspace and retry
-only the archive:
+
+#### Archives<a id="usage-archives"></a>
+
+`release`, `promote` and `rescan` require `--archive-dir` and report each
+archive's path, size and SHA-256 digest. Release archives contain exact source
+and configuration, SBOMs, scan and test reports, image metadata and signed
+attestations. Add `--include-image-layers` to retain image layers too.
+
+Signing keys, credentials, protected profiles, raw logs, private test outputs
+and scanner database caches are excluded. Source and reports may still be
+sensitive; review archives before sharing them.
+
+Keep archives while the release is supported and for your chosen review period
+afterward. Keep referenced source archives beside their rescans. See
+[backup](./docs/backup.md) for retention and separate key backups.
+
+Verify an archive against your trusted profile key:
+
+```sh
+bundle="$archives/<archive-name>.tar.gz"
+conclear archive verify "$bundle" --profile foundata
+```
+
+Verification needs Cosign trust data but not registry access. Unsigned
+diagnostic rescans are not signed release evidence.
+
+If a release or rescan completed but archiving failed, keep its workspace and
+retry the archive without publishing or rescanning:
 
 ```sh
 conclear archive create "<run-id>" --profile foundata --archive-dir "$archives"
 ```
 
+Clean up the run only after the archive is safely retained.
 
-### Updating image pins<a id="usage-pins"></a>
+
+#### Updating image pins<a id="usage-pins"></a>
 
 Generate a proposal at a new path:
 
@@ -419,24 +455,43 @@ git diff
 Run project tests and commit the Containerfile changes before releasing.
 
 
-### Rescans and triage<a id="usage-rescan-triage"></a>
+#### Rescans and triage<a id="usage-rescan-triage"></a>
 
 Rescan a published image to check for newly disclosed vulnerabilities without
-rebuilding it. Use triage to record whether findings apply and track
-remediation. See
-[restore and rescan](./docs/evidence-retention.md#rescan-on-a-restored-host) for
-commands and [scheduling](./docs/evidence-retention.md#scheduled-operation) for
-ongoing checks.
+rebuilding it. Use its release archive or latest rescan archive, with the
+referenced source archive beside it:
+
+```sh
+archives=/srv/archives/conclear
+bundle="$archives/<archive-name>.tar.gz"
+conclear rescan --archive "$bundle" --profile foundata \
+  --authoritative --archive-dir "$archives"
+```
+
+On a restored host, install ConClear and its supported tools, then restore
+the protected profile, trusted public key and registry access separately.
+Authoritative rescans also need the signing key. No import of old run workspaces
+is needed. The image and signed history must still exist in the registry, even
+when the archive includes layers.
+
+Omit `--authoritative` for a diagnostic. Add `--triage-file triage.json` for
+reviewed vulnerability decisions; do not edit archived configuration.
+
+For ongoing checks, schedule a timer or cron job on a managed host and serialize
+rescans per digest. Keep the resulting archives, assign triage and rebuild
+owners, and alert on rejected, failed or overdue assessments. A completed
+authoritative assessment is retained even when its verdict is rejected (exit 2).
+Maintain your supported-release inventory and schedules separately.
 
 
-### Distributed qualification<a id="usage-distributed"></a>
+#### Distributed qualification<a id="usage-distributed"></a>
 
 To build and test platforms on separate machines, follow
 [distributed qualification](./docs/distributed-qualification.md), then assemble
 and release the combined image from one machine.
 
 
-### Command help<a id="usage-commands"></a>
+#### Command help<a id="usage-commands"></a>
 
 Use `conclear --help` to list commands and `conclear <command> --help` for
 options. `release` is the normal workflow; individual build, test, signing and
@@ -444,7 +499,7 @@ promotion commands are listed in the
 [command reference](./ARCHITECTURE.md#command-model).
 
 
-### JSON output and exit codes<a id="usage-json-exit-codes"></a>
+#### JSON output and exit codes<a id="usage-json-exit-codes"></a>
 
 Add `--format json` for machine-readable results on stdout. Diagnostics go to
 stderr.
@@ -461,9 +516,9 @@ stderr.
 ## Records and schemas<a id="records-schemas"></a>
 
 The [JSON schemas](./src/conclear/schemas/) define configuration, profiles,
-command results and release records. Follow the
-[archive usage](./docs/evidence-retention.md) to verify retained reports and
-source for release reviews, troubleshooting and later rescans.
+command results and release records. Use [archives](#usage-archives) to verify
+retained reports and source for release reviews, troubleshooting and later
+rescans.
 
 
 ## Backup<a id="backup"></a>
@@ -528,4 +583,5 @@ endorsement by the trademark holders.
 
 ## Author information<a id="author-information"></a>
 
-This project was created and is maintained by [foundata](https://foundata.com).
+This [project](https://foundata.com/en/projects/) was created and is maintained
+by [foundata](https://foundata.com/).

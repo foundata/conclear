@@ -8,6 +8,12 @@ the contribution workflow. Summary:
 - Send an email to the maintainer if you have something to discuss (no support
   requests).
 
+> **Important:** ConClear is built for foundata's release process. You are
+> welcome to use it if you adopt the
+> [foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
+> requirements but pull requests to adapt ConClear to different release policies
+> are out of scope.
+
 
 ## Issues
 

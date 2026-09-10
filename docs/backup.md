@@ -3,7 +3,7 @@
 Point `--archive-dir` at durable, backed-up storage. Keep the tarballs while
 releases are supported and for your chosen review period afterward. Keep
 referenced source archives beside their rescans and test retrieval with
-`conclear archive verify`. See [archive usage](./evidence-retention.md).
+`conclear archive verify`. See [archive usage](../README.md#usage-archives).
 
 Release/rescan archives exclude signing keys, credentials and raw logs. Source
 and reports may still be sensitive. Back up keys and durable state separately:

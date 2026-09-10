@@ -2,6 +2,7 @@
 
 import re
 import shlex
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -24,11 +25,19 @@ def _blocks(language: str, *, document: Path = README) -> list[str]:
     )
 
 
+def _configuration_block(table: str) -> str:
+    matches = [block for block in _blocks("toml") if table in tomllib.loads(block)]
+    assert len(matches) == 1
+    return matches[0]
+
+
 def test_readme_repository_example_loads_and_includes_latest(
     repository_factory: Callable[..., Path],
 ) -> None:
     directory = repository_factory()
-    (directory / "conclear.toml").write_text(_blocks("toml")[0], encoding="utf-8")
+    (directory / "conclear.toml").write_text(
+        _configuration_block("project"), encoding="utf-8"
+    )
 
     image = load_repository_config(directory / "conclear.toml").release_image(None)
 
@@ -48,7 +57,7 @@ def test_readme_release_profile_loads_with_protected_credentials(
         path.write_text("test credential\n", encoding="utf-8")
         path.chmod(0o600)
     path = directory / "foundata.toml"
-    path.write_text(_blocks("toml")[1], encoding="utf-8")
+    path.write_text(_configuration_block("registry"), encoding="utf-8")
     path.chmod(0o600)
 
     profile = load_release_profile("foundata", config_home=directory.parent)
@@ -67,7 +76,6 @@ def test_readme_release_profile_loads_with_protected_credentials(
         ("README.md", "sh"),
         ("README.md", "bash"),
         ("docs/distributed-qualification.md", "sh"),
-        ("docs/evidence-retention.md", "sh"),
     ],
 )
 def test_documented_conclear_commands_parse_without_invoking_operations(
