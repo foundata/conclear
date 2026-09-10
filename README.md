@@ -43,6 +43,7 @@ without requiring you to maintain your own release scripts or CI service.
   - [Command help](#usage-commands)
   - [JSON output and exit codes](#usage-json-exit-codes)
 - [Records and schemas](#records-schemas)
+- [Backup](#backup)
 - [Conformance](#conformance)
 - [Contributing](#contributing)
 - [Licensing, copyright](#licensing-copyright)
@@ -173,11 +174,11 @@ installation steps with supported versions. Finish active runs before updating.
   and registry access.
 
 
-
 ## Usage<a id="usage"></a>
 
 Run these commands from your image repository's root. With multiple release
 images, add `--image <id>` to select one.
+
 
 ### Getting started<a id="usage-getting-started"></a>
 
@@ -329,9 +330,9 @@ policy-read access. Cleanup can use `manual` or `auto-prune` instead of
 [registry options](./ARCHITECTURE.md#publication-and-promotion).
 
 ConClear prompts for the signing passphrase. For automation, configure a
-protected `passphrase_file` or use `--passphrase-fd`. Never put secrets in
+protected `passphrase_file` or use `--passphrase-fd`. **Never put secrets in
 command-line values, ordinary environment variables or repository files.
-Policy descriptions appear in public release evidence.
+Policy descriptions appear in public release evidence.**
 
 
 ### Running a release<a id="usage-release"></a>
@@ -348,9 +349,9 @@ to the same digest. Use a new version if its final tag already names different
 image bytes.
 
 Keep the reported run ID for evidence export, cleanup or resuming an interrupted
-run. [Retain the release evidence](./docs/evidence-retention.md) so you can
-review its test and scan reports and rescan the image later. Then remove the
-run's temporary resources and candidate tag:
+run. Optionally [retain the release evidence](./docs/evidence-retention.md) so
+you can review its test and scan reports and rescan the image later. Then remove
+the run's temporary resources and candidate tag:
 
 ```sh
 conclear cleanup "<run-id>" --profile foundata
@@ -435,6 +436,12 @@ The [JSON schemas](./src/conclear/schemas/) define configuration, profiles,
 command results and release records. Follow the
 [retention recipe](./docs/evidence-retention.md) to archive reports and source
 for release reviews, troubleshooting and later rescans.
+
+
+## Backup<a id="backup"></a>
+
+See [backup and retention](./docs/backup.md) for what to preserve, when it can
+be deleted, and a daily archive recipe for secure storage.
 
 
 ## Conformance<a id="conformance"></a>
