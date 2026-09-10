@@ -162,7 +162,6 @@ def test_link_validation_rejects_drift_and_unsafe_paths(tmp_path: Path) -> None:
     for path in (
         tmp_path / "README.md",
         tmp_path / "DEVELOPMENT.md",
-        tmp_path / "docs" / "quickstart.md",
     ):
         path.write_text(MATRIX_PATH.name, encoding="utf-8")
     matrix = ImplementationMatrix(

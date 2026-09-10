@@ -50,7 +50,7 @@ This file provides information for maintainers and contributors to `conclear`.
   [Hadolint](https://github.com/hadolint/hadolint), [Trivy](https://trivy.dev/)
   and [Cosign](https://docs.sigstore.dev/cosign/)** - Only for the opt-in local
   integration tier and for real releases. The default unit suite does not need
-  them. [`README.md`](./README.md#supported-tools) lists the accepted ranges and
+  them. [`README.md`](./README.md#installation) lists the accepted ranges and
   exact real-tool tested versions.
 
 Hermetic unit tests need no container tools, credentials or network access.
@@ -102,7 +102,7 @@ conclear/
 │   ├── guide-options-1.0.0.md    # Generated guide-option support inventory
 │   ├── compatibility-inventory.json # Generated internal compatibility inventory
 │   ├── implementation-1.0.0.md   # Generated release-specific promise matrix
-│   └── quickstart.md             # Project adoption quick start
+│   └── evidence-retention.md     # Evidence export and historical rescans
 ├── pyproject.toml                # Project configuration
 ├── uv.lock                       # Dependency lock file
 ├── src/conclear/                 # Main package
@@ -772,7 +772,7 @@ suite and the release gate fail while the committed inventory is stale.
 
 ## Generated supported-tools table<a id="supported-tools-table"></a>
 
-The table under [Supported tools](README.md#supported-tools) in the README is
+The table under [Installation](README.md#installation) in the README is
 rendered from the tool policies in `src/conclear/tools.py` between two HTML
 comment markers. Never edit it by hand; change the policy and regenerate. An
 accepted interval and its exclusions come from the flags and output fields the

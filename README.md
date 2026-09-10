@@ -1,21 +1,13 @@
 # ConClear — container clearance before promotion
 
-ConClear implements the technical parts of
-[foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md).
-It takes a container image from a reviewed source commit to a signed, verified
-and promoted digest:
+ConClear builds, tests and scans OCI container images, then signs and releases
+the digest that passed its checks. It applies the technical requirements of
+[foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
+without requiring you to maintain your own release scripts or CI service.
 
-`qualify` → `assemble` → `provenance` → `publish` → `attest` (sign) → `verify` →
-`promote`
+Add a `conclear.toml` to your image repository and run `conclear release` from a
+Linux workstation or VM.
 
-A container project adopts it by adding a repository configuration, making each
-Containerfile comply with the guide and declaring any runtime inputs its tests
-need.
-
-The publication backend is [Quay](https://quay.io/). A protected release profile
-chooses required version-tag protection or its reviewed absence, and an owned
-candidate-cleanup procedure. Native expiration or auto-prune is recommended;
-manual cleanup is supported.
 
 <!-- rumdl-disable MD033 -->
 <!-- HTML for consistent rendering across limited platform parsers -->
@@ -36,15 +28,20 @@ manual cleanup is supported.
 
 - [Features](#features)
 - [Installation](#installation)
+  - [Fedora](#installation-fedora)
+  - [Updating](#installation-update)
+  - [Miscellaneous notes](#installation-misc)
 - [Usage](#usage)
   - [Getting started](#usage-getting-started)
+  - [Checking locally](#usage-check)
+  - [Setting up release access](#usage-access)
   - [Running a release](#usage-release)
   - [Resuming an interrupted run](#usage-resume)
-  - [Composable commands](#usage-commands)
+  - [Updating image pins](#usage-pins)
+  - [Rescans and triage](#usage-rescan-triage)
   - [Distributed qualification](#usage-distributed)
+  - [Command help](#usage-commands)
   - [JSON output and exit codes](#usage-json-exit-codes)
-  - [Rescan triage](#usage-rescan-triage)
-- [Supported tools](#supported-tools)
 - [Records and schemas](#records-schemas)
 - [Conformance](#conformance)
 - [Contributing](#contributing)
@@ -55,29 +52,15 @@ manual cleanup is supported.
 
 ## Features<a id="features"></a>
 
-- **One command from reviewed commit to promoted digest:** `conclear release`
-  builds, tests, scans, signs, verifies and promotes an image, and it implements
-  the rules of a published guide instead of a homegrown checklist.
-- **Same workflow on a laptop and in CI:** there is no separate CI mode, and a
-  maintainer workstation can produce a fully verified release without special
-  services.
-- **Rootless and daemonless toolchain:**
-  [Buildah](https://github.com/containers/buildah),
-  [Podman](https://github.com/containers/podman) and
-  [Skopeo](https://github.com/containers/skopeo), with no Docker daemon anywhere
-  in the workflow.
-- **Signed, logged and auditable:** [Cosign](https://docs.sigstore.dev/cosign/)
-  signs every released digest and always records it in the public transparency
-  log; there is no switch to turn that off. Each release decision is also kept
-  as a schema-validated JSON record with a stable digest, so it can be
-  reconstructed later without relying on logs.
-- **Promotion moves tags, never content:** the exact digest that passed every
-  gate is the one consumers receive.
-- **Usable day to day:** multi-platform images can be qualified on separate
-  machines and assembled into one verified index, base-image pins can be updated
-  locally without a bot (verified and all-or-nothing), and a policy rejection
-  never looks like an operational failure in human output, JSON output or exit
-  status.
+- **Checked releases with one command:** `conclear release` runs the checks and
+  points your release tags to the exact image digest that passed them.
+- **No CI required:** run from a Linux workstation or VM. CI can call the same
+  commands when you need it.
+- **Auditable releases:** retrieve signed SBOMs and release evidence from the
+  registry. [Cosign](https://docs.sigstore.dev/cosign/) records signatures in
+  the public transparency log.
+- **Multi-platform builds and pin updates:** qualify platforms on separate
+  machines and update base-image digests without running an update bot.
 
 
 ## Installation<a id="installation"></a>
@@ -91,272 +74,11 @@ uv tool install conclear
 conclear version
 ```
 
-`pipx install conclear`, or `pip install conclear` inside a virtual environment,
-works as well. Release workflows also need the rootless container toolchain
-listed under [Supported tools](#supported-tools).
+`pipx install conclear`, or `pip install --upgrade conclear` inside a virtual
+environment, works as well.
 
-The [native-tool installation recipe](./docs/native-tool-installation.md)
-covers verified Cosign and Trivy releases, root-owned `/usr/local/bin`
-activation and readiness checks.
-
-Development happens in a source checkout as described in
-[`DEVELOPMENT.md`](./DEVELOPMENT.md). A checkout is enough to explore the
-commands and run the unit suite, but it cannot emit release evidence; only a
-built distribution such as the published package can.
-
-
-## Usage<a id="usage"></a>
-
-### Getting started<a id="usage-getting-started"></a>
-
-The [quick start](./docs/quickstart.md) covers repository setup, local checks,
-release access and the normal `release` workflow. It links to the reference
-contracts for runtime exceptions and distributed qualification.
-
-An existing repository can start with the `conclear adopt` command, which
-observes its conventional Containerfiles and Git origin read-only, separates
-what it saw from what it suggests and from what only a maintainer can decide,
-and with `--output` writes a draft that stays deliberately invalid until every
-`DECIDE` value is resolved. Resource limits need measurements; the draft does
-not invent them. Configuration validation reports pending values together,
-without a second decision table to maintain.
-
-`conclear config show` lists effective defaults, runtime-profile mounts, pin
-limits and decision reasons without executing tools or contacting registries.
-Add `--version 1.2.3` to check rendered tags and `--profile foundata` to include
-the shared profile's public identity. Credential paths and contents are omitted.
-The view is a configuration summary, not a qualification result.
-
-Commands can omit `--image` when exactly one release image is configured;
-test-only dependencies do not make that selection ambiguous. Platforms remain
-explicit. Pin declarations name the readable tag and intent; the Containerfile
-is the sole source of its pinned digest.
-
-In short: repository behavior is declared in a reviewed `conclear.toml` at the
-selected source revision, which holds project facts and the exceptions the guide
-permits, never credentials. Images whose tests need fixtures, generated outputs
-or sibling images describe them in `[images.test]`. Trust roots, signing keys
-and registry credentials stay outside the repository in a named release profile.
-The runtime contract defaults to a numeric non-root user and a read-only root.
-Starting as UID 0, supporting sudo and using a writable root each require a
-separate reviewed declaration. Sudo escalation has permitted-caller,
-unauthorized-caller and restrictive runtime tests. These permissions remain
-independent of the systemd lifecycle profile and never enable host root or
-privileged containers. The
-[configuration contract](./ARCHITECTURE.md#configuration-and-trust-inputs)
-describes these runtime and test options.
-
-
-### Running a release<a id="usage-release"></a>
-
-`release` runs the complete workflow from a reviewed Git selector through
-promotion:
-
-```sh
-conclear release --image app --revision v1.2.3 --version 1.2.3 --profile foundata
-```
-
-See
-[Release the committed revision](./docs/quickstart.md#6-release-the-committed-revision)
-for readiness checks and release behavior.
-
-
-### Resuming an interrupted run<a id="usage-resume"></a>
-
-An interrupted run resumes only when its source, configuration, tool identities,
-artifacts and remote observations still match:
-
-```sh
-conclear release --resume 01arz3ndektsv4rrffq69g5fav --profile foundata
-```
-
-A candidate reference is never reused for a second publication attempt. If an
-ambiguous write cannot be resolved conclusively to the expected digest within
-its lifetime, the release restarts as a new run.
-
-
-### Composable commands<a id="usage-commands"></a>
-
-`release` is the normal interface. The composable commands support diagnosis,
-distributed platform work and recovery without defining an alternative workflow:
-`doctor`, `check`, `pins check`, `pins propose`, `pins apply`, `build`, `test`,
-`qualify`, `transport export`, `assemble`, `provenance`, `publish`, `attest`,
-`verify`, `promote`, `rescan` and `cleanup`. Run any of them with `--help` for
-its exact inputs. `doctor --scope qualify` validates a workstation or worker
-that only qualifies, without a release profile; the default `release` scope
-validates the complete release environment.
-
-No command offers an option that disables a gate, skips verification or affects
-transparency-log behavior.
-
-
-### Distributed qualification<a id="usage-distributed"></a>
-
-`release` qualifies every platform in one process. When platforms are qualified
-on separate workers, or when one workstation qualifies them in separate runs,
-each `qualify` produces its own worker run, and a coordinator assembles the
-accepted qualifications in a new run of its own. This workflow needs no release
-profile, registry credentials, signing material or publication.
-
-```sh
-# Worker A (linux/amd64)
-conclear qualify --source . --revision v1.2.3 --image app --version 1.2.3 \
-  --platform linux/amd64 --format json
-conclear transport export <worker-run-a> --platform linux/amd64 \
-  --output ./app-linux-amd64.tar --format json
-
-# Worker B (linux/arm64), pinned to the same vulnerability database snapshot
-conclear qualify --source . --revision v1.2.3 --image app --version 1.2.3 \
-  --platform linux/arm64 --database-digest sha256:<database-digest> \
-  --qualification-started-at "$QUALIFICATION_STARTED_AT" --format json
-conclear transport export <worker-run-b> --platform linux/arm64 \
-  --output ./app-linux-arm64.tar --format json
-
-# Coordinator (authorized release environment)
-conclear assemble --source . --revision v1.2.3 --image app --version 1.2.3 \
-  --transport ./app-linux-amd64.tar sha256:<transport-digest-a> \
-  --transport ./app-linux-arm64.tar sha256:<transport-digest-b> \
-  --format json
-```
-
-`transport export` writes a new archive, or a directory with `--kind directory`,
-containing only the immutable qualification record, its OCI layout and the
-evidence payloads the record names, plus a schema-validated `transport.json`
-manifest that binds every member by digest. It refuses an existing destination
-and never includes logs, tool environments, container storage, test inputs,
-secret outputs, private keys or authentication files. Its JSON result reports
-the identifiers that a coordinator must receive through a channel other than the
-transport itself:
-
-|         Identifier          | Meaning |
-| --------------------------- | ------- |
-| worker run ID               | The lowercase ULID of the `qualify` run that produced the qualification. It stays in the record and in the candidate. |
-| coordinator run ID          | The new lowercase ULID that `assemble` generates. It names the candidate reference and owns the assembled layout. |
-| qualification-record digest | SHA-256 of the exact `platform-qualification-<platform>.json` bytes (`recordDigest`). |
-| transport digest            | SHA-256 of the archive file, or of `transport.json` for a directory transport (`transportDigest`). `assemble` requires it as its second `--transport` value. |
-| platform manifest digest    | Digest of the platform's OCI image manifest (`platformManifestDigest`), which becomes one index entry. |
-| assembled index digest      | Digest of the assembled image index, or of the single manifest for a one-platform image (`subjectDigest`). |
-
-`assemble` creates the coordinator run from the reviewed source revision, so the
-coordinator needs the repository checkout but no worker workspace. It compares
-each transport with the caller-supplied digest before trusting any member,
-extracts only regular files below a bounded, confined staging directory,
-verifies every member, the record digest, the layout graph, the platform
-descriptor and the evidence payloads, and then checks that all qualifications
-agree on image, source revision, configuration digest, guide and ConClear
-identity, tool versions, pin resolutions, effective limits, release version and
-vulnerability database. It rejects missing, duplicate and unexpected platforms
-and any qualification produced by another ConClear revision. The candidate
-record names the coordinator run and every worker run with its record and
-transport digests, and the assembled index carries exactly one verified manifest
-per required platform. `provenance`, `publish`, `attest`, `verify` and `promote`
-then continue on the coordinator run. Copying worker workspaces or records by
-hand is not a supported operation; assembly accepts only transports it can
-verify.
-
-Every worker must scan against the same vulnerability database. The coordinator
-takes `data.databaseDigest` from the first `qualify --format json` result and
-distributes
-`$XDG_CACHE_HOME/conclear/trivy/snapshots/<digest-without-sha256-prefix>`
-unchanged to every later worker, which pins it with `--database-digest`. Set
-`QUALIFICATION_STARTED_AT` from the first result's
-`data.qualificationWindow.startedAt`. ConClear selects that directory directly,
-recomputes its content and freshness-metadata digest, and checks the original
-qualification window before building. It never substitutes a newer snapshot
-for an explicit digest.
-
-Qualification approval lasts at most 24 hours from that start; older pin
-evidence or expiring exceptions can shorten it. The JSON result includes the
-effective deadline. Assembly, publication and promotion reject expired approval,
-including on resume. Start a new qualification with a fresh common database
-after expiry. The limit is centralized in `src/conclear/freshness.py` as
-`QUALIFICATION_WINDOW`; repository configuration cannot extend it. Historical
-records remain inspectable and published digests can still be rescanned.
-
-
-### JSON output and exit codes<a id="usage-json-exit-codes"></a>
-
-Every command that produces a result supports `--format json`. JSON mode writes
-exactly one schema-validated object to standard output and all diagnostics to
-standard error.
-
-| Exit code | Meaning |
-| --------: | ------- |
-|       `0` | Success. |
-|       `1` | Operational failure: a required fact could not be established. |
-|       `2` | Rule rejection: observed content violates the guide or the effective configuration. |
-|      `64` | Invalid invocation or configuration. |
-
-
-### Rescan triage<a id="usage-rescan-triage"></a>
-
-`rescan` accepts externally owned vulnerability decisions through
-`--triage-file`. Each decision must name the exact immutable rescan subject and
-one platform in that subject; duplicate platform, component and advisory
-identities are rejected.
-
-```json
-{
-  "schemaVersion": 1,
-  "decisions": [
-    {
-      "subject": "quay.io/example/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "platform": "linux/amd64",
-      "component": "openssl",
-      "advisory": "CVE-2026-0001",
-      "decision": "remediation-planned",
-      "rationale": "The fixed base-image rebuild is scheduled.",
-      "owner": "security@example.com",
-      "decidedAt": "2026-08-31T12:34:56Z",
-      "remediatingDigest": null
-    }
-  ]
-}
-```
-
-An exact `not-applicable` decision suppresses only its matching platform,
-component and advisory finding. An exact `remediated` decision closes deadline
-tracking for its matching finding and must name the immutable remediating
-digest, but it does not erase the scanner observation. `affected` and
-`remediation-planned` findings remain active. Exact, unexpired vulnerability
-exceptions from the release configuration are evaluated separately, and every
-applied exception is included in the new linked rescan record.
-
-An authoritative rescan reports and durably journals the successful
-post-attachment verification time that starts the remediation clock. The signed
-rescan attestations on the released digest are the authoritative history. Later
-rescans link the exact latest result, preserve the original start time while a
-finding remains active, and reject an active fixable finding at or beyond its
-configured deadline of at most 30 days.
-
-
-## Supported tools<a id="supported-tools"></a>
-
-Each command resolves only the host tools its call path executes, records
-their versions and executable digests, and rechecks those identities before a
-later phase uses them, so a package upgrade during a run cannot silently change
-the toolchain. A run pins a tool from the first phase that resolves it: a
-qualification never needs Cosign, and a publication never needs Buildah,
-Podman, Hadolint or Trivy. `doctor --scope check|qualify|release` reports every
-missing or unsupported tool of a scope in one pass.
-
-See [native-tool installation](./docs/native-tool-installation.md) for verified
-downloads and troubleshooting older distribution packages.
-
-A tool may start a run when its version lies in the tool's accepted interval and
-is not an excluded version. The interval is a compatibility statement based on
-the flags, output fields and behaviors ConClear uses and on published
-advisories; it does not claim that every version in it was tested. The real-tool
-tested versions are the exact versions the local integration tier and the
-external release drill exercised, and the tier fails on a host whose version is
-not yet listed, so that column grows only with evidence. A version outside the
-interval or in the exclusion list is rejected with the observed version, the
-interval, the exclusions and the tested versions. Every run still records the
-exact version and executable digest of each tool it used, and distributed
-qualifications of one release must report identical versions. The Trivy floor
-lies above 0.71.1, the release that fixed the path traversal through a crafted
-vulnerability database (GHSA-mcj4-mphf-j9ff), so accepted Trivy versions carry
-no exposure to that advisory.
+Install the external tools below from distribution packages or upstream
+downloads. Use versions within the accepted ranges, avoiding excluded versions.
 
 <!-- supported-tools:begin -->
 
@@ -372,78 +94,405 @@ no exposure to that advisory.
 
 <!-- supported-tools:end -->
 
-|      Command       |                     Tools                     | Release profile | Credentials and services |
-| ------------------ | --------------------------------------------- | --------------- | ------------------------ |
-| `version`          | none                                          | none            | none                     |
-| `adopt`            | Git                                           | none            | none                     |
-| `config show`      | none                                          | optional        | none; only the profile's public identity is displayed |
-| `check`            | Hadolint                                      | none            | none                     |
-| `pins check`       | Skopeo                                        | optional        | registry reads with the profile's auth file |
-| `pins propose`     | Git, Skopeo                                   | optional        | registry reads with the profile's auth file |
-| `pins apply`       | Git                                           | none            | none                     |
-| `build`            | Git, Buildah                                  | optional        | registry reads for image inputs |
-| `test`             | Git, Podman                                   | none            | none                     |
-| `qualify`          | Git, Buildah, Podman, Skopeo, Hadolint, Trivy | optional        | registry reads for image inputs |
-| `transport export` | Git                                           | none            | none                     |
-| `assemble`         | Git                                           | optional        | none; the profile only records trust inputs |
-| `provenance`       | Git                                           | none            | none                     |
-| `publish`          | Git, Skopeo                                   | required        | registry writes, registry control API |
-| `attest`           | Git, Skopeo, Cosign                           | required        | registry writes, signing key and passphrase, public Sigstore services |
-| `verify`           | Git, Skopeo, Cosign                           | required        | registry writes for the signed verification, signing key and passphrase, public Sigstore services |
-| `promote`          | Git, Skopeo, Cosign                           | required        | registry reads, tag writes through the registry control API, public Sigstore services |
-| `release`          | all seven                                     | required        | everything above         |
-| `rescan`           | Skopeo, Trivy, Cosign                         | required        | registry reads, public Sigstore services; `--authoritative` adds registry writes with the auth file and the signing key with passphrase |
-| `cleanup`          | Git, Buildah, Podman                          | optional        | registry control API when a profile is given |
-| `doctor`           | the union of its scope                        | `release` scope | `release` scope requires the profile's auth file, control-plane token and signing key, then probes the registry and Sigstore read-only |
 
-The generated [compatibility inventory](./docs/compatibility-inventory.json)
-carries the same declarations in machine-readable form, including the
-escalation an option such as `--authoritative` adds. A command that writes to
-the registry or signs refuses a profile without the auth file or the signing
-key before it opens a run, `rescan --authoritative` is held to the same rule
-because it attaches a signed result, and `doctor` applies the rule to its
-scope, so readiness is never reported for a profile that cannot publish.
+Install them and other dependencies as follows:
 
-Trivy is the only supported scanner stack. Production signing always uses Cosign
-3 public Rekor logging and verifies log inclusion; there is no release option
-that disables upload or ignores the transparency log. Manual no-service signing
-experiments stay outside ConClear and use disposable keys, a no-service signing
-configuration, `--bundle` and `--insecure-ignore-tlog=true` as specified by the
-guide.
+### Fedora (x86_64)<a id="installation-fedora"></a>
+
+```bash
+sudo dnf install --refresh \
+  buildah \
+  hadolint \
+  podman \
+  skopeo \
+  ca-certificates \
+  coreutils \
+  curl \
+  git-core \
+  gzip \
+  jq \
+  tar
+
+# needed if the tools already installed in the base OS
+sudo dnf upgrade --refresh \
+  buildah \
+  hadolint \
+  podman \
+  skopeo \
+  git-core
+
+# if there is a packaged Trivy, it is usually too old
+sudo dnf remove trivy
+```
+
+For Trivy and Cosign, use upstream releases when suitable packages are
+unavailable:
+
+```bash
+# Create temp download dir and define helper function
+work="$(mktemp -d "${TMPDIR:-/tmp}/conclear-tools.XXXXXXXX")"
+fetch() { curl -fSL --proto '=https' --proto-redir '=https' "$@"; }
+
+# Determine latest versions (adapt manually if versions are not within
+# Conclear's supported range)
+fetch 'https://api.github.com/repos/sigstore/cosign/releases/latest' -o "${work}/cosign-release.json"
+fetch 'https://api.github.com/repos/aquasecurity/trivy/releases/latest' -o "${work}/trivy-release.json"
+cosign_version="$(jq -er '.tag_name | ltrimstr("v")' "${work}/cosign-release.json")"
+trivy_version="$(jq -er '.tag_name | ltrimstr("v")' "${work}/trivy-release.json")"
+printf 'Cosign: %s\nTrivy: %s\n' "${cosign_version}" "${trivy_version}"
+
+# Download and install Cosign
+cosign_base="https://github.com/sigstore/cosign/releases/download/v${cosign_version}"
+fetch "${cosign_base}/cosign-linux-amd64" -o "${work}/cosign" && \
+sudo install -o root -g root -m 0755 "${work}/cosign" "/usr/local/bin/cosign"
+
+# Download and install Trivy
+trivy_base="https://github.com/aquasecurity/trivy/releases/download/v${trivy_version}"
+fetch "${trivy_base}/trivy_${trivy_version}_Linux-64bit.tar.gz" -o "${work}/trivy.tar.gz" && \
+tar --extract --gzip --file "${work}/trivy.tar.gz" --directory "${work}" \
+  --no-same-owner --no-same-permissions trivy && \
+sudo install -o root -g root -m 0755 "${work}/trivy" "/usr/local/bin/trivy"
+
+# Check
+which cosign && cosign version
+which trivy && trivy --version
+```
+
+### Updating<a id="installation-update"></a>
+
+Update ConClear with `uv tool upgrade conclear`. For host tools, repeat the
+installation steps with supported versions. Finish active runs before updating.
+
+### Miscellaneous notes<a id="installation-misc"></a>
+
+- Run ConClear as a normal user with working rootless Podman and Buildah.
+- Use a Linux login session with a user-owned, mode-0700 `XDG_RUNTIME_DIR`,
+  normally `/run/user/<uid>`.
+- From a configured image repository, run `conclear doctor --scope qualify` to
+  check local prerequisites. Use the [release check](#usage-release) for signing
+  and registry access.
+
+
+
+## Usage<a id="usage"></a>
+
+Run these commands from your image repository's root. With multiple release
+images, add `--image <id>` to select one.
+
+### Getting started<a id="usage-getting-started"></a>
+
+Generate a configuration from your existing Containerfile:
+
+```sh
+conclear adopt --output conclear.toml
+```
+
+If the file already exists, edit it instead. Resolve every `DECIDE` value and
+use your project's identities, measured resource limits and health command.
+A service image configuration looks like this:
+
+```toml
+schema_version = 1
+
+[project]
+name = "example"
+source = "https://github.com/foundata/example"
+
+[[images]]
+id = "app"
+repository = "quay.io/foundata/example"
+platforms = ["linux/amd64"]
+
+[images.release]
+version_tags = ["{version}"]
+moving_tags = ["latest"]
+
+[images.runtime]
+profile = "service"
+user = 65532
+writable_mounts = ["/tmp"]
+memory = "512MiB"
+cpus = 1.0
+pids = 256
+nofile = 1024
+health_command = ["/usr/local/bin/app", "health"]
+
+[[images.pins]]
+reference = "quay.io/example/base:1"
+tag_intent = "immutable-version"
+```
+
+The resource numbers are illustrative. Keep credentials out of this file and
+list every release platform explicitly.
+
+Prepare the build inputs:
+
+- Pin external images in the Containerfile as `image:tag@sha256:<digest>` and
+  declare each tag and its intent under `[[images.pins]]`.
+- Supply the
+  [required OCI labels](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md#image-metadata).
+  Declare and use the `IMAGE_CREATED`, `IMAGE_REVISION` and `IMAGE_VERSION`
+  build arguments for their corresponding labels.
+- Match the numeric `USER` to `images.runtime.user`. Declare writable paths
+  and put the health command in `conclear.toml`.
+- Allow only required build inputs in `.containerignore`, for example:
+
+```gitignore
+*
+!Containerfile
+!conclear.toml
+!app
+```
+
+Use `one-shot` or `systemd` instead of `service` where appropriate. For root,
+sudo, writable-root requirements or test fixtures, use the
+[configuration reference](./ARCHITECTURE.md#configuration-and-trust-inputs).
+
+
+### Checking locally<a id="usage-check"></a>
+
+```sh
+version=1.2.3
+conclear config show --version "$version"
+conclear check
+conclear pins check
+conclear doctor --scope qualify
+```
+
+Fix reported errors, then commit the configuration, Containerfile and test
+inputs. Builds use the selected Git revision, not uncommitted changes.
+
+To build, test and scan one platform without publishing:
+
+```sh
+conclear qualify --revision HEAD --version "$version" --platform linux/amd64
+```
+
+This separate qualification is optional; `release` runs its own checks.
+
+
+### Setting up release access<a id="usage-access"></a>
+
+Create a Quay destination repository and grant your release account writer
+access. Obtain a Quay API token with tag read, write and delete access.
+
+Reuse your organization's release profile and key if available. For first-time
+setup, create credentials and a new encrypted key outside the image repository:
+
+```sh
+umask 077
+install -d -m 0700 "$HOME/.config/conclear"
+podman login --authfile "$HOME/.config/conclear/auth.json" quay.io
+cosign generate-key-pair --output-key-prefix "$HOME/.config/conclear/cosign"
+```
+
+Store the API token in `~/.config/conclear/quay.token`. Create
+`~/.config/conclear/foundata.toml` (or `$XDG_CONFIG_HOME/conclear/foundata.toml`
+if set), adjusting paths, ownership and policy choices:
+
+```toml
+schema_version = 1
+ci_context = "observe"
+auth_file = "~/.config/conclear/auth.json"
+cosign_private_key = "~/.config/conclear/cosign.key"
+cosign_public_key = "~/.config/conclear/cosign.pub"
+
+[builder]
+id = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+
+[registry]
+provider = "quay"
+host = "quay.io"
+api_url = "https://quay.io/api/v1"
+token_file = "~/.config/conclear/quay.token"
+
+[registry.tag_protection]
+mode = "not-enforced"
+rationale = "Selective version-tag protection is unavailable on this deployment."
+owner = "Release maintainer"
+
+[registry.candidate_cleanup]
+mode = "tag-expiration"
+owner = "Release maintainer"
+procedure = "Review abandoned runs daily; run conclear cleanup before discarding state."
+```
+
+Keep the profile and secret files owned by your user with mode `0600`.
+Reuse the profile across repositories. Set `builder.id` to the URL documenting
+your build environment; use foundata's identity only for that environment.
+
+Where selective tag protection is available, enable it for version tags,
+exclude `latest` and candidates, and set `tag_protection.mode = "required"`
+without `rationale` or `owner`. This also needs repository and organization
+policy-read access. Cleanup can use `manual` or `auto-prune` instead of
+`tag-expiration`; keep an owner and procedure in every case. See
+[registry options](./ARCHITECTURE.md#publication-and-promotion).
+
+ConClear prompts for the signing passphrase. For automation, configure a
+protected `passphrase_file` or use `--passphrase-fd`. Never put secrets in
+command-line values, ordinary environment variables or repository files.
+Policy descriptions appear in public release evidence.
+
+
+### Running a release<a id="usage-release"></a>
+
+```sh
+version=1.2.3
+conclear doctor --profile foundata --version "$version"
+conclear release --revision HEAD --version "$version" --profile foundata
+```
+
+Replace `HEAD` with a Git tag or commit to release another revision. With the
+configuration above, a successful release creates `1.2.3` and updates `latest`
+to the same digest. Use a new version if its final tag already names different
+image bytes.
+
+Keep the reported run ID. [Retain its evidence](./docs/evidence-retention.md)
+before cleanup:
+
+```sh
+conclear cleanup "<run-id>" --profile foundata
+```
+
+
+### Resuming an interrupted run<a id="usage-resume"></a>
+
+From the same repository, with the original profile and tools:
+
+```sh
+conclear release --resume "<run-id>" --profile foundata
+```
+
+If the qualification or candidate has expired, or required inputs have changed,
+start a new `release`. Clean up the abandoned run after retaining needed
+evidence.
+
+
+### Updating image pins<a id="usage-pins"></a>
+
+Generate a proposal at a new path:
+
+```sh
+conclear pins propose --output ../pins-proposal.json
+```
+
+Review the proposal, then apply and check it:
+
+```sh
+conclear pins apply --proposal ../pins-proposal.json
+conclear pins check
+conclear check
+git diff
+```
+
+Run project tests and commit the Containerfile changes before releasing.
+
+
+### Rescans and triage<a id="usage-rescan-triage"></a>
+
+Use the released digest and the
+[retained source checkout](./docs/evidence-retention.md#restore-and-rescan) with
+its unchanged `conclear.toml`:
+
+```sh
+conclear rescan --subject "quay.io/foundata/example@sha256:<digest>" \
+  --config /path/to/retained-source/conclear.toml \
+  --profile foundata --authoritative --format json
+```
+
+`--authoritative` signs and publishes the result; omit it for a local
+diagnostic. For later rescans, add `--previous-result <recordDigest>` using the
+latest authoritative result's `data.recordDigest`.
+
+Add `--triage-file triage.json` to record vulnerability decisions using the
+[triage schema](./src/conclear/schemas/triage.schema.json). Each decision must
+name the exact subject, platform, component and advisory. See
+[evidence retention and scheduling](./docs/evidence-retention.md) for ongoing
+operation.
+
+
+### Distributed qualification<a id="usage-distributed"></a>
+
+Declare both `linux/amd64` and `linux/arm64` in `images.platforms`. Use the same
+source revision, release version, ConClear and host-tool versions on every
+worker. Qualify and export the first platform:
+
+```sh
+conclear qualify --revision v1.2.3 --version 1.2.3 \
+  --platform linux/amd64 --format json
+conclear transport export "<worker-run-a>" --platform linux/amd64 \
+  --output ./app-linux-amd64.tar --format json
+```
+
+Take `data.databaseDigest` and `data.qualificationWindow.startedAt` from the
+qualification result. Copy its database snapshot from
+`${XDG_CACHE_HOME:-$HOME/.cache}/conclear/trivy/snapshots/<digest-without-sha256-prefix>`
+to the same cache-relative path on the next worker:
+
+```sh
+conclear qualify --revision v1.2.3 --version 1.2.3 \
+  --platform linux/arm64 --database-digest "sha256:<database-digest>" \
+  --qualification-started-at "<startedAt>" --format json
+conclear transport export "<worker-run-b>" --platform linux/arm64 \
+  --output ./app-linux-arm64.tar --format json
+```
+
+Copy both archives to the release machine. Obtain each `data.transportDigest`
+directly from its worker, separately from the archive. From the matching source
+repository, assemble and finish the release:
+
+```sh
+conclear assemble --revision v1.2.3 --version 1.2.3 --profile foundata \
+  --transport ./app-linux-amd64.tar "sha256:<transport-digest-a>" \
+  --transport ./app-linux-arm64.tar "sha256:<transport-digest-b>" --format json
+conclear release --resume "<coordinator-run-id>" --profile foundata
+```
+
+Use the `data.runId` returned by `assemble`. Complete the release before the
+reported qualification deadline; after expiry, qualify again with a fresh
+database. Retain the worker archives before cleaning up their runs.
+
+
+### Command help<a id="usage-commands"></a>
+
+Use `conclear --help` to list commands and `conclear <command> --help` for
+options. `release` is the normal workflow; individual build, test, signing and
+promotion commands are listed in the
+[command reference](./ARCHITECTURE.md#command-model).
+
+
+### JSON output and exit codes<a id="usage-json-exit-codes"></a>
+
+Add `--format json` for machine-readable results on stdout. Diagnostics go to
+stderr.
+
+| Exit code | Meaning |
+| --------: | ------- |
+|       `0` | Success. |
+|       `1` | Operational failure, such as an unavailable tool or service. |
+|       `2` | A policy check rejected the image or evidence. |
+|      `64` | Invalid invocation or configuration. |
+
 
 
 ## Records and schemas<a id="records-schemas"></a>
 
-Public qualification, transport, candidate, verification and rescan records each
-carry their own record schema version. Repository configuration, release
-profiles, provenance, rescan-triage input and command-result objects use their
-own independent schemas. Signed registry attestations are the authoritative
-retained evidence; workspace files are convenience copies.
+The [JSON schemas](./src/conclear/schemas/) define configuration, profiles,
+command results and release records. Follow the
+[retention recipe](./docs/evidence-retention.md) to archive reports and source
+alongside signed registry evidence.
 
 
 ## Conformance<a id="conformance"></a>
 
-The generated [conformance catalog](./docs/conformance.md) maps stable `CCnnnn`
-identifiers to the guide's `IGnnnn` requirement identifiers, states for every
-requirement of the embedded guide revision whether ConClear automates it, leaves
-it to human review, leaves it to an external control or does not support it, and
-lists the built-in limits that repository configuration may narrow but never
-disable. The generated
-[guide-option support inventory](./docs/guide-options-1.0.0.md) records
-supported exceptions and deliberately unsupported or out-of-scope guide choices
-with a rationale and reconsideration condition.
+Look up `CCnnnn` failures in the [conformance catalog](./docs/conformance.md).
+It also identifies guide requirements that need manual review or external
+controls. The [guide-option inventory](./docs/guide-options-1.0.0.md) lists
+supported and unsupported choices.
 
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) describes the current behavioral contract
-behind those checks. The generated
-[ConClear 1.0.0 implementation matrix](./docs/implementation-1.0.0.md) links
-every architectural promise to production code and verification tests. The
-generated
-[internal compatibility inventory](./docs/compatibility-inventory.json) lists
-those promises with the commands, options, schemas, record types, exit statuses
-and check identifiers that form the compatibility surface; the inventory file's
-own JSON layout is not an external interface. Planned behavior remains in
-[GitHub issues](https://github.com/foundata/conclear/issues) until it is
-implemented and tested.
+For implementation details, see [ARCHITECTURE.md](./ARCHITECTURE.md), the
+[implementation matrix](./docs/implementation-1.0.0.md) and the
+[compatibility inventory](./docs/compatibility-inventory.json).
 
 
 ## Contributing<a id="contributing"></a>

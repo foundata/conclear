@@ -23,7 +23,6 @@ MATRIX_REFERENCE_PATHS = (
     ARCHITECTURE_PATH,
     Path("README.md"),
     Path("DEVELOPMENT.md"),
-    Path("docs/quickstart.md"),
 )
 _PROMISE_ID = re.compile(r"IP[0-9]{4}")
 _PROMISE_ANCHOR = re.compile(r'<a id="promise-(ip[0-9]{4})"></a>')
