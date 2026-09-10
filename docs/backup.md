@@ -73,8 +73,9 @@ printf 'Backup: %s\n' "${backup}"
 
 Each run creates a new dated directory containing `local.tar.gz` and
 `SHA256SUMS`. Failures exit nonzero; alert on failed or missed backups. The
-script does not delete older copies. Keep these archives private: they can
-contain signing keys, passphrases and logs.
+archive is a full copy of the selected sources at that time. Earlier versions
+of changed or deleted files survive only in older backups. Keep these archives
+private: they can contain signing keys, passphrases and logs.
 
 Check `SHA256SUMS` after copying. Periodically extract into an empty directory
 and test recovery, preserving ownership and permissions. Archive paths omit
@@ -83,3 +84,48 @@ the leading `/`; never test by extracting over the live filesystem.
 The default database cache is excluded. Add its selected snapshot if recovering
 an unfinished release matters. Resume still needs the original inputs/tools
 and unexpired deadlines; a file archive is not a running-host snapshot.
+
+## Remove older backups
+
+After a successful backup, use this to keep the newest `keep` complete backups
+(default: 7), ordered by directory modification time. Run without concurrent
+backup or cleanup jobs. It verifies retained archives before deleting older
+ones and ignores unfinished directories, symbolic links and unrelated names.
+
+```bash
+set -euo pipefail
+export LC_ALL=C
+: "${secure_storage:?Set secure_storage to the secure backup directory}"
+[[ "${secure_storage}" = /* && -d "${secure_storage}" ]]
+secure_storage="$(realpath -e -- "${secure_storage}")"
+keep="${keep:-7}"
+if [[ ! "${keep}" =~ ^[1-9][0-9]{0,8}$ ]]; then
+  printf 'keep must be an integer between 1 and 999999999\n' >&2
+  exit 1
+fi
+
+listing="$(find "${secure_storage}" -regextype posix-extended \
+  -mindepth 1 -maxdepth 1 -type d \
+  -regex '.*/conclear-[0-9]{8}T[0-9]{6}Z-[[:alnum:]]{6}' \
+  -printf '%T@ %f\n' | sort -rn)"
+backups=()
+while read -r timestamp name; do
+  [[ -n "${name}" ]] || continue
+  directory="${secure_storage}/${name}"
+  if [[ -f "${directory}/local.tar.gz" && ! -L "${directory}/local.tar.gz" &&
+        -f "${directory}/SHA256SUMS" && ! -L "${directory}/SHA256SUMS" ]]; then
+    backups+=("${directory}")
+  fi
+done <<< "${listing}"
+
+if (( ${#backups[@]} <= keep )); then
+  exit 0
+fi
+for directory in "${backups[@]:0:keep}"; do
+  (cd -- "${directory}" && sha256sum --check SHA256SUMS)
+done
+for directory in "${backups[@]:keep}"; do
+  printf 'Deleting backup: %s\n' "${directory}"
+  rm -rf -- "${directory}"
+done
+```
