@@ -188,6 +188,8 @@ def create_run_archive(
         "releaseArchiveDigest": release_archive_digest,
         "signedEvidence": evidence,
     }
+    if not include_source and "releaseArchiveName" in snapshot.immutable_inputs:
+        metadata["releaseArchiveName"] = snapshot.immutable_inputs["releaseArchiveName"]
     return write_archive(
         directory,
         metadata,

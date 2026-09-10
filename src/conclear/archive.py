@@ -272,7 +272,7 @@ def _validate_manifest(value: dict[str, object]) -> dict[str, tuple[int, str]]:
         "signedEvidence",
     }
     if (
-        set(value) != required
+        set(value) - {"releaseArchiveName"} != required
         or type(value["schemaVersion"]) is not int
         or value["schemaVersion"] != 1
     ):
@@ -302,6 +302,16 @@ def _validate_manifest(value: dict[str, object]) -> dict[str, tuple[int, str]]:
                 value["releaseArchiveDigest"], "release archive digest"
             )
         )
+    if "releaseArchiveName" in value:
+        hint = _narrow.string_value(value["releaseArchiveName"], "source archive hint")
+        if (
+            len(member_path(hint).parts) != 1
+            or value["source"]
+            or value["releaseArchiveDigest"] is None
+        ):
+            raise InvalidInvocationError(
+                "Source archive hint must be a basename for a referenced archive"
+            )
     _narrow.array_value(value["signedEvidence"], "signed evidence")
     members: dict[str, tuple[int, str]] = {}
     total = 0

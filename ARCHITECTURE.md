@@ -838,6 +838,9 @@ supplemental files or make diagnostic rescans authoritative.
 
 `rescan --archive` restores source into a private temporary directory. Rescan
 archives reference their source archive by SHA-256; retain it alongside them.
+An optional basename hint in the unsigned archive manifest avoids a directory
+search. Missing or stale hints fall back to a bounded search; both paths verify
+the referenced digest and signatures. New rescans retain the filename found.
 Current signed registry history supplies the next predecessor, and an archived
 authoritative checkpoint must remain present. No completed run is reactivated.
 Archive storage, support inventory, schedules and backups remain operator

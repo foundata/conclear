@@ -15,6 +15,7 @@ from conclear.services.archives import ArchiveSigner, verify_archive_signatures
 from conclear.values import OCIReference
 
 _narrow = Narrower(InvalidInvocationError)
+MAX_SOURCE_ARCHIVE_LOOKUP_FILES = 10_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,7 @@ class ArchiveRescanInput:
     subject: OCIReference
     image_id: str
     release_archive_digest: str
+    release_archive_name: str
     history_checkpoint: str | None
 
 
@@ -66,6 +68,7 @@ def archived_rescan_input(
                         archive.manifest["imageId"], "archive image id"
                     ),
                     release_archive_digest=source_archive.result.digest,
+                    release_archive_name=source_archive.result.path.name,
                     history_checkpoint=checkpoint,
                 )
 
@@ -82,12 +85,14 @@ def _source_archive(
         load_json(archive.root / "records/rescan-result.json"), "rescan record"
     )
     payload = _narrow.object_value(record["payload"], "rescan payload")
-    for number, path in enumerate(sorted(archive.result.path.parent.glob("*.tar.gz"))):
-        if number >= 10_000:
-            raise InvalidInvocationError("Archive directory exceeds the lookup limit")
+    for path in _source_archive_candidates(archive):
         if path.is_symlink() or not path.is_file() or sha256_file(path) != expected:
             continue
         with open_archive(path) as source:
+            if source.result.digest != expected:
+                raise InvalidInvocationError(
+                    "Referenced source archive changed during lookup"
+                )
             verify_archive_signatures(source, signer=signer, public_key=public_key)
             if (
                 not source.manifest["source"]
@@ -106,3 +111,20 @@ def _source_archive(
     raise InvalidInvocationError(
         "Keep the referenced release archive beside this rescan archive"
     )
+
+
+def _source_archive_candidates(archive: OpenArchive) -> Iterator[Path]:
+    directory = archive.result.path.parent
+    hint = archive.manifest.get("releaseArchiveName")
+    hinted_path = (
+        None
+        if hint is None
+        else directory / _narrow.string_value(hint, "source archive filename hint")
+    )
+    if hinted_path is not None:
+        yield hinted_path
+    for number, path in enumerate(sorted(directory.glob("*.tar.gz"))):
+        if number >= MAX_SOURCE_ARCHIVE_LOOKUP_FILES:
+            raise InvalidInvocationError("Archive directory exceeds the lookup limit")
+        if path != hinted_path:
+            yield path

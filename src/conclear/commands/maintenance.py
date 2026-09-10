@@ -606,7 +606,10 @@ def _execute_rescan(
             {
                 "sourceTreeDigest": source_digest,
                 **(
-                    {"releaseArchiveDigest": archived.release_archive_digest}
+                    {
+                        "releaseArchiveDigest": archived.release_archive_digest,
+                        "releaseArchiveName": archived.release_archive_name,
+                    }
                     if archived is not None
                     else {}
                 ),

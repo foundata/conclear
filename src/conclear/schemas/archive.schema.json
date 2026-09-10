@@ -16,6 +16,7 @@
     "source": {"type": "boolean"},
     "imageLayers": {"type": "boolean"},
     "releaseArchiveDigest": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+    "releaseArchiveName": {"type": "string", "minLength": 1, "pattern": "^[^/\\\\\u0000]+$", "not": {"enum": [".", ".."]}},
     "members": {"type": "array", "minItems": 1, "maxItems": 99999, "items": {
       "type": "object", "additionalProperties": false,
       "required": ["path", "size", "digest"],

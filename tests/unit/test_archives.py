@@ -5,8 +5,8 @@ import json
 import os
 import shutil
 import tarfile
-from collections.abc import Callable
-from contextlib import nullcontext
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -18,18 +18,23 @@ from click.testing import CliRunner
 
 import conclear.commands.archive as archive_commands
 import conclear.commands.maintenance as maintenance_commands
+import conclear.services.archive_rescan as archive_rescan_service
 import conclear.services.release as release_service
 from conclear.adapters.cosign import VerificationObservation
 from conclear.adapters.skopeo import RegistryCopyObservation
-from conclear.archive import open_archive, prepare_archive_directory
+from conclear.archive import OpenArchive, open_archive, prepare_archive_directory
 from conclear.archive_source import collect_source, restore_source
 from conclear.attestations import RESCAN_TYPE
 from conclear.cli import root
 from conclear.errors import InvalidInvocationError, OperationalError
-from conclear.jsonutil import canonical_json_bytes, load_json, sha256_bytes
+from conclear.jsonutil import canonical_json_bytes, load_json, sha256_bytes, sha256_file
 from conclear.oci import validate_layout, validate_layout_metadata
 from conclear.services.archive_rescan import archived_rescan_input
-from conclear.services.archives import create_run_archive, verify_archive_signatures
+from conclear.services.archives import (
+    ArchiveSigner,
+    create_run_archive,
+    verify_archive_signatures,
+)
 from conclear.services.qualification_inputs import QualificationInputs
 from conclear.source_integrity import source_tree_digest
 from conclear.tools import ToolName
@@ -84,6 +89,7 @@ def test_release_archive_retains_source_metadata_reports_and_signed_material(
         )
         assert archive.manifest["imageLayers"] is False
         assert archive.manifest["source"] is True
+        assert "releaseArchiveName" not in archive.manifest
         assert (archive.root / "source/conclear.toml").is_file()
         assert (archive.root / "source/Containerfile").is_file()
         assert (archive.root / "image/index.json").is_file()
@@ -162,6 +168,17 @@ def _rewrite_archive(path: Path, update: Callable[[dict[str, bytes]], None]) -> 
             header.size = len(content)
             archive.addfile(header, io.BytesIO(content))
     return destination
+
+
+def _rewrite_archive_manifest(
+    path: Path, update: Callable[[dict[str, Any]], None]
+) -> Path:
+    def update_members(members: dict[str, bytes]) -> None:
+        manifest = json.loads(members["archive.json"])
+        update(manifest)
+        members["archive.json"] = canonical_json_bytes(manifest)
+
+    return _rewrite_archive(path, update_members)
 
 
 @pytest.mark.parametrize("change", ["bytes", "extra", "missing", "source"])
@@ -466,11 +483,14 @@ def test_archived_rescans_continue_after_source_and_local_state_loss(
     first_archive = Path(first["archive"]["path"])
     with open_archive(first_archive) as archive:
         assert archive.manifest["source"] is False
+        assert archive.manifest["releaseArchiveName"] == bundle.name
         assert not (archive.root / "source").exists()
         first_record = load_json(archive.root / "records/rescan-result.json")
+        assert "releaseArchiveName" not in first_record["payload"]
     shutil.rmtree(released.tmp_path / "restored-state")
     second = invoke(first_archive)
     with open_archive(Path(second["archive"]["path"])) as archive:
+        assert archive.manifest["releaseArchiveName"] == bundle.name
         record = load_json(archive.root / "records/rescan-result.json")
         assert isinstance(record, dict) and isinstance(first_record, dict)
         assert record["payload"]["previousResultDigest"] == first["recordDigest"]
@@ -510,6 +530,238 @@ def test_archived_rescans_continue_after_source_and_local_state_loss(
     )
     assert result.exit_code != 0
     assert "missing the archived checkpoint" in str(result.exception)
+
+
+@pytest.fixture
+def rescan_archives(
+    released: Harness, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    source = _create(released)
+    result = _rescan_cli(released, monkeypatch)(source)
+    return source, Path(result["archive"]["path"])
+
+
+def test_source_archive_hint_avoids_directory_search(
+    released: Harness,
+    rescan_archives: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, rescan = rescan_archives
+    (source.parent / "000-unrelated.tar.gz").write_bytes(b"unrelated archive")
+    monkeypatch.setattr(archive_rescan_service, "MAX_SOURCE_ARCHIVE_LOOKUP_FILES", 0)
+    observed: list[Path] = []
+    original_glob = Path.glob
+
+    def glob(path: Path, *arguments: Any, **options: Any) -> Iterator[Path]:
+        assert path != source.parent, "A valid hint must not list the archive directory"
+        return original_glob(path, *arguments, **options)
+
+    def digest(path: Path) -> str:
+        if path.parent == source.parent:
+            observed.append(path)
+        return sha256_file(path)
+
+    monkeypatch.setattr(Path, "glob", glob)
+    monkeypatch.setattr(archive_rescan_service, "sha256_file", digest)
+    with archived_rescan_input(
+        rescan,
+        signer=released.runtime.signer,
+        public_key=released.profile.cosign_public_key,
+    ) as restored:
+        assert restored.release_archive_name == source.name
+        assert restored.release_archive_digest == sha256_file(source)
+    assert observed == [source]
+
+
+def test_source_archive_fallback_keeps_its_lookup_limit(
+    released: Harness,
+    rescan_archives: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, rescan = rescan_archives
+    (source.parent / "000-unrelated.tar.gz").write_bytes(b"unrelated archive")
+    changed = _rewrite_archive_manifest(
+        rescan, lambda manifest: manifest.pop("releaseArchiveName")
+    )
+    monkeypatch.setattr(archive_rescan_service, "MAX_SOURCE_ARCHIVE_LOOKUP_FILES", 1)
+    with pytest.raises(InvalidInvocationError, match="lookup limit"):
+        with archived_rescan_input(
+            changed,
+            signer=released.runtime.signer,
+            public_key=released.profile.cosign_public_key,
+        ):
+            pytest.fail("The source archive search exceeded its bound")
+
+
+@pytest.mark.parametrize(
+    "hint_state", ["missing", "wrong-digest", "symlink", "directory", "absent"]
+)
+def test_source_archive_hint_falls_back_and_retains_the_found_name(
+    released: Harness,
+    rescan_archives: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    hint_state: str,
+) -> None:
+    source, rescan = rescan_archives
+    renamed = source.rename(source.with_name("renamed-source.tar.gz"))
+    if hint_state == "wrong-digest":
+        source.write_bytes(b"unrelated archive")
+    elif hint_state == "symlink":
+        source.symlink_to(renamed)
+    elif hint_state == "directory":
+        source.mkdir()
+    elif hint_state == "absent":
+        rescan = _rewrite_archive_manifest(
+            rescan, lambda manifest: manifest.pop("releaseArchiveName")
+        )
+    observed: list[Path] = []
+
+    def digest(path: Path) -> str:
+        if path.parent == source.parent:
+            observed.append(path)
+        return sha256_file(path)
+
+    monkeypatch.setattr(archive_rescan_service, "sha256_file", digest)
+    with archived_rescan_input(
+        rescan,
+        signer=released.runtime.signer,
+        public_key=released.profile.cosign_public_key,
+    ) as restored:
+        assert restored.release_archive_name == renamed.name
+        assert restored.release_archive_digest == sha256_file(renamed)
+    assert observed.count(source) == (1 if hint_state == "wrong-digest" else 0)
+
+
+def test_rescan_updates_stale_source_archive_hint(
+    released: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _create(released)
+    invoke = _rescan_cli(released, monkeypatch)
+    first = invoke(source)
+    renamed = source.rename(source.with_name("renamed-source.tar.gz"))
+    second = invoke(Path(first["archive"]["path"]))
+    with open_archive(Path(second["archive"]["path"])) as archive:
+        assert archive.manifest["releaseArchiveName"] == renamed.name
+        assert archive.manifest["releaseArchiveDigest"] == sha256_file(renamed)
+
+
+@pytest.mark.parametrize(
+    "hint",
+    [
+        "../outside.tar.gz",
+        "/outside.tar.gz",
+        "nested/source.tar.gz",
+        "nested\\source.tar.gz",
+        ".",
+        "..",
+        "",
+        "bad\x00name",
+        None,
+        42,
+    ],
+)
+def test_archive_rejects_unsafe_or_malformed_source_archive_hints(
+    rescan_archives: tuple[Path, Path], hint: object
+) -> None:
+    _source, rescan = rescan_archives
+    changed = _rewrite_archive_manifest(
+        rescan, lambda manifest: manifest.update(releaseArchiveName=hint)
+    )
+    with pytest.raises(InvalidInvocationError):
+        with open_archive(changed):
+            pytest.fail("Unsafe source archive filename hint was accepted")
+
+
+def test_source_inclusive_archive_cannot_declare_a_reference_hint(
+    released: Harness,
+) -> None:
+    source = _create(released)
+    changed = _rewrite_archive_manifest(
+        source, lambda manifest: manifest.update(releaseArchiveName="other.tar.gz")
+    )
+    with pytest.raises(InvalidInvocationError, match="referenced archive"):
+        with open_archive(changed):
+            pytest.fail("Source-inclusive archive accepted a reference hint")
+
+
+def test_source_archive_hint_does_not_replace_the_expected_digest(
+    released: Harness, rescan_archives: tuple[Path, Path]
+) -> None:
+    source, rescan = rescan_archives
+    repacked = _rewrite_archive(source, lambda members: None).rename(
+        source.with_name("repacked.tar.gz")
+    )
+    assert sha256_file(repacked) != sha256_file(source)
+    with open_archive(repacked) as archive:
+        verify_archive_signatures(
+            archive,
+            signer=released.runtime.signer,
+            public_key=released.profile.cosign_public_key,
+        )
+    source.rename(released.tmp_path / "retained-original.tar.gz")
+    changed = _rewrite_archive_manifest(
+        rescan, lambda manifest: manifest.update(releaseArchiveName=repacked.name)
+    )
+    with pytest.raises(InvalidInvocationError, match="Keep the referenced"):
+        with archived_rescan_input(
+            changed,
+            signer=released.runtime.signer,
+            public_key=released.profile.cosign_public_key,
+        ):
+            pytest.fail("A hint substituted different bytes for the signed digest")
+
+
+def test_source_archive_hint_still_requires_signature_verification(
+    released: Harness,
+    rescan_archives: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, rescan = rescan_archives
+    verified: list[Path] = []
+
+    def verify(
+        archive: OpenArchive, *, signer: ArchiveSigner, public_key: Path
+    ) -> None:
+        verified.append(archive.result.path)
+        if archive.result.path == source:
+            raise OperationalError("Source signature verification failed")
+        verify_archive_signatures(archive, signer=signer, public_key=public_key)
+
+    monkeypatch.setattr(archive_rescan_service, "verify_archive_signatures", verify)
+    with pytest.raises(OperationalError, match="Source signature verification failed"):
+        with archived_rescan_input(
+            rescan,
+            signer=released.runtime.signer,
+            public_key=released.profile.cosign_public_key,
+        ):
+            pytest.fail("The source archive's signatures were not required")
+    assert verified == [rescan, source]
+
+
+def test_source_archive_changed_between_lookup_and_open_is_rejected(
+    released: Harness,
+    rescan_archives: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, rescan = rescan_archives
+    repacked = _rewrite_archive(source, lambda members: None)
+    assert sha256_file(repacked) != sha256_file(source)
+
+    @contextmanager
+    def changed_archive(path: Path) -> Iterator[OpenArchive]:
+        if path == source:
+            source.write_bytes(repacked.read_bytes())
+        with open_archive(path) as archive:
+            yield archive
+
+    monkeypatch.setattr(archive_rescan_service, "open_archive", changed_archive)
+    with pytest.raises(InvalidInvocationError, match="changed during lookup"):
+        with archived_rescan_input(
+            rescan,
+            signer=released.runtime.signer,
+            public_key=released.profile.cosign_public_key,
+        ):
+            pytest.fail("The opened archive differs from the matched digest")
 
 
 def test_archive_commands_create_and_verify_completed_evidence(
