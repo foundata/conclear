@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb",
+  "guideRevision": "2e0a9d45f6488ebfa3fde129ce09310550076ef2",
   "limits": [
     {"name": "Pin resolution freshness", "value": "24 hours"},
     {"name": "Pin divergence", "value": "7 days"},

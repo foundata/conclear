@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb",
+  "guideRevision": "2e0a9d45f6488ebfa3fde129ce09310550076ef2",
   "entries": [
     {"id": "IG0001", "status": "automated", "rationale": "`conclear release` runs the complete fail-closed workflow from a reviewed revision to verified promotion."},
     {"id": "IG0002", "status": "automated", "rationale": "Every run builds from a detached worktree of the selected committed revision and takes trust configuration from the release profile."},
@@ -238,7 +238,7 @@
     {"id": "IG0424", "status": "external", "rationale": "The organization assigns the operating owners; ConClear does not manage credentials, permissions, scheduling or remediation work."},
     {"id": "IG0425", "status": "external", "rationale": "The release owner maintains the supported-digest inventory, retained inputs, latest authoritative result and next due time."},
     {"id": "IG0426", "status": "external", "rationale": "The scheduling owner provides host availability, protected persistent state, monitoring and tested recovery; ConClear supplies individual commands and verified history reconciliation."},
-    {"id": "IG0427", "status": "external", "rationale": "Transport export retains qualification payload bytes; the release owner archives source and release records, checks signed digest bindings and operates accessible retention and restore tests."},
-    {"id": "IG0428", "status": "manual", "rationale": "The release owner reviews disclosure and separates protected diagnostics and secrets from shareable evidence; transport export excludes non-payload files but cannot assess all application content."}
+    {"id": "IG0427", "status": "external", "rationale": "ConClear writes verified release and rescan archives containing source and referenced evidence bytes. The release owner provides durable storage, retention, backup and retrieval tests."},
+    {"id": "IG0428", "status": "manual", "rationale": "Archives exclude protected profiles, keys, credentials, raw logs and secret test outputs. The release owner still reviews source and report content for disclosure before sharing."}
   ]
 }

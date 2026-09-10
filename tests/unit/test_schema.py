@@ -136,7 +136,7 @@ def test_pin_update_proposal_schema_is_closed_and_bounded() -> None:
         "guideTitle": "OCI container image build and release guide",
         "guideRepository": "https://github.com/foundata/guidelines",
         "guidePath": "oci-container-image-guide.md",
-        "guideRevision": "f1c75ec9dd9a766d5752623fd68be4a3e1aba5eb",
+        "guideRevision": "2e0a9d45f6488ebfa3fde129ce09310550076ef2",
     }
     lookup: dict[str, object] = {
         "imageIds": ["runtime"],

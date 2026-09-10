@@ -157,9 +157,11 @@
     },
     {
       "id": "IP0016",
-      "summary": "Journal owned resources and clean only ephemeral resources proven to belong to the selected run",
-      "implementation": ["src/conclear/workspace.py", "src/conclear/services/cleanup.py"],
+      "summary": "Retain verified release archives independently of owned working resources and clean only proven ephemeral resources",
+      "implementation": ["src/conclear/workspace.py", "src/conclear/services/cleanup.py", "src/conclear/archive.py", "src/conclear/archive_source.py", "src/conclear/services/archives.py", "src/conclear/services/archive_rescan.py", "src/conclear/commands/archive.py"],
       "tests": [
+        {"path": "tests/unit/test_archives.py", "tier": "unit"},
+        {"path": "tests/local_integration/test_archive_signatures.py", "tier": "local_integration"},
         {"path": "tests/unit/test_workspace_journal.py", "tier": "unit"},
         {"path": "tests/unit/test_cleanup.py", "tier": "unit"},
         {"path": "tests/unit/test_cleanup_ownership.py", "tier": "unit"}
@@ -250,8 +252,9 @@
     {
       "id": "IP0024",
       "summary": "Expose only non-secret exact-image facts to reviewed hooks and destroy generated private test material",
-      "implementation": ["src/conclear/hooks.py", "src/conclear/test_inputs.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/cleanup.py"],
+      "implementation": ["src/conclear/hooks.py", "src/conclear/test_inputs.py", "src/conclear/test_output_archive.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/cleanup.py"],
       "tests": [
+        {"path": "tests/unit/test_test_output_archive.py", "tier": "unit"},
         {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
         {"path": "tests/unit/test_secrets.py", "tier": "unit"},
         {"path": "tests/unit/test_cleanup.py", "tier": "unit"}
