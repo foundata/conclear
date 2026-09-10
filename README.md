@@ -173,6 +173,18 @@ installation steps with supported versions. Finish active runs before updating.
   check local prerequisites. Use the [release check](#usage-release) for signing
   and registry access.
 
+On SELinux hosts, label ConClear's private state directory for container storage
+before the first build. Keep SELinux enforcing:
+
+```sh
+state="${XDG_STATE_HOME:-$HOME/.local/state}/conclear"
+install -d -m 0700 "$state"
+chcon -t container_file_t "$state"
+```
+
+Repeat the label setup after a filesystem relabel or when changing the state
+directory. Do not relabel your entire home directory.
+
 
 ## Usage<a id="usage"></a>
 

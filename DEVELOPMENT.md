@@ -423,6 +423,11 @@ CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration
 
 The run ID becomes part of an OCI repository name, so it must be lowercase.
 
+On SELinux hosts, label the manifest-owned parent of `--basetemp` as
+`container_file_t` before creating test storage. Keep SELinux enforcing and use
+the normal login runtime directory; do not put `XDG_RUNTIME_DIR` under the
+checkout or a home-directory test workspace.
+
 The sudo tests need a separate Linux amd64 fixture containing real sudo,
 visudo, UID 10001 and the denied account `nobody`. After recording an absolute
 `RUN` directory and its descendant storage, images and containers in the local
