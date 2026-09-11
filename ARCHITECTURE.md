@@ -1,7 +1,11 @@
 # ConClear architecture
 
 This document defines the architecture and required behavioral contract of
-ConClear. Implementation and tests MUST conform to this contract. Discrepancies
+ConClear. The terms MUST, SHOULD and MAY are used as defined in
+[RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119) and
+[RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
+
+Implementation and tests MUST conform to this contract. Discrepancies
 MUST be investigated; an approved correction changes either the implementation
 or the contract. This document contains no planned or speculative behavior.
 Proposals and future changes are tracked separately, preferably as
@@ -19,10 +23,6 @@ is normative. This document explains how ConClear implements that guide's
 automatable rules. Each ConClear release selects and embeds an exact guide
 revision; when the documents conflict, that selected guide revision takes
 precedence and this document must be corrected.
-
-The terms MUST, SHOULD and MAY are used as defined in
-[RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119) and
-[RFC 8174](https://datatracker.ietf.org/doc/html/rfc8174).
 
 
 ## Table of contents<a id="table-of-contents"></a>
