@@ -1,9 +1,12 @@
 # ConClear architecture
 
-This document defines the architecture and current behavioral contract
-implemented by ConClear. It contains no planned or speculative behavior; future
-changes belong in [GitHub issues](https://github.com/foundata/conclear/issues)
-until their implementation and tests land with the contract change.
+This document defines the architecture and required behavioral contract of
+ConClear. Implementation and tests MUST conform to this contract. Discrepancies
+MUST be investigated; an approved correction changes either the implementation
+or the contract. This document contains no planned or speculative behavior.
+Proposals and future changes are tracked separately, preferably as
+[issues](https://github.com/foundata/conclear/issues), until their
+implementation and tests land with the contract change.
 
 Current implementation promises are marked with stable implementation promise
 (IP) `IPnnnn` anchors. The generated
