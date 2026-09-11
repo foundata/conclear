@@ -98,8 +98,7 @@ conclear/
 ├── REUSE.toml
 ├── LICENSES/                     # License texts (SPDX)
 ├── docs/
-│   ├── conformance.md            # Generated check catalog (do not edit by hand)
-│   ├── guide-options-1.0.0.md    # Generated guide-option support inventory
+│   ├── conformance.md            # Generated check catalog and guide options
 │   ├── compatibility-inventory.json # Generated internal compatibility inventory
 │   ├── implementation.md         # Generated implementation promise matrix
 │   └── backup.md                 # Backup and archive retention
@@ -677,22 +676,22 @@ committed document matches the generator.
 
 ## Generated guide-option support inventory<a id="guide-option-inventory"></a>
 
-`docs/guide-options-1.0.0.md` is generated from
+The guide-option section of `docs/conformance.md` is generated from
 `src/conclear/data/guide-options.json`. It records guide choices whose support
 cannot be inferred from the check catalog, including supported exceptions and
 deliberately unsupported or out-of-scope behavior. Every entry names the guide
 requirements it concerns, its rationale, related checks and condition for
-reconsideration.
+reconsideration. Both parts of the document are generated and verified together:
 
 ```sh
-# Regenerate the inventory
-uv run python -m conclear.guide_options
+# Regenerate the conformance document, including the guide options
+uv run python -m conclear.conformance
 
-# Verify the committed inventory is current
-uv run python -m conclear.guide_options --check
+# Verify the committed document is current
+uv run python -m conclear.conformance --check
 
 # Verify anchors against the exact implemented guide checkout
-uv run python -m conclear.guide_options --check \
+uv run python -m conclear.conformance --check \
   --guide ../guidelines/oci-container-image-guide.md
 ```
 
@@ -748,7 +747,7 @@ Moving to a newer guide revision:
 4. Import the inventory:
    `uv run python -m conclear.guide_requirements --import /tmp/guide-requirements.json`.
 5. Update the affected checks, guide options and coverage entries, regenerate
-   the conformance and guide-option documents, then run the checklist under
+   the conformance document, then run the checklist under
    [Before committing](#before-committing) and the `--guide` verification above.
 
 
@@ -911,22 +910,19 @@ uv run mypy --strict src tests
 # 4. Run the unit suite
 uv run pytest
 
-# 5. Verify the generated conformance catalog is current
+# 5. Verify the generated conformance catalog and guide options are current
 uv run python -m conclear.conformance --check
 
-# 6. Verify the generated guide-option inventory is current
-uv run python -m conclear.guide_options --check
-
-# 7. Verify the guide requirement inventory and coverage are complete
+# 6. Verify the guide requirement inventory and coverage are complete
 uv run python -m conclear.guide_requirements --check
 
-# 8. Verify the generated compatibility inventory is current
+# 7. Verify the generated compatibility inventory is current
 uv run python -m conclear.compatibility_inventory --check
 
-# 9. Verify the implementation promise matrix is current
+# 8. Verify the implementation promise matrix is current
 uv run python -m conclear.implementation --check
 
-# 10. Verify the supported-tools table is current
+# 9. Verify the supported-tools table is current
 uv run python -m conclear.tool_matrix --check
 ```
 
@@ -987,7 +983,6 @@ test workspaces and resource manifests outside the repository.
 
    ```sh
    uv lock
-   uv run python -m conclear.guide_options
    uv run python -m conclear.implementation
    uv run python -m conclear.compatibility_inventory
    uv run python -m conclear.conformance

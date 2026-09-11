@@ -19,7 +19,7 @@ from conclear.errors import (
     ConClearError,
     OperationalError,
 )
-from conclear.identity import GUIDE_REVISION, VERSION
+from conclear.identity import GUIDE_REVISION
 from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.path_safety import extract_tar_safely
 from conclear.process import (
@@ -334,7 +334,6 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
             "uv.lock",
             "docs/compatibility-inventory.json",
             "docs/conformance.md",
-            f"docs/guide-options-{VERSION}.md",
             "docs/implementation.md",
             "LICENSES/GPL-3.0-or-later.txt",
             "src/conclear/_embedded_identity.py",
@@ -397,10 +396,6 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
         (
             "check generated conformance documentation",
             ("python", "-m", "conclear.conformance", "--check"),
-        ),
-        (
-            "check guide-option support inventory",
-            ("python", "-m", "conclear.guide_options", "--check"),
         ),
         (
             "check guide requirement inventory and coverage",

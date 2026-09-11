@@ -531,7 +531,7 @@ be deleted, and a daily archive recipe for secure storage.
 
 Look up `CCnnnn` failures in the [conformance catalog](./docs/conformance.md).
 It also identifies guide requirements that need manual review or external
-controls. The [guide-option inventory](./docs/guide-options-1.0.0.md) lists
+controls. The [guide options](./docs/conformance.md#guide-options) section lists
 supported and unsupported choices.
 
 For implementation details, see [ARCHITECTURE.md](./ARCHITECTURE.md), the

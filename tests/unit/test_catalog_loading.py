@@ -11,6 +11,7 @@ import conclear.catalog as catalog_module
 from conclear.catalog import load_catalog, render_conformance
 from conclear.conformance import main
 from conclear.errors import OperationalError
+from conclear.guide_options import GuideOptionInventory
 from conclear.guide_requirements import validate_guide_anchors
 from conclear.identity import GUIDE_REVISION
 
@@ -115,7 +116,9 @@ def test_valid_catalog_renders_retired_and_limit_sections(
     )
 
     catalog = load_catalog()
-    rendered = render_conformance(catalog, statuses=())
+    rendered = render_conformance(
+        catalog, statuses=(), options=GuideOptionInventory(())
+    )
 
     assert catalog.retired[0].check_id == "CC0999"
     assert "| `CC0999` | Retired rule       |" in rendered

@@ -6,7 +6,7 @@ import textwrap
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from conclear.errors import OperationalError
 from conclear.guide_requirements import (
@@ -21,6 +21,9 @@ from conclear.guide_requirements import (
 )
 from conclear.identity import GUIDE_REVISION, GUIDE_TITLE
 from conclear.jsonutil import atomic_write_bytes, structure_depth_is_bounded
+
+if TYPE_CHECKING:
+    from conclear.guide_options import GuideOptionInventory
 
 GUIDE_URL = (
     "https://github.com/foundata/guidelines/blob/"
@@ -182,15 +185,20 @@ def render_conformance(
     catalog: CheckCatalog | None = None,
     *,
     statuses: tuple[RequirementStatus, ...] | None = None,
+    options: "GuideOptionInventory | None" = None,
 ) -> str:
     """Render deterministic generated conformance documentation."""
+    from conclear.guide_options import render_guide_options
+
     selected = catalog or load_catalog()
     selected_statuses = requirement_statuses(selected) if statuses is None else statuses
     introduction = (
         "ConClear implements the automatable rules of the foundata "
         f"[{GUIDE_TITLE}]({GUIDE_URL}) at revision `{GUIDE_REVISION}`. Every "
-        "check names the guide requirements it covers, and the requirement "
-        "coverage section states a status for every requirement of that revision."
+        "check names the guide requirements it covers, the guide-option section "
+        "states a disposition for choices the catalog does not show, and the "
+        "requirement coverage section states a status for every requirement of "
+        "that revision."
     )
     lines = [
         "# ConClear conformance",
@@ -261,6 +269,8 @@ def render_conformance(
             tuple(check_rows),
         )
     )
+    lines.append("")
+    lines.extend(render_guide_options(options))
     lines.extend(
         [
             "",

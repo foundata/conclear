@@ -5,7 +5,8 @@
 ConClear implements the automatable rules of the foundata
 [OCI container image build and release guide](https://github.com/foundata/guidelines/blob/2e0a9d45f6488ebfa3fde129ce09310550076ef2/oci-container-image-guide.md)
 at revision `2e0a9d45f6488ebfa3fde129ce09310550076ef2`. Every check names the
-guide requirements it covers, and the requirement coverage section states a
+guide requirements it covers, the guide-option section states a disposition for
+choices the catalog does not show, and the requirement coverage section states a
 status for every requirement of that revision.
 
 ## Built-in limits
@@ -89,6 +90,165 @@ below links every identifier to the guide.
 | `CC9002` | manual    | info     | Review an immutable-version tag digest change as a supply-chain event                | `IG0121`, `IG0130` |
 | `CC9003` | manual    | info     | Review vulnerability exceptions through repository security ownership                | `IG0309`           |
 | `CC9005` | manual    | info     | Review external evidence-retention and signing-key procedures                        | `IG0017`, `IG0066`, `IG0328`, `IG0362`, `IG0395` |
+
+## Guide options
+
+These guide choices are not fully visible from the check catalog. Each entry
+names the guide requirements it concerns; the requirement coverage section below
+links every identifier to the guide.
+
+### GO0001: Reviewed container UID 0 requirement
+
+- **Guide requirements:** `IG0207`, `IG0211`, `IG0219`
+- **Status:** `supported`
+- **Checks:** `CC0110`, `CC0401`
+- **Rationale:** ConClear requires a source-reviewed rationale, owner and review
+  trigger, matches the final numeric USER, and retains rootless runtime
+  hardening.
+- **Reconsider when:** Reconsider if the guide removes its documented root
+  exception.
+
+### GO0002: Systemd as the declared container supervisor
+
+- **Guide requirements:** `IG0223`, `IG0224`, `IG0229`
+- **Status:** `supported`
+- **Checks:** `CC0115`, `CC0403`
+- **Rationale:** The systemd profile verifies PID 1, manager access, required
+  units, the baked stop signal, bounded readiness and graceful shutdown without
+  privileged execution.
+- **Reconsider when:** Reconsider the profile when Podman or systemd changes its
+  rootless container contract.
+
+### GO0003: Docker daemon, BuildKit and Docker compatibility
+
+- **Guide requirements:** `IG0030`, `IG0031`, `IG0032`, `IG0057`
+- **Status:** `out-of-scope`
+- **Checks:** `CC0103`
+- **Rationale:** ConClear implements the guide's OCI, Buildah and rootless
+  Podman workflow and makes no Docker compatibility claim.
+- **Reconsider when:** Reconsider only if the guide adopts a separately
+  versioned Docker compatibility profile.
+
+### GO0004: Release registries other than Quay
+
+- **Guide requirements:** `IG0061`, `IG0067`
+- **Status:** `unsupported`
+- **Checks:** None
+- **Rationale:** Provider-neutral checks and qualification work for other
+  repositories, but complete publication requires provider-specific controls and
+  only the Quay backend is implemented.
+- **Reconsider when:** Add a backend after it passes the published
+  digest-preservation, ambiguity, selected protection/cleanup and deletion
+  contract.
+
+### GO0005: Privileged and host-integrated containers
+
+- **Guide requirements:** `IG0211`
+- **Status:** `unsupported`
+- **Checks:** `CC0401`
+- **Rationale:** These controls exceed ConClear's rootless qualification
+  boundary; reviewed capabilities and run-owned test-output mounts are the
+  narrow supported mechanisms.
+- **Reconsider when:** Reconsider only with a separate isolation model that can
+  test each resource without weakening ordinary qualification.
+
+### GO0006: Scanner stacks other than Trivy
+
+- **Guide requirements:** `IG0304`, `IG0307`, `IG0308`
+- **Status:** `unsupported`
+- **Checks:** `CC0501`, `CC0505`
+- **Rationale:** One Trivy result and its validated database snapshot are the
+  authoritative release gate in 1.0.0.
+- **Reconsider when:** Add a scanner only after defining equivalent findings,
+  database identity, SBOM and rescan semantics.
+
+### GO0007: Finalized SPDX versions newer than SPDX 2.3
+
+- **Guide requirements:** `IG0324`, `IG0334`
+- **Status:** `unsupported`
+- **Checks:** `CC0504`
+- **Rationale:** ConClear 1.0.0 generates, validates, records, rescans and
+  attests SPDX 2.3 JSON only.
+- **Reconsider when:** Add a version after every producer, validator, consumer,
+  attestation and rescan path supports it without conversion.
+
+### GO0008: KMS or HSM signing keys
+
+- **Guide requirements:** `IG0363`, `IG0367`
+- **Status:** `unsupported`
+- **Checks:** None
+- **Rationale:** The 1.0.0 release profile supports an approved encrypted Cosign
+  key pair and public-key verification, not managed-key URIs.
+- **Reconsider when:** Add a mode after its non-exportable key identity,
+  authentication, signing and verification behavior is implemented and tested
+  end to end.
+
+### GO0009: Deployment admission and containers-policy configuration
+
+- **Guide requirements:** `IG0088`, `IG0365`, `IG0366`, `IG0375`
+- **Status:** `out-of-scope`
+- **Checks:** `CC9005`
+- **Rationale:** ConClear produces and verifies release evidence; deployment
+  owners configure and test admission policy in their target environment.
+- **Reconsider when:** Reconsider only if ConClear gains an explicit
+  deployment-policy validation scope.
+
+### GO0010: Rootful build or runtime execution
+
+- **Guide requirements:** `IG0020`, `IG0401`
+- **Status:** `unsupported`
+- **Checks:** `CC0301`, `CC0401`
+- **Rationale:** Buildah and Podman must report rootless execution; container
+  UID 0 remains mapped through the invoking user's namespace.
+- **Reconsider when:** Reconsider only with a separate threat model and release
+  profile that does not weaken the rootless default.
+
+### GO0011: Base-image lifecycle suitability
+
+- **Guide requirements:** `IG0098`, `IG0100`
+- **Status:** `manual`
+- **Checks:** `CC9001`
+- **Rationale:** ConClear verifies exact image references and observations but
+  cannot decide whether an upstream lifecycle, publisher or dependency set fits
+  the application.
+- **Reconsider when:** Keep this manual unless an authoritative project policy
+  can express the decision without pretending judgment is mechanical.
+
+### GO0012: Reviewed sudo presence or escalation
+
+- **Guide requirements:** `IG0218`, `IG0405`, `IG0422`
+- **Status:** `supported`
+- **Checks:** `CC0401`, `CC0405`
+- **Rationale:** A sudo requirement declares purpose, owner, review trigger,
+  mode and scope. Escalation requires actual non-root permitted and denied
+  callers plus a restrictive probe; final-image inventory and authorization
+  review remain manual.
+- **Reconsider when:** Reconsider when the image's sudo implementation needs a
+  different validator or authentication test contract.
+
+### GO0013: Reviewed writable container root filesystem
+
+- **Guide requirements:** `IG0186`, `IG0210`, `IG0405`
+- **Status:** `supported`
+- **Checks:** `CC0401`, `CC0404`
+- **Rationale:** A separate writable-root requirement changes the functional
+  container's root filesystem mode and adds a restrictive probe. It grants no
+  host writes or additional capabilities.
+- **Reconsider when:** Review the requirement when the administration tasks or
+  writable paths change.
+
+### GO0014: Reviewed set-ID executable inventory
+
+- **Guide requirements:** `IG0420`, `IG0421`
+- **Status:** `manual`
+- **Checks:** `CC0109`
+- **Rationale:** ConClear checks declared executable paths, ownership, set-ID
+  modes and protected parent directories. Owners review the complete final-image
+  inventory, each purpose and review triggers; inherited executables are not
+  automatically inventoried.
+- **Reconsider when:** Reconsider after a bounded final-image filesystem
+  inventory can validate every privileged executable without depending on
+  image-provided tools.
 
 ## Requirement coverage
 
