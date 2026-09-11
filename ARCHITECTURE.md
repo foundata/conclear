@@ -1610,8 +1610,8 @@ The summary is not an export format or a qualification result.
 
 ## Maintaining this document<a id="maintaining-this-document"></a>
 
-This document describes only behavior implemented and tested in the current
-source tree. Planned or speculative behavior belongs in a
+This document contains only behavior that is implemented and tested in the
+current source tree. Planned or speculative behavior belongs in a
 [GitHub issue](https://github.com/foundata/conclear/issues) until its
 implementation, tests and contract text land together. Contributors update the
 matching `IPnnnn` promise in `src/conclear/data/implementation.json` whenever
