@@ -215,6 +215,8 @@ ownership and policy choices:
 ```toml
 schema_version = 1
 ci_context = "observe"
+# Git origins your release checkouts may have; the list never leaves this file.
+allowed_source_origins = ["https://github.com/foundata/"]
 auth_file = "~/.config/conclear/auth.json"
 cosign_private_key = "~/.config/conclear/cosign.key"
 cosign_public_key = "~/.config/conclear/cosign.pub"
@@ -284,7 +286,8 @@ schema_version = 1
 
 [project]
 name = "example"
-source = "https://github.com/foundata/example"
+# Public URL where users find the code; it need not be a Git repository.
+source = "https://foundata.com/en/projects/example/#source"
 
 [[images]]
 id = "app"
