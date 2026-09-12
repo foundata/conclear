@@ -170,7 +170,11 @@ The release state advances monotonically through `created`, `qualified`,
 `assembled`, `published`, `attested`, `verified` and `promoted`. `rejected` and
 `incomplete` results never satisfy a later state's prerequisite. Retrying a
 network operation may resume the same state only when all immutable inputs and
-expected digests still match.
+expected digests still match. A run that is not a release, such as a rescan,
+has no intermediate states: it ends as `completed` when its record is written,
+or as `rejected` when its verdict rejects the subject. `promoted`, `completed`
+and `rejected` are terminal and cannot be resumed, so a finished run is never
+mistaken for one that stopped before doing anything.
 
 
 ## Invariants<a id="invariants"></a>
@@ -847,7 +851,8 @@ ownership records and never deletes promoted tags, signatures, attestations,
 transported inputs, caller-owned paths or pre-existing registry content.
 
 Rejected runs retain reports with `verdict: rejected`. Interrupted runs are
-`incomplete`. Workspaces may be removed after authoritative evidence has been
+`incomplete`; finished rescans are `completed`. Workspaces may be removed after
+authoritative evidence has been
 retained, but ConClear never presents its local state directory as an archive or
 registry backup.
 
