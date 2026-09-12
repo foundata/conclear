@@ -140,7 +140,7 @@ local image name. A release follows this data flow:
 
 ```text
 reviewed source commit
-  -> isolated detached worktree
+  -> isolated detached worktree and exported tracked tree
   -> platform OCI layout                         build
   -> digest-reverified Podman import and tests   test
   -> SBOM, scans and platform qualification      evidence
@@ -816,6 +816,7 @@ A run workspace is stored under `$XDG_STATE_HOME/conclear/runs/<run-id>/`:
 run.json
 resources.json
 source/
+checkout/
 logs/
 layouts/<image>/<platform>/
 reports/<image>/<platform>/
@@ -965,23 +966,29 @@ that historical evidence.
 ## Build and qualification<a id="build-and-qualification"></a>
 
 <a id="promise-ip0019"></a>
-`release` creates its build context from an isolated detached worktree of the
-selected commit. The ordinary checkout may be dirty, but its uncommitted and
-untracked files cannot enter the context. ConClear validates `.containerignore`,
-rejects source paths outside the checkout and records the exact Containerfile
-and configuration digests. Hadolint runs with the image's context directory as
-its working directory and, when that directory contains a committed regular
-`.hadolint.yaml` or `.hadolint.yml`, receives it explicitly, so the reviewed
-checkout rather than the invoking directory or the operator's home defines lint
-policy.
+`release` holds the selected commit twice. It creates an isolated detached
+worktree under `checkout/` and exports that worktree's index, which is exactly
+the commit's tracked tree, into `source/`. Builds, static checks, evidence and
+archives read only the export, so neither the ordinary checkout's uncommitted
+and untracked files nor anything written during the run can enter a build
+context or an archive. ConClear validates `.containerignore`, rejects source
+paths outside the export and records the exact Containerfile and configuration
+digests. Hadolint runs with the image's context directory as its working
+directory and, when that directory contains a committed regular `.hadolint.yaml`
+or `.hadolint.yml`, receives it explicitly, so the reviewed source rather than
+the invoking directory or the operator's home defines lint policy.
 
-The run also binds the complete detached checkout's content digest, including
-hooks, ignored files, symlink targets and file modes. Reopening a run and the
-build, test and evidence boundaries recheck that binding. A changed checkout is
-rejected without repair; older runs without the binding must be restarted.
-Hooks must keep generated files and caches outside the checkout, in run-owned
-output directories. A clean Git status alone is not sufficient evidence of
-unchanged source bytes.
+The run binds the export's content digest: every regular file and symbolic link
+with its bytes, mode and link target. Reopening a run and the build, test and
+evidence boundaries recheck that binding twice: the export must be unchanged,
+and the Git checkout must still present every exported path with identical
+bytes, mode and link target. A change to either is rejected without repair;
+older runs without the binding must be restarted. Repository hooks run inside
+the checkout, and the tools they invoke may leave untracked files there, such as
+virtual environments, bytecode and test caches, because nothing later in the
+run reads the checkout. A clean Git status alone is not sufficient evidence of
+unchanged source bytes, so the tracked comparison hashes content rather than
+consulting Git's index.
 
 Trivy runs from a fresh private directory with explicit ConClear-owned
 configuration, ignore and secret-rule files. Ambient and repository Trivy
