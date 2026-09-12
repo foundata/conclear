@@ -65,6 +65,27 @@ class GitAdapter(ToolAdapter):
             operation=OperationKind.WRITE,
         )
 
+    def export_index(self, worktree: Path, destination: Path) -> None:
+        """Export the tracked tree of a detached checkout into a new directory.
+
+        `checkout-index` writes exactly the index entries, which in a detached
+        worktree are the selected commit's tree: no untracked or ignored files,
+        the same filters and modes as the checkout itself.
+        """
+        destination.mkdir(mode=0o700, parents=False, exist_ok=False)
+        self._run(
+            (
+                "-C",
+                str(worktree),
+                "checkout-index",
+                "--all",
+                "--force",
+                f"--prefix={destination}/",
+            ),
+            timeout_seconds=300,
+            operation=OperationKind.WRITE,
+        )
+
     def read_text(self, repository: Path, revision: str, relative_path: str) -> str:
         """Read one UTF-8 repository file from an observed commit without checkout."""
         validate_source_revision(revision)

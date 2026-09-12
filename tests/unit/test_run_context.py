@@ -69,6 +69,11 @@ class FakeGit:
             raise OperationalError("injected worktree failure")
         shutil.copytree(self.source_root, destination)
 
+    def export_index(self, worktree: Path, destination: Path) -> None:
+        # The fixture repository has no untracked files, so its tracked tree is
+        # the whole checkout.
+        shutil.copytree(worktree, destination)
+
     def remove_worktree(self, repository: Path, destination: Path) -> None:
         shutil.rmtree(destination)
 
@@ -416,7 +421,8 @@ def test_tool_resolution_failure_after_workspace_creation_names_the_run(
     assert workspace.load().state is RunState.INCOMPLETE
     assert failed_run_id(caught.value) == workspace.run_id
     assert [entry.resource_id for entry in workspace.journal.entries()] == [
-        "source-worktree"
+        "source-worktree",
+        "source-export",
     ]
     _assert_cleanup_resolves_every_resource(workspace, git)
     _assert_cleanup_resolves_every_resource(workspace, git)

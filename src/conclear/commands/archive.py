@@ -111,6 +111,7 @@ def archive_completed_run(
                 state_home() / "conclear",
                 cache_home() / "conclear",
                 workspace.root / "source",
+                workspace.root / "checkout",
                 *((Path(source_root),) if source_root is not None else ()),
             ),
         )

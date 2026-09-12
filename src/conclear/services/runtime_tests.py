@@ -238,7 +238,7 @@ def test_platform(
                         "CC_LAYOUT": str(build.observation.layout_path),
                         "CC_IMAGE_DIGEST": str(build.observation.graph.digest),
                         "CC_PLATFORM": str(inputs.platform),
-                        "CC_SOURCE_ROOT": str(inputs.repository.path.parent),
+                        "CC_SOURCE_ROOT": str(inputs.workspace.root / "checkout"),
                         "CC_TEST_INPUT_MANIFEST": str(manifest_path),
                     },
                 )

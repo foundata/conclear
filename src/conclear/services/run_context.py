@@ -22,7 +22,14 @@ from conclear.jsonutil import sha256_bytes
 from conclear.records import SourceIdentity, utc_now
 from conclear.release_profile import origin_is_allowed
 from conclear.runtime import ApplicationRuntime
-from conclear.source_integrity import require_source_integrity, source_tree_digest
+from conclear.source_integrity import (
+    CHECKOUT_DIRECTORY,
+    CHECKOUT_RESOURCE,
+    EXPORT_DIRECTORY,
+    journaled_checkout,
+    require_source_integrity,
+    source_tree_digest,
+)
 from conclear.tools import ToolName
 from conclear.workspace import (
     TERMINAL_STATES,
@@ -76,11 +83,16 @@ def finish_run_failure(
 def hook_runner(
     runtime: ApplicationRuntime, repository: RepositoryConfig, workspace: RunWorkspace
 ) -> HookRunner:
-    """Bind repository hooks to one run's isolated checkout and tool environment."""
+    """Bind repository hooks to the run's Git checkout and tool environment.
+
+    Hooks run in the checkout, not in the exported tree that builds read, so the
+    tools they invoke may leave untracked files behind without touching any
+    build input. A run without a journaled checkout falls back to the export.
+    """
     return HookRunner(
         runner=runtime.runner,
         environment=runtime.environment,
-        source_root=repository.path.parent,
+        source_root=journaled_checkout(workspace) or repository.path.parent,
         log_directory=workspace.root / "logs",
     )
 
@@ -159,9 +171,9 @@ def create_source_run(
             },
             now=created_at,
         )
-        worktree = workspace.root / "source"
+        worktree = workspace.root / CHECKOUT_DIRECTORY
         workspace.journal.plan(
-            resource_id="source-worktree",
+            resource_id=CHECKOUT_RESOURCE,
             kind=ResourceKind.GIT_WORKTREE,
             identifier=str(worktree),
             ephemeral=True,
@@ -172,10 +184,25 @@ def create_source_run(
                 source_repository, worktree, observation.revision
             )
         except Exception:
-            workspace.journal.update("source-worktree", ResourceStatus.FAILED)
+            workspace.journal.update(CHECKOUT_RESOURCE, ResourceStatus.FAILED)
             raise
-        workspace.journal.update("source-worktree", ResourceStatus.CREATED)
-        repository = load_repository_config(worktree / "conclear.toml")
+        workspace.journal.update(CHECKOUT_RESOURCE, ResourceStatus.CREATED)
+        # The export is the commit's tracked tree and the only source that
+        # builds, evidence and archives read; the checkout is for hooks.
+        export = workspace.root / EXPORT_DIRECTORY
+        workspace.journal.plan(
+            resource_id="source-export",
+            kind=ResourceKind.LOCAL_PATH,
+            identifier=str(export),
+            ephemeral=True,
+        )
+        try:
+            runtime.git().export_index(worktree, export)
+        except Exception:
+            workspace.journal.update("source-export", ResourceStatus.FAILED)
+            raise
+        workspace.journal.update("source-export", ResourceStatus.CREATED)
+        repository = load_repository_config(export / "conclear.toml")
         if sha256_bytes(repository.raw_bytes) != sha256_bytes(
             config_text.encode("utf-8")
         ):
@@ -193,7 +220,7 @@ def create_source_run(
                 # The declared public source URL is public by definition and
                 # lets transported records be checked against the run.
                 "projectSource": repository.project.source,
-                "sourceTreeDigest": source_tree_digest(worktree),
+                "sourceTreeDigest": source_tree_digest(export),
                 **_tool_inputs(runtime),
             },
             now=created_at,
@@ -230,26 +257,26 @@ def open_source_run(
     """
     workspace = RunWorkspace.open(state_home=state_home, run_id=run_id)
     snapshot = workspace.load()
-    worktree = workspace.root / "source"
-    try:
-        worktree_stat = worktree.lstat()
-    except OSError as exc:
-        raise InvalidInvocationError(
-            "Workspace source checkout is unavailable"
-        ) from exc
-    if stat.S_ISLNK(worktree_stat.st_mode) or not stat.S_ISDIR(worktree_stat.st_mode):
-        raise InvalidInvocationError("Workspace source checkout is not a directory")
+    worktree = workspace.root / CHECKOUT_DIRECTORY
+    export = workspace.root / EXPORT_DIRECTORY
+    for label, path in (("checkout", worktree), ("source", export)):
+        try:
+            path_stat = path.lstat()
+        except OSError as exc:
+            raise InvalidInvocationError(f"Workspace {label} is unavailable") from exc
+        if stat.S_ISLNK(path_stat.st_mode) or not stat.S_ISDIR(path_stat.st_mode):
+            raise InvalidInvocationError(f"Workspace {label} is not a directory")
     source_entries = [
         entry
         for entry in workspace.journal.entries()
-        if entry.resource_id == "source-worktree"
+        if entry.resource_id == CHECKOUT_RESOURCE
         and entry.kind is ResourceKind.GIT_WORKTREE
         and entry.status is ResourceStatus.CREATED
         and entry.identifier == str(worktree)
     ]
     if len(source_entries) != 1:
         raise InvalidInvocationError("Workspace source ownership is not established")
-    repository = load_repository_config(worktree / "conclear.toml")
+    repository = load_repository_config(export / "conclear.toml")
     configuration_digest = sha256_bytes(repository.raw_bytes)
     if snapshot.immutable_inputs.get("configurationDigest") != configuration_digest:
         raise InvalidInvocationError("Workspace repository configuration changed")
@@ -278,7 +305,7 @@ def open_source_run(
         raise InvalidInvocationError("Workspace source checkout changed")
     origin = normalize_observed_source_url(observation.remote_url)
     _require_allowed_origin(origin, allowed_origins)
-    require_source_integrity(workspace, worktree)
+    require_source_integrity(workspace, export)
     return SourceRun(
         workspace,
         repository,

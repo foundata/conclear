@@ -202,6 +202,7 @@ def resume_release(
         image = source_run.repository.release_image(image_id)
         protected_resources = {
             "source-worktree",
+            "source-export",
             f"candidate-layout-{image.image_id}",
         }
         for platform in image.platforms:

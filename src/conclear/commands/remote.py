@@ -256,6 +256,7 @@ def promote_command(
         archive_directory,
         excluded=(
             source_run.repository.path.parent,
+            source_run.workspace.root / "checkout",
             state_home() / "conclear",
             cache_home() / "conclear",
         ),
