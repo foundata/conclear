@@ -38,6 +38,7 @@ def _profile(tmp_path: Path) -> ReleaseProfile:
         passphrase_file=None,
         configuration_digest="sha256:" + "1" * 64,
         public_key_digest="sha256:" + "2" * 64,
+        allowed_source_origins=("https://github.com/example/",),
     )
 
 

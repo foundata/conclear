@@ -56,7 +56,6 @@ class Scenario:
             state_home=tmp_path / "state",
             immutable_inputs={
                 "sourceRevision": "b" * 40,
-                "sourceRepository": self.repository.project.source,
                 "configurationDigest": sha256_bytes(self.repository.raw_bytes),
                 "sourceTreeDigest": DIGEST,
                 "image": "app",
@@ -176,7 +175,10 @@ class Scenario:
             record_type="platformQualification",
             created_at=created_at,
             run_id=run_id or self.workspace.run_id,
-            source=source or SourceIdentity("https://github.com/example/app", "b" * 40),
+            source=source
+            or SourceIdentity(
+                "https://foundata.com/en/projects/example/#source", "b" * 40
+            ),
             configuration_digest=configuration_digest
             or sha256_bytes(self.repository.raw_bytes),
             tools=tools or (self.tool,),
@@ -284,7 +286,9 @@ def test_assembly_rejects_source_configuration_and_ruleset_drift(
     with pytest.raises(InvalidInvocationError, match="source revision"):
         scenario.assemble(
             scenario.transport(
-                source=SourceIdentity("https://github.com/example/app", "e" * 40)
+                source=SourceIdentity(
+                    "https://foundata.com/en/projects/example/#source", "e" * 40
+                )
             )
         )
     with pytest.raises(InvalidInvocationError, match="repository configuration"):

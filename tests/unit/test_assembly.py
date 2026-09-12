@@ -182,7 +182,6 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
         state_home=tmp_path / "state",
         immutable_inputs={
             "sourceRevision": "b" * 40,
-            "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
             "sourceTreeDigest": "sha256:" + "d" * 64,
             "image": "app",
@@ -204,7 +203,9 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
         record_type="platformQualification",
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         run_id=workspace.run_id,
-        source=SourceIdentity("https://github.com/example/app", "b" * 40),
+        source=SourceIdentity(
+            "https://foundata.com/en/projects/example/#source", "b" * 40
+        ),
         configuration_digest=configuration_digest,
         tools=(tool,),
         verdict=Verdict.ACCEPTED,

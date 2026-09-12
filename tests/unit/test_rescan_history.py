@@ -62,7 +62,9 @@ def _record(
         record_type="rescanResult",
         created_at=when,
         run_id="01arz3ndektsv4rrffq69g5fav",
-        source=SourceIdentity("https://github.com/example/app", "b" * 40),
+        source=SourceIdentity(
+            "https://foundata.com/en/projects/example/#source", "b" * 40
+        ),
         configuration_digest="sha256:" + "c" * 64,
         tools=(
             ToolIdentity("trivy", "0.69.3", executable_digest="sha256:" + "f" * 64),

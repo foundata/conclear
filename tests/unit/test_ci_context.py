@@ -45,6 +45,7 @@ def _profile(tmp_path: Path, policy: CIContextPolicy) -> ReleaseProfile:
         passphrase_file=None,
         configuration_digest="sha256:" + "1" * 64,
         public_key_digest="sha256:" + "2" * 64,
+        allowed_source_origins=("https://forge.internal.example/foundata/",),
     )
 
 
@@ -239,8 +240,9 @@ def test_observe_policy_omits_inconsistent_context_and_keeps_diagnostics(
         observation,
         policy=CIContextPolicy.OBSERVE,
         source=SourceIdentity(
-            "https://gitlab.internal.example/foundata/example", REVISION
+            "https://foundata.com/en/projects/example/#source", REVISION
         ),
+        origin="https://gitlab.internal.example/foundata/example",
         diagnostic_path=diagnostic,
     )
 
@@ -255,12 +257,18 @@ def test_observe_policy_omits_inconsistent_context_and_keeps_diagnostics(
 def test_required_ci_context_rejects_absence_and_checkout_disagreement(
     tmp_path: Path,
 ) -> None:
-    source = SourceIdentity("https://gitlab.com/foundata/example", REVISION)
+    # The public source URL is a project page; only the Git origin is compared
+    # with the provider's repository claim.
+    source = SourceIdentity(
+        "https://foundata.com/en/projects/example/#source", REVISION
+    )
+    origin = "https://gitlab.com/foundata/example"
     with pytest.raises(OperationalError, match="Required"):
         resolve_ci_context(
             CIContextAbsent(),
             policy=CIContextPolicy.REQUIRE,
             source=source,
+            origin=origin,
             diagnostic_path=tmp_path / "absent.json",
         )
 
@@ -275,6 +283,7 @@ def test_required_ci_context_rejects_absence_and_checkout_disagreement(
             ),
             policy=CIContextPolicy.REQUIRE,
             source=source,
+            origin=origin,
             diagnostic_path=tmp_path / "mismatch.json",
         )
 
@@ -289,6 +298,7 @@ def test_required_ci_context_rejects_absence_and_checkout_disagreement(
             ),
             policy=CIContextPolicy.REQUIRE,
             source=source,
+            origin=origin,
             diagnostic_path=tmp_path / "repository-mismatch.json",
         )
 
@@ -298,6 +308,7 @@ def test_required_ci_context_rejects_absence_and_checkout_disagreement(
             CIContextInvalid("gitlab-ci", "malformed provider context"),
             policy=CIContextPolicy.REQUIRE,
             source=source,
+            origin=origin,
             diagnostic_path=invalid_diagnostic,
         )
     assert load_json(invalid_diagnostic) == {
@@ -319,8 +330,9 @@ def test_matching_ci_context_has_provider_neutral_public_shape(tmp_path: Path) -
         ),
         policy=CIContextPolicy.OBSERVE,
         source=SourceIdentity(
-            "https://forge.internal.example/foundata/example", REVISION
+            "https://foundata.com/en/projects/example/#source", REVISION
         ),
+        origin="https://forge.internal.example/foundata/example",
         diagnostic_path=tmp_path / "ci-context.json",
     )
 

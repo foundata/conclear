@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "2e0a9d45f6488ebfa3fde129ce09310550076ef2",
+  "guideRevision": "9902755d7775d8679e09c35f7b639e9f573b0530",
   "limits": [
     {"name": "Pin resolution freshness", "value": "24 hours"},
     {"name": "Pin divergence", "value": "7 days"},
@@ -12,6 +12,7 @@
     {"id": "CC0001", "summary": "Validate repository configuration against its closed schema", "severity": "error", "behavior": "automated", "requirements": ["IG0093", "IG0116", "IG0118", "IG0310", "IG0314"]},
     {"id": "CC0002", "summary": "Keep configured and transported paths within their trusted root", "severity": "error", "behavior": "automated", "requirements": ["IG0149", "IG0273"]},
     {"id": "CC0003", "summary": "Reject unsafe release-profile ownership and permissions", "severity": "error", "behavior": "automated", "requirements": ["IG0373", "IG0374"]},
+    {"id": "CC0004", "summary": "Require the observed Git origin to match a release-profile-allowed origin prefix", "severity": "error", "behavior": "automated", "requirements": ["IG0429"]},
     {"id": "CC0101", "summary": "Require UTF-8 Containerfiles with Unix line endings and a final newline", "severity": "error", "behavior": "automated", "requirements": ["IG0047"]},
     {"id": "CC0102", "summary": "Require uppercase Containerfile instruction keywords", "severity": "error", "behavior": "automated", "requirements": ["IG0048"]},
     {"id": "CC0103", "summary": "Reject Docker BuildKit parser directives and extensions", "severity": "error", "behavior": "automated", "requirements": ["IG0031", "IG0057"]},
@@ -24,7 +25,7 @@
     {"id": "CC0110", "summary": "Require the final numeric user to match the reviewed runtime contract", "severity": "error", "behavior": "automated", "requirements": ["IG0207", "IG0219", "IG0221"]},
     {"id": "CC0111", "summary": "Require JSON exec form for ENTRYPOINT and CMD", "severity": "error", "behavior": "automated", "requirements": ["IG0222"]},
     {"id": "CC0112", "summary": "Reject Docker-format HEALTHCHECK metadata", "severity": "error", "behavior": "automated", "requirements": ["IG0257"]},
-    {"id": "CC0113", "summary": "Verify mandatory OCI image labels against observed source facts", "severity": "error", "behavior": "automated", "requirements": ["IG0232", "IG0233", "IG0234", "IG0235", "IG0236", "IG0243", "IG0407"]},
+    {"id": "CC0113", "summary": "Verify mandatory OCI image labels against the declared public source URL and observed release facts", "severity": "error", "behavior": "automated", "requirements": ["IG0232", "IG0233", "IG0234", "IG0235", "IG0236", "IG0243", "IG0407"]},
     {"id": "CC0114", "summary": "Report Hadolint diagnostics with their upstream rule identifiers", "severity": "error", "behavior": "automated", "requirements": ["IG0399"]},
     {"id": "CC0115", "summary": "Require systemd stop-signal metadata to match the runtime contract", "severity": "error", "behavior": "automated", "requirements": ["IG0224", "IG0231"]},
     {"id": "CC0116", "summary": "Require final-stage VOLUME destinations to be declared writable runtime mounts", "severity": "error", "behavior": "automated", "requirements": ["IG0209", "IG0253"]},

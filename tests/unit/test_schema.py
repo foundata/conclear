@@ -92,6 +92,7 @@ def test_release_profile_schema_has_a_closed_registry_backend_matrix() -> None:
     profile = {
         "schema_version": 1,
         "ci_context": "omit",
+        "allowed_source_origins": ["https://github.com/example/"],
         "builder": {
             "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"
         },
@@ -136,7 +137,7 @@ def test_pin_update_proposal_schema_is_closed_and_bounded() -> None:
         "guideTitle": "OCI container image build and release guide",
         "guideRepository": "https://github.com/foundata/guidelines",
         "guidePath": "oci-container-image-guide.md",
-        "guideRevision": "2e0a9d45f6488ebfa3fde129ce09310550076ef2",
+        "guideRevision": "9902755d7775d8679e09c35f7b639e9f573b0530",
     }
     lookup: dict[str, object] = {
         "imageIds": ["runtime"],
@@ -167,7 +168,7 @@ def test_pin_update_proposal_schema_is_closed_and_bounded() -> None:
         "createdAt": "2026-09-04T00:00:00Z",
         "ruleset": ruleset,
         "source": {
-            "repository": "https://github.com/example/app",
+            "repository": "https://foundata.com/en/projects/example/#source",
             "revision": "c" * 40,
         },
         "repositoryConfiguration": {"path": "conclear.toml", "sha256": digest},

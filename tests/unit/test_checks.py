@@ -490,3 +490,38 @@ def test_comment_lines_inside_a_continued_instruction_are_ignored(
         "USER",
         "ENTRYPOINT",
     ]
+
+
+def test_source_label_must_equal_the_public_source_url_byte_for_byte() -> None:
+    source = "https://foundata.com/en/projects/example/#source"
+    labels = {
+        "org.opencontainers.image.source": source,
+        "org.opencontainers.image.revision": "a" * 40,
+        "org.opencontainers.image.licenses": "MIT",
+        "org.opencontainers.image.title": "Example",
+    }
+
+    assert (
+        validate_image_labels(
+            labels,
+            source=source,
+            revision="a" * 40,
+            version=None,
+            created="2026-01-01T00:00:00Z",
+        )
+        == ()
+    )
+
+    # Dropping the fragment or naming the Git repository instead is a mismatch.
+    for wrong in (
+        "https://foundata.com/en/projects/example/",
+        "https://github.com/foundata/example",
+    ):
+        findings = validate_image_labels(
+            {**labels, "org.opencontainers.image.source": wrong},
+            source=source,
+            revision="a" * 40,
+            version=None,
+            created="2026-01-01T00:00:00Z",
+        )
+        assert [finding.check_id for finding in findings] == ["CC0113"]

@@ -139,7 +139,6 @@ def qualify_worker(
         state_home=state_home,
         immutable_inputs={
             "sourceRevision": source_revision,
-            "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
             "sourceTreeDigest": source_tree_digest(source_root),
             "image": "app",
@@ -216,7 +215,6 @@ def coordinator_workspace(
         state_home=tmp_path / "coordinator" / run_id / "state",
         immutable_inputs={
             "sourceRevision": source_revision,
-            "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
             "sourceTreeDigest": source_tree_digest(source_root),
             "image": "app",

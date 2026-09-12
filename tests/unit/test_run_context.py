@@ -150,14 +150,17 @@ def test_source_run_binds_observed_identity_and_worktree_ownership(
 
     inputs = run.workspace.load().immutable_inputs
     assert inputs["sourceRevision"] == REVISION
-    assert inputs["sourceRepository"] == "https://github.com/example/app"
     assert inputs["configurationDigest"] == sha256_bytes(
         (root / "conclear.toml").read_bytes()
     )
     assert inputs["tool.git"] == "1.0.0@sha256:" + "1" * 64
     assert inputs["tool.buildah"] == "1.0.0@sha256:" + "1" * 64
-    assert run.source.repository == "https://github.com/example/app"
+    # Records name the declared public source URL; the Git origin is held in
+    # memory only and never bound as a run input.
+    assert run.source.repository == run.repository.project.source
     assert run.source.revision == REVISION
+    assert run.origin == "https://github.com/example/app"
+    assert "github.com" not in json.dumps(inputs)
     assert run.repository.path == (run.workspace.root / "source" / "conclear.toml")
     entry = next(iter(run.workspace.journal.entries()))
     assert entry.resource_id == "source-worktree"
@@ -249,20 +252,86 @@ def test_checked_out_configuration_must_match_the_git_object(
     _assert_cleanup_resolves_every_resource(workspace, git)
 
 
-def test_observed_origin_must_match_the_configured_project_source(
+def test_origin_outside_the_profile_allowlist_is_rejected_before_any_run_exists(
+    source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
+) -> None:
+    root, git, _ = source
+    git.remote_url = "git@git.internal.example:someone/app.git"
+
+    with pytest.raises(RuleRejectionError, match="no allowed source origin") as caught:
+        create(
+            root,
+            tmp_path,
+            allowed_origins=("https://git.internal.example/foundata/",),
+        )
+
+    assert caught.value.code == "CC0004"
+    # Neither the origin nor the allowlist may surface in the rejection, and
+    # nothing was written: no run directory exists to leak the origin into.
+    assert "git.internal.example" not in str(caught.value)
+    assert failed_run_id(caught.value) is None
+    assert not (tmp_path / "state" / "conclear" / "runs").exists()
+
+
+def test_origin_under_an_allowed_prefix_is_accepted_and_never_recorded(
+    source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
+) -> None:
+    root, git, _ = source
+    git.remote_url = "git@git.internal.example:foundata/app.git"
+
+    run = create(
+        root,
+        tmp_path,
+        allowed_origins=(
+            "https://codeberg.org/foundata/",
+            "https://git.internal.example/foundata/",
+        ),
+    )
+
+    assert run.origin == "https://git.internal.example/foundata/app"
+    assert run.source.repository == run.repository.project.source
+    workspace_text = "".join(
+        path.read_text(encoding="utf-8")
+        for path in run.workspace.root.rglob("*.json")
+        if path.is_file()
+    )
+    assert "git.internal.example" not in workspace_text
+
+
+def test_without_a_profile_the_origin_is_observed_but_not_policed(
     source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
 ) -> None:
     root, git, _ = source
     git.remote_url = "https://github.com/other/app.git"
 
-    with pytest.raises(RuleRejectionError, match="differs from configured") as caught:
-        create(root, tmp_path)
+    run = create(root, tmp_path)
 
-    assert caught.value.code == "CC0001"
-    workspace = _only_workspace(tmp_path)
-    assert workspace.load().state is RunState.REJECTED
-    assert failed_run_id(caught.value) == workspace.run_id
-    _assert_cleanup_resolves_every_resource(workspace, git)
+    assert run.origin == "https://github.com/other/app"
+    assert run.source.repository == run.repository.project.source
+
+
+def test_reopening_with_a_profile_reapplies_the_origin_allowlist(
+    source: tuple[Path, FakeGit, dict[str, str]], tmp_path: Path
+) -> None:
+    root, _git, _ = source
+    created = create(root, tmp_path, allowed_origins=("https://github.com/example/",))
+
+    reopened = open_source_run(
+        state_home=tmp_path / "state",
+        run_id=created.workspace.run_id,
+        names=(),
+        allowed_origins=("https://github.com/example/",),
+    )
+    assert reopened.origin == "https://github.com/example/app"
+
+    with pytest.raises(RuleRejectionError, match="no allowed source origin") as caught:
+        open_source_run(
+            state_home=tmp_path / "state",
+            run_id=created.workspace.run_id,
+            names=(),
+            allowed_origins=("https://codeberg.org/foundata/",),
+        )
+    assert caught.value.code == "CC0004"
 
 
 def test_unknown_image_leaves_an_incomplete_run(

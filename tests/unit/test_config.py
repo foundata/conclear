@@ -10,8 +10,9 @@ import conclear.config as config_module
 from conclear.config import (
     ReleaseTags,
     load_repository_config,
+    normalize_git_repository_url,
     normalize_observed_source_url,
-    normalize_source_url,
+    validate_public_source_url,
 )
 from conclear.errors import InvalidInvocationError
 from conclear.values import Platform
@@ -69,7 +70,7 @@ def test_repository_configuration_is_validated_and_narrowed(
     root = repository_factory()
     config = load_repository_config(root / "conclear.toml")
     image = config.release_image("app")
-    assert config.project.source == "https://github.com/example/app"
+    assert config.project.source == "https://foundata.com/en/projects/example/#source"
     assert image.release_limits.candidate_lifetime == timedelta(days=7)
     assert str(image.platforms[0]) == "linux/amd64"
     assert image.containerfile == (root / "Containerfile").resolve()
@@ -842,30 +843,63 @@ def test_repository_configuration_reserves_candidate_tag_namespace(
 @pytest.mark.parametrize(
     "source",
     (
-        "https://user:secret@github.com/example/app",
-        "https://github.com/example/../app",
-        "https://github.com/example/app?credential=secret",
-        "https://github.com:99999/example/app",
-        "https://github..com/example/app",
+        "https://foundata.com/en/projects/oci-openldap-declarative/#source",
+        "https://foundata.com/en/projects/example/",
+        "https://GitHub.com/example/app.git/",
+        "https://example.com:8443/projects/app#source",
     ),
 )
-def test_repository_configuration_rejects_ambiguous_source_urls(
-    source: str,
+def test_public_source_url_is_kept_byte_for_byte(source: str) -> None:
+    # Fragments, trailing slashes, `.git` and host case are part of the public
+    # identity; nothing Git-specific is normalized away.
+    assert validate_public_source_url(source) == source
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    (
+        ("https://user:secret@github.com/example/app", "credential-free"),
+        ("https://github.com/example/app?credential=secret", "credential-free"),
+        ("http://foundata.com/en/projects/example/#source", "credential-free"),
+        ("https://github..com/example/app", "credential-free"),
+        ("https://github.com:99999/example/app", "malformed"),
+        ("git@github.com:example/app.git", "credential-free"),
+        ("ssh://git@github.com/example/app.git", "credential-free"),
+        ("https://foundata.com/en/projects/example/ #source", "control"),
+        ("https://foundata.com/en/projects/example/\n#source", "control"),
+        ("", "control"),
+    ),
+)
+def test_public_source_url_rejects_credentials_queries_and_control_characters(
+    source: str, message: str
 ) -> None:
-    with pytest.raises(InvalidInvocationError):
-        normalize_source_url(source)
+    with pytest.raises(InvalidInvocationError, match=message):
+        validate_public_source_url(source)
 
 
 @pytest.mark.parametrize(
     "source",
     (
+        "https://user:secret@github.com/example/app",
+        "https://github.com/example/../app",
+        "https://github.com/example/app?credential=secret",
+        "https://github.com/example/app#fragment",
+        "https://github.com:99999/example/app",
+        "https://github..com/example/app",
         "git@github.com:example/app.git",
         "ssh://git@github.com/example/app.git",
     ),
 )
-def test_repository_configuration_rejects_ssh_source_identity(source: str) -> None:
-    with pytest.raises(InvalidInvocationError, match="credential-free HTTPS"):
-        normalize_source_url(source)
+def test_git_repository_url_normalization_rejects_ambiguous_urls(source: str) -> None:
+    with pytest.raises(InvalidInvocationError):
+        normalize_git_repository_url(source)
+
+
+def test_git_repository_url_normalization_produces_one_identity() -> None:
+    assert (
+        normalize_git_repository_url("https://GitHub.com/example/app.git/")
+        == "https://github.com/example/app"
+    )
 
 
 @pytest.mark.parametrize(

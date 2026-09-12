@@ -18,11 +18,7 @@ from conclear.checks import (
     normalized_signal,
     volume_paths,
 )
-from conclear.config import (
-    SYSTEMD_STOP_SIGNAL,
-    SYSTEMD_WRITABLE_MOUNTS,
-    normalize_observed_source_url,
-)
+from conclear.config import SYSTEMD_STOP_SIGNAL, SYSTEMD_WRITABLE_MOUNTS
 from conclear.containerfile import Instruction, load_containerfile
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.path_safety import contained_path
@@ -182,30 +178,31 @@ class ContainerfileObservation:
         }
 
 
-class SourceStatus(StrEnum):
-    """Whether the canonical source identity could be observed."""
+class RevisionStatus(StrEnum):
+    """Whether Git could state the current source revision."""
 
     OBSERVED = "observed"
-    UNSUPPORTED = "unsupported"
     UNAVAILABLE = "unavailable"
 
 
 @dataclass(frozen=True, slots=True)
 class ProjectObservation:
-    """Project identity observed from the directory and Git."""
+    """Project identity observed from the directory and Git.
+
+    The public source URL is never observed: it is a project decision that the
+    Git origin cannot reveal, so the draft always asks for it.
+    """
 
     name: str
-    source: str | None
     revision: str | None
-    status: SourceStatus
+    status: RevisionStatus
 
     def to_dict(self) -> dict[str, object]:
         """Return the public observation."""
         return {
             "name": self.name,
-            "source": self.source,
             "revision": self.revision,
-            "sourceStatus": self.status.value,
+            "revisionStatus": self.status.value,
         }
 
 
@@ -256,21 +253,20 @@ def explicit_containerfiles(root: Path, values: tuple[str, ...]) -> tuple[Path, 
 
 
 def observe_project(root: Path, git: SourceObserver | None) -> ProjectObservation:
-    """Observe the project name and, when Git can state it, the canonical source."""
+    """Observe the project name and, when Git can state it, the current revision.
+
+    The Git origin is read by the adapter but deliberately not used: an adopted
+    project's public source URL is declared by its owner, and the origin may be
+    an internal host that a drafted `conclear.toml` must never propose.
+    """
     name = root.name or "project"
     if git is None:
-        return ProjectObservation(name, None, None, SourceStatus.UNAVAILABLE)
+        return ProjectObservation(name, None, RevisionStatus.UNAVAILABLE)
     try:
         observation = git.observe(root, "HEAD")
     except OperationalError:
-        return ProjectObservation(name, None, None, SourceStatus.UNAVAILABLE)
-    try:
-        source = normalize_observed_source_url(observation.remote_url)
-    except InvalidInvocationError:
-        return ProjectObservation(
-            name, None, observation.revision, SourceStatus.UNSUPPORTED
-        )
-    return ProjectObservation(name, source, observation.revision, SourceStatus.OBSERVED)
+        return ProjectObservation(name, None, RevisionStatus.UNAVAILABLE)
+    return ProjectObservation(name, observation.revision, RevisionStatus.OBSERVED)
 
 
 def observe_containerfile(

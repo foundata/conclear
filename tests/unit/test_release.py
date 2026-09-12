@@ -61,6 +61,7 @@ def profile(tmp_path: Path) -> ReleaseProfile:
         passphrase_file=None,
         configuration_digest="sha256:" + "a" * 64,
         public_key_digest="sha256:" + "b" * 64,
+        allowed_source_origins=("https://github.com/example/",),
     )
 
 
@@ -74,7 +75,6 @@ def workspace(
         immutable_inputs={
             "sourceRoot": str(source_root),
             "sourceRevision": "a" * 40,
-            "sourceRepository": "https://github.com/example/project",
             "image": "app",
             "version": "1.2.3",
             "profile": profile_value.name,
@@ -185,6 +185,7 @@ def test_release_does_not_promote_until_verification_transitions_state(
             workspace=run_workspace,
             runtime=cast(Any, runtime),
             source=cast(Any, object()),
+            origin="https://github.com/example/app",
             source_time=datetime(2026, 1, 1, tzinfo=UTC),
             now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -250,6 +251,7 @@ def test_full_release_rejects_unsupported_registry_before_qualification(
             workspace=run_workspace,
             runtime=cast(Any, object()),
             source=cast(Any, object()),
+            origin="https://github.com/example/app",
             source_time=datetime(2026, 1, 1, tzinfo=UTC),
             now_factory=lambda: datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -275,7 +277,6 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
         immutable_inputs={
             "sourceRoot": str(source_root.resolve()),
             "sourceRevision": "b" * 40,
-            "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
             "sourceTreeDigest": source_tree_digest(source_root),
             "image": "app",
@@ -297,6 +298,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
         runtime=runtime,
         source=SourceIdentity(repository.project.source, "b" * 40),
         source_time=datetime(2026, 1, 1, tzinfo=UTC),
+        origin="https://github.com/example/app",
     )
     monkeypatch.setattr(release, "create_source_run", lambda **_kwargs: source_run)
     monkeypatch.setattr(

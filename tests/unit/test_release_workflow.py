@@ -77,6 +77,7 @@ def profile(tmp_path: Path) -> ReleaseProfile:
         passphrase_file=None,
         configuration_digest="sha256:" + "a" * 64,
         public_key_digest="sha256:" + "b" * 64,
+        allowed_source_origins=("https://github.com/example/",),
     )
 
 
@@ -107,7 +108,6 @@ class Harness:
             immutable_inputs={
                 "sourceRoot": str(self.source_root.resolve()),
                 "sourceRevision": "b" * 40,
-                "sourceRepository": self.repository.project.source,
                 "configurationDigest": sha256_bytes(self.repository.raw_bytes),
                 "sourceTreeDigest": source_tree_digest(self.source_root),
                 "image": "app",
@@ -129,6 +129,7 @@ class Harness:
             runtime=self.runtime,
             source=SourceIdentity(self.repository.project.source, "b" * 40),
             source_time=NOW,
+            origin="https://github.com/example/app",
         )
         monkeypatch.setattr(
             release, "create_source_run", lambda **_kwargs: self.source_run
@@ -363,6 +364,7 @@ def test_continuation_requires_a_signing_key_after_loading_evidence(
             workspace=harness.workspace,
             runtime=cast(Any, harness.runtime),
             source=harness.source_run.source,
+            origin="https://github.com/example/app",
             source_time=NOW,
             now_factory=lambda: NOW,
         )

@@ -235,7 +235,6 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
         state_home=root / "state",
         immutable_inputs={
             "sourceRevision": "a" * 40,
-            "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
             "sourceTreeDigest": source_tree_digest(context),
             "image": "fixture",

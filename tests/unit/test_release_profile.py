@@ -41,6 +41,11 @@ def test_release_profile_import_does_not_load_repository_configuration(
 
 def _profile_text(*root_lines: str, api_url: str | None = None) -> str:
     root_lines = ("schema_version = 1", *root_lines)
+    if not any(line.startswith("allowed_source_origins") for line in root_lines):
+        root_lines = (
+            *root_lines,
+            'allowed_source_origins = ["https://github.com/example/"]',
+        )
     registry_lines = [
         "",
         "[builder]",
@@ -280,3 +285,76 @@ def test_release_profile_requires_its_schema_version(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert load_release_profile("release", config_home=tmp_path).schema_version == 1
+
+
+def test_release_profile_requires_and_normalizes_allowed_source_origins(
+    tmp_path: Path,
+) -> None:
+    from conclear.release_profile import (
+        normalize_source_origin_prefix,
+        origin_is_allowed,
+    )
+
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    path = profile_directory / "release.toml"
+
+    path.write_text(
+        _profile_text(
+            'ci_context = "omit"',
+            f'cosign_public_key = "{public_key}"',
+            'allowed_source_origins = ["https://Git.Internal.Example/foundata/", "https://codeberg.org/"]',
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+    selected = load_release_profile("release", config_home=config_home)
+    assert selected.allowed_source_origins == (
+        "https://git.internal.example/foundata/",
+        "https://codeberg.org/",
+    )
+
+    # A prefix ends with `/`, so a sibling path sharing leading characters does
+    # not match; an exact repository listed with its trailing slash does.
+    assert origin_is_allowed(
+        "https://git.internal.example/foundata/app", selected.allowed_source_origins
+    )
+    assert origin_is_allowed(
+        "https://codeberg.org/anyone/app", selected.allowed_source_origins
+    )
+    assert not origin_is_allowed(
+        "https://git.internal.example/foundata-evil/app",
+        selected.allowed_source_origins,
+    )
+    assert not origin_is_allowed(
+        "https://github.com/foundata/app", selected.allowed_source_origins
+    )
+    assert origin_is_allowed(
+        "https://github.com/foundata/app", ("https://github.com/foundata/app/",)
+    )
+
+    for prefix in (
+        "https://git.internal.example/foundata",
+        "http://git.internal.example/foundata/",
+        "https://user:secret@git.internal.example/foundata/",
+        "https://git.internal.example/foundata/?x=1",
+        "https://git.internal.example/foundata/#main",
+        "https://git.internal.example/../foundata/",
+    ):
+        with pytest.raises(InvalidInvocationError, match="Allowed source origin"):
+            normalize_source_origin_prefix(prefix)
+
+    path.write_text(
+        _profile_text(
+            'ci_context = "omit"',
+            f'cosign_public_key = "{public_key}"',
+            "allowed_source_origins = []",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(InvalidInvocationError):
+        load_release_profile("release", config_home=config_home)

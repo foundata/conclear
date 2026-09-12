@@ -454,7 +454,11 @@ def load_repository_config(path: Path) -> RepositoryConfig:
             )
         _reject_release_keys_without_repository(value)
     validate_external(
-        value, "config.schema.json", label="conclear.toml", all_errors=True
+        value,
+        "config.schema.json",
+        label="conclear.toml",
+        all_errors=True,
+        code="CC0001",
     )
     if not isinstance(value, dict):
         raise InvalidInvocationError("conclear.toml must contain a table")
@@ -472,7 +476,7 @@ def load_repository_config(path: Path) -> RepositoryConfig:
         schema_version=toml_integer(value["schema_version"]),
         project=ProjectConfig(
             name=toml_string(project_value["name"]),
-            source=normalize_source_url(toml_string(project_value["source"])),
+            source=validate_public_source_url(toml_string(project_value["source"])),
         ),
         images=images,
         path=path.resolve(strict=True),
@@ -480,13 +484,47 @@ def load_repository_config(path: Path) -> RepositoryConfig:
     )
 
 
-def normalize_source_url(value: str) -> str:
-    """Normalize a configured HTTPS Git repository identity."""
+def validate_public_source_url(value: str) -> str:
+    """Validate the declared public source URL and return it byte for byte.
+
+    The public source URL is where users find the source code; it need not be a
+    Git repository and is never compared with a Git origin, so nothing is
+    normalized away. Fragments such as `#source` are part of the identity.
+    """
+    if not value or any(
+        character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+        for character in value
+    ):
+        raise InvalidInvocationError(
+            "Project source must not be empty or contain whitespace or control characters"
+        )
+    try:
+        parsed = urlsplit(value)
+        parsed.port  # noqa: B018 - validates the authority
+    except ValueError as exc:
+        raise InvalidInvocationError("Project source URL is malformed") from exc
+    hostname = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or HOST_PATTERN.fullmatch(hostname.lower()) is None
+    ):
+        raise InvalidInvocationError(
+            "Project source must be a credential-free absolute HTTPS URL without a query"
+        )
+    return value
+
+
+def normalize_git_repository_url(value: str) -> str:
+    """Normalize an HTTPS Git repository URL to its canonical identity."""
     try:
         parsed = urlsplit(value)
         port = parsed.port
     except ValueError as exc:
-        raise InvalidInvocationError("Project source URL is malformed") from exc
+        raise InvalidInvocationError("Git repository URL is malformed") from exc
     hostname = parsed.hostname
     if (
         parsed.scheme != "https"
@@ -498,20 +536,24 @@ def normalize_source_url(value: str) -> str:
         or HOST_PATTERN.fullmatch(hostname.lower()) is None
     ):
         raise InvalidInvocationError(
-            "Project source must be a credential-free HTTPS URL"
+            "Git repository URL must be a credential-free HTTPS URL"
         )
     components = parsed.path.removesuffix("/").removesuffix(".git").split("/")[1:]
     if len(components) < 2 or any(
         URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
         for item in components
     ):
-        raise InvalidInvocationError("Project source must name a repository")
+        raise InvalidInvocationError("Git repository URL must name a repository")
     authority = hostname.lower() + ("" if port is None else f":{port}")
     return urlunsplit(("https", authority, "/" + "/".join(components), "", ""))
 
 
 def normalize_observed_source_url(value: str) -> str:
-    """Convert a supported observed Git remote to its HTTPS identity."""
+    """Convert a supported observed Git remote to its HTTPS identity.
+
+    The result is compared with the release profile's allowed origins and then
+    discarded; it never enters labels, records, attestations or results.
+    """
     scp_remote = _SCP_GIT_REMOTE_PATTERN.fullmatch(value)
     if scp_remote is not None:
         return _normalize_ssh_repository(
@@ -524,7 +566,7 @@ def normalize_observed_source_url(value: str) -> str:
     except ValueError as exc:
         raise InvalidInvocationError("Observed Git remote is malformed") from exc
     if parsed.scheme == "https":
-        return normalize_source_url(value)
+        return normalize_git_repository_url(value)
     if (
         parsed.scheme != "ssh"
         or parsed.hostname is None

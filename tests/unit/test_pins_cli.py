@@ -167,7 +167,7 @@ def test_propose_writes_one_proposal_and_reports_review_in_json(
     stored = json.loads(output.read_text(encoding="utf-8"))
     assert stored["recordType"] == "pinUpdateProposal"
     assert stored["source"] == {
-        "repository": "https://github.com/example/app",
+        "repository": "https://foundata.com/en/projects/example/#source",
         "revision": "1" * 40,
     }
     assert (root_path / "Containerfile").read_bytes() == before

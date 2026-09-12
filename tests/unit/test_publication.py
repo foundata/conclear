@@ -560,7 +560,6 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         state_home=tmp_path / "state",
         immutable_inputs={
             "sourceRevision": "b" * 40,
-            "sourceRepository": repository.project.source,
             "configurationDigest": "sha256:" + "2" * 64,
             "builderId": BUILDER_ID,
             "image": "app",
@@ -679,6 +678,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         passphrase_file=None,
         configuration_digest="sha256:" + "4" * 64,
         public_key_digest="sha256:" + "5" * 64,
+        allowed_source_origins=("https://github.com/example/",),
     )
     tags: dict[str, Digest] = {}
     registry = FakeRegistry(observation.graph, tags)

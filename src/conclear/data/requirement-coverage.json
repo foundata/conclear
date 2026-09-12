@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "guideRevision": "2e0a9d45f6488ebfa3fde129ce09310550076ef2",
+  "guideRevision": "9902755d7775d8679e09c35f7b639e9f573b0530",
   "entries": [
     {"id": "IG0001", "status": "automated", "rationale": "`conclear release` runs the complete fail-closed workflow from a reviewed revision to verified promotion."},
     {"id": "IG0002", "status": "automated", "rationale": "Every run builds from a detached worktree of the selected committed revision and takes trust configuration from the release profile."},
@@ -196,7 +196,7 @@
     {"id": "IG0337", "status": "automated", "rationale": "`conclear provenance` runs before publication; `conclear attest` validates and attaches it once the registry digest is known."},
     {"id": "IG0338", "status": "manual", "rationale": "Documenting the provenance integration is a project duty."},
     {"id": "IG0339", "status": "automated", "rationale": "The predicate lists every platform digest and the index digest as subjects."},
-    {"id": "IG0340", "status": "automated", "rationale": "The predicate records the canonical source repository and full revision."},
+    {"id": "IG0340", "status": "automated", "rationale": "The predicate records the declared public source URL and the full revision; the observed Git origin is never written to it."},
     {"id": "IG0341", "status": "automated", "rationale": "The predicate records the Containerfile and build configuration."},
     {"id": "IG0342", "status": "automated", "rationale": "The predicate records external image materials by digest."},
     {"id": "IG0344", "status": "automated", "rationale": "The predicate records build parameters without release-profile secrets."},
@@ -239,6 +239,7 @@
     {"id": "IG0425", "status": "external", "rationale": "The release owner maintains the supported-digest inventory, retained inputs, latest authoritative result and next due time."},
     {"id": "IG0426", "status": "external", "rationale": "The scheduling owner provides host availability, protected persistent state, monitoring and tested recovery; ConClear supplies individual commands and verified history reconciliation."},
     {"id": "IG0427", "status": "external", "rationale": "ConClear writes verified release and rescan archives containing source and referenced evidence bytes. The release owner provides durable storage, retention, backup and retrieval tests."},
-    {"id": "IG0428", "status": "manual", "rationale": "Archives exclude protected profiles, keys, credentials, raw logs and secret test outputs. The release owner still reviews source and report content for disclosure before sharing."}
+    {"id": "IG0428", "status": "manual", "rationale": "Archives exclude protected profiles, keys, credentials, raw logs and secret test outputs. The release owner still reviews source and report content for disclosure before sharing."},
+    {"id": "IG0430", "status": "automated", "rationale": "Records, attestations, labels, command results and archives carry the declared public source URL and revision only; the observed Git origin is compared against the release profile and then discarded."}
   ]
 }

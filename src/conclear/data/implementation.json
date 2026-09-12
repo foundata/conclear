@@ -95,7 +95,7 @@
     },
     {
       "id": "IP0010",
-      "summary": "Keep release trust, credentials, signing inputs and optional CI context outside repository control",
+      "summary": "Keep release trust, credentials, signing inputs, allowed source origins and optional CI context outside repository control",
       "implementation": ["src/conclear/release_profile.py", "src/conclear/secrets.py", "src/conclear/adapters/ci.py", "src/conclear/services/ci_context.py", "src/conclear/parsing.py", "src/conclear/values.py"],
       "tests": [
         {"path": "tests/unit/test_release_profile.py", "tier": "unit"},
@@ -195,7 +195,7 @@
     },
     {
       "id": "IP0019",
-      "summary": "Build only from the selected isolated Git worktree with confined context and reviewed Hadolint configuration",
+      "summary": "Build only from an isolated Git worktree whose origin the release profile allows and is never recorded, with confined context and reviewed Hadolint configuration",
       "implementation": ["src/conclear/services/run_context.py", "src/conclear/source_integrity.py", "src/conclear/context.py", "src/conclear/checks.py", "src/conclear/adapters/hadolint.py"],
       "tests": [
         {"path": "tests/unit/test_run_context.py", "tier": "unit"},

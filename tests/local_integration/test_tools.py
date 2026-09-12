@@ -418,7 +418,6 @@ def test_real_exact_image_preparation_and_launch_inputs(
         state_home=root / "state",
         immutable_inputs={
             "sourceRevision": "a" * 40,
-            "sourceRepository": repository.project.source,
             "configurationDigest": sha256_bytes(repository.raw_bytes),
             "sourceTreeDigest": source_tree_digest(context),
             "image": "runtime",

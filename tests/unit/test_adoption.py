@@ -88,6 +88,7 @@ def _notes(notes: tuple[Any, ...], field: str) -> list[str]:
 
 def _resolve_test_resources(draft: str) -> str:
     for key, value in {
+        "source": '"https://foundata.com/en/projects/example/#source"',
         "memory": '"256MiB"',
         "cpus": "1.0",
         "pids": "128",
@@ -124,8 +125,8 @@ def test_single_containerfile_observations_suggestions_and_decisions(
     assert dict(image.labels)["maintainer"] == "ops"
     assert image.entrypoint.command == ("/usr/local/bin/app",)
     assert not image.entrypoint.systemd
-    assert assessment.project.source == "https://github.com/foundata/example"
     assert assessment.project.revision == REVISION
+    assert assessment.project.status.value == "observed"
     assert assessment.findings == ()
     assert _notes(assessment.suggestions, "runtime.user") == [
         "Keep the numeric UID 1001 from the final USER instruction."
@@ -152,7 +153,8 @@ def test_single_containerfile_observations_suggestions_and_decisions(
     assert "user = 1001" in assessment.draft
     assert 'writable_mounts = ["/data"]' in assessment.draft
     assert "[[images.pins]]" in assessment.draft
-    assert 'source = "https://github.com/foundata/example"' in assessment.draft
+    assert 'source = "DECIDE:' in assessment.draft
+    assert "github.com" not in assessment.draft
 
 
 def test_multiple_containerfiles_get_ids_from_their_names(tmp_path: Path) -> None:
@@ -527,44 +529,50 @@ def test_draft_resolves_into_a_releasable_image_with_a_test_only_dependency(
 
 
 @pytest.mark.parametrize(
-    ("git", "source", "status"),
+    ("git", "revision", "status"),
     [
         (
-            FakeGit("https://github.com/foundata/example.git"),
-            "https://github.com/foundata/example",
+            FakeGit("https://git.internal.example/foundata/example.git"),
+            REVISION,
             "observed",
         ),
         (
-            FakeGit("ssh://git@github.com/foundata/example.git"),
-            "https://github.com/foundata/example",
+            FakeGit("ssh://git@git.internal.example/foundata/example.git"),
+            REVISION,
             "observed",
         ),
-        (FakeGit("ssh://alice@github.com/foundata/example.git"), None, "unsupported"),
         (
-            FakeGit("https://alice:token123@github.com/foundata/example.git"),
-            None,
-            "unsupported",
+            FakeGit("git@git.internal.example:foundata/example.git"),
+            REVISION,
+            "observed",
+        ),
+        (
+            FakeGit("https://alice:token123@git.internal.example/foundata/example.git"),
+            REVISION,
+            "observed",
         ),
         (FakeGit(None), None, "unavailable"),
         (None, None, "unavailable"),
     ],
 )
-def test_source_identity_is_observed_only_in_supported_credential_free_forms(
-    tmp_path: Path, git: FakeGit | None, source: str | None, status: str
+def test_git_origin_never_reaches_the_draft_or_the_assessment(
+    tmp_path: Path, git: FakeGit | None, revision: str | None, status: str
 ) -> None:
     root = _repository(tmp_path, {"Containerfile": _containerfile()})
 
     assessment = assess_repository(root, containerfiles=(), git=git)
 
-    assert assessment.project.source == source
+    assert assessment.project.revision == revision
     assert assessment.project.status.value == status
     rendered = json.dumps(assessment.to_dict()) + assessment.draft
-    assert "token123" not in rendered and "alice" not in rendered
-    assert ("project.source" in {note.field for note in assessment.decisions}) == (
-        source is None
-    )
-    if source is None:
-        assert 'source = "DECIDE:' in assessment.draft
+    # The public source URL is the owner's decision; whatever origin Git
+    # reports, including an internal host or a credentialed remote, is not
+    # proposed and does not leak into the result. The Containerfile's own
+    # public label may legitimately appear, so the origin uses another host.
+    for fragment in ("git.internal.example", "token123", "alice"):
+        assert fragment not in rendered
+    assert "project.source" in {note.field for note in assessment.decisions}
+    assert 'source = "DECIDE:' in assessment.draft
 
 
 def test_draft_is_invalid_until_every_decision_is_resolved(tmp_path: Path) -> None:

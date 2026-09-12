@@ -15,7 +15,6 @@ from conclear.services.adoption_observation import (
     ContainerfileObservation,
     PinQuality,
     ProjectObservation,
-    SourceStatus,
     UserKind,
 )
 
@@ -45,7 +44,13 @@ def render_draft(
         "",
         "[project]",
         f"name = {_toml(project.name)}",
-        f"source = {_toml(project.source or _decide('canonical HTTPS source URL'))}",
+        "source = "
+        + _toml(
+            _decide(
+                "public source URL where users find the code, such as a project page "
+                "section listing every source mirror"
+            )
+        ),
     ]
     for image in images:
         lines.extend(("", "[[images]]", f"id = {_toml(image.image_id)}"))
@@ -147,20 +152,14 @@ def assessment_notes(
 ) -> tuple[tuple[Note, ...], tuple[Note, ...]]:
     """Return the suggestions and the required decisions for one assessment."""
     suggestions: list[Note] = []
-    decisions: list[Note] = []
-    if project.source is None:
-        reason = (
-            "the Git origin is not a canonical HTTPS or Git SSH URL"
-            if project.status is SourceStatus.UNSUPPORTED
-            else "no Git origin could be observed"
+    decisions: list[Note] = [
+        Note(
+            None,
+            "project.source",
+            "Declare the public source URL; it is a project decision and is never "
+            "derived from the Git origin.",
         )
-        decisions.append(
-            Note(
-                None,
-                "project.source",
-                f"Declare the canonical HTTPS source URL; {reason}.",
-            )
-        )
+    ]
     decisions.append(
         Note(
             None,

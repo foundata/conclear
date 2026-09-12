@@ -9,7 +9,7 @@ from conclear.adapters.ci import (
     CIContextObservation,
     ObservedCIContext,
 )
-from conclear.config import normalize_source_url
+from conclear.config import normalize_observed_source_url
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json
 from conclear.records import SourceIdentity
@@ -41,9 +41,15 @@ def resolve_ci_context(
     *,
     policy: CIContextPolicy,
     source: SourceIdentity,
+    origin: str,
     diagnostic_path: Path,
 ) -> PublicCIContext | None:
-    """Apply profile policy and bind optional context to the isolated checkout."""
+    """Apply profile policy and bind optional context to the isolated checkout.
+
+    `origin` is the checkout's normalized Git origin. The provider's repository
+    claim is compared against it, never against the declared public source URL,
+    which need not name a Git repository at all.
+    """
     if policy is CIContextPolicy.OMIT:
         return None
     if observation is None or isinstance(observation, CIContextAbsent):
@@ -61,7 +67,7 @@ def resolve_ci_context(
         )
         return _handle_failure(policy, observation.diagnostic)
 
-    disagreement = _context_disagreement(observation, source)
+    disagreement = _context_disagreement(observation, source, origin)
     _write_diagnostic(
         diagnostic_path,
         status="recorded" if disagreement is None else _failure_status(policy),
@@ -79,15 +85,15 @@ def resolve_ci_context(
 
 
 def _context_disagreement(
-    observation: ObservedCIContext, source: SourceIdentity
+    observation: ObservedCIContext, source: SourceIdentity, origin: str
 ) -> str | None:
     try:
-        claimed_source = normalize_source_url(
+        claimed_origin = normalize_observed_source_url(
             f"{observation.server}/{observation.repository}"
         )
     except InvalidInvocationError:
         return "Observed CI repository is malformed"
-    if claimed_source != source.repository:
+    if claimed_origin != origin:
         return "Observed CI repository differs from the isolated checkout"
     if observation.revision != source.revision:
         return "Observed CI revision differs from the isolated checkout"

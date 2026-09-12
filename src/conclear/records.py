@@ -83,7 +83,11 @@ class Verdict(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class SourceIdentity:
-    """Canonical observed source identity."""
+    """The declared public source URL paired with the observed source revision.
+
+    `repository` is `project.source` from the reviewed configuration, not the
+    Git origin of the checkout; the origin never enters records.
+    """
 
     repository: str
     revision: str

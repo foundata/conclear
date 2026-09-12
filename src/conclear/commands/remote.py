@@ -203,6 +203,7 @@ def verify_command(
         ci_context(selected),
         policy=selected.ci_context,
         source=evidence.source,
+        origin=source_run.origin,
         diagnostic_path=source_run.workspace.root / "reports" / "ci-context.json",
     )
     result = verify_candidate(
@@ -432,7 +433,10 @@ def _remote_run(
     selected = profile(profile_name)
     require_profile_capabilities(selected, COMMAND_DEPENDENCIES[command])
     source_run = open_source_run(
-        state_home=state_home(), run_id=run_id, names=command_tools(command)
+        state_home=state_home(),
+        run_id=run_id,
+        names=command_tools(command),
+        allowed_origins=selected.allowed_source_origins,
     )
     inputs = source_run.workspace.load().immutable_inputs
     if inputs.get("profile") != selected.name:

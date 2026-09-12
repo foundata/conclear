@@ -8,7 +8,7 @@ from conclear.adapters.ci import ObservedCIContext
 from conclear.adapters.registry_backends import create_registry_control
 from conclear.archive import prepare_archive_directory
 from conclear.archive_source import copy_source
-from conclear.config import load_repository_config, normalize_observed_source_url
+from conclear.config import RepositoryConfig, load_repository_config
 from conclear.database import select_fresh_database, trivy_cache_root
 from conclear.dependencies import (
     ProfileUse,
@@ -275,7 +275,7 @@ def pins_propose_command(
     if output_path.is_symlink() or output_path.exists():
         raise InvalidInvocationError(f"Proposal output already exists: {output_path}")
     with command_runtime(command_tools("pins propose")) as runtime:
-        source = _observed_source(runtime, repository.path.parent)
+        source = _observed_source(runtime, repository)
         proposal = propose_pin_updates(
             repository,
             source=source,
@@ -331,14 +331,10 @@ def pins_apply_command(
     """Verify one proposal against the worktree and apply it all-or-nothing."""
     _require_configuration_name(config_path)
     proposal = load_proposal(proposal_path)
-    try:
-        root = config_path.resolve(strict=True).parent
-    except OSError as exc:
-        raise InvalidInvocationError(
-            f"Repository configuration is unavailable: {config_path}"
-        ) from exc
+    repository = load_repository_config(config_path)
+    root = repository.path.parent
     with command_runtime(command_tools("pins apply")) as runtime:
-        source = _observed_source(runtime, root)
+        source = _observed_source(runtime, repository)
     outcome = apply_pin_proposal(
         proposal,
         repository_root=root,
@@ -391,11 +387,17 @@ def _require_configuration_name(config_path: Path) -> None:
         )
 
 
-def _observed_source(runtime: ApplicationRuntime, root: Path) -> SourceIdentity:
-    observation = runtime.git().observe(root, "HEAD")
+def _observed_source(
+    runtime: ApplicationRuntime, repository: RepositoryConfig
+) -> SourceIdentity:
+    """Pair the declared public source URL with the observed HEAD revision.
+
+    The Git origin is deliberately not read here: a proposal is a public record
+    and identifies the source by the declared URL only.
+    """
+    observation = runtime.git().observe(repository.path.parent, "HEAD")
     return SourceIdentity(
-        repository=normalize_observed_source_url(observation.remote_url),
-        revision=observation.revision,
+        repository=repository.project.source, revision=observation.revision
     )
 
 

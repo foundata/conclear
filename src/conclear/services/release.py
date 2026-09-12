@@ -141,6 +141,7 @@ def execute_release(
         names=command_tools("release"),
         profile_name=request.profile.name,
         additional_inputs=_profile_inputs(request.profile),
+        allowed_origins=request.profile.allowed_source_origins,
         id_factory=id_factory or UlidFactory(),
         now=now_factory(),
     )
@@ -152,6 +153,7 @@ def execute_release(
             workspace=workspace,
             runtime=source_run.runtime,
             source=source_run.source,
+            origin=source_run.origin,
             source_time=source_run.source_time,
             now_factory=now_factory,
         )
@@ -178,6 +180,7 @@ def resume_release(
         state_home=state_home,
         run_id=run_id,
         names=command_tools("release"),
+        allowed_origins=profile.allowed_source_origins,
     )
     workspace = source_run.workspace
     snapshot = workspace.load()
@@ -253,6 +256,7 @@ def resume_release(
             workspace=workspace,
             runtime=source_run.runtime,
             source=source_run.source,
+            origin=source_run.origin,
             source_time=source_run.source_time,
             now_factory=now_factory,
         )
@@ -269,6 +273,7 @@ def _continue_release(
     workspace: RunWorkspace,
     runtime: ApplicationRuntime,
     source: SourceIdentity,
+    origin: str,
     source_time: datetime,
     now_factory: Callable[[], datetime],
 ) -> ReleaseResult:
@@ -280,6 +285,7 @@ def _continue_release(
         request.ci_context,
         policy=request.profile.ci_context,
         source=source,
+        origin=origin,
         diagnostic_path=workspace.root / "reports" / "ci-context.json",
     )
     if workspace.load().state is RunState.CREATED:

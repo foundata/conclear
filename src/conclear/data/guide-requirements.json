@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "2e0a9d45f6488ebfa3fde129ce09310550076ef2",
+ "guideRevision": "9902755d7775d8679e09c35f7b639e9f573b0530",
  "requirements": [
   {
    "id": "IG0001",
@@ -1624,7 +1624,7 @@
    "modality": "MUST",
    "section": "Image metadata",
    "anchor": "image-metadata",
-   "text": "`org.opencontainers.image.source` with the canonical source repository URL."
+   "text": "`org.opencontainers.image.source` with the public source URL declared as `project.source`, byte for byte."
   },
   {
    "id": "IG0233",
@@ -2380,7 +2380,7 @@
    "modality": "MUST",
    "section": "Provenance",
    "anchor": "provenance",
-   "text": "The canonical source repository and complete source revision."
+   "text": "The declared public source URL and the complete source revision. The Git origin of the build checkout is not identified."
   },
   {
    "id": "IG0341",
@@ -2997,6 +2997,20 @@
    "section": "Retaining the referenced bytes",
    "anchor": "retaining-the-referenced-bytes",
    "text": "The release owner MUST keep protected command logs, credentials, release profiles, secret test inputs and raw diagnostic output outside the shareable evidence bundle. Review the selected files for disclosure before making a bundle accessible to consumers."
+  },
+  {
+   "id": "IG0429",
+   "modality": "MUST",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "The protected release profile MUST list the allowed Git origins of release checkouts as credential-free HTTPS URL prefixes. ConClear MUST normalize the observed origin of the selected checkout to its HTTPS identity and MUST reject a run whose origin matches no listed prefix. Repository configuration and command-line input MUST NOT supply or extend this list."
+  },
+  {
+   "id": "IG0430",
+   "modality": "MUST NOT",
+   "section": "Release workflow",
+   "anchor": "release-workflow",
+   "text": "The observed Git origin MUST NOT appear in image labels, records, attestations, command results or release archives. Public evidence identifies the source only by the declared public source URL and the complete source revision."
   }
  ],
  "retired": []

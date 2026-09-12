@@ -678,11 +678,10 @@ def _validate_record_inputs(record: dict[str, object], workspace: RunWorkspace) 
     )
     if source.get("revision") != snapshot.immutable_inputs.get("sourceRevision"):
         raise InvalidInvocationError("Record source revision differs from the run")
-    recorded_repository = snapshot.immutable_inputs.get("sourceRepository")
-    if (
-        recorded_repository is not None
-        and source.get("repository") != recorded_repository
-    ):
+    # `projectSource` is the declared public source URL bound at run creation;
+    # the Git origin is never recorded, so there is nothing else to compare.
+    declared_source = snapshot.immutable_inputs.get("projectSource")
+    if declared_source is not None and source.get("repository") != declared_source:
         raise InvalidInvocationError("Record source repository differs from the run")
     if configuration.get("path") != "conclear.toml" or configuration.get(
         "sha256"

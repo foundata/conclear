@@ -26,7 +26,7 @@ def _record() -> RecordEnvelope:
         created_at=datetime(2026, 8, 31, 10, 30, tzinfo=UTC),
         run_id="01k3z8h6v4n7c2m9p5q1r0s8tx",
         source=SourceIdentity(
-            repository="https://github.com/example/app",
+            repository="https://foundata.com/en/projects/example/#source",
             revision="b" * 40,
         ),
         configuration_digest=digest,

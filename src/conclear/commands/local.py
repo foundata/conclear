@@ -125,6 +125,7 @@ def build_command(
         names=command_tools("build"),
         profile_name="none" if selected is None else selected.name,
         additional_inputs=None if selected is None else profile_inputs(selected),
+        allowed_origins=None if selected is None else selected.allowed_source_origins,
     )
     with owned_run(source_run.workspace):
         inputs = _inputs(source_run, platform_text, selected)
@@ -275,6 +276,7 @@ def qualify_command(
         names=command_tools("qualify"),
         profile_name="none" if selected is None else selected.name,
         additional_inputs=additional_inputs or None,
+        allowed_origins=None if selected is None else selected.allowed_source_origins,
     )
     with owned_run(source_run.workspace):
         image = source_run.repository.release_image(image_id)
@@ -406,6 +408,7 @@ def assemble_command(
         names=command_tools("assemble"),
         profile_name="none" if selected is None else selected.name,
         additional_inputs=None if selected is None else profile_inputs(selected),
+        allowed_origins=None if selected is None else selected.allowed_source_origins,
     )
     workspace = source_run.workspace
     image = source_run.repository.release_image(image_id)

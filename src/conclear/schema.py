@@ -34,17 +34,28 @@ def validate_schema(name: str) -> None:
 
 
 def validate_external(
-    value: object, schema_name: str, *, label: str, all_errors: bool = False
+    value: object,
+    schema_name: str,
+    *,
+    label: str,
+    all_errors: bool = False,
+    code: str | None = None,
 ) -> None:
-    """Validate untrusted data, optionally collecting configuration diagnostics."""
+    """Validate untrusted data, optionally collecting configuration diagnostics.
+
+    `code` names the stable check a rejection belongs to, for inputs whose
+    schema validation is itself a catalogued check.
+    """
     if not structure_depth_is_bounded(value):
-        raise InvalidInvocationError(f"Invalid {label}: nesting limit exceeded")
+        raise InvalidInvocationError(
+            f"Invalid {label}: nesting limit exceeded", code=code
+        )
     validator = Draft202012Validator(load_schema(schema_name))
     try:
         errors = sorted(validator.iter_errors(value), key=_validation_error_key)
     except RecursionError as exc:
         raise InvalidInvocationError(
-            f"Invalid {label}: nesting limit exceeded"
+            f"Invalid {label}: nesting limit exceeded", code=code
         ) from exc
     if not errors:
         return
@@ -53,11 +64,13 @@ def validate_external(
             f"  {'.'.join(str(part) for part in item.absolute_path) or '<root>'}: {item.message}"
             for item in errors
         ]
-        raise InvalidInvocationError(f"Invalid {label}:\n" + "\n".join(messages))
+        raise InvalidInvocationError(
+            f"Invalid {label}:\n" + "\n".join(messages), code=code
+        )
     error = errors[0]
     location = ".".join(str(part) for part in error.absolute_path) or "<root>"
     raise InvalidInvocationError(
-        f"Invalid {label} at {location}: {error.message}",
+        f"Invalid {label} at {location}: {error.message}", code=code
     )
 
 

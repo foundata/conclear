@@ -2,8 +2,11 @@
 
 A release profile is read from the user's protected configuration directory,
 never from the repository. It names the SLSA builder identity, the compiled
-registry backend, the Cosign key material and the CI-context policy, and it
-enforces ownership and permission checks on every credential path it resolves.
+registry backend, the Cosign key material, the CI-context policy and the Git
+origins a release checkout may have, and it enforces ownership and permission
+checks on every credential path it resolves. The allowed origins stay in this
+private file because they may name internal hosts that public evidence must not
+disclose.
 """
 
 import os
@@ -80,6 +83,7 @@ class ReleaseProfile:
     passphrase_file: Path | None
     configuration_digest: str
     public_key_digest: str
+    allowed_source_origins: tuple[str, ...]
     schema_version: int = 1
 
 
@@ -129,8 +133,68 @@ def load_release_profile(
         passphrase_file=passphrase_file,
         configuration_digest=sha256_bytes(profile_bytes),
         public_key_digest=sha256_bytes(public_key_bytes),
+        allowed_source_origins=_allowed_source_origins(
+            profile["allowed_source_origins"]
+        ),
         schema_version=toml_integer(profile["schema_version"]),
     )
+
+
+def normalize_source_origin_prefix(value: str) -> str:
+    """Validate one allowed Git origin prefix and return its canonical HTTPS form.
+
+    A prefix names a host or a path below it and always ends with `/`, so a
+    prefix match cannot be satisfied by a sibling path that merely shares
+    leading characters.
+    """
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidInvocationError("Allowed source origin is malformed") from exc
+    hostname = parsed.hostname
+    if (
+        parsed.scheme != "https"
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.endswith("/")
+        or HOST_PATTERN.fullmatch(hostname.lower()) is None
+    ):
+        raise InvalidInvocationError(
+            "Allowed source origin must be a credential-free HTTPS URL prefix ending in /"
+        )
+    components = parsed.path.strip("/").split("/") if parsed.path.strip("/") else []
+    if any(
+        URL_PATH_COMPONENT_PATTERN.fullmatch(item) is None or item in {".", ".."}
+        for item in components
+    ):
+        raise InvalidInvocationError("Allowed source origin path is malformed")
+    authority = hostname.lower() + ("" if port is None else f":{port}")
+    path = "/" + "".join(f"{item}/" for item in components)
+    return urlunsplit(("https", authority, path, "", ""))
+
+
+def origin_is_allowed(origin: str, prefixes: tuple[str, ...]) -> bool:
+    """Return whether a normalized HTTPS Git origin falls under an allowed prefix."""
+    return any(
+        origin == prefix.rstrip("/") or origin.startswith(prefix) for prefix in prefixes
+    )
+
+
+def _allowed_source_origins(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or not value:
+        raise InvalidInvocationError(
+            "Release profile must list at least one allowed source origin"
+        )
+    prefixes = tuple(
+        normalize_source_origin_prefix(toml_string(item)) for item in value
+    )
+    if len(prefixes) != len(set(prefixes)):
+        raise InvalidInvocationError("Allowed source origins contain duplicates")
+    return prefixes
 
 
 def normalize_builder_id(value: str) -> str:

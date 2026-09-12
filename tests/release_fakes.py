@@ -76,7 +76,7 @@ class FakeBuilder:
             '{"imageLayoutVersion":"1.0.0"}\n', encoding="utf-8"
         )
         labels = {
-            "org.opencontainers.image.source": "https://github.com/example/app",
+            "org.opencontainers.image.source": "https://foundata.com/en/projects/example/#source",
             "org.opencontainers.image.revision": build_arguments["IMAGE_REVISION"],
             "org.opencontainers.image.created": build_arguments["IMAGE_CREATED"],
             "org.opencontainers.image.version": build_arguments["IMAGE_VERSION"],

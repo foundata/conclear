@@ -88,6 +88,7 @@ def release_profile(
         passphrase_file=None,
         configuration_digest="sha256:" + "b" * 64,
         public_key_digest="sha256:" + "c" * 64,
+        allowed_source_origins=("https://github.com/example/",),
     )
 
 
@@ -102,10 +103,10 @@ class FakeSourceRun:
         version: str | None = "1.2.3",
     ) -> None:
         self.repository = load_repository_config(root / "conclear.toml")
+        self.origin = "https://github.com/example/app"
         inputs = {
             "sourceRoot": str(root.resolve()),
             "sourceRevision": "b" * 40,
-            "sourceRepository": self.repository.project.source,
             "configurationDigest": DIGEST,
             "image": "app",
             "version": version or "",

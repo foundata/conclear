@@ -459,7 +459,9 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         record_type="releaseVerification",
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         run_id=run.run_id,
-        source=SourceIdentity("https://github.com/example/app", "e" * 40),
+        source=SourceIdentity(
+            "https://foundata.com/en/projects/example/#source", "e" * 40
+        ),
         configuration_digest=configuration_digest,
         tools=(
             ToolIdentity("cosign", "3.1.3", executable_digest="sha256:" + "8" * 64),
@@ -573,7 +575,9 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             record_type="rescanResult",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
             run_id=run.run_id,
-            source=SourceIdentity("https://github.com/example/app", "e" * 40),
+            source=SourceIdentity(
+                "https://foundata.com/en/projects/example/#source", "e" * 40
+            ),
             configuration_digest=configuration_digest,
             tools=(
                 ToolIdentity("trivy", "0.69.3", executable_digest="sha256:" + "7" * 64),

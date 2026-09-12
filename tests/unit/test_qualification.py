@@ -83,7 +83,7 @@ class Builder:
         platform = values["platform"]
         assert isinstance(platform, Platform)
         labels = {
-            "org.opencontainers.image.source": "https://github.com/example/app",
+            "org.opencontainers.image.source": "https://foundata.com/en/projects/example/#source",
             "org.opencontainers.image.revision": build_arguments["IMAGE_REVISION"],
             "org.opencontainers.image.created": build_arguments["IMAGE_CREATED"],
             "org.opencontainers.image.version": build_arguments["IMAGE_VERSION"],
@@ -420,7 +420,6 @@ def inputs(repository: Path, tmp_path: Path) -> QualificationInputs:
         state_home=tmp_path / "state",
         immutable_inputs={
             "sourceRevision": "b" * 40,
-            "sourceRepository": config.project.source,
             "configurationDigest": sha256_bytes(config.raw_bytes),
             "sourceTreeDigest": source_tree_digest(repository),
             "image": "app",
@@ -434,7 +433,9 @@ def inputs(repository: Path, tmp_path: Path) -> QualificationInputs:
         repository=config,
         image=config.release_image("app"),
         workspace=workspace,
-        source=SourceIdentity("https://github.com/example/app", "b" * 40),
+        source=SourceIdentity(
+            "https://foundata.com/en/projects/example/#source", "b" * 40
+        ),
         source_time=datetime(2026, 1, 1, tzinfo=UTC),
         version="1.2.3",
         platform=Platform.parse("linux/amd64"),

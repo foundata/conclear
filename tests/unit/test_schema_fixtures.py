@@ -179,6 +179,7 @@ def test_configuration_profile_result_and_triage_fixtures(
     profile = {
         "schema_version": 1,
         "ci_context": "observe",
+        "allowed_source_origins": ["https://github.com/example/"],
         "builder": {
             "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/"
         },
@@ -191,6 +192,14 @@ def test_configuration_profile_result_and_triage_fixtures(
     }
     assert _errors("profile.schema.json", profile) == []
     assert _errors("profile.schema.json", {**profile, "cosign_passphrase": "secret"})
+    for origins in ([], ["https://github.com/example"], ["git@github.com:example/"]):
+        assert _errors(
+            "profile.schema.json", {**profile, "allowed_source_origins": origins}
+        )
+    without_origins = {
+        k: v for k, v in profile.items() if k != "allowed_source_origins"
+    }
+    assert _errors("profile.schema.json", without_origins)
     assert _errors(
         "profile.schema.json",
         {**profile, "registry": {"provider": "quay", "host": "quay.io", "token": "x"}},
@@ -266,7 +275,7 @@ def test_unknown_record_types_are_never_serialized(
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         run_id="01arz3ndektsv4rrffq69g5fav",
         source=records_module.SourceIdentity(
-            "https://github.com/example/app", "b" * 40
+            "https://foundata.com/en/projects/example/#source", "b" * 40
         ),
         configuration_digest="sha256:" + "a" * 64,
         tools=(),

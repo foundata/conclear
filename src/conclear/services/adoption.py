@@ -69,8 +69,9 @@ class Assessment:
     def details(self) -> tuple[str, ...]:
         """Return the concise human assessment lines."""
         lines = [
-            f"Project {self.project.name}: source "
-            + (self.project.source or f"not observed ({self.project.status.value})")
+            f"Project {self.project.name}: revision "
+            + (self.project.revision or f"not observed ({self.project.status.value})")
+            + "; the public source URL is yours to declare"
         ]
         for image in self.images:
             pinned = sum(
