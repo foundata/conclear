@@ -25,6 +25,7 @@ from conclear.runtime import ApplicationRuntime
 from conclear.source_integrity import require_source_integrity, source_tree_digest
 from conclear.tools import ToolName
 from conclear.workspace import (
+    TERMINAL_STATES,
     IdFactory,
     ResourceKind,
     ResourceStatus,
@@ -62,7 +63,7 @@ def finish_run_failure(
     A run that already reached a terminal state is left alone.
     """
     state = workspace.load().state
-    if state in {RunState.REJECTED, RunState.INCOMPLETE, RunState.PROMOTED}:
+    if state is RunState.INCOMPLETE or state in TERMINAL_STATES:
         return
     workspace.transition(
         RunState.REJECTED

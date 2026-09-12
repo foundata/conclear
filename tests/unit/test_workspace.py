@@ -53,12 +53,33 @@ def test_workspace_refuses_changed_inputs_and_invalid_transition(
         workspace.transition(RunState.PUBLISHED)
 
 
-@pytest.mark.parametrize("terminal_state", (RunState.REJECTED, RunState.PROMOTED))
+def test_completed_is_terminal_and_reachable_only_from_created(tmp_path: Path) -> None:
+    # A rescan run has no intermediate states: created -> completed. A release
+    # that has started qualifying can never be marked completed instead of
+    # promoted, and a completed run is neither resumable nor re-enterable.
+    started = create_workspace(tmp_path / "started")
+    started.transition(RunState.QUALIFIED)
+    with pytest.raises(InvalidInvocationError, match="Invalid run transition"):
+        started.transition(RunState.COMPLETED)
+
+    rescan = create_workspace(tmp_path / "rescan")
+    assert rescan.transition(RunState.COMPLETED).state is RunState.COMPLETED
+    with pytest.raises(InvalidInvocationError, match="terminal state completed"):
+        rescan.validate_resume({"sourceRevision": "a" * 40, "image": "example"})
+    with pytest.raises(InvalidInvocationError, match="Invalid run transition"):
+        rescan.transition(RunState.QUALIFIED)
+    with pytest.raises(InvalidInvocationError, match="finished run"):
+        rescan.bind_tool_identities({"tool.trivy": "1.0.0@sha256:" + "1" * 64})
+
+
+@pytest.mark.parametrize(
+    "terminal_state", (RunState.REJECTED, RunState.PROMOTED, RunState.COMPLETED)
+)
 def test_workspace_rejects_repeated_terminal_transition(
     tmp_path: Path, terminal_state: RunState
 ) -> None:
     workspace = create_workspace(tmp_path)
-    if terminal_state is RunState.REJECTED:
+    if terminal_state in {RunState.REJECTED, RunState.COMPLETED}:
         workspace.transition(terminal_state)
     else:
         for state in (

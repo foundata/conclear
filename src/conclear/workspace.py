@@ -35,7 +35,14 @@ class UlidFactory:
 
 
 class RunState(StrEnum):
-    """Monotonic release-run states."""
+    """Monotonic run states.
+
+    A release advances through the qualification states to `promoted`. A run
+    that is not a release, such as a rescan, has no intermediate states: it
+    ends as `completed` when its record is written. `promoted`, `completed` and
+    `rejected` are terminal; `incomplete` records where an interrupted release
+    may resume.
+    """
 
     CREATED = "created"
     QUALIFIED = "qualified"
@@ -44,13 +51,23 @@ class RunState(StrEnum):
     ATTESTED = "attested"
     VERIFIED = "verified"
     PROMOTED = "promoted"
+    COMPLETED = "completed"
     REJECTED = "rejected"
     INCOMPLETE = "incomplete"
 
 
+TERMINAL_STATES: frozenset[RunState] = frozenset(
+    {RunState.PROMOTED, RunState.COMPLETED, RunState.REJECTED}
+)
+
 _NEXT_STATES: dict[RunState, frozenset[RunState]] = {
     RunState.CREATED: frozenset(
-        {RunState.QUALIFIED, RunState.REJECTED, RunState.INCOMPLETE}
+        {
+            RunState.QUALIFIED,
+            RunState.COMPLETED,
+            RunState.REJECTED,
+            RunState.INCOMPLETE,
+        }
     ),
     RunState.QUALIFIED: frozenset(
         {RunState.ASSEMBLED, RunState.REJECTED, RunState.INCOMPLETE}
@@ -68,6 +85,7 @@ _NEXT_STATES: dict[RunState, frozenset[RunState]] = {
         {RunState.PROMOTED, RunState.REJECTED, RunState.INCOMPLETE}
     ),
     RunState.PROMOTED: frozenset(),
+    RunState.COMPLETED: frozenset(),
     RunState.REJECTED: frozenset(),
     RunState.INCOMPLETE: frozenset(),
 }
@@ -220,7 +238,7 @@ class RunWorkspace:
     def validate_resume(self, expected_inputs: dict[str, str]) -> RunSnapshot:
         """Refuse resume when any immutable input differs."""
         snapshot = self.load()
-        if snapshot.state in {RunState.REJECTED, RunState.PROMOTED}:
+        if snapshot.state in TERMINAL_STATES:
             raise InvalidInvocationError(
                 f"Run {self.run_id} cannot resume from terminal state {snapshot.state.value}"
             )
@@ -303,7 +321,7 @@ class RunWorkspace:
             }
             if not new:
                 return snapshot
-            if snapshot.state in {RunState.PROMOTED, RunState.REJECTED}:
+            if snapshot.state in TERMINAL_STATES:
                 raise InvalidInvocationError(
                     "Tool identities cannot be bound to a finished run"
                 )
@@ -349,7 +367,7 @@ class RunWorkspace:
         with locked_file(self.root / ".run.lock", label="run state"):
             snapshot = self.load()
             if state == snapshot.state:
-                if state in {RunState.REJECTED, RunState.PROMOTED}:
+                if state in TERMINAL_STATES:
                     raise InvalidInvocationError(
                         f"Run is already in terminal state {state.value}"
                     )
@@ -554,7 +572,7 @@ def _parse_snapshot(value: object) -> RunSnapshot:
         )
         if (state is RunState.INCOMPLETE) != (resume_state is not None):
             raise OperationalError("Interrupted run state has invalid resume metadata")
-        if resume_state in {RunState.REJECTED, RunState.INCOMPLETE, RunState.PROMOTED}:
+        if resume_state is RunState.INCOMPLETE or resume_state in TERMINAL_STATES:
             raise OperationalError("Interrupted run has an invalid resume state")
         return RunSnapshot(
             run_id=validate_run_id(_string(value.get("runId"), "runId")),

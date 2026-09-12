@@ -58,7 +58,7 @@ from conclear.services.rescan import (
 )
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference, Platform
-from conclear.workspace import ResourceStatus, RunWorkspace
+from conclear.workspace import ResourceStatus, RunState, RunWorkspace
 from tests.registry_policy_fixtures import STRICT_POLICY
 
 
@@ -681,6 +681,11 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     assert result.authoritative
     assert result.verdict is (
         Verdict.REJECTED if triage_decision == "affected" else Verdict.ACCEPTED
+    )
+    # The rescan run settles into a terminal state that mirrors its verdict, so
+    # a finished rescan is never mistaken for an abandoned run.
+    assert run.load().state is (
+        RunState.REJECTED if triage_decision == "affected" else RunState.COMPLETED
     )
     assert result.statement_path is not None
     record = load_json(result.record_path)

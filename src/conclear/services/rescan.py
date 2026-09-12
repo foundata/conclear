@@ -44,7 +44,7 @@ from conclear.services.rescan_evidence import (
 )
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference
-from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
+from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 
 
 class Registry(Protocol):
@@ -168,6 +168,18 @@ def verified_rescan_history(
         statements, predicate_type=RESCAN_TYPE, subject=subject
     )
     return history_from_records(tuple(predicates.values()), subject)
+
+
+def _settle_rescan_run(workspace: RunWorkspace, verdict: Verdict) -> None:
+    """Move a rescan run to its terminal state once its record exists.
+
+    A rescan is not a release and has no intermediate states; leaving it in
+    `created` would make a finished rescan indistinguishable from a run that
+    stopped before doing anything.
+    """
+    workspace.transition(
+        RunState.COMPLETED if verdict is Verdict.ACCEPTED else RunState.REJECTED
+    )
 
 
 def rescan_release(
@@ -463,6 +475,7 @@ def rescan_release(
     record_path = workspace.root / "records" / "rescan-result.json"
     record_digest = record.write(record_path)
     if signing is None:
+        _settle_rescan_run(workspace, verdict)
         return RescanResult(
             record_path,
             record_digest,
@@ -527,6 +540,7 @@ def rescan_release(
         ResourceStatus.CREATED,
         metadata={"verifiedAt": verified_at},
     )
+    _settle_rescan_run(workspace, verdict)
     return RescanResult(
         record_path,
         record_digest,
