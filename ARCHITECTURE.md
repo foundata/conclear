@@ -250,15 +250,27 @@ platforms, native-testing requirements, runtime expectations, resource limits,
 typed test inputs, test-image dependencies, test hooks, image-pin intent,
 candidate lifetime reductions and permitted exceptions. Paths resolve below the
 isolated source root and cannot escape through `..`, symlinks or archive
-entries. The configured source is always a credential-free canonical HTTPS
-repository identity. An observed Git remote may use that HTTPS form or an
-equivalent `git@host:owner/repository.git` or
-`ssh://git@host/owner/repository.git` transport form. ConClear converts a
-supported observed remote to the canonical HTTPS identity before comparison and
-records only that identity in evidence. It rejects arbitrary SSH users, host
-aliases, local paths and other remote forms whose equivalence cannot be
-established from their syntax alone; it never requires a maintainer to change an
-equivalent local SSH remote.
+entries.
+
+The configured source is the project's public source URL: a credential-free
+absolute HTTPS URL, kept byte for byte including any fragment, through which
+users find the source code. It need not name a Git repository and is never
+compared with the checkout's Git origin. A project page section that lists every
+repository mirror is valid, and it stays stable when repository names or hosts
+change. Labels, records and attestations name this URL and the full source
+revision, and nothing else about where the code came from.
+
+ConClear still observes the Git origin of the selected checkout, but only to
+enforce the release profile's allowed origins and to correlate optional CI
+context. An observed remote may use the HTTPS form or an equivalent
+`git@host:owner/repository.git` or `ssh://git@host/owner/repository.git`
+transport form; ConClear converts it to its HTTPS identity for that comparison
+and then discards it. The origin never enters labels, records, attestations,
+command results, rejection messages or archives, so a primary forge that is not
+publicly reachable stays undisclosed while public mirrors carry every commit.
+ConClear rejects arbitrary SSH users, host aliases, local paths and other remote
+forms whose identity cannot be established from their syntax alone; it never
+requires a maintainer to change an equivalent local SSH remote.
 
 An illustrative configuration is:
 
@@ -457,6 +469,16 @@ credential locations, not alternative guide rules or secret values. ConClear
 rejects release configuration and file-based credentials with unsafe ownership
 or permissions. Backend selection is never inferred from a repository hostname.
 
+The profile also lists the allowed Git origins of release checkouts as
+credential-free HTTPS URL prefixes (`allowed_source_origins`). Every command
+that runs with a profile normalizes the checkout's origin and requires it to
+fall under one listed prefix, both when a run is created and when a later phase
+reopens it; a run whose origin matches no prefix is rejected before any run
+state exists, and the rejection names neither the origin nor the list. The list
+belongs in the profile rather than in `conclear.toml` for two reasons: it may
+name internal hosts, and the repository being released must not be able to
+authorize itself. Without a profile no origin policy applies.
+
 The release profile configures optional CI context handling as `omit`, `observe`
 or `require`. `omit` does not inspect provider variables. `observe` records
 complete context that agrees with the isolated checkout and otherwise writes a
@@ -471,8 +493,10 @@ Public CI context has one provider-neutral shape: provider,
 identifier. The values are correlation metadata from ordinary process
 environment variables, not authenticated CI identity. They cannot override the
 isolated checkout, builder, signer, ConClear run identifier, artifact digest or
-release verdict. Full provider origins stay in local diagnostics so signed
-public evidence does not disclose internal hostnames.
+release verdict. The provider's repository claim is compared with the checkout's
+Git origin, not with the public source URL, which need not name a repository.
+Full provider origins stay in local diagnostics so signed public evidence does
+not disclose internal hostnames.
 
 On a workstation, the signing passphrase may be read from the controlling
 terminal. Automation may provide a read-once file descriptor or mounted secret.
@@ -604,7 +628,7 @@ and it refuses to overwrite an existing file.
 The proposal is a schema-validated version-1 record with `recordType`
 `pinUpdateProposal`. It records the ConClear version, source revision and
 embedded guide revision; the resolving tool identity; the creation time from an
-injected UTC clock; the canonical repository identity, current full Git
+injected UTC clock; the declared public source URL, current full Git
 revision, configuration path and SHA-256 digest; the selected image IDs; one
 lookup per original tagged-digest reference with its affected image IDs,
 declared tag intent, resolved tagged-digest reference, old and new digest and
@@ -735,8 +759,9 @@ configuration.
 <a id="promise-ip0015"></a>
 Every record is UTF-8 JSON validated against a versioned schema. It includes
 `schemaVersion`, `recordType`, `createdAt`, `runId`, ConClear and guide
-identity, canonical source repository and revision, SHA-256 of the exact
-`conclear.toml` bytes, relevant tool identities and a verdict. Timestamps use
+identity, the declared public source URL and source revision, SHA-256 of the
+exact `conclear.toml` bytes, relevant tool identities and a verdict. Timestamps
+use
 UTC RFC 3339 form with whole-second precision and a `Z` suffix. ConClear
 truncates a sub-second observation when it reads its clock and never rounds, so
 a recorded time never post-dates the observation and identical inputs serialize
@@ -1293,7 +1318,8 @@ status.
 <a id="promise-ip0031"></a>
 ConClear generates release provenance as an in-toto Statement with a SLSA
 Provenance v1 predicate. It derives the subject graph from
-`release-candidate.json`, source identity from the isolated Git checkout,
+`release-candidate.json`, the source revision from the isolated Git checkout,
+the public source URL from the reviewed configuration,
 builder identity from the protected release profile, ConClear implementation
 identity from embedded data, and the run identity from observed execution.
 Repository configuration, CI environment metadata, labels and arbitrary
@@ -1315,7 +1341,7 @@ ConClear. A separately controlled CI platform needs its own builder identity and
 documentation; ordinary provider environment variables cannot authenticate or
 select it.
 
-Materials include the canonical source repository and full commit,
+Materials include the declared public source URL with the full commit,
 Containerfile, repository configuration, external image digests and other
 integrity-checked dependencies known to the build. Parameters exclude
 credentials and secret values. Verification requires the exact profile-selected
@@ -1569,7 +1595,7 @@ overwrite. It discovers only the conventional `Containerfile`,
 repository root, refuses a root that mixes both families or has none unless
 paths are given, and confines explicit paths below the root. Through the same
 structural parsers `check` uses, it observes the Containerfile path, the
-canonical source identity, every external image input and its pin quality, the
+current Git revision, every external image input and its pin quality, the
 final `USER`, `VOLUME` destinations, `STOPSIGNAL`, static labels and a
 recognizable systemd entrypoint. The structural facts select the proposed
 runtime profile before the profile-dependent checks run: a systemd entrypoint is
