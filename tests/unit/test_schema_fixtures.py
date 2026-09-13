@@ -138,6 +138,20 @@ def test_release_records_validate_and_reject_security_significant_mutations(
         },
     )
     assert load_candidate(harness.workspace, harness.image).candidate_tag
+    # Records written before ConClear evaluated scanner coverage omit the package
+    # assessment; readers must still accept them (absence means "not evaluated").
+    qualification = fixtures["platformQualification"]
+    assert qualification["payload"]["packageAssessment"]["status"] == "assessed"
+    older = {
+        **qualification,
+        "payload": {
+            key: item
+            for key, item in qualification["payload"].items()
+            if key != "packageAssessment"
+        },
+    }
+    validate_record(older)
+    assert _errors("record.schema.json", older) == []
 
 
 def test_configuration_profile_result_and_triage_fixtures(

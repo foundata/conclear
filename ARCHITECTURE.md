@@ -1176,7 +1176,10 @@ detected; a detected operating system without such a result is `unassessed`,
 never clean, and rejects qualification (`CC0506`) unless a reviewed, expiring
 `package_assessment_exception` applies. The qualification record and every
 rescan result state the assessment status, the operating system, the package
-count and any applied exception. Trivy is the only supported scanner stack,
+count and any applied exception. A record written before ConClear evaluated
+scanner coverage omits the field; absence means the writer did not evaluate it,
+never that the packages were assessed, and a rescan always records its own
+fresh assessment. Trivy is the only supported scanner stack,
 and exactly one vulnerability result gates a release. Every rejecting scan runs
 against local content and the digest-addressed layout before publication. Every
 failed Trivy configuration check rejects qualification except `DS-0026`, which

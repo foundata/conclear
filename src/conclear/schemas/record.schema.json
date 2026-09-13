@@ -462,6 +462,7 @@
       }
     },
     "packageAssessment": {
+      "description": "Whether the scanner assessed the operating-system packages it inventoried. Records written before ConClear evaluated scanner coverage omit it; absence means not evaluated, never assessed.",
       "type": "object",
       "additionalProperties": false,
       "required": ["status", "operatingSystem", "packages", "reason", "exception"],
@@ -578,7 +579,7 @@
     "platformQualification": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["imageId", "sourceTreeDigest", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "buildExecution", "testExecution", "runtimeConstraints", "testInputs", "testImageDependencies", "testResults", "sbom", "scans", "appliedExceptions", "packageAssessment", "payloadDigests", "databaseDigest", "databaseMetadata", "qualificationWindow", "findings"],
+      "required": ["imageId", "sourceTreeDigest", "platform", "layoutDescriptor", "manifestDigest", "containerfileDigest", "contextDigest", "buildArguments", "externalImages", "pinObservations", "effectiveLimits", "buildExecution", "testExecution", "runtimeConstraints", "testInputs", "testImageDependencies", "testResults", "sbom", "scans", "appliedExceptions", "payloadDigests", "databaseDigest", "databaseMetadata", "qualificationWindow", "findings"],
       "properties": {
         "sourceTreeDigest": {"$ref": "#/$defs/digest"},
         "imageId": {"type": "string"},
@@ -734,7 +735,7 @@
         "subject": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
         "releaseRecordDigest": {"$ref": "#/$defs/digest"},
         "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
-        "scanResults": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "sbomDigest", "reportDigest", "packageAssessment"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "sbomDigest": {"$ref": "#/$defs/digest"}, "reportDigest": {"$ref": "#/$defs/digest"}, "packageAssessment": {"$ref": "#/$defs/packageAssessment"}}}},
+        "scanResults": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "sbomDigest", "reportDigest"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "sbomDigest": {"$ref": "#/$defs/digest"}, "reportDigest": {"$ref": "#/$defs/digest"}, "packageAssessment": {"$ref": "#/$defs/packageAssessment"}}}},
         "scanner": {"type": "string"},
         "databaseDigest": {"$ref": "#/$defs/digest"},
         "databaseMetadata": {"$ref": "#/$defs/databaseMetadata"},
