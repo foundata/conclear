@@ -28,6 +28,20 @@ class DiagnosticHadolint:
                 line=7,
                 column=5,
             ),
+            HadolintFinding(
+                code="DL3041",
+                level="warning",
+                message="Specify version with `dnf install -y <package>-<version>`",
+                line=9,
+                column=1,
+            ),
+            HadolintFinding(
+                code="DL3003",
+                level="error",
+                message="Use WORKDIR to switch to a directory",
+                line=7,
+                column=5,
+            ),
         )
 
 
@@ -459,8 +473,10 @@ def test_hadolint_diagnostics_use_the_adapter_check_identifier(
     finding = outcome.findings[0]
     assert finding.check_id == "CC0114"
     assert finding.severity == "error"
-    assert finding.message == "Hadolint DL3008: Pin versions in apt get install"
+    assert finding.message == "Hadolint DL3003: Use WORKDIR to switch to a directory"
     assert finding.location == "Containerfile:7:5"
+    # DL3008 and DL3041 demand exact distribution package versions, which the
+    # guide forbids by default (IG0181); they never surface as findings.
 
 
 def test_comment_lines_inside_a_continued_instruction_are_ignored(

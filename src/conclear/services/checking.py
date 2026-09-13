@@ -9,6 +9,14 @@ from conclear.config import ImageConfig
 from conclear.presentation import Finding
 from conclear.scan_identity import evidence_path
 
+# The guide forbids requiring exact distribution package versions by default
+# (IG0181) and leaves a justified constraint to review (IG0175), so Hadolint's
+# distribution package pinning rules cannot apply. Language package managers
+# (pip, npm, gem) are application dependencies and stay reported.
+_DISTRIBUTION_PINNING_RULES = frozenset(
+    {"DL3008", "DL3018", "DL3033", "DL3037", "DL3041"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class CheckOutcome:
@@ -26,6 +34,8 @@ def check_image(image: ImageConfig, hadolint: HadolintAdapter) -> CheckOutcome:
     """Run deterministic source checks and the supported Hadolint adapter."""
     findings = list(check_image_static(image))
     for item in hadolint.check(image.containerfile, config_directory=image.context):
+        if item.code in _DISTRIBUTION_PINNING_RULES:
+            continue
         if (
             item.code == "DL3002"
             and image.runtime.user == 0
