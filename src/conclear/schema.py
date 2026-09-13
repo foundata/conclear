@@ -1,6 +1,7 @@
 """Draft 2020-12 validation for external configuration and records."""
 
 import json
+from collections.abc import Mapping
 from importlib.resources import files
 from typing import Any
 
@@ -67,11 +68,57 @@ def validate_external(
         raise InvalidInvocationError(
             f"Invalid {label}:\n" + "\n".join(messages), code=code
         )
-    error = errors[0]
+    error = _most_specific(errors[0])
     location = ".".join(str(part) for part in error.absolute_path) or "<root>"
     raise InvalidInvocationError(
-        f"Invalid {label} at {location}: {error.message}", code=code
+        f"Invalid {label} at {location}: {_describe(error)}", code=code
     )
+
+
+def _most_specific(error: ValidationError) -> ValidationError:
+    """Descend through oneOf/anyOf alternatives to the error a reader can act on."""
+    current = error
+    while current.context:
+        current = max(
+            current.context,
+            key=lambda item: (
+                len(item.absolute_path),
+                item.validator in _ACTIONABLE_VALIDATORS,
+                -len(item.message),
+            ),
+        )
+    return current
+
+
+_ACTIONABLE_VALIDATORS = frozenset(
+    {"additionalProperties", "required", "enum", "const", "type", "pattern"}
+)
+
+
+def _describe(error: ValidationError) -> str:
+    """Return the error message without echoing the offending value."""
+    if error.validator in {"oneOf", "anyOf"}:
+        return "does not match any of the allowed forms"
+    if error.validator == "additionalProperties":
+        schema = error.schema if isinstance(error.schema, Mapping) else {}
+        allowed = schema.get("properties") or {}
+        unexpected = sorted(
+            key
+            for key in (error.instance if isinstance(error.instance, dict) else {})
+            if key not in allowed
+        )
+        if unexpected:
+            return "unexpected key(s): " + ", ".join(unexpected)
+    if error.validator == "required":
+        return str(error.message)
+    message = str(error.message)
+    # jsonschema phrases most messages as "<value repr> <verdict>"; keep the verdict.
+    rendered = repr(error.instance)
+    if message.startswith(rendered):
+        message = message[len(rendered) :].strip()
+    if not message:
+        message = f"violates {error.validator}"
+    return message if len(message) <= 200 else message[:197] + "..."
 
 
 def _validation_error_key(error: ValidationError) -> tuple[str, str]:

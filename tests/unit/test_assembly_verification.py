@@ -728,7 +728,7 @@ def test_assembly_requires_build_arguments_derived_from_the_selected_commit(
         dependency={**BUILD_ARGUMENTS, "IMAGE_REVISION": "c" * 40},
     )
     rejects(
-        "Additional properties are not allowed",
+        "unexpected key",
         primary={**BUILD_ARGUMENTS, "EXTRA": "1"},
         dependency={**BUILD_ARGUMENTS, "EXTRA": "1"},
     )

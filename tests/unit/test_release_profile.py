@@ -358,3 +358,52 @@ def test_release_profile_requires_and_normalizes_allowed_source_origins(
     )
     with pytest.raises(InvalidInvocationError):
         load_release_profile("release", config_home=config_home)
+
+
+def test_release_profile_names_a_misplaced_key_instead_of_dumping_the_table(
+    tmp_path: Path,
+) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    profile = profile_directory / "release.toml"
+    # A key appended after the last table header lands inside that table, the
+    # way it happens when someone appends to the end of the file by hand.
+    profile.write_text(
+        f"""schema_version = 1
+ci_context = "omit"
+allowed_source_origins = ["https://github.com/example/"]
+cosign_public_key = "{public_key}"
+
+[builder]
+id = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
+
+[registry]
+provider = "quay"
+host = "quay.io"
+
+[registry.tag_protection]
+mode = "not-enforced"
+rationale = "Not available."
+owner = "Release maintainer"
+
+[registry.candidate_cleanup]
+mode = "tag-expiration"
+owner = "Release maintainer"
+procedure = "Review abandoned runs."
+passphrase_file = "~/.config/conclear/release.passphrase"
+""",
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError) as caught:
+        load_release_profile("release", config_home=config_home)
+
+    message = str(caught.value)
+    assert "at registry.candidate_cleanup:" in message
+    assert "unexpected key(s): passphrase_file" in message
+    assert "{" not in message
