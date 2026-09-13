@@ -282,6 +282,13 @@ def test_candidate_assembly_verifies_record_payload_and_layout_digests(
             "sbom": {"digest": payload_digest, "spdxVersion": "SPDX-2.3"},
             "scans": [],
             "appliedExceptions": [],
+            "packageAssessment": {
+                "status": "assessed",
+                "operatingSystem": "debian 13",
+                "packages": 1,
+                "reason": None,
+                "exception": None,
+            },
             "payloadDigests": [payload_digest],
             "databaseDigest": digest,
             "databaseMetadata": {

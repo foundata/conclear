@@ -357,8 +357,12 @@ class FakeReadinessTiming:
 
 
 class Scanner:
-    def __init__(self) -> None:
+    def __init__(
+        self, *, os_family: str | None = None, package_result: bool = True
+    ) -> None:
         self.identities: list[Any] = []
+        self.os_family = os_family
+        self.package_result = package_result
 
     def scan_filesystem(self, **values: Any) -> ScanObservation:
         self.identities.append(values.get("identity"))
@@ -366,7 +370,20 @@ class Scanner:
 
     def scan_layout(self, **values: Any) -> ScanObservation:
         self.identities.append(values.get("identity"))
-        return self._write(values["report_path"], {"Results": []})
+        report: dict[str, Any] = {"Results": []}
+        if self.os_family is not None:
+            report["Metadata"] = {"OS": {"Family": self.os_family, "Name": "43"}}
+            if self.package_result:
+                report["Results"].append(
+                    {
+                        "Target": "subject (os 43)",
+                        "Class": "os-pkgs",
+                        "Type": self.os_family,
+                        "Packages": [{"Name": "bash"}],
+                        "Vulnerabilities": [],
+                    }
+                )
+        return self._write(values["report_path"], report)
 
     def generate_spdx(self, **values: Any) -> ScanObservation:
         self.identities.append(values.get("identity"))
@@ -1143,6 +1160,90 @@ def test_scans_are_named_by_the_platform_subject_not_the_host(
     assert identity.workspace_root == value.workspace.root
     assert identity.artifact_path == result.layout_path
     assert str(tmp_path) not in identity.subject
+
+
+def qualify_with_scanner(
+    value: Any, scanner: Scanner, tmp_path: Path
+) -> tuple[Any, dict[str, Any]]:
+    database_path = tmp_path / "database"
+    database_path.mkdir(exist_ok=True)
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=scanner,
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        preflight=closure_preflight(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+    return result, json.loads(result.record_path.read_text(encoding="utf-8"))
+
+
+def test_qualification_records_an_assessed_package_inventory(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    result, record = qualify_with_scanner(value, Scanner(os_family="alma"), tmp_path)
+
+    assert result.verdict is Verdict.ACCEPTED
+    assert record["payload"]["packageAssessment"] == {
+        "status": "assessed",
+        "operatingSystem": "alma 43",
+        "packages": 1,
+        "reason": None,
+        "exception": None,
+    }
+
+
+def test_qualification_rejects_an_unassessed_inventory_without_an_exception(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    result, record = qualify_with_scanner(
+        value, Scanner(os_family="fedora", package_result=False), tmp_path
+    )
+
+    assert result.verdict is Verdict.REJECTED
+    assert [item.check_id for item in result.findings] == ["CC0506"]
+    assert record["payload"]["packageAssessment"]["status"] == "unassessed"
+    assert record["payload"]["packageAssessment"]["exception"] is None
+
+
+def test_qualification_accepts_an_unassessed_inventory_with_a_reviewed_exception(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + """
+[images.package_assessment_exception]
+rationale = "Trivy has no vulnerability data for Fedora."
+owner = "platform@example.com"
+review_trigger = "Scanner coverage or the base image changes."
+expires = "2026-12-31"
+""",
+        encoding="utf-8",
+    )
+    value = inputs(root, tmp_path)
+
+    result, record = qualify_with_scanner(
+        value, Scanner(os_family="fedora", package_result=False), tmp_path
+    )
+
+    assert result.verdict is Verdict.ACCEPTED
+    assert result.findings == ()
+    assessment = record["payload"]["packageAssessment"]
+    assert assessment["status"] == "unassessed"
+    assert assessment["operatingSystem"] == "fedora 43"
+    assert assessment["exception"]["expires"] == "2026-12-31"
+    assert "no package vulnerability result" in assessment["reason"]
 
 
 def test_service_without_health_command_does_not_poll(

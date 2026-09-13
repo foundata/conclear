@@ -317,6 +317,30 @@ class VulnerabilityException:
 
 
 @dataclass(frozen=True, slots=True)
+class PackageAssessmentException:
+    """A reviewed, expiring acceptance of packages no scanner can assess.
+
+    It exists for images whose operating system the authoritative scanner
+    inventories but cannot match against vulnerability data. The evidence then
+    states that the packages were not assessed instead of implying a clean scan.
+    """
+
+    rationale: str
+    owner: str
+    review_trigger: str
+    expires: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the evidence representation."""
+        return {
+            "rationale": self.rationale,
+            "owner": self.owner,
+            "reviewTrigger": self.review_trigger,
+            "expires": self.expires,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ImageConfig:
     """The common build-image model after schema and semantic validation.
 
@@ -362,6 +386,7 @@ class ReleaseImageConfig(ImageConfig):
     hooks: tuple[HookConfig, ...]
     vulnerability_exceptions: tuple[VulnerabilityException, ...]
     release_limits: ReleaseLimits
+    package_assessment_exception: PackageAssessmentException | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -672,6 +697,12 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         raise InvalidInvocationError(
             f"Vulnerability exceptions for {image_id} must be unique"
         )
+    assessment_value = value.get("package_assessment_exception")
+    package_assessment_exception = (
+        None
+        if assessment_value is None
+        else _parse_package_assessment_exception(toml_table(assessment_value))
+    )
     return ReleaseImageConfig(
         image_id=image_id,
         containerfile=containerfile,
@@ -690,6 +721,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
             _parse_hook(toml_table(item)) for item in _list(value.get("hooks", []))
         ),
         vulnerability_exceptions=exceptions,
+        package_assessment_exception=package_assessment_exception,
         release_limits=ReleaseLimits(
             candidate_lifetime=parse_duration(
                 toml_string(limits_value.get("candidate_lifetime", "7d")),
@@ -711,6 +743,7 @@ _RELEASE_ONLY_KEYS = (
     "rescan_scope",
     "hooks",
     "vulnerability_exceptions",
+    "package_assessment_exception",
 )
 _RELEASE_ONLY_TEST_KEYS = ("fixtures", "outputs", "preparations", "launch")
 _RELEASE_ONLY_LIMIT_KEYS = ("candidate_lifetime", "remediation")
@@ -1297,6 +1330,25 @@ def _parse_exception(value: dict[str, Any], image_id: str) -> VulnerabilityExcep
         owner=toml_string(value["owner"]),
         expires=expires,
         review_trigger=toml_string(value["review_trigger"]),
+    )
+
+
+def _parse_package_assessment_exception(
+    value: dict[str, Any],
+) -> PackageAssessmentException:
+    expires = toml_string(value["expires"])
+    try:
+        date.fromisoformat(expires)
+    except ValueError as exc:
+        raise InvalidInvocationError(
+            f"Package assessment exception expiry is not an ISO date: {expires}"
+        ) from exc
+    review = _parse_requirement(value)
+    return PackageAssessmentException(
+        rationale=review.rationale,
+        owner=review.owner,
+        review_trigger=review.review_trigger,
+        expires=expires,
     )
 
 

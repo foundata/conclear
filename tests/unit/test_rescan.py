@@ -695,6 +695,13 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     )
     assert result.statement_path is not None
     record = load_json(result.record_path)
+    assert record["payload"]["scanResults"][0]["packageAssessment"] == {
+        "status": "assessed",
+        "operatingSystem": None,
+        "packages": 0,
+        "reason": None,
+        "exception": None,
+    }
     assert record["payload"]["databaseDigest"] == database.digest
     assert record["payload"]["releaseRecordDigest"] == release_record_digest
     assert result.release_record_digest == release_record_digest

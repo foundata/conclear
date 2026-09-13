@@ -3,7 +3,11 @@
 from dataclasses import dataclass
 from datetime import date
 
-from conclear.config import RuntimeConfig, VulnerabilityException
+from conclear.config import (
+    PackageAssessmentException,
+    RuntimeConfig,
+    VulnerabilityException,
+)
 from conclear.errors import OperationalError
 from conclear.parsing import array_value, object_value, string_value
 from conclear.presentation import Finding
@@ -40,6 +44,32 @@ class FixableVulnerability:
 
 
 @dataclass(frozen=True, slots=True)
+class PackageAssessment:
+    """Whether the scanner assessed the operating-system packages it inventoried.
+
+    A report that names an operating system but contains no package result
+    proves only that the scanner has no vulnerability data for it. That is an
+    unassessed inventory, never a clean one.
+    """
+
+    status: str
+    operating_system: str | None
+    packages: int
+    reason: str | None = None
+    exception: PackageAssessmentException | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the evidence representation."""
+        return {
+            "status": self.status,
+            "operatingSystem": self.operating_system,
+            "packages": self.packages,
+            "reason": self.reason,
+            "exception": None if self.exception is None else self.exception.to_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ScanEvaluation:
     """Policy findings and exact exceptions applied to one Trivy report."""
 
@@ -47,6 +77,7 @@ class ScanEvaluation:
     applied_exceptions: tuple[AppliedException, ...]
     fixable_vulnerabilities: tuple[FixableVulnerability, ...]
     applied_runtime_requirements: tuple[dict[str, object], ...] = ()
+    package_assessment: PackageAssessment | None = None
 
     @property
     def accepted(self) -> bool:
@@ -66,8 +97,15 @@ def evaluate_trivy_report(
     exceptions: tuple[VulnerabilityException, ...],
     today: date,
     runtime: RuntimeConfig | None = None,
+    expect_packages: bool = False,
+    package_assessment_exception: PackageAssessmentException | None = None,
 ) -> ScanEvaluation:
-    """Reject secrets, failed misconfigurations and unexcepted fixable vulnerabilities."""
+    """Reject secrets, failed misconfigurations and unexcepted fixable vulnerabilities.
+
+    With ``expect_packages`` the report must also assess the operating-system
+    packages it inventoried; an unassessed inventory rejects unless a reviewed,
+    unexpired ``package_assessment_exception`` applies.
+    """
     report = object_value(value, label="Trivy report")
     results_value = report.get("Results", [])
     results = array_value(results_value, label="Trivy results")
@@ -178,7 +216,15 @@ def evaluate_trivy_report(
                     finding=finding,
                 )
             )
+    assessment = None
+    if expect_packages:
+        assessment = _assess_packages(
+            report, results, package_assessment_exception, today=today
+        )
+        if assessment.status == "unassessed" and assessment.exception is None:
+            findings.append(Finding("CC0506", "error", _unassessed_message(assessment)))
     return ScanEvaluation(
+        package_assessment=assessment,
         applied_runtime_requirements=tuple(runtime_requirements),
         findings=tuple(
             sorted(
@@ -238,3 +284,60 @@ def _array_or_empty(value: object, *, label: str) -> list[object]:
     if value is None:
         return []
     return array_value(value, label=label)
+
+
+def _assess_packages(
+    report: dict[str, object],
+    results: list[object],
+    exception: PackageAssessmentException | None,
+    *,
+    today: date,
+) -> PackageAssessment:
+    metadata = report.get("Metadata")
+    operating_system: str | None = None
+    if isinstance(metadata, dict) and isinstance(metadata.get("OS"), dict):
+        family = metadata["OS"].get("Family")
+        name = metadata["OS"].get("Name")
+        if isinstance(family, str) and family:
+            operating_system = (
+                family if not isinstance(name, str) else f"{family} {name}".strip()
+            )
+    package_results = [
+        result
+        for result in results
+        if isinstance(result, dict) and result.get("Class") == "os-pkgs"
+    ]
+    packages = sum(
+        len(packages_value)
+        for result in package_results
+        if isinstance(packages_value := result.get("Packages"), list)
+    )
+    if operating_system is None or package_results:
+        return PackageAssessment("assessed", operating_system, packages)
+    reason = (
+        f"the scanner inventoried {operating_system} but produced no package "
+        "vulnerability result for it"
+    )
+    if exception is None:
+        return PackageAssessment("unassessed", operating_system, 0, reason)
+    try:
+        expiry = date.fromisoformat(exception.expires)
+    except ValueError as exc:
+        raise OperationalError(
+            f"Package assessment exception has invalid expiry: {exception.expires}"
+        ) from exc
+    if expiry < today:
+        return PackageAssessment(
+            "unassessed",
+            operating_system,
+            0,
+            f"{reason}; the package assessment exception expired on {exception.expires}",
+        )
+    return PackageAssessment("unassessed", operating_system, 0, reason, exception)
+
+
+def _unassessed_message(assessment: PackageAssessment) -> str:
+    return (
+        f"Package vulnerability assessment not established: {assessment.reason}. "
+        "Declare a reviewed [images.package_assessment_exception] or change the base image"
+    )

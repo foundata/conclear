@@ -35,7 +35,11 @@ from conclear.records import (
     Verdict,
 )
 from conclear.scan_identity import ScanIdentity
-from conclear.scan_policy import AppliedException, evaluate_trivy_report
+from conclear.scan_policy import (
+    AppliedException,
+    PackageAssessment,
+    evaluate_trivy_report,
+)
 from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification_inputs import (
     BuildEvidence,
@@ -125,6 +129,7 @@ class ScanEvidence:
     applied_exceptions: tuple[AppliedException, ...]
     findings: tuple[Finding, ...]
     applied_runtime_requirements: tuple[dict[str, object], ...] = ()
+    package_assessment: PackageAssessment | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,8 +324,11 @@ def generate_evidence(
         exceptions=inputs.image.vulnerability_exceptions,
         today=today,
         runtime=inputs.image.runtime,
+        expect_packages=True,
+        package_assessment_exception=inputs.image.package_assessment_exception,
     )
     return ScanEvidence(
+        package_assessment=image_evaluation.package_assessment,
         sbom=sbom,
         scans=(source_scan, containerfile_scan, image_scan),
         applied_exceptions=image_evaluation.applied_exceptions,
@@ -444,6 +452,11 @@ def qualify_platform(
             item.to_dict() for item in scan_evidence.applied_exceptions
         ],
         "appliedRuntimeRequirements": list(scan_evidence.applied_runtime_requirements),
+        "packageAssessment": (
+            None
+            if scan_evidence.package_assessment is None
+            else scan_evidence.package_assessment.to_dict()
+        ),
         "payloadDigests": list(payload_digests),
         "databaseDigest": database.digest,
         "databaseMetadata": database.metadata,

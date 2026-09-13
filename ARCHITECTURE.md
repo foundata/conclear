@@ -446,7 +446,8 @@ runtime contract and its own dependencies, and the keys that only a qualified
 image uses are rejected there. ConClear's typed model mirrors that split: the
 common build-image model holds exactly those facts, the release image type adds
 the destination, tags, native-test requirements, rescan policy,
-test inputs, hooks, vulnerability exceptions and release limits, and scanning,
+test inputs, hooks, vulnerability exceptions, a package assessment exception
+and release limits, and scanning,
 runtime qualification, assembly, publication and rescan accept only the
 release image type, so release-only state cannot exist on a test-only image.
 ConClear refuses to select a test-only image for a build, qualification, release
@@ -1164,8 +1165,14 @@ configuration. It scans the build context for secrets, the Containerfile and
 image configuration for insecure settings, and the final layout for packages,
 vulnerabilities, secrets and configuration. A fixable `HIGH` or `CRITICAL`
 vulnerability rejects qualification unless an exact, approved and unexpired
-repository exception applies. Trivy is the only supported scanner stack, and
-exactly one vulnerability result gates a release. Every rejecting scan runs
+repository exception applies. A package inventory is `assessed` only when the
+scanner produced a package vulnerability result for the operating system it
+detected; a detected operating system without such a result is `unassessed`,
+never clean, and rejects qualification (`CC0506`) unless a reviewed, expiring
+`package_assessment_exception` applies. The qualification record and every
+rescan result state the assessment status, the operating system, the package
+count and any applied exception. Trivy is the only supported scanner stack,
+and exactly one vulnerability result gates a release. Every rejecting scan runs
 against local content and the digest-addressed layout before publication. Every
 failed Trivy configuration check rejects qualification except `DS-0026`, which
 demands a Containerfile `HEALTHCHECK` that the guide forbids in OCI-format

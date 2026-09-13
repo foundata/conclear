@@ -18,7 +18,12 @@ from conclear.attestations import (
     SPDX_DOCUMENT_TYPE,
     write_statement,
 )
-from conclear.config import MAX_REMEDIATION, RuntimeConfig, VulnerabilityException
+from conclear.config import (
+    MAX_REMEDIATION,
+    PackageAssessmentException,
+    RuntimeConfig,
+    VulnerabilityException,
+)
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.parsing import object_value, string_value
@@ -208,6 +213,7 @@ def rescan_release(
     now: datetime,
     record_clock: Callable[[], datetime],
     runtime_rules: RuntimeConfig | None = None,
+    package_assessment_exception: PackageAssessmentException | None = None,
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -374,6 +380,13 @@ def rescan_release(
             exceptions=exceptions,
             today=now.date(),
             runtime=runtime_rules,
+            expect_packages=True,
+            package_assessment_exception=package_assessment_exception,
+        )
+        scan_results[-1]["packageAssessment"] = (
+            None
+            if evaluation.package_assessment is None
+            else evaluation.package_assessment.to_dict()
         )
         suppressed = set()
         for vulnerability in evaluation.fixable_vulnerabilities:

@@ -681,6 +681,7 @@ def _execute_rescan(
             expected_configuration_digest=configuration_digest,
             scope=image.rescan_scope,
             exceptions=image.vulnerability_exceptions,
+            package_assessment_exception=image.package_assessment_exception,
             triage=triage,
             previous_result_digest=previous_result,
             remediation_limit=image.release_limits.remediation,

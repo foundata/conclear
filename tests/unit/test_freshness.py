@@ -131,6 +131,13 @@ def payload(start: datetime = NOW) -> dict[str, Any]:
         },
         "pinObservations": [],
         "appliedExceptions": [],
+        "packageAssessment": {
+            "status": "assessed",
+            "operatingSystem": "debian 13",
+            "packages": 1,
+            "reason": None,
+            "exception": None,
+        },
     }
 
 

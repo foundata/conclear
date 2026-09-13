@@ -1178,6 +1178,7 @@ def test_common_model_holds_only_build_facts() -> None:
         "test",
         "hooks",
         "vulnerability_exceptions",
+        "package_assessment_exception",
         "release_limits",
     }
     assert {item.name for item in fields(config_module.TestConfig)} == {
@@ -1339,4 +1340,53 @@ def test_dependency_cycle_applies_to_every_image_kind(
     )
 
     with pytest.raises(InvalidInvocationError, match="cycle"):
+        load_repository_config(path)
+
+
+def test_package_assessment_exception_is_parsed_with_review_fields(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + """
+[images.package_assessment_exception]
+rationale = "Trivy has no vulnerability data for Fedora."
+owner = "platform@example.com"
+review_trigger = "Scanner coverage or the base image changes."
+expires = "2026-12-31"
+""",
+        encoding="utf-8",
+    )
+
+    image = load_repository_config(path).release_image("app")
+
+    assert image.package_assessment_exception is not None
+    assert image.package_assessment_exception.to_dict() == {
+        "rationale": "Trivy has no vulnerability data for Fedora.",
+        "owner": "platform@example.com",
+        "reviewTrigger": "Scanner coverage or the base image changes.",
+        "expires": "2026-12-31",
+    }
+
+
+def test_package_assessment_exception_requires_an_iso_expiry(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + """
+[images.package_assessment_exception]
+rationale = "r"
+owner = "o"
+review_trigger = "t"
+expires = "soon"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="not an ISO date"):
         load_repository_config(path)

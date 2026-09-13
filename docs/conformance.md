@@ -31,66 +31,67 @@ Manual entries identify requirements that still need human judgment. The last
 column lists the guide requirements each check covers; the coverage section
 below links every identifier to the guide.
 
-|  Check   | Behavior  | Severity |                                               Summary                                               | Guide requirements |
-| -------- | --------- | -------- | --------------------------------------------------------------------------------------------------- | ------------------ |
-| `CC0001` | automated | error    | Validate repository configuration against its closed schema                                         | `IG0093`, `IG0116`, `IG0118`, `IG0310`, `IG0314` |
-| `CC0002` | automated | error    | Keep configured and transported paths within their trusted root                                     | `IG0149`, `IG0273` |
-| `CC0003` | automated | error    | Reject unsafe release-profile ownership and permissions                                             | `IG0373`, `IG0374` |
-| `CC0004` | automated | error    | Require the observed Git origin to match a release-profile-allowed origin prefix                    | `IG0429`           |
-| `CC0101` | automated | error    | Require UTF-8 Containerfiles with Unix line endings and a final newline                             | `IG0047`           |
-| `CC0102` | automated | error    | Require uppercase Containerfile instruction keywords                                                | `IG0048`           |
-| `CC0103` | automated | error    | Reject Docker BuildKit parser directives and extensions                                             | `IG0031`, `IG0057` |
-| `CC0104` | automated | error    | Require named lowercase build stages and named stage references                                     | `IG0049`, `IG0150`, `IG0151` |
-| `CC0105` | automated | error    | Require fully qualified external image references                                                   | `IG0062`, `IG0072`, `IG0074` |
-| `CC0106` | automated | error    | Require digest pins for every external image input                                                  | `IG0063`, `IG0107`, `IG0108`, `IG0109`, `IG0110`, `IG0112`, `IG0154`, `IG0284` |
-| `CC0107` | automated | error    | Reject remote ADD and implicit archive extraction                                                   | `IG0182`, `IG0193`, `IG0194` |
-| `CC0108` | automated | error    | Reject network-to-interpreter command pipelines                                                     | `IG0161`, `IG0176` |
-| `CC0109` | automated | error    | Reject world-writable permissions and undeclared set-ID chmod targets                               | `IG0195`           |
-| `CC0110` | automated | error    | Require the final numeric user to match the reviewed runtime contract                               | `IG0207`, `IG0219`, `IG0221` |
-| `CC0111` | automated | error    | Require JSON exec form for ENTRYPOINT and CMD                                                       | `IG0222`           |
-| `CC0112` | automated | error    | Reject Docker-format HEALTHCHECK metadata                                                           | `IG0257`           |
-| `CC0113` | automated | error    | Verify mandatory OCI image labels against the declared public source URL and observed release facts | `IG0232`, `IG0233`, `IG0234`, `IG0235`, `IG0236`, `IG0243`, `IG0407` |
-| `CC0114` | automated | error    | Report Hadolint diagnostics with their upstream rule identifiers                                    | `IG0399`           |
-| `CC0115` | automated | error    | Require systemd stop-signal metadata to match the runtime contract                                  | `IG0224`, `IG0231` |
-| `CC0116` | automated | error    | Require final-stage VOLUME destinations to be declared writable runtime mounts                      | `IG0209`, `IG0253` |
-| `CC0201` | automated | error    | Require a .containerignore at the build-context root                                                | `IG0139`           |
-| `CC0202` | automated | error    | Require context exclusions for source control, credentials and local output                         | `IG0140`, `IG0147` |
-| `CC0203` | automated | error    | Match every declared pin to exactly one Containerfile image input                                   | `IG0116`, `IG0120` |
-| `CC0204` | automated | error    | Enforce bounded pin freshness and divergence observations                                           | `IG0117`, `IG0118`, `IG0119` |
-| `CC0205` | automated | warning  | Report immutable-tag digest changes for supply-chain review                                         | `IG0121`, `IG0130` |
-| `CC0206` | automated | error    | Bind one tag resolution to every declared pin occurrence in a non-mutating proposal                 | `IG0114`, `IG0123`, `IG0124`, `IG0125`, `IG0127` |
-| `CC0207` | automated | error    | Verify a pin proposal against the current worktree before all-or-nothing application                | `IG0126`, `IG0128` |
-| `CC0301` | automated | error    | Resolve and hold the supported release toolchain constant                                           | `IG0020`, `IG0025`, `IG0111`, `IG0282`, `IG0401` |
-| `CC0302` | automated | error    | Recursively verify every OCI descriptor size and digest                                             | `IG0273`, `IG0409` |
-| `CC0303` | automated | error    | Match OCI descriptor platforms to image configuration                                               | `IG0268`, `IG0275`, `IG0407` |
-| `CC0304` | automated | error    | Require exact accepted platform coverage during assembly                                            | `IG0010`, `IG0260`, `IG0270`, `IG0275` |
-| `CC0305` | automated | error    | Re-verify imported runtime content against the layout digest                                        | `IG0408`, `IG0409`, `IG0410` |
-| `CC0306` | automated | error    | Verify transported qualifications against caller-supplied digests before assembly                   | `IG0010`, `IG0261`, `IG0271`, `IG0272`, `IG0273`, `IG0274` |
-| `CC0401` | automated | error    | Test declared functional controls and separate restrictive controls                                 | `IG0209`, `IG0210`, `IG0213`, `IG0214`, `IG0215`, `IG0403`, `IG0405` |
-| `CC0402` | automated | error    | Apply and observe memory, CPU, PID and nofile limits                                                | `IG0216`, `IG0406` |
-| `CC0403` | automated | error    | Test startup, health, signal forwarding, shutdown and exit status                                   | `IG0223`, `IG0224`, `IG0225`, `IG0226`, `IG0230`, `IG0404` |
-| `CC0404` | automated | error    | Verify immutable runtime paths are root-owned and deny group/other writes                           | `IG0186`, `IG0191` |
-| `CC0405` | automated | error    | Validate sudo policy and test permitted, denied and restricted escalation                           | `IG0422`           |
-| `CC0501` | automated | error    | Run local package, vulnerability, secret and configuration scans                                    | `IG0148`, `IG0203`, `IG0264`, `IG0295`, `IG0297`, `IG0298`, `IG0299`, `IG0304`, `IG0308` |
-| `CC0502` | automated | error    | Reject fixable HIGH and CRITICAL findings without an exact exception                                | `IG0300`, `IG0313` |
-| `CC0503` | automated | error    | Validate exception completeness, expiry and exact finding matches                                   | `IG0309`, `IG0310`, `IG0311` |
-| `CC0504` | automated | error    | Generate and validate one digest-bound SPDX JSON SBOM per platform                                  | `IG0009`, `IG0264`, `IG0324`, `IG0325`, `IG0326`, `IG0327` |
-| `CC0505` | automated | error    | Hold one fresh database snapshot within a bounded qualification window                              | `IG0301`, `IG0305`, `IG0423` |
-| `CC0601` | automated | error    | Generate a unique lowercase-ULID candidate reference                                                | `IG0012`, `IG0089`, `IG0090`, `IG0095` |
-| `CC0602` | automated | error    | Preserve and compare the complete local and remote digest graph                                     | `IG0013`, `IG0076`, `IG0263`, `IG0294`, `IG0296`, `IG0302` |
-| `CC0603` | automated | error    | Enforce candidate authorization deadlines and selected cleanup controls                             | `IG0093`           |
-| `CC0604` | automated | error    | Refuse version tag replacement and verify every promoted tag                                        | `IG0016`, `IG0019`, `IG0081`, `IG0086`, `IG0096`, `IG0317` |
-| `CC0605` | automated | error    | Delete and verify removal of the candidate tag after promotion                                      | `IG0082`, `IG0097` |
-| `CC0701` | automated | error    | Require default public Rekor inclusion for release signatures                                       | `IG0356`, `IG0357`, `IG0358`, `IG0372` |
-| `CC0702` | automated | error    | Sign and verify the index and every platform manifest                                               | `IG0014`, `IG0018`, `IG0078`, `IG0360`, `IG0361`, `IG0363`, `IG0368` |
-| `CC0703` | automated | error    | Verify SBOM, provenance and release-verification attestations                                       | `IG0015`, `IG0329`, `IG0330`, `IG0352`, `IG0353`, `IG0364`, `IG0369`, `IG0376`, `IG0377`, `IG0378`, `IG0379`, `IG0380`, `IG0381`, `IG0382`, `IG0383`, `IG0394` |
-| `CC0704` | automated | error    | Keep builder, signer and source identities distinct                                                 | `IG0343`, `IG0346`, `IG0348`, `IG0349`, `IG0350`, `IG0384` |
-| `CC0801` | automated | error    | Verify complete platform coverage before an authoritative rescan                                    | `IG0396`           |
-| `CC0802` | automated | error    | Link immutable rescans and reject overdue remediation findings                                      | `IG0312`, `IG0314`, `IG0318`, `IG0322`, `IG0323`, `IG0397` |
-| `CC9001` | manual    | info     | Review whether the selected base image fits the application lifecycle                               | `IG0098`, `IG0099`, `IG0100`, `IG0101`, `IG0102`, `IG0103`, `IG0104`, `IG0105`, `IG0106` |
-| `CC9002` | manual    | info     | Review an immutable-version tag digest change as a supply-chain event                               | `IG0121`, `IG0130` |
-| `CC9003` | manual    | info     | Review vulnerability exceptions through repository security ownership                               | `IG0309`           |
-| `CC9005` | manual    | info     | Review external evidence-retention and signing-key procedures                                       | `IG0017`, `IG0066`, `IG0328`, `IG0362`, `IG0395` |
+|  Check   | Behavior  | Severity |                                                   Summary                                                   | Guide requirements |
+| -------- | --------- | -------- | ----------------------------------------------------------------------------------------------------------- | ------------------ |
+| `CC0001` | automated | error    | Validate repository configuration against its closed schema                                                 | `IG0093`, `IG0116`, `IG0118`, `IG0310`, `IG0314` |
+| `CC0002` | automated | error    | Keep configured and transported paths within their trusted root                                             | `IG0149`, `IG0273` |
+| `CC0003` | automated | error    | Reject unsafe release-profile ownership and permissions                                                     | `IG0373`, `IG0374` |
+| `CC0004` | automated | error    | Require the observed Git origin to match a release-profile-allowed origin prefix                            | `IG0429`           |
+| `CC0101` | automated | error    | Require UTF-8 Containerfiles with Unix line endings and a final newline                                     | `IG0047`           |
+| `CC0102` | automated | error    | Require uppercase Containerfile instruction keywords                                                        | `IG0048`           |
+| `CC0103` | automated | error    | Reject Docker BuildKit parser directives and extensions                                                     | `IG0031`, `IG0057` |
+| `CC0104` | automated | error    | Require named lowercase build stages and named stage references                                             | `IG0049`, `IG0150`, `IG0151` |
+| `CC0105` | automated | error    | Require fully qualified external image references                                                           | `IG0062`, `IG0072`, `IG0074` |
+| `CC0106` | automated | error    | Require digest pins for every external image input                                                          | `IG0063`, `IG0107`, `IG0108`, `IG0109`, `IG0110`, `IG0112`, `IG0154`, `IG0284` |
+| `CC0107` | automated | error    | Reject remote ADD and implicit archive extraction                                                           | `IG0182`, `IG0193`, `IG0194` |
+| `CC0108` | automated | error    | Reject network-to-interpreter command pipelines                                                             | `IG0161`, `IG0176` |
+| `CC0109` | automated | error    | Reject world-writable permissions and undeclared set-ID chmod targets                                       | `IG0195`           |
+| `CC0110` | automated | error    | Require the final numeric user to match the reviewed runtime contract                                       | `IG0207`, `IG0219`, `IG0221` |
+| `CC0111` | automated | error    | Require JSON exec form for ENTRYPOINT and CMD                                                               | `IG0222`           |
+| `CC0112` | automated | error    | Reject Docker-format HEALTHCHECK metadata                                                                   | `IG0257`           |
+| `CC0113` | automated | error    | Verify mandatory OCI image labels against the declared public source URL and observed release facts         | `IG0232`, `IG0233`, `IG0234`, `IG0235`, `IG0236`, `IG0243`, `IG0407` |
+| `CC0114` | automated | error    | Report Hadolint diagnostics with their upstream rule identifiers                                            | `IG0399`           |
+| `CC0115` | automated | error    | Require systemd stop-signal metadata to match the runtime contract                                          | `IG0224`, `IG0231` |
+| `CC0116` | automated | error    | Require final-stage VOLUME destinations to be declared writable runtime mounts                              | `IG0209`, `IG0253` |
+| `CC0201` | automated | error    | Require a .containerignore at the build-context root                                                        | `IG0139`           |
+| `CC0202` | automated | error    | Require context exclusions for source control, credentials and local output                                 | `IG0140`, `IG0147` |
+| `CC0203` | automated | error    | Match every declared pin to exactly one Containerfile image input                                           | `IG0116`, `IG0120` |
+| `CC0204` | automated | error    | Enforce bounded pin freshness and divergence observations                                                   | `IG0117`, `IG0118`, `IG0119` |
+| `CC0205` | automated | warning  | Report immutable-tag digest changes for supply-chain review                                                 | `IG0121`, `IG0130` |
+| `CC0206` | automated | error    | Bind one tag resolution to every declared pin occurrence in a non-mutating proposal                         | `IG0114`, `IG0123`, `IG0124`, `IG0125`, `IG0127` |
+| `CC0207` | automated | error    | Verify a pin proposal against the current worktree before all-or-nothing application                        | `IG0126`, `IG0128` |
+| `CC0301` | automated | error    | Resolve and hold the supported release toolchain constant                                                   | `IG0020`, `IG0025`, `IG0111`, `IG0282`, `IG0401` |
+| `CC0302` | automated | error    | Recursively verify every OCI descriptor size and digest                                                     | `IG0273`, `IG0409` |
+| `CC0303` | automated | error    | Match OCI descriptor platforms to image configuration                                                       | `IG0268`, `IG0275`, `IG0407` |
+| `CC0304` | automated | error    | Require exact accepted platform coverage during assembly                                                    | `IG0010`, `IG0260`, `IG0270`, `IG0275` |
+| `CC0305` | automated | error    | Re-verify imported runtime content against the layout digest                                                | `IG0408`, `IG0409`, `IG0410` |
+| `CC0306` | automated | error    | Verify transported qualifications against caller-supplied digests before assembly                           | `IG0010`, `IG0261`, `IG0271`, `IG0272`, `IG0273`, `IG0274` |
+| `CC0401` | automated | error    | Test declared functional controls and separate restrictive controls                                         | `IG0209`, `IG0210`, `IG0213`, `IG0214`, `IG0215`, `IG0403`, `IG0405` |
+| `CC0402` | automated | error    | Apply and observe memory, CPU, PID and nofile limits                                                        | `IG0216`, `IG0406` |
+| `CC0403` | automated | error    | Test startup, health, signal forwarding, shutdown and exit status                                           | `IG0223`, `IG0224`, `IG0225`, `IG0226`, `IG0230`, `IG0404` |
+| `CC0404` | automated | error    | Verify immutable runtime paths are root-owned and deny group/other writes                                   | `IG0186`, `IG0191` |
+| `CC0405` | automated | error    | Validate sudo policy and test permitted, denied and restricted escalation                                   | `IG0422`           |
+| `CC0501` | automated | error    | Run local package, vulnerability, secret and configuration scans                                            | `IG0148`, `IG0203`, `IG0264`, `IG0295`, `IG0297`, `IG0298`, `IG0299`, `IG0304`, `IG0308` |
+| `CC0502` | automated | error    | Reject fixable HIGH and CRITICAL findings without an exact exception                                        | `IG0300`, `IG0313` |
+| `CC0503` | automated | error    | Validate exception completeness, expiry and exact finding matches                                           | `IG0309`, `IG0310`, `IG0311` |
+| `CC0504` | automated | error    | Generate and validate one digest-bound SPDX JSON SBOM per platform                                          | `IG0009`, `IG0264`, `IG0324`, `IG0325`, `IG0326`, `IG0327` |
+| `CC0505` | automated | error    | Hold one fresh database snapshot within a bounded qualification window                                      | `IG0301`, `IG0305`, `IG0423` |
+| `CC0506` | automated | error    | Reject an operating-system package inventory the scanner did not assess unless a reviewed exception applies | `IG0297`, `IG0300` |
+| `CC0601` | automated | error    | Generate a unique lowercase-ULID candidate reference                                                        | `IG0012`, `IG0089`, `IG0090`, `IG0095` |
+| `CC0602` | automated | error    | Preserve and compare the complete local and remote digest graph                                             | `IG0013`, `IG0076`, `IG0263`, `IG0294`, `IG0296`, `IG0302` |
+| `CC0603` | automated | error    | Enforce candidate authorization deadlines and selected cleanup controls                                     | `IG0093`           |
+| `CC0604` | automated | error    | Refuse version tag replacement and verify every promoted tag                                                | `IG0016`, `IG0019`, `IG0081`, `IG0086`, `IG0096`, `IG0317` |
+| `CC0605` | automated | error    | Delete and verify removal of the candidate tag after promotion                                              | `IG0082`, `IG0097` |
+| `CC0701` | automated | error    | Require default public Rekor inclusion for release signatures                                               | `IG0356`, `IG0357`, `IG0358`, `IG0372` |
+| `CC0702` | automated | error    | Sign and verify the index and every platform manifest                                                       | `IG0014`, `IG0018`, `IG0078`, `IG0360`, `IG0361`, `IG0363`, `IG0368` |
+| `CC0703` | automated | error    | Verify SBOM, provenance and release-verification attestations                                               | `IG0015`, `IG0329`, `IG0330`, `IG0352`, `IG0353`, `IG0364`, `IG0369`, `IG0376`, `IG0377`, `IG0378`, `IG0379`, `IG0380`, `IG0381`, `IG0382`, `IG0383`, `IG0394` |
+| `CC0704` | automated | error    | Keep builder, signer and source identities distinct                                                         | `IG0343`, `IG0346`, `IG0348`, `IG0349`, `IG0350`, `IG0384` |
+| `CC0801` | automated | error    | Verify complete platform coverage before an authoritative rescan                                            | `IG0396`           |
+| `CC0802` | automated | error    | Link immutable rescans and reject overdue remediation findings                                              | `IG0312`, `IG0314`, `IG0318`, `IG0322`, `IG0323`, `IG0397` |
+| `CC9001` | manual    | info     | Review whether the selected base image fits the application lifecycle                                       | `IG0098`, `IG0099`, `IG0100`, `IG0101`, `IG0102`, `IG0103`, `IG0104`, `IG0105`, `IG0106` |
+| `CC9002` | manual    | info     | Review an immutable-version tag digest change as a supply-chain event                                       | `IG0121`, `IG0130` |
+| `CC9003` | manual    | info     | Review vulnerability exceptions through repository security ownership                                       | `IG0309`           |
+| `CC9005` | manual    | info     | Review external evidence-retention and signing-key procedures                                               | `IG0017`, `IG0066`, `IG0328`, `IG0362`, `IG0395` |
 
 ## Guide options
 
@@ -567,10 +568,10 @@ status.
 | [`IG0294`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0294) | MUST       | [security-sboms-provenance-and-signing](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#security-sboms-provenance-and-signing)         | automated   | `CC0602` |
 | [`IG0295`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0295) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0501` |
 | [`IG0296`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0296) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0602` |
-| [`IG0297`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0297) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0501` |
+| [`IG0297`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0297) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0501`, `CC0506` |
 | [`IG0298`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0298) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0501` |
 | [`IG0299`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0299) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0501` |
-| [`IG0300`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0300) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0502` |
+| [`IG0300`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0300) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0502`, `CC0506` |
 | [`IG0301`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0301) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0505` |
 | [`IG0302`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0302) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0602` |
 | [`IG0303`](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#ig0303) | MUST NOT   | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/d21676f38d9aebbc7f398b694b8a99f5a6c6618e/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | external    | Rescan scheduling from a digest-bound inventory is an organization control; `conclear rescan` resolves subjects by digest (`CC0801`). |

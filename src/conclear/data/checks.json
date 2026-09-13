@@ -52,6 +52,7 @@
     {"id": "CC0503", "summary": "Validate exception completeness, expiry and exact finding matches", "severity": "error", "behavior": "automated", "requirements": ["IG0309", "IG0310", "IG0311"]},
     {"id": "CC0504", "summary": "Generate and validate one digest-bound SPDX JSON SBOM per platform", "severity": "error", "behavior": "automated", "requirements": ["IG0009", "IG0264", "IG0324", "IG0325", "IG0326", "IG0327"]},
     {"id": "CC0505", "summary": "Hold one fresh database snapshot within a bounded qualification window", "severity": "error", "behavior": "automated", "requirements": ["IG0301", "IG0305", "IG0423"]},
+    {"id": "CC0506", "summary": "Reject an operating-system package inventory the scanner did not assess unless a reviewed exception applies", "severity": "error", "behavior": "automated", "requirements": ["IG0297", "IG0300"]},
     {"id": "CC0601", "summary": "Generate a unique lowercase-ULID candidate reference", "severity": "error", "behavior": "automated", "requirements": ["IG0012", "IG0089", "IG0090", "IG0095"]},
     {"id": "CC0602", "summary": "Preserve and compare the complete local and remote digest graph", "severity": "error", "behavior": "automated", "requirements": ["IG0013", "IG0076", "IG0263", "IG0294", "IG0296", "IG0302"]},
     {"id": "CC0603", "summary": "Enforce candidate authorization deadlines and selected cleanup controls", "severity": "error", "behavior": "automated", "requirements": ["IG0093"]},

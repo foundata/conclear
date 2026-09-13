@@ -139,6 +139,13 @@ class Scenario:
             "sbom": {"digest": self.payload_digest, "spdxVersion": "SPDX-2.3"},
             "scans": [],
             "appliedExceptions": [],
+            "packageAssessment": {
+                "status": "assessed",
+                "operatingSystem": "debian 13",
+                "packages": 1,
+                "reason": None,
+                "exception": None,
+            },
             "payloadDigests": [self.payload_digest],
             "databaseDigest": DIGEST,
             "databaseMetadata": {

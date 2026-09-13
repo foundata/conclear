@@ -283,6 +283,17 @@
         "tag_intent": {"enum": ["immutable-version", "moving-release-line"]}
       }
     },
+    "packageAssessmentException": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rationale", "owner", "review_trigger", "expires"],
+      "properties": {
+        "rationale": {"$ref": "#/$defs/nonEmptyString"},
+        "owner": {"$ref": "#/$defs/nonEmptyString"},
+        "review_trigger": {"$ref": "#/$defs/nonEmptyString"},
+        "expires": {"type": "string", "format": "date"}
+      }
+    },
     "exception": {
       "type": "object",
       "additionalProperties": false,
@@ -327,6 +338,7 @@
         "hooks": {"type": "array", "items": {"$ref": "#/$defs/hook"}},
         "pins": {"type": "array", "items": {"$ref": "#/$defs/pin"}},
         "vulnerability_exceptions": {"type": "array", "items": {"$ref": "#/$defs/exception"}},
+        "package_assessment_exception": {"$ref": "#/$defs/packageAssessmentException"},
         "limits": {"$ref": "#/$defs/limits"}
       },
       "allOf": [
