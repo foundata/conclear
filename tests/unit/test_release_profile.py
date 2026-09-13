@@ -407,3 +407,48 @@ passphrase_file = "~/.config/conclear/release.passphrase"
     assert "at registry.candidate_cleanup:" in message
     assert "unexpected key(s): passphrase_file" in message
     assert "{" not in message
+
+
+def test_release_profile_accepts_an_absolute_archive_directory(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    profile = profile_directory / "release.toml"
+    profile.write_text(
+        _profile_text(
+            'ci_context = "omit"',
+            f'cosign_public_key = "{public_key}"',
+            f'archive_dir = "{tmp_path / "archives"}"',
+        ),
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    loaded = load_release_profile("release", config_home=config_home)
+
+    assert loaded.archive_dir == tmp_path / "archives"
+
+
+def test_release_profile_rejects_a_relative_archive_directory(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    profile = profile_directory / "release.toml"
+    profile.write_text(
+        _profile_text(
+            'ci_context = "omit"',
+            f'cosign_public_key = "{public_key}"',
+            'archive_dir = "archives"',
+        ),
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError, match="absolute path"):
+        load_release_profile("release", config_home=config_home)

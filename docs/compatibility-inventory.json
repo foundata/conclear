@@ -751,7 +751,7 @@
           "kind": "option",
           "multiple": false,
           "name": "archive_directory",
-          "required": true,
+          "required": false,
           "type": "directory"
         },
         {
@@ -1044,7 +1044,7 @@
           "kind": "option",
           "multiple": false,
           "name": "platform_text",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -1644,7 +1644,7 @@
           "kind": "option",
           "multiple": false,
           "name": "archive_directory",
-          "required": true,
+          "required": false,
           "type": "directory"
         },
         {
@@ -1827,7 +1827,7 @@
           "kind": "option",
           "multiple": false,
           "name": "platform_text",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -1967,7 +1967,7 @@
           "kind": "option",
           "multiple": false,
           "name": "archive_directory",
-          "required": true,
+          "required": false,
           "type": "directory"
         },
         {
@@ -2107,7 +2107,7 @@
           "kind": "option",
           "multiple": false,
           "name": "archive_directory",
-          "required": true,
+          "required": false,
           "type": "directory"
         },
         {
@@ -2201,7 +2201,7 @@
           "kind": "option",
           "multiple": false,
           "name": "platform_text",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {
@@ -2259,7 +2259,7 @@
           "kind": "option",
           "multiple": false,
           "name": "platform_text",
-          "required": true,
+          "required": false,
           "type": "text"
         },
         {

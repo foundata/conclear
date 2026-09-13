@@ -85,6 +85,7 @@ class ReleaseProfile:
     public_key_digest: str
     allowed_source_origins: tuple[str, ...]
     schema_version: int = 1
+    archive_dir: Path | None = None
 
 
 def load_release_profile(
@@ -116,6 +117,14 @@ def load_release_profile(
         allow_group_read=True,
     )
     passphrase_file = _optional_private_path(profile.get("passphrase_file"))
+    archive_value = profile.get("archive_dir")
+    archive_dir = None
+    if archive_value is not None:
+        archive_dir = Path(toml_string(archive_value)).expanduser()
+        if not archive_dir.is_absolute():
+            raise InvalidInvocationError(
+                "Release profile archive_dir must be an absolute path"
+            )
     private_key_value = profile.get("cosign_private_key")
     private_key = (
         _signing_key(toml_string(private_key_value))
@@ -137,6 +146,7 @@ def load_release_profile(
             profile["allowed_source_origins"]
         ),
         schema_version=toml_integer(profile["schema_version"]),
+        archive_dir=archive_dir,
     )
 
 

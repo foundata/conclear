@@ -220,6 +220,8 @@ allowed_source_origins = ["https://github.com/foundata/"]
 auth_file = "~/.config/conclear/auth.json"
 cosign_private_key = "~/.config/conclear/cosign.key"
 cosign_public_key = "~/.config/conclear/cosign.pub"
+# Durable, backed-up directory for release and rescan archives; --archive-dir overrides it.
+archive_dir = "/srv/archives/conclear"
 
 [builder]
 id = "https://foundata.com/en/projects/conclear/builder/simple-v1/"
@@ -408,8 +410,9 @@ evidence.
 
 #### Archives<a id="usage-archives"></a>
 
-`release`, `promote` and `rescan` require `--archive-dir` and report each
-archive's path, size and SHA-256 digest. Release archives contain exact source
+`release`, `promote` and `rescan` write to `--archive-dir`, or to the profile's
+`archive_dir` when the option is omitted, and report each archive's path, size
+and SHA-256 digest. Release archives contain exact source
 and configuration, SBOMs, scan and test reports, image metadata and signed
 attestations. Add `--include-image-layers` to retain image layers too.
 

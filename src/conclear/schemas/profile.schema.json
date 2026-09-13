@@ -50,6 +50,7 @@
       "type": "string",
       "minLength": 1
     },
+    "archive_dir": {"type": "string", "minLength": 1},
     "passphrase_file": {
       "type": "string",
       "minLength": 1

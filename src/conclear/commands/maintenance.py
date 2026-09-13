@@ -73,6 +73,7 @@ from .common import (
     profile,
     profile_option,
     required_profile_option,
+    resolve_archive_directory,
     signing_passphrase,
     state_home,
 )
@@ -535,13 +536,13 @@ def rescan_command(
     triage_path: Path | None,
     output_format: str,
     archive_path: Path | None,
-    archive_directory: Path,
+    archive_directory: Path | None,
     include_image_layers: bool,
 ) -> None:
     """Rescan a released digest and retain its assessment in a compressed archive."""
     selected = profile(profile_name)
     archive_directory = prepare_archive_directory(
-        archive_directory,
+        resolve_archive_directory(archive_directory, selected),
         excluded=(
             state_home() / "conclear",
             cache_home() / "conclear",

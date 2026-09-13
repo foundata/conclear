@@ -26,6 +26,7 @@ from conclear.archive import OpenArchive, open_archive, prepare_archive_director
 from conclear.archive_source import collect_source, restore_source
 from conclear.attestations import RESCAN_TYPE
 from conclear.cli import root
+from conclear.commands.common import resolve_archive_directory
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import canonical_json_bytes, load_json, sha256_bytes, sha256_file
 from conclear.oci import validate_layout, validate_layout_metadata
@@ -41,6 +42,7 @@ from conclear.tools import ToolName
 from conclear.values import OCIReference
 from conclear.workspace import RunState
 from tests.release_fakes import FakeBuilder
+from tests.unit.test_commands import release_profile
 from tests.unit.test_qualification import _register_arm64_handler
 from tests.unit.test_release_workflow import NOW, Harness
 
@@ -245,14 +247,17 @@ def test_source_snapshot_preserves_executable_modes_and_contained_links(
     assert source_tree_digest(source) == source_tree_digest(destination)
 
 
-@pytest.mark.parametrize("command", ["release", "promote", "rescan"])
-def test_archival_output_is_mandatory(command: str) -> None:
-    arguments = [command, "--profile", "foundata"]
-    if command == "promote":
-        arguments.append("01arz3ndektsv4rrffq69g5fav")
-    result = CliRunner().invoke(root, arguments)
-    assert result.exit_code == 2
-    assert "--archive-dir" in result.output
+def test_archival_output_is_mandatory(tmp_path: Path) -> None:
+    profile = release_profile(tmp_path)
+    option = tmp_path / "option-archives"
+    default = tmp_path / "profile-archives"
+
+    with pytest.raises(InvalidInvocationError, match="--archive-dir is required"):
+        resolve_archive_directory(None, profile)
+    assert resolve_archive_directory(option, profile) == option
+    with_default = replace(profile, archive_dir=default)
+    assert resolve_archive_directory(None, with_default) == default
+    assert resolve_archive_directory(option, with_default) == option
 
 
 def test_archive_directory_must_be_outside_working_data(tmp_path: Path) -> None:

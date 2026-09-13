@@ -20,6 +20,7 @@ from .common import (
     format_option,
     profile,
     required_profile_option,
+    resolve_archive_directory,
     state_home,
 )
 
@@ -37,15 +38,16 @@ def archive_group() -> None:
 def archive_create_command(
     run_id: str,
     profile_name: str,
-    archive_directory: Path,
+    archive_directory: Path | None,
     include_image_layers: bool,
     output_format: str,
 ) -> None:
     """Retry archival of a completed run without publishing or rescanning."""
+    selected = profile(profile_name)
     result = archive_completed_run(
         run_id,
-        selected=profile(profile_name),
-        directory=archive_directory,
+        selected=selected,
+        directory=resolve_archive_directory(archive_directory, selected),
         include_image_layers=include_image_layers,
     )
     emit(

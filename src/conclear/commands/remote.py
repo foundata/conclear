@@ -50,6 +50,7 @@ from .common import (
     passphrase_option,
     profile,
     required_profile_option,
+    resolve_archive_directory,
     signing_passphrase,
     state_home,
 )
@@ -247,13 +248,13 @@ def promote_command(
     release_version: str | None,
     profile_name: str,
     output_format: str,
-    archive_directory: Path,
+    archive_directory: Path | None,
     include_image_layers: bool,
 ) -> None:
     """Apply release tags to only the verified digest and remove the candidate."""
     source_run, selected = _remote_run(run_id, profile_name, "promote")
     archive_directory = prepare_archive_directory(
-        archive_directory,
+        resolve_archive_directory(archive_directory, selected),
         excluded=(
             source_run.repository.path.parent,
             source_run.workspace.root / "checkout",
@@ -349,13 +350,13 @@ def release_command(
     resume_id: str | None,
     passphrase_fd: int | None,
     output_format: str,
-    archive_directory: Path,
+    archive_directory: Path | None,
     include_image_layers: bool,
 ) -> None:
     """Execute or resume the complete isolated release through promotion."""
     selected = profile(profile_name)
     archive_directory = prepare_archive_directory(
-        archive_directory,
+        resolve_archive_directory(archive_directory, selected),
         excluded=(
             source_root,
             state_home() / "conclear",

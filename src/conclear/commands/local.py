@@ -110,7 +110,7 @@ def build_command(
     selector: str,
     image_id: str | None,
     version: str | None,
-    platform_text: str,
+    platform_text: str | None,
     profile_name: str | None,
     output_format: str,
 ) -> None:
@@ -242,7 +242,7 @@ def qualify_command(
     selector: str,
     image_id: str | None,
     version: str | None,
-    platform_text: str,
+    platform_text: str | None,
     profile_name: str | None,
     database_digest: str | None,
     qualification_start: str | None,
@@ -473,13 +473,21 @@ def _transport_entry(item: ImportedTransport) -> dict[str, object]:
 
 def _inputs(
     source_run: SourceRun,
-    platform_text: str,
+    platform_text: str | None,
     selected: ReleaseProfile | None,
 ) -> QualificationInputs:
     snapshot = source_run.workspace.load()
     image_id = snapshot.immutable_inputs["image"]
-    platform = Platform.parse(platform_text)
     image = source_run.repository.release_image(image_id)
+    if platform_text is None:
+        if len(image.platforms) != 1:
+            raise InvalidInvocationError(
+                f"--platform is required because {image_id} declares "
+                f"{len(image.platforms)} platforms"
+            )
+        platform = image.platforms[0]
+    else:
+        platform = Platform.parse(platform_text)
     if platform not in image.platforms:
         raise click.UsageError(f"Platform is not configured for {image_id}: {platform}")
     version = snapshot.immutable_inputs.get("version") or None

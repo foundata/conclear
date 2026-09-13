@@ -7,6 +7,7 @@ exercised without container tools, registries or credentials.
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -168,9 +169,10 @@ def invoke(
         maintenance_commands, "archive_completed_run", lambda *args, **kwargs: result
     )
 
-    def run(arguments: list[str]) -> tuple[int, Any, str]:
+    def run(arguments: list[str], *, auto_archive: bool = True) -> tuple[int, Any, str]:
         if (
-            arguments[0] in {"release", "promote", "rescan"}
+            auto_archive
+            and arguments[0] in {"release", "promote", "rescan"}
             and "--archive-dir" not in arguments
         ):
             arguments = [*arguments, "--archive-dir", str(archives)]
@@ -221,7 +223,7 @@ def test_build_reports_layout_identity_and_rejects_on_metadata_errors(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     findings: tuple[Finding, ...],
     exit_code: int,
     status: str,
@@ -250,7 +252,7 @@ def test_build_rejects_platform_that_the_image_does_not_declare(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     run = FakeSourceRun(repository_factory(), tmp_path)
     _local(monkeypatch, run)
@@ -275,7 +277,7 @@ def test_run_creating_commands_name_their_run_when_a_phase_fails(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     command: str,
     fake: str,
 ) -> None:
@@ -309,7 +311,7 @@ def test_test_command_distinguishes_pass_rejection_and_incompleteness(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     incomplete: bool,
     findings: tuple[Finding, ...],
     exit_code: int,
@@ -357,7 +359,7 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     preflight_accepted: bool,
     pins_accepted: bool,
     verdict: Verdict | None,
@@ -450,7 +452,7 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
     ],
 )
 def test_qualify_rejects_invalid_shared_start_before_creating_a_run(
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     monkeypatch: pytest.MonkeyPatch,
     start: str,
     digest_args: list[str],
@@ -484,7 +486,7 @@ def test_assemble_command_imports_transports_into_a_new_coordinator_run(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     run = FakeSourceRun(repository_factory(), tmp_path)
     imports: list[tuple[Path, str]] = []
@@ -591,7 +593,7 @@ def test_assemble_command_records_a_failed_import_on_the_coordinator_run(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     failure: Exception,
     exit_code: int,
     status: str,
@@ -632,7 +634,7 @@ def test_assemble_command_requires_at_least_one_transport(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     run = FakeSourceRun(repository_factory(), tmp_path)
     _local(monkeypatch, run)
@@ -648,7 +650,7 @@ def test_transport_export_reports_every_digest_a_worker_must_publish(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     run = FakeSourceRun(repository_factory(), tmp_path, state=RunState.QUALIFIED)
     calls: list[dict[str, Any]] = []
@@ -787,7 +789,7 @@ def test_provenance_command_requires_assembled_state_and_a_profile_bound_run(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     profile = release_profile(tmp_path)
     root = repository_factory()
@@ -840,7 +842,7 @@ def test_remote_commands_refuse_a_profile_that_differs_from_the_run(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     profile = release_profile(tmp_path)
     run = FakeSourceRun(repository_factory(), tmp_path, state=RunState.ASSEMBLED)
@@ -861,7 +863,7 @@ def test_remote_commands_refuse_a_changed_trust_profile(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     profile = release_profile(tmp_path)
     run = FakeSourceRun(
@@ -887,7 +889,7 @@ def test_publish_attest_verify_and_promote_report_their_observations(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     profile = release_profile(tmp_path)
     run = FakeSourceRun(
@@ -977,7 +979,7 @@ def test_attest_and_release_require_a_signing_key(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     profile = release_profile(tmp_path, key=None)
     run = FakeSourceRun(
@@ -998,7 +1000,7 @@ def test_release_command_validates_selection_and_reports_promotion(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     profile = release_profile(tmp_path)
     run = FakeSourceRun(repository_factory(), tmp_path, profile=profile)
@@ -1064,7 +1066,7 @@ def test_doctor_reports_environment_observations(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     status: DiagnosticStatus,
 ) -> None:
     root = repository_factory()
@@ -1139,7 +1141,7 @@ def test_doctor_reports_environment_observations(
 def test_doctor_rejects_invalid_versions_before_tools_or_credentials(
     repository_factory: Callable[..., Path],
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     arguments: list[str],
     message: str,
 ) -> None:
@@ -1164,7 +1166,7 @@ def test_doctor_rejects_invalid_versions_before_tools_or_credentials(
 def test_doctor_qualify_scope_needs_no_profile_registry_or_signing(
     repository_factory: Callable[..., Path],
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     root = repository_factory()
     monkeypatch.setattr(
@@ -1216,7 +1218,7 @@ def test_doctor_qualify_scope_needs_no_profile_registry_or_signing(
 
 def test_doctor_release_scope_requires_a_profile(
     repository_factory: Callable[..., Path],
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     root = repository_factory()
 
@@ -1264,7 +1266,7 @@ def test_doctor_reports_every_unresolved_tool_at_once(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     problems: tuple[ToolProblem, ...],
     exit_code: int,
 ) -> None:
@@ -1301,7 +1303,7 @@ def test_cleanup_command_refuses_a_foreign_profile_and_reports_ownership(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     profile = release_profile(tmp_path)
     run = FakeSourceRun(repository_factory(), tmp_path, profile=profile)
@@ -1366,7 +1368,7 @@ def test_pins_check_reports_observations_and_rejections(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     root = repository_factory()
     monkeypatch.setattr(
@@ -1419,7 +1421,7 @@ def test_rescan_command_validates_subject_profile_and_configuration(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     root = repository_factory()
     config = str(root / "conclear.toml")
@@ -1488,7 +1490,7 @@ def test_authoritative_rescan_refuses_a_profile_that_cannot_write_or_sign(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     profile_arguments: dict[str, Any],
     expected: str,
 ) -> None:
@@ -1534,7 +1536,7 @@ def test_rescan_refuses_a_test_only_image(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     root = repository_factory()
     path = root / "conclear.toml"
@@ -1575,7 +1577,7 @@ def test_diagnostic_rescan_accepts_a_read_only_profile(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     root = repository_factory()
     profile = release_profile(tmp_path, key=None, auth=None)
@@ -1790,7 +1792,7 @@ def test_every_command_resolves_exactly_its_declared_tools(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     arguments: list[str],
     expected: tuple[ToolName, ...],
 ) -> None:
@@ -1868,7 +1870,7 @@ def test_doctor_release_scope_refuses_a_profile_that_cannot_write_or_sign(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     profile_arguments: dict[str, Any],
     expected: str,
 ) -> None:
@@ -1895,7 +1897,7 @@ def test_doctor_qualify_scope_accepts_a_read_only_profile(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
 ) -> None:
     root = repository_factory()
     profile = release_profile(tmp_path, key=None, auth=None)
@@ -1948,7 +1950,7 @@ def test_remote_commands_refuse_an_incapable_profile_before_touching_the_run(
     repository_factory: Callable[..., Path],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    invoke: Callable[[list[str]], tuple[int, Any, str]],
+    invoke: Callable[..., tuple[int, Any, str]],
     command: str,
     profile_arguments: dict[str, Any],
     expected: str,
@@ -1976,3 +1978,113 @@ def test_remote_commands_refuse_an_incapable_profile_before_touching_the_run(
 
     assert code == 64
     assert expected in value["message"]
+
+
+def test_release_uses_the_profile_archive_directory_when_the_option_is_omitted(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[..., tuple[int, Any, str]],
+) -> None:
+    archives = tmp_path / "profile-archives"
+    archives.mkdir()
+    profile = replace(release_profile(tmp_path), archive_dir=archives)
+    run = FakeSourceRun(repository_factory(), tmp_path, profile=profile)
+    result = SimpleNamespace(
+        run_id=run.workspace.run_id,
+        workspace=run.workspace.root,
+        subject="quay.io/example/app@" + DIGEST,
+        tags=(("1.2.3", DIGEST),),
+        candidate_deleted=True,
+        findings=(),
+        immutability_enabled=True,
+    )
+    prepared: list[Path] = []
+
+    def prepare(directory: Path, **kwargs: Any) -> Path:
+        prepared.append(directory)
+        return directory
+
+    monkeypatch.setattr(remote_commands, "prepare_archive_directory", prepare)
+    _remote(
+        monkeypatch,
+        run,
+        profile,
+        execute_release=lambda request: result,
+        resume_release=lambda run_id, **kwargs: result,
+    )
+
+    code, value, _ = invoke(
+        ["release", "--profile", "production", "--revision", "v1", "--image", "app"],
+        auto_archive=False,
+    )
+
+    assert code == 0, value
+    assert prepared == [archives]
+
+
+def test_release_without_an_archive_directory_anywhere_is_an_invalid_invocation(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[..., tuple[int, Any, str]],
+) -> None:
+    profile = release_profile(tmp_path)
+    run = FakeSourceRun(repository_factory(), tmp_path, profile=profile)
+    _remote(monkeypatch, run, profile)
+
+    code, value, _ = invoke(
+        ["release", "--profile", "production", "--revision", "v1", "--image", "app"],
+        auto_archive=False,
+    )
+
+    assert code == 64
+    assert "archive_dir" in value["message"]
+
+
+def test_qualify_defaults_to_the_single_declared_platform(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[..., tuple[int, Any, str]],
+) -> None:
+    run = FakeSourceRun(repository_factory(), tmp_path)
+    platforms: list[str] = []
+
+    def qualify(inputs: Any, *args: Any, **kwargs: Any) -> SimpleNamespace:
+        platforms.append(str(inputs.platform))
+        return SimpleNamespace(
+            verdict=Verdict.ACCEPTED,
+            findings=(),
+            record_path=Path("/record.json"),
+            record_digest=DIGEST,
+            layout_path=Path("/layout"),
+            qualification_window=QualificationWindow.start(
+                datetime(2026, 1, 1, tzinfo=UTC)
+            ),
+        )
+
+    monkeypatch.setattr(
+        preflight_module,
+        "check_image",
+        lambda image, hadolint: SimpleNamespace(accepted=True, findings=()),
+    )
+    _local(
+        monkeypatch,
+        run,
+        PinStore=lambda home: _PinStore(accepted=True),
+        AuthenticatedPinResolver=lambda runtime, auth_file: object(),
+        select_database_by_digest=lambda *args, expected_digest, **kwargs: (
+            SimpleNamespace(digest=str(expected_digest))
+        ),
+        select_fresh_database=lambda *args, **kwargs: SimpleNamespace(digest=DIGEST),
+        hook_runner=lambda *args, **kwargs: object(),
+        qualify_platform=qualify,
+    )
+
+    code, value, _ = invoke(
+        ["qualify", "--revision", "v1", "--image", "app", "--database-digest", DIGEST]
+    )
+
+    assert code == 0, value
+    assert platforms == ["linux/amd64"]

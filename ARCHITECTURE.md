@@ -860,12 +860,14 @@ could still resume, and `cleanup` reports what it removed, what it retained and
 what the workspace still holds. ConClear never presents its local state
 directory as an archive or registry backup.
 
-`release`, `promote` and `rescan` require `--archive-dir` and write a compressed
-evidence archive after completion. The allowlisted members include records,
-reports, OCI metadata and retained Sigstore bundles; releases also include exact
-source. Non-secret test outputs travel as a digest-bound qualification payload.
-Image layers are opt-in. Profiles, credentials, keys, raw logs and private test
-outputs are excluded, but source and reports still require disclosure review.
+`release`, `promote` and `rescan` write a compressed evidence archive after
+completion to `--archive-dir`, or to the protected profile's `archive_dir` when
+the option is omitted; one of the two must name an existing durable directory.
+The allowlisted members include records, reports, OCI metadata and retained
+Sigstore bundles; releases also include exact source. Non-secret test outputs
+travel as a digest-bound qualification payload. Image layers are opt-in.
+Profiles, credentials, keys, raw logs and private test outputs are excluded, but
+source and reports still require disclosure review.
 
 Archive writes are checked before atomic, non-overwriting publication. Failure
 preserves the run and does not undo registry publication; `archive create`

@@ -14,7 +14,7 @@ from conclear.adapters.ci import (
     CIContextObservation,
     observe_ci_context,
 )
-from conclear.errors import bind_failed_run
+from conclear.errors import InvalidInvocationError, bind_failed_run
 from conclear.presentation import CommandResult, present_human, present_json
 from conclear.release_profile import (
     CIContextPolicy,
@@ -102,9 +102,11 @@ def archive_options[FC: Callable[..., Any]](function: FC) -> FC:
     function = click.option(
         "archive_directory",
         "--archive-dir",
-        required=True,
         type=click.Path(path_type=Path, file_okay=False),
-        help="Existing durable directory for the completed evidence tarball.",
+        help=(
+            "Existing durable directory for the completed evidence tarball; "
+            "defaults to the release profile's archive_dir."
+        ),
     )(function)
     return click.option(
         "--include-image-layers",
@@ -114,8 +116,26 @@ def archive_options[FC: Callable[..., Any]](function: FC) -> FC:
 
 
 def platform_option[FC: Callable[..., Any]](function: FC) -> FC:
-    """Add the required target platform selector."""
-    return click.option("platform_text", "--platform", required=True)(function)
+    """Add the target platform selector; optional when the image declares one."""
+    return click.option(
+        "platform_text",
+        "--platform",
+        help="Target platform; defaults to the image's only declared platform.",
+    )(function)
+
+
+def resolve_archive_directory(
+    archive_directory: Path | None, profile: ReleaseProfile
+) -> Path:
+    """Return the archive directory from the option or the profile's archive_dir."""
+    if archive_directory is not None:
+        return archive_directory
+    if profile.archive_dir is not None:
+        return profile.archive_dir
+    raise InvalidInvocationError(
+        "--archive-dir is required because the release profile "
+        f"{profile.name} sets no archive_dir"
+    )
 
 
 def passphrase_option[FC: Callable[..., Any]](function: FC) -> FC:
