@@ -30,6 +30,7 @@ from conclear.services.qualification import (
     build_platform,
     build_test_dependencies,
     qualify_platform,
+    verify_base_annotations,
 )
 from conclear.services.qualification_inputs import (
     QualificationInputs,
@@ -129,7 +130,12 @@ def build_command(
     )
     with owned_run(source_run.workspace):
         inputs = _inputs(source_run, platform_text, selected)
-        build = build_platform(inputs, source_run.runtime.buildah())
+        base_resolver = AuthenticatedPinResolver(
+            source_run.runtime, None if selected is None else selected.auth_file
+        )
+        build = verify_base_annotations(
+            inputs, build_platform(inputs, source_run.runtime.buildah()), base_resolver
+        )
         build_path = write_build_evidence(inputs, build)
         dependencies = build_test_dependencies(inputs, source_run.runtime.buildah())
         dependency_paths = [
@@ -326,6 +332,9 @@ def qualify_command(
         result = qualify_platform(
             inputs,
             builder=source_run.runtime.buildah(),
+            base_resolver=AuthenticatedPinResolver(
+                source_run.runtime, None if selected is None else selected.auth_file
+            ),
             runtime=source_run.runtime.podman(),
             hooks=hooks,
             scanner=source_run.runtime.trivy(),

@@ -17,6 +17,7 @@ from conclear.adapters.podman import (
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.artifacts import qualification_materials, qualification_transport
 from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig, load_repository_config
+from conclear.containerfile import load_containerfile
 from conclear.errors import CommandTimeoutError, OperationalError, RuleRejectionError
 from conclear.hooks import HookRunner
 from conclear.identity import ApplicationIdentity
@@ -40,7 +41,9 @@ from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification import (
     build_platform,
     build_test_dependencies,
+    final_stage_base,
     qualify_platform,
+    verify_base_annotations,
 )
 from conclear.services.qualification_inputs import BuildInputs, QualificationInputs
 from conclear.services.runtime_lifecycle import ReadinessTiming
@@ -48,6 +51,7 @@ from conclear.services.runtime_tests import test_platform as run_platform_tests
 from conclear.source_integrity import source_tree_digest
 from conclear.values import Digest, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
+from tests.release_fakes import FakeBaseResolver, base_annotations
 from tests.unit.test_config import _image_text
 
 
@@ -66,10 +70,15 @@ def write_blob(layout: Path, content: bytes) -> tuple[str, int]:
 
 class Builder:
     def __init__(
-        self, *, invalid_labels: bool = False, observed_variant: str | None = None
+        self,
+        *,
+        invalid_labels: bool = False,
+        observed_variant: str | None = None,
+        extra_labels: dict[str, str] | None = None,
     ) -> None:
         self.invalid_labels = invalid_labels
         self.observed_variant = observed_variant
+        self.extra_labels = extra_labels or {}
 
     def build(self, **values: Any) -> BuildObservation:
         layout = values["layout_path"]
@@ -87,11 +96,11 @@ class Builder:
             "org.opencontainers.image.revision": build_arguments["IMAGE_REVISION"],
             "org.opencontainers.image.created": build_arguments["IMAGE_CREATED"],
             "org.opencontainers.image.version": build_arguments["IMAGE_VERSION"],
-            "org.opencontainers.image.licenses": "GPL-3.0-or-later",
             "org.opencontainers.image.title": "Example",
         }
         if self.invalid_labels:
             labels["org.opencontainers.image.revision"] = "wrong"
+        labels.update(self.extra_labels)
         observed_platform: dict[str, object] = {
             "architecture": platform.architecture,
             "os": "linux",
@@ -114,6 +123,7 @@ class Builder:
                 {
                     "schemaVersion": 2,
                     "mediaType": OCI_MANIFEST,
+                    "annotations": base_annotations(build_arguments["IMAGE_CREATED"]),
                     "config": {
                         "mediaType": OCI_CONFIG,
                         "digest": config,
@@ -657,6 +667,7 @@ def test_qualification_writes_accepted_digest_bound_record(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -728,6 +739,7 @@ def test_foreign_platform_without_binfmt_handler_is_not_qualified(
         qualify_platform(
             value,
             builder=UnexpectedBuilder(),
+            base_resolver=FakeBaseResolver(),
             runtime=Runtime(),
             hooks=hook_runner(value),
             scanner=Scanner(),
@@ -767,6 +779,7 @@ def test_foreign_build_and_test_record_the_same_qemu_execution_mode(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -811,6 +824,7 @@ def test_emulated_qualification_is_accepted_without_justification(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -854,6 +868,7 @@ def test_configured_native_platform_rejects_emulated_runtime_tests(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -881,6 +896,7 @@ def test_qualification_payload_tampering_is_a_catalogued_rule_rejection(
     qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -910,6 +926,7 @@ def test_qualification_records_label_rule_rejection(
     result = qualify_platform(
         value,
         builder=Builder(invalid_labels=True),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -1139,6 +1156,7 @@ def test_scans_are_named_by_the_platform_subject_not_the_host(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=scanner,
@@ -1170,6 +1188,7 @@ def qualify_with_scanner(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=scanner,
@@ -1244,6 +1263,63 @@ expires = "2026-12-31"
     assert assessment["operatingSystem"] == "fedora 43"
     assert assessment["exception"]["expires"] == "2026-12-31"
     assert "no package vulnerability result" in assessment["reason"]
+
+
+class MismatchingBaseResolver:
+    def platform_manifest_digest(self, reference: Any, platform: Any) -> Digest:
+        del reference, platform
+        return Digest("sha256:" + "e" * 64)
+
+
+def test_qualification_rejects_labels_the_containerfile_did_not_declare(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    build = build_platform(
+        value,
+        Builder(extra_labels={"org.opencontainers.image.vendor": "Fedora Project"}),
+    )
+
+    assert [(item.check_id, item.message) for item in build.findings] == [
+        (
+            "CC0117",
+            "Image label org.opencontainers.image.vendor was not declared by the "
+            "Containerfile (inherited from the base image?)",
+        )
+    ]
+
+
+def test_qualification_verifies_base_annotations_against_the_pin(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    build = build_platform(value, Builder())
+
+    verified = verify_base_annotations(value, build, FakeBaseResolver())
+    assert verified.findings == ()
+
+    mismatched = verify_base_annotations(value, build, MismatchingBaseResolver())
+    assert [item.check_id for item in mismatched.findings] == ["CC0118"]
+    assert "base.digest" in mismatched.findings[0].message
+
+
+def test_final_stage_base_follows_stage_aliases(tmp_path: Path) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        "FROM quay.io/example/tools:1@sha256:" + "b" * 64 + " AS tools\n"
+        "FROM quay.io/example/base:1@sha256:" + "a" * 64 + " AS runtime\n"
+        "COPY --from=tools /bin/tool /usr/local/bin/tool\n"
+        "FROM runtime AS final\n"
+        'LABEL org.opencontainers.image.title="Example"\n',
+        encoding="utf-8",
+    )
+
+    base = final_stage_base(load_containerfile(path))
+
+    assert base is not None
+    assert base.reference == "quay.io/example/base:1@sha256:" + "a" * 64
+    assert base.external
 
 
 def test_service_without_health_command_does_not_poll(
@@ -1380,6 +1456,7 @@ def test_systemd_qualification_records_review_and_lifecycle_contract(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -1636,6 +1713,7 @@ def test_qualification_rejects_stale_pin_resolution(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(value),
         scanner=Scanner(),
@@ -1727,6 +1805,7 @@ def test_qualification_record_binds_test_inputs_and_sibling_result(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=configured_hook_runner(value, CapturingRunner()),
         scanner=Scanner(),
@@ -1919,6 +1998,7 @@ def test_qualification_requires_a_preflight_covering_the_test_dependencies(
         qualify_platform(
             value,
             builder=RefusingBuilder(),
+            base_resolver=FakeBaseResolver(),
             runtime=Runtime(),
             hooks=hook_runner(value),
             scanner=Scanner(),
@@ -1949,6 +2029,7 @@ def test_rejected_dependency_preflight_starts_no_build(
         qualify_platform(
             value,
             builder=RefusingBuilder(),
+            base_resolver=FakeBaseResolver(),
             runtime=Runtime(),
             hooks=hook_runner(value),
             scanner=Scanner(),
@@ -1991,6 +2072,7 @@ pin_freshness = "1h"
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=configured_hook_runner(value, CapturingRunner()),
         scanner=Scanner(),
@@ -2033,6 +2115,7 @@ def test_qualification_records_transitive_dependencies_dependency_first(
     result = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=configured_hook_runner(value, CapturingRunner()),
         scanner=Scanner(),

@@ -1015,7 +1015,12 @@ ConClear supplies `IMAGE_REVISION` from the full observed source commit,
 `IMAGE_CREATED` as an RFC 3339 representation of the controlled source
 timestamp. It inspects the final image configuration and rejects missing
 mandatory `org.opencontainers.image.*` labels or source, revision, version and
-creation values that disagree with those observations.
+creation values that disagree with those observations. It rejects the
+`org.opencontainers.image.licenses` label and its legacy `license` forms, builds
+with label inheritance disabled and rejects any label the Containerfile did
+not declare, and verifies the `base.name` and `base.digest` manifest
+annotations Buildah writes against the declared pin and the platform manifest
+that pin resolves to, rejecting any other manifest annotation.
 
 <a id="promise-ip0021"></a>
 Every release includes `linux/amd64`. `linux/arm64` is optional and required

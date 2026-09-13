@@ -9,10 +9,15 @@ from conclear.adapters.hadolint import HadolintFinding
 from conclear.checks import (
     analyze_containerfile,
     check_image_static,
+    declared_label_keys,
+    validate_base_annotations,
+    validate_declared_labels,
     validate_image_labels,
 )
 from conclear.config import load_repository_config
+from conclear.containerfile import load_containerfile
 from conclear.services.checking import check_image
+from conclear.values import Digest, OCIReference
 
 
 class DiagnosticHadolint:
@@ -381,7 +386,6 @@ def test_created_label_is_optional_but_verified_when_present() -> None:
     labels = {
         "org.opencontainers.image.source": "https://github.com/example/app",
         "org.opencontainers.image.revision": "a" * 40,
-        "org.opencontainers.image.licenses": "MIT",
         "org.opencontainers.image.title": "Example",
     }
 
@@ -513,7 +517,6 @@ def test_source_label_must_equal_the_public_source_url_byte_for_byte() -> None:
     labels = {
         "org.opencontainers.image.source": source,
         "org.opencontainers.image.revision": "a" * 40,
-        "org.opencontainers.image.licenses": "MIT",
         "org.opencontainers.image.title": "Example",
     }
 
@@ -541,3 +544,124 @@ def test_source_label_must_equal_the_public_source_url_byte_for_byte() -> None:
             created="2026-01-01T00:00:00Z",
         )
         assert [finding.check_id for finding in findings] == ["CC0113"]
+
+
+def test_license_labels_are_rejected_in_every_form() -> None:
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/example/app",
+        "org.opencontainers.image.revision": "a" * 40,
+        "org.opencontainers.image.title": "Example",
+        "org.opencontainers.image.licenses": "MIT",
+        "org.opencontainers.image.license": "MIT",
+        "license": "MIT",
+    }
+
+    findings = validate_image_labels(
+        labels,
+        source="https://github.com/example/app",
+        revision="a" * 40,
+        version=None,
+        created="2026-01-01T00:00:00Z",
+    )
+
+    assert [finding.check_id for finding in findings] == ["CC0113"] * 3
+    assert {finding.message.split(" ")[2] for finding in findings} == {
+        "license",
+        "org.opencontainers.image.license",
+        "org.opencontainers.image.licenses",
+    }
+
+
+def test_declared_label_keys_cover_multi_key_and_legacy_forms(tmp_path: Path) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        "FROM quay.io/example/base:1@sha256:" + "a" * 64 + "\n"
+        "ARG IMAGE_VERSION\n"
+        'LABEL org.opencontainers.image.title="Example" \\\n'
+        '      org.opencontainers.image.version="${IMAGE_VERSION}"\n'
+        "LABEL maintainer someone@example.com\n"
+        "LABEL vendor=foundata\n",
+        encoding="utf-8",
+    )
+
+    assert declared_label_keys(load_containerfile(path)) == frozenset(
+        {
+            "org.opencontainers.image.title",
+            "org.opencontainers.image.version",
+            "maintainer",
+            "vendor",
+        }
+    )
+
+
+def test_undeclared_labels_are_rejected_except_the_buildah_stamp(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        "FROM quay.io/example/base:1@sha256:" + "a" * 64 + "\n"
+        'LABEL org.opencontainers.image.title="Example"\n',
+        encoding="utf-8",
+    )
+    containerfile = load_containerfile(path)
+
+    assert (
+        validate_declared_labels(
+            {
+                "org.opencontainers.image.title": "Example",
+                "io.buildah.version": "1.43.2",
+            },
+            containerfile,
+        )
+        == ()
+    )
+    findings = validate_declared_labels(
+        {
+            "org.opencontainers.image.title": "Example",
+            "org.opencontainers.image.vendor": "Fedora Project",
+            "version": "43",
+        },
+        containerfile,
+    )
+    assert [(item.check_id, item.message.split(" ")[2]) for item in findings] == [
+        ("CC0117", "org.opencontainers.image.vendor"),
+        ("CC0117", "version"),
+    ]
+
+
+def test_base_annotations_must_match_the_pin_and_nothing_else() -> None:
+    pinned = OCIReference.parse(
+        "quay.io/example/base:1@sha256:" + "a" * 64,
+        require_tag=True,
+        require_digest=True,
+    )
+    platform_digest = Digest("sha256:" + "d" * 64)
+    good = (
+        ("org.opencontainers.image.base.digest", str(platform_digest)),
+        (
+            "org.opencontainers.image.base.name",
+            "quay.io/example/base@sha256:" + "a" * 64,
+        ),
+        ("org.opencontainers.image.created", "2026-01-01T00:00:00Z"),
+    )
+
+    assert (
+        validate_base_annotations(
+            good, pinned=pinned, platform_manifest_digest=platform_digest
+        )
+        == ()
+    )
+
+    findings = validate_base_annotations(
+        (
+            ("org.opencontainers.image.base.digest", "sha256:" + "e" * 64),
+            ("org.opencontainers.image.base.name", "quay.io/example/base:1"),
+            ("org.opencontainers.image.vendor", "Fedora Project"),
+        ),
+        pinned=pinned,
+        platform_manifest_digest=platform_digest,
+    )
+    assert [item.check_id for item in findings] == ["CC0118"] * 3
+    assert "base.name" in findings[0].message
+    assert "base.digest" in findings[1].message
+    assert "inherited from the base image" in findings[2].message

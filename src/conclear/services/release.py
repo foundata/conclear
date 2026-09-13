@@ -122,6 +122,14 @@ class AuthenticatedPinResolver(PinResolver):
     def resolve_digest(self, reference: OCIReference) -> Digest:
         return self._registry.resolve_digest(reference, auth_file=self._auth_file)
 
+    def platform_manifest_digest(
+        self, reference: OCIReference, platform: Platform
+    ) -> Digest:
+        """Return the base platform manifest a pinned reference resolves to."""
+        return self._registry.platform_manifest_digest(
+            reference, platform, auth_file=self._auth_file
+        )
+
 
 def execute_release(
     request: ReleaseRequest,
@@ -492,6 +500,7 @@ def _qualify_release(
                 auth_file=request.profile.auth_file,
                 host_architecture=host_platform.machine(),
             ),
+            base_resolver=AuthenticatedPinResolver(runtime, request.profile.auth_file),
             builder=runtime.buildah(),
             runtime=runtime.podman(),
             hooks=hooks,

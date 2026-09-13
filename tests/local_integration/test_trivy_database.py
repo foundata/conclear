@@ -39,6 +39,7 @@ from tests.local_integration.fixtures import (
     manifest_run_id,
     tool_resolver,
 )
+from tests.release_fakes import FakeBaseResolver
 
 pytestmark = pytest.mark.local_integration
 
@@ -217,7 +218,6 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
         .replace(
             "LABEL org.opencontainers.image.version=$IMAGE_VERSION\n",
             "LABEL org.opencontainers.image.version=$IMAGE_VERSION\n"
-            "LABEL org.opencontainers.image.licenses=GPL-3.0-or-later\n"
             'LABEL org.opencontainers.image.title="ConClear fixture"\n',
         ),
         encoding="utf-8",
@@ -267,6 +267,7 @@ def test_real_trivy_qualifies_two_platforms_from_one_database_snapshot(
         result = qualify_platform(
             inputs,
             builder=runtime.buildah(),
+            base_resolver=FakeBaseResolver(),
             runtime=runtime.podman(),
             hooks=HookRunner(
                 runner=runtime.runner,

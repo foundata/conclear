@@ -72,6 +72,9 @@ class BuildahAdapter(ToolAdapter):
             str(source_epoch),
             "--rewrite-timestamp",
             "--pull=always",
+            # Labels describe this image, never its base (IG0431). Annotation
+            # inheritance stays on: Buildah writes the base annotations through it.
+            "--inherit-labels=false",
             "--file",
             str(containerfile),
             "--tag",

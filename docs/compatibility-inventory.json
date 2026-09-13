@@ -194,6 +194,23 @@
       },
       {
         "behavior": "automated",
+        "id": "CC0117",
+        "requirements": [
+          "IG0431"
+        ],
+        "severity": "error"
+      },
+      {
+        "behavior": "automated",
+        "id": "CC0118",
+        "requirements": [
+          "IG0432",
+          "IG0433"
+        ],
+        "severity": "error"
+      },
+      {
+        "behavior": "automated",
         "id": "CC0201",
         "requirements": [
           "IG0139"
@@ -420,7 +437,8 @@
           "IG0324",
           "IG0325",
           "IG0326",
-          "IG0327"
+          "IG0327",
+          "IG0434"
         ],
         "severity": "error"
       },
@@ -2551,7 +2569,7 @@
     {
       "excluded": [],
       "maximumExclusive": "1.44.0",
-      "minimum": "1.39.0",
+      "minimum": "1.40.0",
       "name": "buildah",
       "tested": [
         "1.43.2"

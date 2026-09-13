@@ -88,7 +88,7 @@ downloads. Use versions within the accepted ranges, avoiding excluded versions.
 |   Tool   |     Accepted versions      | Excluded versions | Real-tool tested versions |
 | -------- | -------------------------- | ----------------- | ------------------------- |
 | Git      | 2.43.0 <= version < 3.0.0  | none              | 2.55.0                    |
-| Buildah  | 1.39.0 <= version < 1.44.0 | none              | 1.43.2                    |
+| Buildah  | 1.40.0 <= version < 1.44.0 | none              | 1.43.2                    |
 | Podman   | 5.8.4 <= version < 6.0.0   | none              | 5.8.4                     |
 | Skopeo   | 1.14.0 <= version < 2.0.0  | none              | 1.22.2                    |
 | Hadolint | 2.12.0 <= version < 3.0.0  | none              | 2.14.0                    |

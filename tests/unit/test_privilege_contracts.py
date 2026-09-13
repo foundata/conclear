@@ -27,6 +27,7 @@ from conclear.services.qualification import qualify_platform
 from conclear.services.runtime_controls import control_findings
 from conclear.tools import ToolName
 from conclear.workspace import ResourceStatus
+from tests.release_fakes import FakeBaseResolver
 from tests.unit.test_adapters import FakeRunner, adapter_arguments, result
 from tests.unit.test_qualification import (
     DATABASE_METADATA,
@@ -416,6 +417,7 @@ def test_sudo_qualification_binds_permission_contract_and_test_report(
     outcome = qualify_platform(
         value,
         builder=Builder(),
+        base_resolver=FakeBaseResolver(),
         runtime=PrivilegeRuntime(),
         hooks=hook_runner(value),
         scanner=Scanner(),

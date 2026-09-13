@@ -19,7 +19,12 @@ def repository_factory(tmp_path: Path) -> Callable[..., Path]:
             containerfile
             or (
                 "FROM quay.io/example/base:1@sha256:" + "a" * 64 + " AS runtime\n"
-                'LABEL org.opencontainers.image.source="https://foundata.com/en/projects/example/#source"\n'
+                "ARG IMAGE_CREATED\nARG IMAGE_REVISION\nARG IMAGE_VERSION\n"
+                'LABEL org.opencontainers.image.source="https://foundata.com/en/projects/example/#source" \\\n'
+                '      org.opencontainers.image.title="Example" \\\n'
+                '      org.opencontainers.image.created="${IMAGE_CREATED}" \\\n'
+                '      org.opencontainers.image.revision="${IMAGE_REVISION}" \\\n'
+                '      org.opencontainers.image.version="${IMAGE_VERSION}"\n'
                 "USER 10001:10001\n"
                 "[invalid]"
             ).replace("[invalid]", 'ENTRYPOINT ["/app"]\n'),

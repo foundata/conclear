@@ -763,6 +763,91 @@ def test_trivy_spdx_hash_survives_attestation_reserialization(
     assert observation.value == document
 
 
+def _index(*entries: tuple[str, str, str]) -> str:
+    return json.dumps(
+        {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "manifests": [
+                {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": digest,
+                    "size": 1,
+                    "platform": {
+                        "os": "linux",
+                        "architecture": architecture,
+                        "variant": variant,
+                    }
+                    if variant
+                    else {"os": "linux", "architecture": architecture},
+                }
+                for architecture, variant, digest in entries
+            ],
+        }
+    )
+
+
+def test_skopeo_resolves_the_platform_manifest_of_a_pinned_index(
+    tmp_path: Path,
+) -> None:
+    reference = OCIReference.parse(
+        "quay.io/example/base:1@sha256:" + "a" * 64,
+        require_tag=True,
+        require_digest=True,
+    )
+    amd64 = "sha256:" + "1" * 64
+    arm64 = "sha256:" + "2" * 64
+
+    def inspect(request: CommandRequest) -> ProcessResult:
+        assert "--raw" in request.argv
+        # A tag plus digest is rejected by Skopeo; the pin is addressed by digest.
+        assert request.argv[-1] == "docker://quay.io/example/base@sha256:" + "a" * 64
+        return result(stdout=_index(("amd64", "", amd64), ("arm64", "v8", arm64)))
+
+    adapter = adapter_arguments(
+        tmp_path, ToolName.SKOPEO, FakeRunner(inspect, inspect, inspect)
+    ).create(SkopeoAdapter)
+
+    assert adapter.platform_manifest_digest(
+        reference, Platform.parse("linux/amd64")
+    ) == Digest(amd64)
+    assert adapter.platform_manifest_digest(
+        reference, Platform.parse("linux/arm64")
+    ) == Digest(arm64)
+    with pytest.raises(OperationalError, match="resolves 0 manifests"):
+        adapter.platform_manifest_digest(reference, Platform.parse("linux/ppc64le"))
+
+
+def test_skopeo_resolves_a_single_platform_manifest_to_itself(tmp_path: Path) -> None:
+    reference = OCIReference.parse(
+        "quay.io/example/base:1@sha256:" + "a" * 64,
+        require_tag=True,
+        require_digest=True,
+    )
+
+    def inspect(request: CommandRequest) -> ProcessResult:
+        if "--raw" in request.argv:
+            return result(
+                stdout=json.dumps(
+                    {
+                        "schemaVersion": 2,
+                        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "config": {"digest": "sha256:" + "c" * 64, "size": 1},
+                        "layers": [],
+                    }
+                )
+            )
+        return result(stdout="sha256:" + "a" * 64 + "\n")
+
+    adapter = adapter_arguments(
+        tmp_path, ToolName.SKOPEO, FakeRunner(inspect, inspect)
+    ).create(SkopeoAdapter)
+
+    assert adapter.platform_manifest_digest(
+        reference, Platform.parse("linux/amd64")
+    ) == Digest("sha256:" + "a" * 64)
+
+
 def test_trivy_reports_name_the_subject_instead_of_the_layout_path(
     tmp_path: Path,
 ) -> None:

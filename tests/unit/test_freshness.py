@@ -22,6 +22,7 @@ from conclear.services.promotion import promote_candidate
 from conclear.services.qualification import qualify_platform
 from conclear.values import Digest
 from conclear.workspace import RunState
+from tests.release_fakes import FakeBaseResolver
 from tests.unit.test_assembly_verification import Scenario as AssemblyScenario
 from tests.unit.test_publication_resume import Scenario as PublicationScenario
 from tests.unit.test_qualification import (
@@ -316,6 +317,7 @@ def test_qualification_cannot_complete_after_its_window(
         qualify_platform(
             value,
             builder=Builder(),
+            base_resolver=FakeBaseResolver(),
             runtime=Runtime(),
             hooks=hook_runner(value),
             scanner=Scanner(),

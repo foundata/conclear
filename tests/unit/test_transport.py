@@ -49,7 +49,7 @@ from conclear.transport import (
 )
 from conclear.values import Platform
 from conclear.workspace import ResourceStatus, RunState, RunWorkspace
-from tests.release_fakes import FakePodman
+from tests.release_fakes import FakeBaseResolver, FakePodman
 from tests.unit.test_qualification import (
     DATABASE_METADATA,
     Builder,
@@ -168,6 +168,7 @@ def qualify_worker(
     result = qualify_platform(
         inputs,
         builder=selected_builder,
+        base_resolver=FakeBaseResolver(),
         runtime=Runtime(),
         hooks=hook_runner(inputs),
         scanner=Scanner(),

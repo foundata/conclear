@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "d21676f38d9aebbc7f398b694b8a99f5a6c6618e",
+ "guideRevision": "cd95e231b73e023d91b47c91c58fc6acadf56f61",
  "requirements": [
   {
    "id": "IG0001",
@@ -1635,10 +1635,10 @@
   },
   {
    "id": "IG0234",
-   "modality": "MUST",
+   "modality": "MUST NOT",
    "section": "Image metadata",
    "anchor": "image-metadata",
-   "text": "`org.opencontainers.image.licenses` with an SPDX license expression for the packaged project."
+   "text": "Carry `org.opencontainers.image.licenses`, or the legacy `license` key, in a published image."
   },
   {
    "id": "IG0235",
@@ -3011,6 +3011,34 @@
    "section": "Release workflow",
    "anchor": "release-workflow",
    "text": "The observed Git origin MUST NOT appear in image labels, records, attestations, command results or release archives. Public evidence identifies the source only by the declared public source URL and the complete source revision."
+  },
+  {
+   "id": "IG0431",
+   "modality": "MUST NOT",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "Inherit labels from the base image; every label a published image carries is written by its own build (`--inherit-labels=false`)."
+  },
+  {
+   "id": "IG0432",
+   "modality": "MUST",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "The `org.opencontainers.image.base.name` and `org.opencontainers.image.base.digest` annotations on every platform manifest, naming the pinned base image exactly: `base.name` is the pinned reference by digest and `base.digest` is the platform manifest of that base which the build consumed."
+  },
+  {
+   "id": "IG0433",
+   "modality": "MUST NOT",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "Write the base annotations by hand or derive them from anything but the pinned `FROM` reference."
+  },
+  {
+   "id": "IG0434",
+   "modality": "SHOULD",
+   "section": "Image metadata",
+   "anchor": "image-metadata",
+   "text": "License information for the contained software through an attached SPDX SBOM, and for the build definition through REUSE metadata."
   }
  ],
  "retired": []

@@ -3,7 +3,8 @@
 from pathlib import Path
 
 from conclear.adapters.buildah import BuildObservation
-from conclear.checks import validate_image_labels
+from conclear.checks import validate_declared_labels, validate_image_labels
+from conclear.containerfile import load_containerfile
 from conclear.context import hash_build_context
 from conclear.errors import InvalidInvocationError
 from conclear.jsonutil import atomic_write_json, load_json, sha256_file
@@ -86,7 +87,7 @@ def load_build_evidence(inputs: BuildInputs) -> BuildEvidence:
         revision=inputs.source.revision,
         version=inputs.version,
         created=build_arguments.get("IMAGE_CREATED", ""),
-    )
+    ) + validate_declared_labels(labels, load_containerfile(inputs.image.containerfile))
     return BuildEvidence(
         BuildObservation(
             image_name=(

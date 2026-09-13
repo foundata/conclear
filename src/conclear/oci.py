@@ -118,6 +118,7 @@ class ManifestObservation:
     config: Descriptor
     layers: tuple[Descriptor, ...]
     config_data: dict[str, object]
+    annotations: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,12 +307,22 @@ class LayoutValidator:
             if existing is None:
                 self._verify_layer(layer)
                 self._remember_descriptor(layer)
+        annotations_value = manifest.get("annotations", {})
+        annotations_item = _narrow.object_value(
+            annotations_value, "manifest.annotations"
+        )
+        annotations: list[tuple[str, str]] = []
+        for key, annotation_value in annotations_item.items():
+            if not isinstance(annotation_value, str):
+                raise InvalidInvocationError("OCI manifest annotations must be strings")
+            annotations.append((key, annotation_value))
         self._manifests[descriptor.digest] = ManifestObservation(
             descriptor=descriptor,
             platform=platform,
             config=config,
             layers=layers,
             config_data=config_value,
+            annotations=tuple(sorted(annotations)),
         )
 
     def _verify_layer(self, descriptor: Descriptor) -> None:

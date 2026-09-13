@@ -11,7 +11,7 @@ from conclear.containerfile import Containerfile, Instruction, load_containerfil
 from conclear.context import load_containerignore
 from conclear.errors import InvalidInvocationError
 from conclear.presentation import Finding
-from conclear.values import OCIReference
+from conclear.values import Digest, OCIReference
 
 _CURL_PIPE_PATTERN = re.compile(
     r"\b(?:curl|wget)\b[^|;&]*(?:\||\|&)[ \t]*(?:sh|bash|dash|zsh|python[0-9.]*)\b",
@@ -275,6 +275,110 @@ def check_image_static(image: ImageConfig) -> tuple[Finding, ...]:
     )
 
 
+# The guide forbids the licenses label (IG0234): its OCI definition covers all
+# contained software, which an image on a distribution base cannot state
+# truthfully, and the legacy singular key is not a standard annotation at all.
+_FORBIDDEN_LABELS = frozenset(
+    {
+        "org.opencontainers.image.licenses",
+        "org.opencontainers.image.license",
+        "license",
+    }
+)
+# Buildah stamps its own version unless asked not to; it is not inherited.
+_TOOL_LABELS = frozenset({"io.buildah.version"})
+BASE_NAME_ANNOTATION = "org.opencontainers.image.base.name"
+BASE_DIGEST_ANNOTATION = "org.opencontainers.image.base.digest"
+# Buildah writes exactly these manifest annotations for a build; anything else
+# on a platform manifest was inherited from the base.
+_MANIFEST_ANNOTATIONS = frozenset(
+    {BASE_NAME_ANNOTATION, BASE_DIGEST_ANNOTATION, "org.opencontainers.image.created"}
+)
+
+
+def declared_label_keys(containerfile: Containerfile) -> frozenset[str]:
+    """Return every label key a Containerfile declares in its LABEL instructions."""
+    keys: set[str] = set()
+    for instruction in containerfile.instructions:
+        if instruction.keyword != "LABEL":
+            continue
+        try:
+            words = shlex.split(instruction.body, posix=True)
+        except ValueError as exc:
+            raise InvalidInvocationError(
+                f"Unparseable LABEL instruction at {containerfile.path.name}:"
+                f"{instruction.line_number}"
+            ) from exc
+        if not words:
+            continue
+        if all("=" in word for word in words):
+            keys.update(word.split("=", 1)[0] for word in words)
+        else:
+            # Legacy `LABEL key value` form names one key.
+            keys.add(words[0].split("=", 1)[0])
+    return frozenset(keys)
+
+
+def validate_declared_labels(
+    labels: object, containerfile: Containerfile
+) -> tuple[Finding, ...]:
+    """Reject labels the Containerfile did not declare (IG0431).
+
+    Builds run with label inheritance disabled, so any undeclared key in the
+    final image came from somewhere other than the reviewed Containerfile.
+    """
+    if not isinstance(labels, dict) or any(not isinstance(key, str) for key in labels):
+        return (_finding("CC0117", "Image labels are missing or malformed"),)
+    declared = declared_label_keys(containerfile)
+    return tuple(
+        _finding(
+            "CC0117",
+            f"Image label {key} was not declared by the Containerfile "
+            "(inherited from the base image?)",
+        )
+        for key in sorted(labels)
+        if key not in declared and key not in _TOOL_LABELS
+    )
+
+
+def validate_base_annotations(
+    annotations: tuple[tuple[str, str], ...],
+    *,
+    pinned: OCIReference,
+    platform_manifest_digest: Digest,
+) -> tuple[Finding, ...]:
+    """Verify the base annotations of one platform manifest against the pin (IG0432)."""
+    values = dict(annotations)
+    expected_name = f"{pinned.registry}/{pinned.repository}@{pinned.digest}"
+    findings: list[Finding] = []
+    if values.get(BASE_NAME_ANNOTATION) != expected_name:
+        findings.append(
+            _finding(
+                "CC0118",
+                f"Manifest annotation {BASE_NAME_ANNOTATION} does not name the "
+                f"pinned base {expected_name}",
+            )
+        )
+    if values.get(BASE_DIGEST_ANNOTATION) != str(platform_manifest_digest):
+        findings.append(
+            _finding(
+                "CC0118",
+                f"Manifest annotation {BASE_DIGEST_ANNOTATION} does not name the "
+                f"base platform manifest {platform_manifest_digest}",
+            )
+        )
+    for key in sorted(values):
+        if key not in _MANIFEST_ANNOTATIONS:
+            findings.append(
+                _finding(
+                    "CC0118",
+                    f"Manifest annotation {key} is not written by the build "
+                    "(inherited from the base image?)",
+                )
+            )
+    return tuple(findings)
+
+
 def validate_image_labels(
     labels: object,
     *,
@@ -292,11 +396,17 @@ def validate_image_labels(
     }
     if version is not None:
         expected["org.opencontainers.image.version"] = version
-    required_presence = {
-        "org.opencontainers.image.licenses",
-        "org.opencontainers.image.title",
-    }
+    required_presence = {"org.opencontainers.image.title"}
     findings: list[Finding] = []
+    for key in sorted(_FORBIDDEN_LABELS):
+        if key in labels:
+            findings.append(
+                _finding(
+                    "CC0113",
+                    f"Image label {key} is forbidden; license information belongs "
+                    "in the SBOM and REUSE metadata",
+                )
+            )
     for key, expected_value in expected.items():
         if labels.get(key) != expected_value:
             findings.append(

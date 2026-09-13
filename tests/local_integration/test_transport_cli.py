@@ -43,7 +43,6 @@ ARG IMAGE_VERSION
 ARG TARGETARCH
 COPY --chmod=0555 conclear-fixture-${TARGETARCH} /app/conclear-fixture
 LABEL org.opencontainers.image.created="${IMAGE_CREATED}" \\
-      org.opencontainers.image.licenses="GPL-3.0-or-later" \\
       org.opencontainers.image.revision="${IMAGE_REVISION}" \\
       org.opencontainers.image.source="https://example.invalid/llmtest/app" \\
       org.opencontainers.image.title="ConClear transport fixture" \\

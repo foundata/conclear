@@ -1,5 +1,6 @@
 """Skopeo registry and OCI transport adapter."""
 
+import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +13,7 @@ from conclear.errors import (
 )
 from conclear.oci import OCIGraph, validate_layout
 from conclear.process import OperationKind
-from conclear.values import Digest, OCIReference
+from conclear.values import Digest, OCIReference, Platform
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,70 @@ class SkopeoAdapter(ToolAdapter):
             raise OperationalError(
                 "Skopeo returned an invalid manifest digest"
             ) from exc
+
+    def platform_manifest_digest(
+        self,
+        reference: OCIReference,
+        platform: Platform,
+        *,
+        auth_file: Path | None = None,
+    ) -> Digest:
+        """Return the digest of the platform manifest a pinned reference resolves to.
+
+        A single-platform manifest resolves to itself; an image index resolves
+        to exactly one manifest whose platform semantically matches.
+        """
+        # Skopeo rejects a reference that carries both a tag and a digest; the
+        # pinned digest alone names the exact index or manifest.
+        addressed = (
+            reference
+            if reference.digest is None
+            else reference.with_digest(reference.digest)
+        )
+        arguments = ["inspect", "--raw"]
+        if auth_file is not None:
+            arguments.extend(("--authfile", str(auth_file)))
+        arguments.append(f"docker://{addressed}")
+        result = self._run(
+            arguments,
+            timeout_seconds=120,
+            retries=2,
+            secret_paths=(() if auth_file is None else (auth_file,)),
+        )
+        try:
+            document = json.loads(result.stdout)
+        except ValueError as exc:
+            raise OperationalError("Skopeo returned an unreadable manifest") from exc
+        if not isinstance(document, dict):
+            raise OperationalError("Skopeo returned an unreadable manifest")
+        manifests = document.get("manifests")
+        if manifests is None:
+            return self.resolve_digest(addressed, auth_file=auth_file)
+        if not isinstance(manifests, list):
+            raise OperationalError("Skopeo returned a malformed image index")
+        matches: list[Digest] = []
+        for item in manifests:
+            if not isinstance(item, dict) or not isinstance(item.get("platform"), dict):
+                continue
+            declared = item["platform"]
+            try:
+                candidate = Platform(
+                    str(declared.get("os")),
+                    str(declared.get("architecture")),
+                    declared.get("variant") or None,
+                )
+            except Exception:
+                continue
+            if candidate.semantically_matches(platform) and isinstance(
+                item.get("digest"), str
+            ):
+                matches.append(Digest(item["digest"]))
+        if len(matches) != 1:
+            raise OperationalError(
+                f"Image index {reference} resolves {len(matches)} manifests for "
+                f"{platform}, expected exactly one"
+            )
+        return matches[0]
 
     def resolve_optional(
         self, reference: OCIReference, *, auth_file: Path | None = None

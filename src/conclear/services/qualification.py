@@ -17,8 +17,13 @@ from typing import Protocol
 
 from conclear.adapters.buildah import BuildObservation
 from conclear.adapters.trivy import DatabaseObservation, ScanObservation
-from conclear.checks import validate_image_labels
+from conclear.checks import (
+    validate_base_annotations,
+    validate_declared_labels,
+    validate_image_labels,
+)
 from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig
+from conclear.containerfile import Containerfile, ImageInput, load_containerfile
 from conclear.context import hash_build_context
 from conclear.database import qualification_database_window
 from conclear.errors import OperationalError
@@ -53,7 +58,7 @@ from conclear.services.qualification_inputs import (
 from conclear.services.runtime_lifecycle import RuntimeAdapter
 from conclear.services.runtime_tests import test_platform
 from conclear.source_integrity import require_source_integrity
-from conclear.values import Platform
+from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import (
     ResourceKind,
     ResourceStatus,
@@ -218,9 +223,79 @@ def build_platform(inputs: BuildInputs, builder: Builder) -> BuildEvidence:
         revision=inputs.source.revision,
         version=inputs.version,
         created=created,
-    )
+    ) + validate_declared_labels(labels, load_containerfile(inputs.image.containerfile))
     return BuildEvidence(
         observation, context, containerfile_digest, build_arguments, findings
+    )
+
+
+class BaseManifestResolver(Protocol):
+    """Resolve the platform manifest a pinned base reference points to."""
+
+    def platform_manifest_digest(
+        self, reference: OCIReference, platform: Platform
+    ) -> Digest:
+        """Return the digest of the base manifest for one platform."""
+        ...
+
+
+def final_stage_base(containerfile: Containerfile) -> ImageInput | None:
+    """Return the external image the final stage is built on, if any."""
+    stage_bases: dict[str, ImageInput | None] = {}
+    base: ImageInput | None = None
+    for instruction in containerfile.instructions:
+        if instruction.keyword != "FROM" or not instruction.image_inputs:
+            continue
+        image_input = instruction.image_inputs[0]
+        if image_input.external:
+            base = image_input
+        else:
+            base = stage_bases.get(image_input.reference)
+        if instruction.stage_name is not None:
+            stage_bases[instruction.stage_name] = base
+    return base
+
+
+def verify_base_annotations(
+    inputs: QualificationInputs, build: BuildEvidence, resolver: BaseManifestResolver
+) -> BuildEvidence:
+    """Attach base-annotation findings (CC0118) to one platform build."""
+    containerfile = load_containerfile(inputs.image.containerfile)
+    base = final_stage_base(containerfile)
+    manifest = build.observation.graph.manifests[0]
+    if base is None:
+        findings = tuple(
+            _finding_for_unexpected_annotation(key)
+            for key, _value in manifest.annotations
+            if key != "org.opencontainers.image.created"
+        )
+    else:
+        pinned = next(
+            (
+                pin.reference
+                for pin in inputs.image.pins
+                if str(pin.reference) == base.reference
+            ),
+            None,
+        )
+        if pinned is None:
+            raise OperationalError(f"Final stage base {base.reference} has no pin")
+        findings = validate_base_annotations(
+            manifest.annotations,
+            pinned=pinned,
+            platform_manifest_digest=resolver.platform_manifest_digest(
+                pinned, inputs.platform
+            ),
+        )
+    return replace(build, findings=build.findings + findings)
+
+
+def _finding_for_unexpected_annotation(key: str) -> Finding:
+    return Finding(
+        "CC0118",
+        "error",
+        f"Manifest annotation {key} is not written by the build "
+        "(inherited from the base image?)",
     )
 
 
@@ -348,6 +423,7 @@ def qualify_platform(
     inputs: QualificationInputs,
     *,
     builder: Builder,
+    base_resolver: BaseManifestResolver,
     runtime: RuntimeAdapter,
     hooks: HookRunner,
     scanner: Scanner,
@@ -364,7 +440,9 @@ def qualify_platform(
     window = qualification_database_window(
         database, started_at=qualification_started_at or now, now=now
     )
-    build = build_platform(inputs, builder)
+    build = verify_base_annotations(
+        inputs, build_platform(inputs, builder), base_resolver
+    )
     dependency_builds = build_test_dependencies(inputs, builder)
     runtime_evidence = test_platform(
         inputs, build, runtime, hooks, dependencies=dependency_builds

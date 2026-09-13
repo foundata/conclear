@@ -103,7 +103,7 @@ def test_every_production_policy_is_bounded_and_its_tested_versions_accepted() -
 def test_production_policies_pin_the_documented_floors_and_ceilings() -> None:
     expected: dict[ToolName, tuple[str, str, set[str]]] = {
         ToolName.GIT: ("2.43.0", "3.0.0", set()),
-        ToolName.BUILDAH: ("1.39.0", "1.44.0", set()),
+        ToolName.BUILDAH: ("1.40.0", "1.44.0", set()),
         ToolName.PODMAN: ("5.8.4", "6.0.0", set()),
         ToolName.SKOPEO: ("1.14.0", "2.0.0", set()),
         ToolName.HADOLINT: ("2.12.0", "3.0.0", set()),

@@ -55,6 +55,29 @@ def _write_blob(layout: Path, content: bytes) -> tuple[str, int]:
     return digest, len(content)
 
 
+BASE_PLATFORM_DIGEST = Digest("sha256:" + "d" * 64)
+PINNED_BASE_NAME = "quay.io/example/base@sha256:" + "a" * 64
+
+
+def base_annotations(created: str) -> dict[str, str]:
+    """Return the manifest annotations Buildah writes for the fixture base."""
+    return {
+        "org.opencontainers.image.base.digest": str(BASE_PLATFORM_DIGEST),
+        "org.opencontainers.image.base.name": PINNED_BASE_NAME,
+        "org.opencontainers.image.created": created,
+    }
+
+
+class FakeBaseResolver:
+    """Resolve the fixture base to its fake platform manifest."""
+
+    def platform_manifest_digest(
+        self, reference: OCIReference, platform: Platform
+    ) -> Digest:
+        del reference, platform
+        return BASE_PLATFORM_DIGEST
+
+
 class FakeBuilder:
     """Produce one valid OCI layout from observed build inputs."""
 
@@ -80,7 +103,6 @@ class FakeBuilder:
             "org.opencontainers.image.revision": build_arguments["IMAGE_REVISION"],
             "org.opencontainers.image.created": build_arguments["IMAGE_CREATED"],
             "org.opencontainers.image.version": build_arguments["IMAGE_VERSION"],
-            "org.opencontainers.image.licenses": "GPL-3.0-or-later",
             "org.opencontainers.image.title": "Example",
         }
         layers: list[dict[str, object]] = []
@@ -119,6 +141,7 @@ class FakeBuilder:
                         "size": config_size,
                     },
                     "layers": layers,
+                    "annotations": base_annotations(build_arguments["IMAGE_CREATED"]),
                 }
             ),
         )
@@ -315,6 +338,16 @@ class FakeRegistry:
         if reference.tag is None or reference.tag not in self.tags:
             raise OperationalError(f"Fake registry has no tag: {reference}")
         return self.tags[reference.tag]
+
+    def platform_manifest_digest(
+        self,
+        reference: OCIReference,
+        platform: Platform,
+        *,
+        auth_file: Path | None = None,
+    ) -> Digest:
+        del reference, platform, auth_file
+        return BASE_PLATFORM_DIGEST
 
     def resolve_optional(
         self, reference: OCIReference, *, auth_file: Path | None = None

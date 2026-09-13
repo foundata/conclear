@@ -208,6 +208,10 @@ def _local(monkeypatch: pytest.MonkeyPatch, run: FakeSourceRun, **fakes: Any) ->
     )
     monkeypatch.setattr(local_commands, "create_source_run", lambda **_kwargs: run)
     monkeypatch.setattr(local_commands, "open_source_run", lambda **_kwargs: run)
+    # Base annotation verification needs a real layout and registry; command
+    # tests exercise it through the service tests and skip it here by default.
+    fakes.setdefault("verify_base_annotations", lambda inputs, build, resolver: build)
+    fakes.setdefault("AuthenticatedPinResolver", lambda runtime, auth_file: object())
     for name, value in fakes.items():
         monkeypatch.setattr(local_commands, name, value)
 

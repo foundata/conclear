@@ -140,15 +140,16 @@ SUPPORTED_TOOLS: Mapping[ToolName, ToolSpec] = {
             _version("2.43.0"), _version("3.0.0"), frozenset({_version("2.55.0")})
         ),
     ),
-    # Buildah: `build --source-date-epoch --rewrite-timestamp` exists since the
-    # 1.39 line, which also lies above the 1.38.1 build-breakout fix
-    # (GHSA-5vpc-35f4-r8w6). Minor lines after the tested 1.43 change storage and
-    # build behavior and are admitted only with real-tool evidence.
+    # Buildah: `build --inherit-labels` exists since 1.40.0, which also lies
+    # above `--source-date-epoch --rewrite-timestamp` (1.39) and the 1.38.1
+    # build-breakout fix (GHSA-5vpc-35f4-r8w6). Minor lines after the tested
+    # 1.43 change storage and build behavior and are admitted only with
+    # real-tool evidence.
     ToolName.BUILDAH: ToolSpec(
         ("--version",),
         _pattern(r"buildah version "),
         VersionPolicy(
-            _version("1.39.0"), _version("1.44.0"), frozenset({_version("1.43.2")})
+            _version("1.40.0"), _version("1.44.0"), frozenset({_version("1.43.2")})
         ),
     ),
     # Podman: `podman run` below 5.8.4 can leak host environment variables to a
