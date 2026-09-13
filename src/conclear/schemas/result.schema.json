@@ -939,6 +939,13 @@
                 "items": {
                   "$ref": "#/$defs/text"
                 }
+              },
+              "state": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retired": {
+                "type": "boolean"
               }
             }
           }
@@ -2208,6 +2215,13 @@
           "items": {
             "$ref": "#/$defs/text"
           }
+        },
+        "state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retired": {
+          "type": "boolean"
         }
       },
       "required": [

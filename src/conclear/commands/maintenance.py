@@ -39,7 +39,7 @@ from conclear.release_profile import ReleaseProfile
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime, ToolProblem
 from conclear.services.archive_rescan import ArchiveRescanInput, archived_rescan_input
-from conclear.services.cleanup import cleanup_run
+from conclear.services.cleanup import cleanup_run, retire_run, workspace_size_bytes
 from conclear.services.doctor import DoctorScope, diagnose_environment
 from conclear.services.registry_diagnostics import DiagnosticStatus
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
@@ -51,7 +51,12 @@ from conclear.services.rescan import (
 from conclear.tools import ToolName
 from conclear.triage import load_triage
 from conclear.values import OCIReference, validate_release_version
-from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
+from conclear.workspace import (
+    TERMINAL_STATES,
+    ResourceKind,
+    ResourceStatus,
+    RunWorkspace,
+)
 
 from .archive import archive_completed_run, archive_details
 from .common import (
@@ -421,8 +426,20 @@ def _lookup_details(proposal: PinUpdateProposal) -> tuple[str, ...]:
 @click.command("cleanup")
 @click.argument("run_id")
 @profile_option
+@click.option(
+    "retire",
+    "--retire",
+    is_flag=True,
+    help=(
+        "Also delete the run directory with its layouts and evidence. Allowed "
+        "only for promoted, completed or rejected runs, after the release "
+        "archive has been retained elsewhere."
+    ),
+)
 @format_option
-def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -> None:
+def cleanup_command(
+    run_id: str, profile_name: str | None, retire: bool, output_format: str
+) -> None:
     """Remove only ephemeral resources owned by one release run."""
     workspace = RunWorkspace.open(state_home=state_home(), run_id=run_id)
     runtime = ApplicationRuntime.create(
@@ -452,12 +469,40 @@ def cleanup_command(run_id: str, profile_name: str | None, output_format: str) -
     finally:
         if registry_control is not None:
             registry_control.close()
+    snapshot = workspace.load()
+    details = [
+        f"Removed {len(result.removed)} owned resource(s)"
+        + (": " + ", ".join(result.removed) if result.removed else ""),
+    ]
+    if result.retained:
+        details.append("Retained: " + ", ".join(result.retained))
+    retired_path: Path | None = None
+    if retire:
+        retired_path = retire_run(workspace, state_home=state_home())
+        details.append(f"Retired run directory {retired_path}")
+    else:
+        size = workspace_size_bytes(workspace.root) / (1024 * 1024)
+        details.append(
+            f"Run {run_id} is {snapshot.state.value}; its directory keeps layouts "
+            f"and evidence ({size:.0f} MiB) at {workspace.root}"
+        )
+        if snapshot.state in TERMINAL_STATES:
+            details.append(
+                "Once the release archive is safely retained, rerun with --retire "
+                "to delete it"
+            )
     emit(
         CommandResult(
             "cleanup",
             ResultStatus.SUCCESS,
             "Owned cleanup completed",
-            data={"removed": list(result.removed), "retained": list(result.retained)},
+            data={
+                "removed": list(result.removed),
+                "retained": list(result.retained),
+                "state": snapshot.state.value,
+                "retired": retired_path is not None,
+            },
+            details=tuple(details),
         ),
         output_format,
     )

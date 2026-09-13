@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from conclear.errors import OperationalError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.registry_control import TagObservation
 from conclear.runtime_directory import remove_runtime_directory
 from conclear.test_inputs import remove_materialized_test_inputs
 from conclear.values import Digest, OCIReference
 from conclear.workspace import (
+    TERMINAL_STATES,
     ResourceEntry,
     ResourceKind,
     ResourceStatus,
@@ -267,3 +268,37 @@ def _remove_local(path: Path) -> None:
             path.unlink()
     except OSError as exc:
         raise OperationalError(f"Unable to remove owned path {path}") from exc
+
+
+def workspace_size_bytes(root: Path) -> int:
+    """Return the size of a run workspace without following symbolic links."""
+    total = 0
+    for path in root.rglob("*"):
+        try:
+            if path.is_file() and not path.is_symlink():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def retire_run(workspace: RunWorkspace, *, state_home: Path) -> Path:
+    """Delete the whole workspace of a run in a terminal state.
+
+    Layouts and records stay after ordinary cleanup because an interrupted
+    release needs them to resume. A promoted, completed or rejected run can
+    never resume, so once its archive is safely retained its directory is only
+    disk usage. The caller is responsible for that retention judgement.
+    """
+    snapshot = workspace.load()
+    if snapshot.state not in TERMINAL_STATES:
+        raise InvalidInvocationError(
+            f"Run {workspace.run_id} is {snapshot.state.value}; only promoted, "
+            "completed or rejected runs can be retired"
+        )
+    runs = (state_home / "conclear" / "runs").resolve()
+    root = workspace.root.resolve()
+    if root.parent != runs or root.name != workspace.run_id:
+        raise OperationalError(f"Refusing to retire a workspace outside {runs}")
+    shutil.rmtree(root)
+    return root

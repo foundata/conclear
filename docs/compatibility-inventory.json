@@ -1165,6 +1165,17 @@
           "type": "text"
         },
         {
+          "declarations": [
+            "--retire"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "retire",
+          "required": false,
+          "type": "boolean"
+        },
+        {
           "choices": [
             "human",
             "json"

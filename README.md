@@ -364,8 +364,11 @@ final tag already names different image bytes.
 After checking that the archive is safely retained, clean up the reported run:
 
 ```sh
-conclear cleanup "<run-id>" --profile foundata
+conclear cleanup "<run-id>" --profile foundata --retire
 ```
+
+`--retire` also deletes the run directory with its layouts and evidence once the
+run is finished; omit it to keep the directory for inspection.
 
 
 ### Advanced<a id="usage-advanced"></a>

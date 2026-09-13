@@ -5,14 +5,15 @@ import pytest
 
 from conclear.config import TestConfig as RuntimeTestConfig
 from conclear.config import TestLaunchConfig as RuntimeTestLaunchConfig
-from conclear.errors import OperationalError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.registry_control import TagObservation
-from conclear.services.cleanup import cleanup_run
+from conclear.services.cleanup import cleanup_run, retire_run
 from conclear.test_inputs import materialize_test_inputs
 from conclear.values import Digest, OCIReference
 from conclear.workspace import (
     ResourceKind,
     ResourceStatus,
+    RunState,
     RunWorkspace,
 )
 
@@ -363,3 +364,31 @@ def test_cleanup_preserves_explicitly_revalidated_resource(tmp_path: Path) -> No
 
     assert result.retained == ("layout-linux-amd64",)
     assert layout.is_dir()
+
+
+def test_retire_removes_the_directory_of_a_terminal_run(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    run.transition(RunState.COMPLETED, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+    assert run.root.is_dir()
+
+    removed = retire_run(run, state_home=tmp_path / "state")
+
+    assert removed == run.root.resolve()
+    assert not run.root.exists()
+
+
+def test_retire_refuses_a_run_that_could_still_resume(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+
+    with pytest.raises(InvalidInvocationError, match="only promoted, completed"):
+        retire_run(run, state_home=tmp_path / "state")
+    assert run.root.is_dir()
+
+
+def test_retire_refuses_a_workspace_outside_the_state_home(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    run.transition(RunState.REJECTED, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+
+    with pytest.raises(OperationalError, match="Refusing to retire"):
+        retire_run(run, state_home=tmp_path / "elsewhere")
+    assert run.root.is_dir()

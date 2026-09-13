@@ -1351,7 +1351,12 @@ def test_cleanup_command_refuses_a_foreign_profile_and_reports_ownership(
         ["cleanup", run.workspace.run_id, "--profile", "production"]
     )
     assert code == 0, err
-    assert value["data"] == {"removed": ["a"], "retained": ["b"]}
+    assert value["data"] == {
+        "removed": ["a"],
+        "retained": ["b"],
+        "state": "created",
+        "retired": False,
+    }
 
     code, value, err = invoke(["cleanup", run.workspace.run_id])
     assert code == 0, err
