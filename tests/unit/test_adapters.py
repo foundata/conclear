@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -29,13 +30,14 @@ from conclear.errors import (
     OperationalError,
     UnsupportedOperationError,
 )
-from conclear.jsonutil import canonical_json_bytes, sha256_bytes
+from conclear.jsonutil import canonical_json_bytes, sha256_bytes, sha256_file
 from conclear.process import (
     CommandRequest,
     ProcessEnvironment,
     ProcessResult,
     ProcessRunner,
 )
+from conclear.scan_identity import ScanIdentity
 from conclear.tools import ResolvedTool, ToolName
 from conclear.values import Digest, OCIReference, Platform
 
@@ -759,6 +761,107 @@ def test_trivy_spdx_hash_survives_attestation_reserialization(
     assert observation.digest != sha256_bytes(raw_output.encode("utf-8"))
     assert output.read_bytes() == canonical_json_bytes(document)
     assert observation.value == document
+
+
+def test_trivy_reports_name_the_subject_instead_of_the_layout_path(
+    tmp_path: Path,
+) -> None:
+    layout = tmp_path / "runs" / "01run" / "layouts" / "app" / "linux-amd64"
+    subject = "quay.io/example/app@sha256:" + "b" * 64
+    identity = ScanIdentity(
+        workspace_root=tmp_path / "runs" / "01run",
+        subject=subject,
+        artifact_path=layout,
+    )
+    report = tmp_path / "image-scan.json"
+    raw_report = {
+        "ArtifactName": str(layout),
+        "ArtifactType": "container_image",
+        "Results": [
+            {"Target": f"{layout} (fedora 43)", "Class": "os-pkgs", "Type": "fedora"},
+            {
+                "Target": str(layout),
+                "Class": "config",
+                "Type": "dockerfile",
+                "Misconfigurations": [{"ID": "DS-0026", "Status": "FAIL"}],
+            },
+        ],
+    }
+
+    def scan(request: CommandRequest) -> ProcessResult:
+        report.write_text(json.dumps(raw_report), encoding="utf-8")
+        return result()
+
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, FakeRunner(scan)).create(
+        TrivyAdapter
+    )
+    observation = adapter.scan_layout(
+        layout_path=layout,
+        report_path=report,
+        cache_root=tmp_path / "cache",
+        identity=identity,
+    )
+
+    value = cast(dict[str, Any], observation.value)
+    assert value["ArtifactName"] == subject
+    assert value["Results"][0]["Target"] == f"{subject} (fedora 43)"
+    assert value["Results"][1]["Target"] == subject
+    stored = json.loads(report.read_text(encoding="utf-8"))
+    assert stored == value
+    assert str(tmp_path) not in report.read_text(encoding="utf-8")
+    assert observation.digest == sha256_file(report)
+
+
+def test_trivy_spdx_names_the_subject_and_keeps_the_hash_of_the_rewritten_bytes(
+    tmp_path: Path,
+) -> None:
+    layout = tmp_path / "runs" / "01run" / "layouts" / "app" / "linux-amd64"
+    subject = "quay.io/example/app@sha256:" + "c" * 64
+    identity = ScanIdentity(
+        workspace_root=tmp_path / "runs" / "01run",
+        subject=subject,
+        artifact_path=layout,
+    )
+    document: dict[str, object] = {
+        "spdxVersion": "SPDX-2.3",
+        "dataLicense": "CC0-1.0",
+        "SPDXID": "SPDXRef-DOCUMENT",
+        "name": str(layout),
+        "documentNamespace": f"http://trivy.dev/container_image/{layout}-1234",
+        "creationInfo": {
+            "creators": ["Tool: trivy"],
+            "created": "2026-01-01T00:00:00Z",
+        },
+        "packages": [
+            {
+                "name": str(layout),
+                "SPDXID": "SPDXRef-ContainerImage-1",
+                "downloadLocation": "NONE",
+                "filesAnalyzed": False,
+            }
+        ],
+    }
+    output = tmp_path / "sbom.json"
+
+    def generate(request: CommandRequest) -> ProcessResult:
+        output.write_text(json.dumps(document), encoding="utf-8")
+        return result()
+
+    adapter = adapter_arguments(tmp_path, ToolName.TRIVY, FakeRunner(generate)).create(
+        TrivyAdapter
+    )
+    observation = adapter.generate_spdx(
+        layout_path=layout,
+        output_path=output,
+        cache_root=tmp_path / "cache",
+        identity=identity,
+    )
+
+    value = cast(dict[str, Any], observation.value)
+    assert value["name"] == subject
+    assert value["packages"][0]["name"] == subject
+    assert str(tmp_path) not in output.read_text(encoding="utf-8")
+    assert observation.digest == sha256_bytes(canonical_json_bytes(observation.value))
 
 
 def test_trivy_database_refresh_installs_content_addressed_snapshot(

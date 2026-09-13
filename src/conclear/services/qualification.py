@@ -34,6 +34,7 @@ from conclear.records import (
     RecordEnvelope,
     Verdict,
 )
+from conclear.scan_identity import ScanIdentity
 from conclear.scan_policy import AppliedException, evaluate_trivy_report
 from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification_inputs import (
@@ -87,6 +88,7 @@ class Scanner(Protocol):
         report_path: Path,
         cache_root: Path,
         scanners: tuple[str, ...],
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Scan local source content."""
         ...
@@ -97,6 +99,7 @@ class Scanner(Protocol):
         layout_path: Path,
         report_path: Path,
         cache_root: Path,
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Scan one local OCI layout."""
         ...
@@ -107,6 +110,7 @@ class Scanner(Protocol):
         layout_path: Path,
         output_path: Path,
         cache_root: Path,
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Generate one SPDX JSON document."""
         ...
@@ -230,6 +234,28 @@ def build_test_dependencies(
     )
 
 
+def scan_identity(inputs: QualificationInputs, build: BuildEvidence) -> ScanIdentity:
+    """Name scan evidence by the platform subject, never by the release host."""
+    manifest = next(
+        (
+            item
+            for item in build.observation.graph.manifests
+            if item.platform == inputs.platform
+        ),
+        None,
+    )
+    digest = (
+        build.observation.graph.digest
+        if manifest is None
+        else manifest.descriptor.digest
+    )
+    return ScanIdentity(
+        workspace_root=inputs.workspace.root,
+        subject=str(inputs.image.repository.with_digest(digest)),
+        artifact_path=build.observation.layout_path,
+    )
+
+
 def generate_evidence(
     inputs: QualificationInputs,
     build: BuildEvidence,
@@ -244,22 +270,26 @@ def generate_evidence(
         inputs.workspace.root / "reports" / inputs.image.image_id / inputs.platform.key
     )
     report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    identity = scan_identity(inputs, build)
     source_scan = scanner.scan_filesystem(
         path=inputs.image.context,
         report_path=report_root / "source-scan.json",
         cache_root=database.path,
         scanners=("secret",),
+        identity=identity,
     )
     containerfile_scan = scanner.scan_filesystem(
         path=inputs.image.containerfile,
         report_path=report_root / "containerfile-scan.json",
         cache_root=database.path,
         scanners=("misconfig",),
+        identity=identity,
     )
     image_scan = scanner.scan_layout(
         layout_path=build.observation.layout_path,
         report_path=report_root / "image-scan.json",
         cache_root=database.path,
+        identity=identity,
     )
     sbom_path = (
         inputs.workspace.root / "exports" / "sbom" / f"{inputs.platform.key}.spdx.json"
@@ -268,6 +298,7 @@ def generate_evidence(
         layout_path=build.observation.layout_path,
         output_path=sbom_path,
         cache_root=database.path,
+        identity=identity,
     )
     source_evaluation = evaluate_trivy_report(
         source_scan.value,

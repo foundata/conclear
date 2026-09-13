@@ -1,11 +1,13 @@
 """Static repository check service."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 
 from conclear.adapters.hadolint import HadolintAdapter
 from conclear.checks import check_image_static
 from conclear.config import ImageConfig
 from conclear.presentation import Finding
+from conclear.scan_identity import evidence_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,9 +38,10 @@ def check_image(image: ImageConfig, hadolint: HadolintAdapter) -> CheckOutcome:
                 check_id="CC0114",
                 severity=severity,
                 message=f"Hadolint {item.code}: {item.message}",
-                location=f"{image.containerfile}:{item.line}:{item.column}",
+                location=f"{evidence_path(image.containerfile, image.context)}:{item.line}:{item.column}",
             )
         )
+    findings = [_relative_location(finding, image.context) for finding in findings]
     return CheckOutcome(
         tuple(
             sorted(
@@ -50,4 +53,16 @@ def check_image(image: ImageConfig, hadolint: HadolintAdapter) -> CheckOutcome:
                 ),
             )
         )
+    )
+
+
+def _relative_location(finding: Finding, root: Path) -> Finding:
+    """Report file locations relative to the build context, never as host paths."""
+    if finding.location is None:
+        return finding
+    path, separator, suffix = finding.location.partition(":")
+    if not path.startswith("/"):
+        return finding
+    return replace(
+        finding, location=evidence_path(Path(path), root) + separator + suffix
     )

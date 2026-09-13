@@ -357,13 +357,19 @@ class FakeReadinessTiming:
 
 
 class Scanner:
+    def __init__(self) -> None:
+        self.identities: list[Any] = []
+
     def scan_filesystem(self, **values: Any) -> ScanObservation:
+        self.identities.append(values.get("identity"))
         return self._write(values["report_path"], {"Results": []})
 
     def scan_layout(self, **values: Any) -> ScanObservation:
+        self.identities.append(values.get("identity"))
         return self._write(values["report_path"], {"Results": []})
 
     def generate_spdx(self, **values: Any) -> ScanObservation:
+        self.identities.append(values.get("identity"))
         return self._write(
             values["output_path"],
             {
@@ -1103,6 +1109,40 @@ def test_service_exit_during_readiness_rejects_without_signal(
     )
     assert runtime.signals == 0
     assert runtime.removals == 1
+
+
+def test_scans_are_named_by_the_platform_subject_not_the_host(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+    database_path = tmp_path / "database"
+    database_path.mkdir()
+    scanner = Scanner()
+
+    result = qualify_platform(
+        value,
+        builder=Builder(),
+        runtime=Runtime(),
+        hooks=hook_runner(value),
+        scanner=scanner,
+        database=DatabaseObservation(
+            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+        ),
+        preflight=closure_preflight(value),
+        now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert len(scanner.identities) == 4
+    identity = scanner.identities[0]
+    assert all(item == identity for item in scanner.identities)
+    record = json.loads(result.record_path.read_text(encoding="utf-8"))
+    assert identity.subject == str(
+        value.image.repository.with_digest(Digest(record["payload"]["manifestDigest"]))
+    )
+    assert identity.workspace_root == value.workspace.root
+    assert identity.artifact_path == result.layout_path
+    assert str(tmp_path) not in identity.subject
 
 
 def test_service_without_health_command_does_not_poll(

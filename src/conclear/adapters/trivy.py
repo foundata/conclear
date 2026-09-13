@@ -21,6 +21,11 @@ from conclear.jsonutil import (
 from conclear.parsing import array_value, object_value, string_value
 from conclear.process import OperationKind
 from conclear.records import format_timestamp
+from conclear.scan_identity import (
+    ScanIdentity,
+    neutralize_scan_report,
+    neutralize_spdx_document,
+)
 from conclear.spdx import validate_spdx_document
 from conclear.values import Digest
 
@@ -144,6 +149,7 @@ class TrivyAdapter(ToolAdapter):
         report_path: Path,
         cache_root: Path,
         scanners: tuple[str, ...],
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Scan an explicit source tree for secrets and configuration findings."""
         return self._scan(
@@ -164,6 +170,7 @@ class TrivyAdapter(ToolAdapter):
                 str(path.absolute()),
             ),
             report_path,
+            identity=identity,
         )
 
     def scan_layout(
@@ -172,6 +179,7 @@ class TrivyAdapter(ToolAdapter):
         layout_path: Path,
         report_path: Path,
         cache_root: Path,
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Scan one exact OCI layout using the selected immutable database cache."""
         observation = self._scan(
@@ -196,6 +204,7 @@ class TrivyAdapter(ToolAdapter):
                 str(report_path.absolute()),
             ),
             report_path,
+            identity=identity,
         )
         _require_image_config_coverage(observation.value)
         return observation
@@ -206,6 +215,7 @@ class TrivyAdapter(ToolAdapter):
         layout_path: Path,
         output_path: Path,
         cache_root: Path,
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Generate an SPDX JSON inventory from one exact OCI layout."""
         observation = self._scan(
@@ -229,6 +239,8 @@ class TrivyAdapter(ToolAdapter):
         document = validate_spdx_document(
             observation.value, label="Trivy SPDX document"
         )
+        if identity is not None:
+            document = neutralize_spdx_document(document, identity)
         # Attestation envelopes preserve JSON values, not the scanner's formatting.
         atomic_write_json(output_path, document, mode=0o644)
         return ScanObservation(output_path, sha256_file(output_path), document)
@@ -239,6 +251,7 @@ class TrivyAdapter(ToolAdapter):
         sbom_path: Path,
         report_path: Path,
         cache_root: Path,
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Match current vulnerability data against one retained SPDX inventory."""
         return self._scan(
@@ -256,11 +269,22 @@ class TrivyAdapter(ToolAdapter):
                 str(sbom_path.absolute()),
             ),
             report_path,
+            identity=identity,
         )
 
-    def _scan(self, arguments: tuple[str, ...], output_path: Path) -> ScanObservation:
+    def _scan(
+        self,
+        arguments: tuple[str, ...],
+        output_path: Path,
+        *,
+        identity: ScanIdentity | None = None,
+    ) -> ScanObservation:
         self._execute(arguments, timeout_seconds=1800)
         value = load_json(output_path)
+        if identity is not None:
+            # Evidence names the subject, never the release host.
+            value = neutralize_scan_report(value, identity)
+            atomic_write_json(output_path, value, mode=0o644)
         return ScanObservation(output_path, sha256_file(output_path), value)
 
     def _execute(

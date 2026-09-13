@@ -35,6 +35,7 @@ from conclear.rescan_history import (
     RescanHistoryEntry,
     history_from_records,
 )
+from conclear.scan_identity import ScanIdentity
 from conclear.scan_policy import evaluate_trivy_report
 from conclear.services.attestation_reads import verified_statements
 from conclear.services.rescan_evidence import (
@@ -107,6 +108,7 @@ class Scanner(Protocol):
         sbom_path: Path,
         report_path: Path,
         cache_root: Path,
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Match current vulnerability data against retained inventory."""
         ...
@@ -117,6 +119,7 @@ class Scanner(Protocol):
         layout_path: Path,
         report_path: Path,
         cache_root: Path,
+        identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Repeat vulnerability, secret and configuration scans on image content."""
         ...
@@ -341,12 +344,22 @@ def rescan_release(
                 layout_path=platform_layout,
                 report_path=report_path,
                 cache_root=database.path,
+                identity=ScanIdentity(
+                    workspace_root=workspace.root,
+                    subject=str(manifest_subject),
+                    artifact_path=platform_layout,
+                ),
             )
         else:
             scan = scanner.scan_sbom(
                 sbom_path=sbom_path,
                 report_path=report_path,
                 cache_root=database.path,
+                identity=ScanIdentity(
+                    workspace_root=workspace.root,
+                    subject=str(manifest_subject),
+                    artifact_path=sbom_path,
+                ),
             )
         scan_results.append(
             {

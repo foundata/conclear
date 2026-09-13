@@ -1175,7 +1175,10 @@ the second exemption records the declared root justification. Neither exempts
 secrets, vulnerabilities or unrelated configuration findings.
 
 Each platform SBOM is SPDX 2.3 JSON. ConClear validates the document, records
-its exact specification version and exports the raw JSON.
+its exact specification version and exports the raw JSON. Scan reports, SBOMs
+and finding locations name the scanned subject by its repository and manifest
+digest or a path relative to the build context; the release host's directory
+layout never enters evidence.
 
 <a id="promise-ip0026"></a>
 A qualification is validated in one of two ways and never by rewriting it. A

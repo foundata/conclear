@@ -460,7 +460,7 @@ def test_hadolint_diagnostics_use_the_adapter_check_identifier(
     assert finding.check_id == "CC0114"
     assert finding.severity == "error"
     assert finding.message == "Hadolint DL3008: Pin versions in apt get install"
-    assert finding.location == f"{root / 'Containerfile'}:7:5"
+    assert finding.location == "Containerfile:7:5"
 
 
 def test_comment_lines_inside_a_continued_instruction_are_ignored(

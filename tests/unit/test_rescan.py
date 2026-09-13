@@ -3,6 +3,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -232,6 +233,7 @@ class FakeScanner:
         self.sbom_scans = 0
         self.layout_scans = 0
         self.root_check = root_check
+        self.identities: list[Any] = []
 
     def scan_sbom(
         self,
@@ -239,8 +241,10 @@ class FakeScanner:
         sbom_path: Path,
         report_path: Path,
         cache_root: Path,
+        identity: object = None,
     ) -> ScanObservation:
         self.sbom_scans += 1
+        self.identities.append(identity)
         assert sbom_path.is_file()
         assert cache_root.is_dir()
         value = _scan_report()
@@ -253,10 +257,12 @@ class FakeScanner:
         layout_path: Path,
         report_path: Path,
         cache_root: Path,
+        identity: object = None,
     ) -> ScanObservation:
         assert layout_path
         assert cache_root.is_dir()
         self.layout_scans += 1
+        self.identities.append(identity)
         value = _scan_report()
         if self.root_check:
             results = value["Results"]
@@ -746,6 +752,14 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     assert record["payload"]["triage"] == [triage[0].to_dict()]
     assert scanner.sbom_scans == (1 if scope == "sbom-vulnerabilities" else 0)
     assert scanner.layout_scans == (1 if scope == "full-image" else 0)
+    identity = scanner.identities[0]
+    assert identity.workspace_root == run.root
+    assert identity.subject.startswith("quay.io/")
+    assert "@sha256:" in identity.subject
+    assert str(run.root) not in identity.subject
+    assert identity.artifact_path.name == (
+        "linux-amd64.spdx.json" if scope == "sbom-vulnerabilities" else "linux-amd64"
+    )
     entry = run.journal.entries()[0]
     assert entry.resource_id == "rescan-result"
     assert entry.status is ResourceStatus.CREATED
