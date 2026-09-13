@@ -172,6 +172,7 @@ class Runtime:
         pid1: str = "systemd",
         inactive_systemd_units: tuple[str, ...] = (),
         observed_writable_mounts: tuple[str, ...] | None = None,
+        unreachable_manager_queries: int = 0,
     ) -> None:
         self.fail_health = fail_health
         self.fail_remove = fail_remove
@@ -189,6 +190,7 @@ class Runtime:
         self.immutable_stat_output = immutable_stat_output
         self.pid1 = pid1
         self.inactive_systemd_units = frozenset(inactive_systemd_units)
+        self.unreachable_manager_queries = unreachable_manager_queries
         self.observed_writable_mounts = observed_writable_mounts
         self.removals = 0
         self.removed_names: list[str] = []
@@ -202,6 +204,7 @@ class Runtime:
         self.signals = 0
         self.signal_names: list[str] = []
         self.systemd_commands: list[tuple[str, ...]] = []
+        self.manager_queries: list[tuple[str, ...]] = []
 
     def import_layout(self, **values: Any) -> ImportObservation:
         self.import_calls += 1
@@ -287,6 +290,12 @@ class Runtime:
         command = tuple(values["command"])
         if command[:2] == ("systemctl", "show"):
             self.systemd_commands.append(command)
+            if len(self.manager_queries) < self.unreachable_manager_queries:
+                self.manager_queries.append(command)
+                return ExecObservation(
+                    1, "", "Failed to connect to bus: No such file or directory\n"
+                )
+            self.manager_queries.append(command)
             return ExecObservation(0, "259\n", "")
         if command[:2] == ("systemctl", "is-active"):
             self.systemd_commands.append(command)
@@ -1149,6 +1158,65 @@ def test_systemd_profile_verifies_pid1_units_and_configured_shutdown(
         ("systemctl", "is-active", "--quiet", "multi-user.target"),
         ("systemctl", "is-active", "--quiet", "sshd.service"),
     ]
+
+
+def test_systemd_manager_query_is_retried_until_systemd_answers(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_systemd_runtime(root)
+    value = inputs(root, tmp_path)
+    runtime = Runtime(unreachable_manager_queries=2)
+    timing = FakeReadinessTiming()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+        _readiness_timing=timing.value,
+    )
+
+    results = {str(item["name"]): item for item in evidence.test_results}
+    assert results["systemdManager"]["status"] == "passed"
+    assert results["systemdUnit:multi-user.target"]["status"] == "passed"
+    assert evidence.findings == ()
+    assert len(runtime.manager_queries) == 3
+    assert timing.sleeps
+
+
+def test_systemd_manager_query_that_never_answers_is_rejected(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_systemd_runtime(root)
+    value = inputs(root, tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(value.image.runtime, startup_timeout_seconds=1),
+        ),
+    )
+    runtime = Runtime(unreachable_manager_queries=1000)
+    timing = FakeReadinessTiming()
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        hook_runner(value),
+        _readiness_timing=timing.value,
+    )
+
+    results = {str(item["name"]): item for item in evidence.test_results}
+    assert results["systemdManager"]["status"] == "failed"
+    assert {finding.check_id for finding in evidence.findings} == {"CC0403"}
+    assert evidence.findings[0].message == "Systemd manager is not operational"
+    assert all(
+        str(item["name"]) != "systemdUnit:multi-user.target"
+        for item in evidence.test_results
+    )
 
 
 def test_systemd_qualification_records_review_and_lifecycle_contract(

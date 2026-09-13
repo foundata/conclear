@@ -1110,11 +1110,14 @@ privileged executables inherited from a base image.
 For a systemd image, ConClear explicitly enables Podman's systemd mode and
 applies the `SIGRTMIN+3` stop signal. It verifies that PID 1 is `systemd`, that
 a `systemctl` manager query succeeds and that every configured required unit
-becomes active. Required-unit probes and an optional application health command
-share the one monotonic startup budget. The profile then sends `SIGRTMIN+3` and
-applies the ordinary bounded shutdown and exit-status checks. Failure of PID 1,
-manager, unit, health or shutdown expectations produces a `CC0403` rejection; an
-inability to invoke or observe Podman remains an operational failure.
+becomes active. The manager query, the required-unit probes and an optional
+application health command share the one monotonic startup budget, and a manager
+query that cannot reach `systemd` yet is retried at the same bounded interval
+because `systemd` creates its socket shortly after the container starts. The
+profile then sends `SIGRTMIN+3` and applies the ordinary bounded shutdown and
+exit-status checks. Failure of PID 1, manager, unit, health or shutdown
+expectations produces a `CC0403` rejection; an inability to invoke or observe
+Podman remains an operational failure.
 
 For a service health command, a nonzero application status means not ready and
 is retried at a bounded implementation-owned interval until success or the

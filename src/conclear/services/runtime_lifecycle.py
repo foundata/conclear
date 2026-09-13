@@ -439,15 +439,35 @@ def _exercise_systemd_readiness(
             Finding("CC0403", "error", "Systemd readiness deadline expired")
         )
         return container, _container_is_running(container)
-    manager = runtime.exec_observe(
+    manager_observation = _wait_for_service_health(
+        runtime,
         root=storage_root,
         runroot=runroot,
         name=container_name,
         command=("systemctl", "show", "--property=Version", "--value"),
-        timeout_seconds=remaining,
+        initial=container,
+        timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
+        timing=timing,
+        start_time=readiness_start,
+        deadline=readiness_deadline,
     )
-    manager_passed = manager.exit_status == 0 and bool(manager.stdout.strip())
-    results.append(_command_test_result("systemdManager", manager, manager_passed))
+    container = manager_observation.container
+    manager = manager_observation.command
+    manager_passed = (
+        manager_observation.outcome == "ready"
+        and manager is not None
+        and bool(manager.stdout.strip())
+    )
+    if manager is None:
+        results.append(
+            {
+                "name": "systemdManager",
+                "status": "failed",
+                "outcome": manager_observation.outcome,
+            }
+        )
+    else:
+        results.append(_command_test_result("systemdManager", manager, manager_passed))
     if not manager_passed:
         findings.append(
             Finding("CC0403", "error", "Systemd manager is not operational")
