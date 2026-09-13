@@ -49,7 +49,7 @@ class DoctorObservation:
 
 
 def diagnose_environment(
-    repository: RepositoryConfig,
+    repository: RepositoryConfig | None,
     runtime: ApplicationRuntime,
     *,
     scope: DoctorScope,
@@ -65,11 +65,18 @@ def diagnose_environment(
     first checked for the credential inputs the scope's commands will use.
     Their presence does not prove write permissions or signing capability.
     """
+    if repository is None and scope is not DoctorScope.CHECK:
+        raise InvalidInvocationError(
+            f"--scope {scope.value} needs the repository configuration; "
+            "run it from a repository with conclear.toml"
+        )
+    images = () if repository is None else repository.images
+    release_images = () if repository is None else repository.release_images
     if version is not None:
         if scope is not DoctorScope.RELEASE:
             raise InvalidInvocationError("--version applies only to --scope release")
         validate_release_version(version)
-        for image in repository.release_images:
+        for image in release_images:
             image.release.render_versions(version)
     if profile is not None:
         require_profile_capabilities(profile, scope_dependencies(scope.value))
@@ -84,9 +91,7 @@ def diagnose_environment(
             root=runtime.root / "doctor" / "podman" / "root",
             runroot=runtime.root / "doctor" / "podman" / "runroot",
         )
-        requested = {
-            item.architecture for image in repository.images for item in image.platforms
-        }
+        requested = {item.architecture for image in images for item in image.platforms}
         emulated = tuple(sorted(item for item in requested if item != native))
         unavailable = [item for item in emulated if binfmt_handler(item) is None]
         if unavailable:
@@ -102,7 +107,7 @@ def diagnose_environment(
             )
         registry_checks = tuple(
             check
-            for image in repository.release_images
+            for image in release_images
             for check in diagnose_registry(
                 image, profile.registry.policy, registry_control, version=version
             )

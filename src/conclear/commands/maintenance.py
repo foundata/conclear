@@ -109,12 +109,15 @@ def doctor_command(
             f"--profile is required for --scope {scope.value}; use --scope "
             f"{DoctorScope.QUALIFY.value} without a release profile"
         )
-    repository = load_repository_config(config_path)
+    repository: RepositoryConfig | None = None
+    if scope is not DoctorScope.CHECK or config_path.exists():
+        repository = load_repository_config(config_path)
+    release_images = () if repository is None else repository.release_images
     if version is not None:
         if scope is not DoctorScope.RELEASE:
             raise click.UsageError("--version applies only to --scope release")
         validate_release_version(version)
-        for image in repository.release_images:
+        for image in release_images:
             image.release.render_versions(version)
     selected = profile(profile_name) if profile_name else None
     if selected is not None:
@@ -123,7 +126,7 @@ def doctor_command(
     if scope is DoctorScope.RELEASE and selected is not None:
         registry_control = create_registry_control(
             selected,
-            destinations=tuple(image.repository for image in repository.release_images),
+            destinations=tuple(image.repository for image in release_images),
         )
     try:
         with diagnostic_runtime(dependencies.tools) as (runtime, problems):

@@ -239,3 +239,18 @@ def test_missing_binfmt_handler_is_an_operational_failure(
 
     assert raised.value.exit_status is ExitStatus.OPERATIONAL_FAILURE
     assert raised.value.code is None
+
+
+def test_check_scope_needs_no_repository_configuration(tmp_path: Path) -> None:
+    observation = diagnose_environment(
+        None, cast(Any, _FakeRuntime(tmp_path)), scope=DoctorScope.CHECK
+    )
+
+    assert observation.scope is DoctorScope.CHECK
+
+
+def test_other_scopes_require_the_repository_configuration(tmp_path: Path) -> None:
+    with pytest.raises(InvalidInvocationError, match="needs the repository"):
+        diagnose_environment(
+            None, cast(Any, _FakeRuntime(tmp_path)), scope=DoctorScope.QUALIFY
+        )
