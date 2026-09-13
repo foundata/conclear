@@ -458,16 +458,10 @@ def _exercise_systemd_readiness(
         and manager is not None
         and bool(manager.stdout.strip())
     )
-    if manager is None:
-        results.append(
-            {
-                "name": "systemdManager",
-                "status": "failed",
-                "outcome": manager_observation.outcome,
-            }
-        )
-    else:
-        results.append(_command_test_result("systemdManager", manager, manager_passed))
+    manager_result = _health_test_result(manager_observation)
+    manager_result["name"] = "systemdManager"
+    manager_result["status"] = "passed" if manager_passed else "failed"
+    results.append(manager_result)
     if not manager_passed:
         findings.append(
             Finding("CC0403", "error", "Systemd manager is not operational")

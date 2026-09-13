@@ -1320,6 +1320,11 @@ def test_systemd_manager_query_is_retried_until_systemd_answers(
 
     results = {str(item["name"]): item for item in evidence.test_results}
     assert results["systemdManager"]["status"] == "passed"
+    assert results["systemdManager"]["outcome"] == "ready"
+    assert results["systemdManager"]["attempts"] == 3
+    assert results["systemdManager"]["exitStatus"] == 0
+    elapsed = results["systemdManager"]["elapsedSeconds"]
+    assert isinstance(elapsed, float) and elapsed > 0
     assert results["systemdUnit:multi-user.target"]["status"] == "passed"
     assert evidence.findings == ()
     assert len(runtime.manager_queries) == 3
@@ -1352,6 +1357,9 @@ def test_systemd_manager_query_that_never_answers_is_rejected(
 
     results = {str(item["name"]): item for item in evidence.test_results}
     assert results["systemdManager"]["status"] == "failed"
+    assert results["systemdManager"]["outcome"] == "timeout"
+    attempts = results["systemdManager"]["attempts"]
+    assert isinstance(attempts, int) and attempts >= 1
     assert {finding.check_id for finding in evidence.findings} == {"CC0403"}
     assert evidence.findings[0].message == "Systemd manager is not operational"
     assert all(
