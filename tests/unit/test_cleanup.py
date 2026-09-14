@@ -414,3 +414,20 @@ def test_retire_refuses_a_workspace_outside_the_state_home(tmp_path: Path) -> No
     with pytest.raises(OperationalError, match="Refusing to retire"):
         retire_run(run, state_home=tmp_path / "elsewhere")
     assert run.root.is_dir()
+
+
+def test_retire_accepts_a_qualification_without_a_release_profile(
+    tmp_path: Path,
+) -> None:
+    run = RunWorkspace.create(
+        state_home=tmp_path / "state",
+        immutable_inputs={"sourceRevision": "b" * 40, "profile": "none"},
+        id_factory=IdFactory(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    run.transition(RunState.QUALIFIED, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+
+    removed = retire_run(run, state_home=tmp_path / "state")
+
+    assert removed == run.root.resolve()
+    assert not run.root.exists()

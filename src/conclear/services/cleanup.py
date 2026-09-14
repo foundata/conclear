@@ -287,16 +287,17 @@ def workspace_size_bytes(root: Path) -> int:
 def retirable(snapshot: RunSnapshot) -> bool:
     """Return whether a run can never resume and may therefore be retired.
 
-    Promoted, completed and rejected runs are terminal. An interrupted run may
-    resume only when it is a release, which `release --resume` recognises by its
-    bound source revision; an interrupted rescan has nothing to resume.
+    Promoted, completed and rejected runs are terminal. `release --resume`
+    continues only a release, recognised by its bound source revision, and only
+    with the release profile the run was bound to; a run without a profile, such
+    as a local qualification, and an interrupted rescan have nothing to resume.
     """
     if snapshot.state in TERMINAL_STATES:
         return True
-    return (
-        snapshot.state is RunState.INCOMPLETE
-        and "sourceRevision" not in snapshot.immutable_inputs
-    )
+    inputs = snapshot.immutable_inputs
+    if inputs.get("profile") == "none":
+        return True
+    return snapshot.state is RunState.INCOMPLETE and "sourceRevision" not in inputs
 
 
 def retire_run(workspace: RunWorkspace, *, state_home: Path) -> Path:
@@ -311,8 +312,8 @@ def retire_run(workspace: RunWorkspace, *, state_home: Path) -> Path:
     if not retirable(snapshot):
         raise InvalidInvocationError(
             f"Run {workspace.run_id} is {snapshot.state.value}; only promoted, "
-            "completed or rejected runs, or interrupted runs that are not "
-            "releases, can be retired"
+            "completed or rejected runs, or runs that cannot resume (no release "
+            "profile, or interrupted without being a release), can be retired"
         )
     runs = (state_home / "conclear" / "runs").resolve()
     root = workspace.root.resolve()
