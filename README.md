@@ -297,6 +297,12 @@ name = "example"
 # Public URL where users find the code; it need not be a Git repository.
 source = "https://foundata.com/en/projects/example/#source"
 
+# Optional: where the project states its version. Every declared source must
+# agree with --version, or the release is rejected before the build.
+# [[project.version_sources]]
+# kind = "changelog"
+# path = "CHANGELOG.md"
+
 [[images]]
 id = "app"
 repository = "quay.io/foundata/example"

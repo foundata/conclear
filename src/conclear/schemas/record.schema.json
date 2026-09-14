@@ -635,6 +635,7 @@
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
         "appliedConfigurationExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedConfigurationException"}},
         "packageAssessment": {"$ref": "#/$defs/packageAssessment"},
+        "versionSources": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["kind", "path", "pattern", "observed", "matched"], "properties": {"kind": {"enum": ["changelog", "git-tag", "file"]}, "path": {"type": ["string", "null"]}, "pattern": {"type": ["string", "null"]}, "observed": {"type": "array", "items": {"type": "string"}}, "matched": {"type": "boolean"}}}},
         "setidInventory": {
           "type": "object",
           "additionalProperties": false,

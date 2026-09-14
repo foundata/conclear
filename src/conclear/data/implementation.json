@@ -73,10 +73,10 @@
     {
       "id": "IP0008",
       "summary": "Validate closed repository configuration and confine every configured source path",
-      "implementation": ["src/conclear/config.py", "src/conclear/schema.py", "src/conclear/path_safety.py", "src/conclear/parsing.py", "src/conclear/values.py"],
+      "implementation": ["src/conclear/config.py", "src/conclear/schema.py", "src/conclear/path_safety.py", "src/conclear/parsing.py", "src/conclear/values.py", "src/conclear/version_sources.py", "src/conclear/services/preflight.py"],
       "tests": [
         {"path": "tests/unit/test_config.py", "tier": "unit"},
-        {"path": "tests/unit/test_config_rejections.py", "tier": "unit"},
+        {"path": "tests/unit/test_config_rejections.py", "tier": "unit"}, {"path": "tests/unit/test_version_sources.py", "tier": "unit"},
         {"path": "tests/unit/test_path_safety.py", "tier": "unit"},
         {"path": "tests/unit/test_parsing.py", "tier": "unit"},
         {"path": "tests/unit/test_values.py", "tier": "unit"}

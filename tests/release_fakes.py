@@ -328,6 +328,10 @@ class FakeGit:
     def remove_worktree(self, repository: Path, destination: Path) -> None:
         self.removed.append((repository, destination))
 
+    def tags_at(self, repository: Path, revision: str) -> tuple[str, ...]:
+        del repository, revision
+        return ()
+
 
 class NoopRunner:
     """Reject unexpected repository hook execution."""

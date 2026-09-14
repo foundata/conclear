@@ -683,6 +683,16 @@ def test_podman_removes_mapped_trees_inside_the_namespace_with_a_throwaway_store
     assert runner.requests[0].operation is OperationKind.WRITE
 
 
+def test_git_adapter_lists_tags_pointing_at_a_revision(tmp_path: Path) -> None:
+    runner = FakeRunner(result("v1.2.3\nlatest\n\n"))
+    adapter = adapter_arguments(tmp_path, ToolName.GIT, runner).create(GitAdapter)
+
+    tags = adapter.tags_at(tmp_path, "a" * 40)
+
+    assert tags == ("latest", "v1.2.3")
+    assert runner.requests[0].argv[-3:] == ("tag", "--points-at", "a" * 40)
+
+
 def test_git_adapter_observes_full_source_facts(tmp_path: Path) -> None:
     revision = "a" * 40
     runner = FakeRunner(

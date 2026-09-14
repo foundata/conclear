@@ -263,6 +263,16 @@ candidate lifetime reductions and permitted exceptions. Paths resolve below the
 isolated source root and cannot escape through `..`, symlinks or archive
 entries.
 
+A project may declare where it states its release version in
+`[[project.version_sources]]`: the first versioned heading of a Keep a
+Changelog file, a Git tag pattern such as `v{version}` at the released
+revision, or a regular expression with `{version}` searched in a file. Before
+building, ConClear compares `--version` with every declared source by exact
+string equality and rejects a source that states another version or none
+(`CC0005`); the observations are retained in the platform record. ConClear
+never derives the version from a source, and a project without declared
+sources is unversioned and never rejected for it.
+
 The configured source is the project's public source URL: a credential-free
 absolute HTTPS URL, kept byte for byte including any fragment, through which
 users find the source code. It need not name a Git repository and is never

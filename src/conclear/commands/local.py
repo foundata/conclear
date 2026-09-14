@@ -25,7 +25,7 @@ from conclear.services.local_phases import (
     load_build_evidence,
     write_build_evidence,
 )
-from conclear.services.preflight import preflight_image_closure
+from conclear.services.preflight import preflight_image_closure, revision_tags
 from conclear.services.qualification import (
     build_platform,
     build_test_dependencies,
@@ -307,6 +307,13 @@ def qualify_command(
                 source_run.runtime, None if selected is None else selected.auth_file
             ),
             now=utc_now(),
+            version=inputs.version,
+            revision_tags=revision_tags(
+                source_run.repository,
+                source_run.runtime.git(),
+                Path(source_run.workspace.load().immutable_inputs["sourceRoot"]),
+                source_run.source.revision,
+            ),
         )
         if not preflight.accepted:
             source_run.workspace.transition(RunState.REJECTED)

@@ -46,6 +46,16 @@ class GitAdapter(ToolAdapter):
             raise OperationalError("Git returned an invalid commit timestamp") from exc
         return SourceObservation(revision, remote, commit_time)
 
+    def tags_at(self, repository: Path, revision: str) -> tuple[str, ...]:
+        """Return the tags that point at a revision, sorted."""
+        output = self._run(
+            ("-C", str(repository), "tag", "--points-at", revision),
+            timeout_seconds=30,
+        ).stdout
+        return tuple(
+            sorted(line.strip() for line in output.splitlines() if line.strip())
+        )
+
     def create_worktree(
         self, repository: Path, destination: Path, revision: str
     ) -> None:

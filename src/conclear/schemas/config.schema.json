@@ -134,7 +134,20 @@
       "required": ["name", "source"],
       "properties": {
         "name": {"$ref": "#/$defs/nonEmptyString"},
-        "source": {"type": "string", "format": "uri", "pattern": "^https://"}
+        "source": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "version_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+              "kind": {"enum": ["changelog", "git-tag", "file"]},
+              "path": {"$ref": "#/$defs/nonEmptyString"},
+              "pattern": {"$ref": "#/$defs/nonEmptyString"}
+            }
+          }
+        }
       }
     },
     "release": {

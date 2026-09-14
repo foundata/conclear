@@ -73,11 +73,27 @@ class ReleaseLimits:
 
 
 @dataclass(frozen=True, slots=True)
+class VersionSourceConfig:
+    """One declared place where the project states its release version.
+
+    `changelog` reads the first versioned Keep a Changelog heading of `path`,
+    `git-tag` expects a tag matching `pattern` at the released revision and
+    `file` searches `path` for the regular expression `pattern`; in both
+    patterns `{version}` stands for the release version.
+    """
+
+    kind: str
+    path: Path | None
+    pattern: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectConfig:
     """Observed project identity."""
 
     name: str
     source: str
+    version_sources: tuple[VersionSourceConfig, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -535,11 +551,64 @@ def load_repository_config(path: Path) -> RepositoryConfig:
         project=ProjectConfig(
             name=toml_string(project_value["name"]),
             source=validate_public_source_url(toml_string(project_value["source"])),
+            version_sources=_parse_version_sources(
+                _list(project_value.get("version_sources", [])), source_root
+            ),
         ),
         images=images,
         path=path.resolve(strict=True),
         raw_bytes=raw_bytes,
     )
+
+
+VERSION_SOURCE_KINDS = ("changelog", "git-tag", "file")
+
+
+def _parse_version_sources(
+    values: list[Any], source_root: Path
+) -> tuple[VersionSourceConfig, ...]:
+    sources: list[VersionSourceConfig] = []
+    for item in values:
+        table = toml_table(item)
+        kind = toml_string(table["kind"])
+        if kind not in VERSION_SOURCE_KINDS:
+            raise InvalidInvocationError(f"Unknown version source kind: {kind}")
+        path_value = table.get("path")
+        pattern_value = table.get("pattern")
+        needs_path = kind != "git-tag"
+        needs_pattern = kind != "changelog"
+        if needs_path != (path_value is not None):
+            raise InvalidInvocationError(
+                f"Version source {kind} {'requires' if needs_path else 'does not take'} a path"
+            )
+        if needs_pattern != (pattern_value is not None):
+            raise InvalidInvocationError(
+                f"Version source {kind} "
+                f"{'requires' if needs_pattern else 'does not take'} a pattern"
+            )
+        pattern = None if pattern_value is None else toml_string(pattern_value)
+        if pattern is not None:
+            if pattern.count("{version}") != 1:
+                raise InvalidInvocationError(
+                    f"Version source pattern must contain {{version}} once: {pattern}"
+                )
+            if kind == "file":
+                try:
+                    re.compile(pattern.replace("{version}", "x"))
+                except re.error as exc:
+                    raise InvalidInvocationError(
+                        f"Version source pattern is not a valid regular expression: {pattern}"
+                    ) from exc
+        path = (
+            None
+            if path_value is None
+            else contained_path(source_root, toml_string(path_value))
+        )
+        source = VersionSourceConfig(kind, path, pattern)
+        if source in sources:
+            raise InvalidInvocationError("Version sources must be unique")
+        sources.append(source)
+    return tuple(sources)
 
 
 def validate_public_source_url(value: str) -> str:

@@ -13,6 +13,7 @@
     {"id": "CC0002", "summary": "Keep configured and transported paths within their trusted root", "severity": "error", "behavior": "automated", "requirements": ["IG0149", "IG0273"]},
     {"id": "CC0003", "summary": "Reject unsafe release-profile ownership and permissions", "severity": "error", "behavior": "automated", "requirements": ["IG0373", "IG0374"]},
     {"id": "CC0004", "summary": "Require the observed Git origin to match a release-profile-allowed origin prefix", "severity": "error", "behavior": "automated", "requirements": ["IG0429"]},
+    {"id": "CC0005", "summary": "Compare the release version with every declared project version source", "severity": "error", "behavior": "automated", "requirements": ["IG0086"]},
     {"id": "CC0101", "summary": "Require UTF-8 Containerfiles with Unix line endings and a final newline", "severity": "error", "behavior": "automated", "requirements": ["IG0047"]},
     {"id": "CC0102", "summary": "Require uppercase Containerfile instruction keywords", "severity": "error", "behavior": "automated", "requirements": ["IG0048"]},
     {"id": "CC0103", "summary": "Reject Docker BuildKit parser directives and extensions", "severity": "error", "behavior": "automated", "requirements": ["IG0031", "IG0057"]},

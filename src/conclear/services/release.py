@@ -53,7 +53,7 @@ from conclear.services.assembly import assemble_candidate
 from conclear.services.attestation import attest_candidate
 from conclear.services.ci_context import resolve_ci_context
 from conclear.services.cleanup import cleanup_run
-from conclear.services.preflight import preflight_image_closure
+from conclear.services.preflight import preflight_image_closure, revision_tags
 from conclear.services.promotion import PromotionResult, promote_candidate
 from conclear.services.publication import PublishedCandidate, publish_candidate
 from conclear.services.qualification import qualify_platform
@@ -428,6 +428,10 @@ def _qualify_release(
         store=PinStore(request.state_home),
         resolver=AuthenticatedPinResolver(runtime, request.profile.auth_file),
         now=now_factory(),
+        version=request.version,
+        revision_tags=revision_tags(
+            repository, runtime.git(), request.repository, source.revision
+        ),
     )
     static_rejection = next(
         (item for item in preflight.static_findings if item.severity == "error"),

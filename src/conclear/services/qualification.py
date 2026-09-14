@@ -515,6 +515,7 @@ def qualify_platform(
         "buildArguments": dict(sorted(build.build_arguments.items())),
         "externalImages": [str(pin.reference) for pin in inputs.image.pins],
         "pinObservations": _pin_observation_values(preflight.primary),
+        "versionSources": [item.to_dict() for item in preflight.version_sources],
         "effectiveLimits": _effective_limits(inputs.image),
         "buildExecution": execution_observation(inputs),
         "testExecution": runtime_evidence.execution,
