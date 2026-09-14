@@ -1597,12 +1597,12 @@ publication, candidate expiration, referrers, partial signing, log inclusion and
 verification, tag races, promotion and candidate deletion. Destructive tests
 never target a shared production repository or use a release signing key.
 
-The
-[foundata declarative OpenLDAP image](https://github.com/foundata/oci-openldap-declarative)
-is a continuing end-to-end compatibility project. It exercises the documented
-supervisor contract, root-owned immutable runtime files, deployment-owned health
-checks and measured resource limits. Compatibility is asserted by running its
-normal release configuration, not by adding product-specific rules to ConClear.
+Projects already using ConClear, such as the
+[foundata declarative OpenLDAP image](https://github.com/foundata/oci-openldap-declarative),
+serve as continuing end-to-end checks. They exercise the documented supervisor
+contract, root-owned immutable runtime files, deployment-owned health checks and
+measured resource limits. Compatibility is asserted by running their normal
+release configuration, not by adding product-specific rules to ConClear.
 
 The acceptance test for release behavior is a complete workstation invocation
 from an ordinary checkout, even when that checkout is dirty: ConClear must
