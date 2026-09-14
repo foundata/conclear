@@ -1022,7 +1022,8 @@
         "signing": "none",
         "tools": [
           "git",
-          "buildah"
+          "buildah",
+          "skopeo"
         ],
         "transparencyLog": false
       },

@@ -85,7 +85,7 @@ COMMAND_DEPENDENCIES: Mapping[str, CommandDependencies] = {
     ),
     "pins apply": CommandDependencies(tools=(ToolName.GIT,)),
     "build": CommandDependencies(
-        tools=(ToolName.GIT, ToolName.BUILDAH),
+        tools=(ToolName.GIT, ToolName.BUILDAH, ToolName.SKOPEO),
         profile=ProfileUse.OPTIONAL,
         registry_access=RegistryAccess.READ,
     ),

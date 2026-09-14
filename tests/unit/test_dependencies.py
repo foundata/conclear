@@ -181,3 +181,12 @@ def test_profile_capabilities_fail_closed_for_writes_and_signing() -> None:
         _profile(auth_file=None, cosign_private_key=None),
         scope_dependencies("qualify"),
     )
+
+
+def test_build_declares_the_registry_reader_that_base_annotation_checks_need() -> None:
+    """A build verifies base annotations against the pinned base manifest."""
+    from conclear.dependencies import command_tools
+    from conclear.tools import ToolName
+
+    assert ToolName.SKOPEO in command_tools("build")
+    assert ToolName.SKOPEO in command_tools("qualify")
