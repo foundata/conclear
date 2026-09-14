@@ -59,6 +59,7 @@ from conclear.services.qualification_inputs import (
 )
 from conclear.services.runtime_lifecycle import RuntimeAdapter
 from conclear.services.runtime_tests import test_platform
+from conclear.setid_inventory import inventory_setid, setid_findings
 from conclear.source_integrity import require_source_integrity
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import (
@@ -438,6 +439,12 @@ def qualify_platform(
     build = verify_base_annotations(
         inputs, build_platform(inputs, builder), base_resolver
     )
+    setid_inventory = inventory_setid(
+        build.observation.layout_path, build.observation.graph.manifests[0].layers
+    )
+    inventory_findings = setid_findings(
+        setid_inventory, inputs.image.runtime.setid_paths
+    )
     dependency_builds = build_test_dependencies(inputs, builder)
     runtime_evidence = test_platform(
         inputs, build, runtime, hooks, dependencies=dependency_builds
@@ -467,6 +474,7 @@ def qualify_platform(
                     ),
                     *runtime_evidence.findings,
                     *scan_evidence.findings,
+                    *inventory_findings,
                 )
             ),
             key=lambda finding: (
@@ -528,6 +536,10 @@ def qualify_platform(
             item.to_dict() for item in scan_evidence.applied_configuration_exceptions
         ],
         "appliedRuntimeRequirements": list(scan_evidence.applied_runtime_requirements),
+        "setidInventory": {
+            **setid_inventory.to_dict(),
+            "declared": list(inputs.image.runtime.setid_paths),
+        },
         "packageAssessment": (
             None
             if scan_evidence.package_assessment is None

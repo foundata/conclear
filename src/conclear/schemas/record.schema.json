@@ -635,6 +635,70 @@
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
         "appliedConfigurationExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedConfigurationException"}},
         "packageAssessment": {"$ref": "#/$defs/packageAssessment"},
+        "setidInventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "executables",
+            "setgidDirectories",
+            "declared"
+          ],
+          "properties": {
+            "executables": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "mode",
+                  "uid",
+                  "gid",
+                  "aliases"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "pattern": "^0[0-7]{4}$"
+                  },
+                  "uid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "gid": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "aliases": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^/"
+                    }
+                  }
+                }
+              }
+            },
+            "setgidDirectories": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^/"
+              }
+            },
+            "declared": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^/"
+              }
+            }
+          }
+        },
         "appliedRuntimeRequirements": {
           "type": "array", "items": {
             "type": "object", "additionalProperties": false,

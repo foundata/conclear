@@ -49,6 +49,7 @@
     {"id": "CC0403", "summary": "Test startup, health, signal forwarding, shutdown and exit status", "severity": "error", "behavior": "automated", "requirements": ["IG0223", "IG0224", "IG0225", "IG0226", "IG0230", "IG0404"]},
     {"id": "CC0404", "summary": "Verify immutable runtime paths are root-owned and deny group/other writes", "severity": "error", "behavior": "automated", "requirements": ["IG0186", "IG0191"]},
     {"id": "CC0405", "summary": "Validate sudo policy and test permitted, denied and restricted escalation", "severity": "error", "behavior": "automated", "requirements": ["IG0422"]},
+    {"id": "CC0406", "summary": "Inventory set-ID executables of the merged filesystem against reviewed declarations", "severity": "error", "behavior": "automated", "requirements": ["IG0420"]},
     {"id": "CC0501", "summary": "Run local package, vulnerability, secret and configuration scans", "severity": "error", "behavior": "automated", "requirements": ["IG0148", "IG0203", "IG0264", "IG0295", "IG0297", "IG0298", "IG0299", "IG0304", "IG0308"]},
     {"id": "CC0502", "summary": "Reject fixable HIGH and CRITICAL findings without an exact exception", "severity": "error", "behavior": "automated", "requirements": ["IG0300", "IG0313"]},
     {"id": "CC0503", "summary": "Validate exception completeness, expiry and exact finding matches", "severity": "error", "behavior": "automated", "requirements": ["IG0309", "IG0310", "IG0311"]},

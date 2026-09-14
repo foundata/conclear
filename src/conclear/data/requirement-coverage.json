@@ -233,7 +233,6 @@
     {"id": "IG0417", "status": "manual", "rationale": "Build stage design is review."},
     {"id": "IG0418", "status": "manual", "rationale": "Runtime base suitability is review."},
     {"id": "IG0419", "status": "manual", "rationale": "Artifact provenance documentation is a project duty."},
-    {"id": "IG0420", "status": "manual", "rationale": "ConClear validates declared set-ID paths and permissions; reviewing the complete final-image inventory, including inherited executables, and each purpose remains manual."},
     {"id": "IG0421", "status": "manual", "rationale": "ConClear requires review metadata; the repository owner reviews its adequacy and revisits permissions at their declared triggers."},
     {"id": "IG0424", "status": "external", "rationale": "The organization assigns the operating owners; ConClear does not manage credentials, permissions, scheduling or remediation work."},
     {"id": "IG0425", "status": "external", "rationale": "The release owner maintains the supported-digest inventory, retained inputs, latest authoritative result and next due time."},

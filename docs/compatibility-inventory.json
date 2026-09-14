@@ -395,6 +395,14 @@
       },
       {
         "behavior": "automated",
+        "id": "CC0406",
+        "requirements": [
+          "IG0420"
+        ],
+        "severity": "error"
+      },
+      {
+        "behavior": "automated",
         "id": "CC0501",
         "requirements": [
           "IG0148",

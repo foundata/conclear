@@ -1154,9 +1154,20 @@ Set-ID inspection requires a POSIX shell, `sleep`, `readlink` and `stat`.
 Sudo tests also require `id`, `cat`, `env` and the image's sudo/visudo
 implementation. The probes are
 removed before the primary lifecycle test; declared launch fixtures are the
-same in each container. Final-image inventory and the adequacy of each
-authorization scope remain reviewed responsibilities, including undeclared
-privileged executables inherited from a base image.
+same in each container.
+
+ConClear also inventories the merged filesystem of every qualified layout
+without running anything from the image: it reads the layer archives in order,
+applies replacements, `.wh.` whiteouts and opaque directory markers, and lists
+every regular executable carrying a set-user-ID or set-group-ID bit with its
+mode, ownership and hard-link aliases. Set-group-ID directories are recorded
+separately because they grant no privilege. An executable that no declared
+sudo or `setid_requirements` path resolves to, through the image's symbolic
+links, and a declared path that is not a set-ID executable are `CC0406`
+rejections, so a base-image or dependency update cannot reintroduce an
+unreviewed privilege. The inventory is retained in the platform record. The
+adequacy of each declared executable and authorization scope remains a reviewed
+responsibility.
 
 For a systemd image, ConClear explicitly enables Podman's systemd mode and
 applies the `SIGRTMIN+3` stop signal. It verifies that PID 1 is `systemd`, that

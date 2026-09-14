@@ -416,7 +416,7 @@ def test_sudo_qualification_binds_permission_contract_and_test_report(
     database.mkdir()
     outcome = qualify_platform(
         value,
-        builder=Builder(),
+        builder=Builder(setid_paths=("/usr/bin/sudo",)),
         base_resolver=FakeBaseResolver(),
         runtime=PrivilegeRuntime(),
         hooks=hook_runner(value),

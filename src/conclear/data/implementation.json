@@ -238,13 +238,14 @@
     {
       "id": "IP0023",
       "summary": "Test reviewed root, sudo, set-ID and writable-root permissions with functional and restrictive controls independently of the lifecycle profile",
-      "implementation": ["src/conclear/config.py", "src/conclear/checks.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/privilege_tests.py", "src/conclear/services/runtime_lifecycle.py", "src/conclear/services/runtime_controls.py", "src/conclear/adapters/podman.py"],
+      "implementation": ["src/conclear/config.py", "src/conclear/checks.py", "src/conclear/setid_inventory.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/privilege_tests.py", "src/conclear/services/runtime_lifecycle.py", "src/conclear/services/runtime_controls.py", "src/conclear/adapters/podman.py"],
       "tests": [
         {"path": "tests/unit/test_config.py", "tier": "unit"},
         {"path": "tests/unit/test_checks.py", "tier": "unit"},
         {"path": "tests/unit/test_qualification.py", "tier": "unit"},
         {"path": "tests/unit/test_runtime_controls.py", "tier": "unit"},
         {"path": "tests/unit/test_privilege_contracts.py", "tier": "unit"},
+        {"path": "tests/unit/test_setid_inventory.py", "tier": "unit"},
         {"path": "tests/local_integration/test_sudo.py", "tier": "local_integration"},
         {"path": "tests/unit/test_adapters.py", "tier": "unit"}
       ]

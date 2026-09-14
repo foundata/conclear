@@ -73,6 +73,7 @@ below links every identifier to the guide.
 | `CC0403` | automated | error    | Test startup, health, signal forwarding, shutdown and exit status                                                                  | `IG0223`, `IG0224`, `IG0225`, `IG0226`, `IG0230`, `IG0404` |
 | `CC0404` | automated | error    | Verify immutable runtime paths are root-owned and deny group/other writes                                                          | `IG0186`, `IG0191` |
 | `CC0405` | automated | error    | Validate sudo policy and test permitted, denied and restricted escalation                                                          | `IG0422`           |
+| `CC0406` | automated | error    | Inventory set-ID executables of the merged filesystem against reviewed declarations                                                | `IG0420`           |
 | `CC0501` | automated | error    | Run local package, vulnerability, secret and configuration scans                                                                   | `IG0148`, `IG0203`, `IG0264`, `IG0295`, `IG0297`, `IG0298`, `IG0299`, `IG0304`, `IG0308` |
 | `CC0502` | automated | error    | Reject fixable HIGH and CRITICAL findings without an exact exception                                                               | `IG0300`, `IG0313` |
 | `CC0503` | automated | error    | Validate exception completeness, expiry and exact finding matches                                                                  | `IG0309`, `IG0310`, `IG0311` |
@@ -267,8 +268,8 @@ status.
 
 |   Status    | Requirements |
 | ----------- | -----------: |
-| automated   |          250 |
-| manual      |          144 |
+| automated   |          251 |
+| manual      |          143 |
 | external    |           33 |
 | unsupported |            7 |
 
@@ -693,7 +694,7 @@ status.
 | [`IG0417`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0417) | SHOULD     | [reference-containerfile](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#reference-containerfile)                                     | manual      | Build stage design is review. |
 | [`IG0418`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0418) | MUST       | [reference-containerfile](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#reference-containerfile)                                     | manual      | Runtime base suitability is review. |
 | [`IG0419`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0419) | MUST       | [reference-containerfile](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#reference-containerfile)                                     | manual      | Artifact provenance documentation is a project duty. |
-| [`IG0420`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0420) | MUST NOT   | [files-ownership-and-permissions](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#files-ownership-and-permissions)                     | manual      | ConClear validates declared set-ID paths and permissions; reviewing the complete final-image inventory, including inherited executables, and each purpose remains manual. |
+| [`IG0420`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0420) | MUST NOT   | [files-ownership-and-permissions](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#files-ownership-and-permissions)                     | automated   | `CC0406` |
 | [`IG0421`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0421) | MUST       | [users-and-runtime-filesystem](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#users-and-runtime-filesystem)                           | manual      | ConClear requires review metadata; the repository owner reviews its adequacy and revisits permissions at their declared triggers. |
 | [`IG0422`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0422) | MUST       | [linting-and-testing](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#linting-and-testing)                                             | automated   | `CC0405` |
 | [`IG0423`](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#ig0423) | MUST       | [vulnerability-and-configuration-scanning](https://github.com/foundata/guidelines/blob/b179c89cd51f79cdb7f6d713a3e260b781b8b121/oci-container-image-guide.md#vulnerability-and-configuration-scanning)   | automated   | `CC0505` |

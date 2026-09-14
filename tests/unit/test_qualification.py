@@ -1,5 +1,8 @@
+import gzip
+import io
 import json
 import shutil
+import tarfile
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -70,6 +73,18 @@ def write_blob(layout: Path, content: bytes) -> tuple[str, int]:
     return digest, len(content)
 
 
+def setid_layer(*paths: str) -> bytes:
+    """Return a gzip tar layer holding set-user-ID root executables at `paths`."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as archive:
+        for path in paths:
+            info = tarfile.TarInfo(path.lstrip("/"))
+            info.mode = 0o4755
+            info.size = 4
+            archive.addfile(info, io.BytesIO(b"exec"))
+    return gzip.compress(buffer.getvalue())
+
+
 class Builder:
     def __init__(
         self,
@@ -77,10 +92,12 @@ class Builder:
         invalid_labels: bool = False,
         observed_variant: str | None = None,
         extra_labels: dict[str, str] | None = None,
+        setid_paths: tuple[str, ...] = (),
     ) -> None:
         self.invalid_labels = invalid_labels
         self.observed_variant = observed_variant
         self.extra_labels = extra_labels or {}
+        self.setid_paths = setid_paths
 
     def build(self, **values: Any) -> BuildObservation:
         layout = values["layout_path"]
@@ -103,6 +120,17 @@ class Builder:
         if self.invalid_labels:
             labels["org.opencontainers.image.revision"] = "wrong"
         labels.update(self.extra_labels)
+        layers: list[dict[str, object]] = []
+        if self.setid_paths:
+            content = setid_layer(*self.setid_paths)
+            layer_digest, layer_size = write_blob(layout, content)
+            layers.append(
+                {
+                    "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                    "digest": layer_digest,
+                    "size": layer_size,
+                }
+            )
         observed_platform: dict[str, object] = {
             "architecture": platform.architecture,
             "os": "linux",
@@ -115,7 +143,10 @@ class Builder:
                 {
                     **observed_platform,
                     "config": {"User": "10001", "Labels": labels},
-                    "rootfs": {"type": "layers", "diff_ids": []},
+                    "rootfs": {
+                        "type": "layers",
+                        "diff_ids": [item["digest"] for item in layers],
+                    },
                 }
             ),
         )
@@ -131,7 +162,7 @@ class Builder:
                         "digest": config,
                         "size": config_size,
                     },
-                    "layers": [],
+                    "layers": layers,
                 }
             ),
         )
