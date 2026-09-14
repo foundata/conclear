@@ -377,12 +377,34 @@ def test_retire_removes_the_directory_of_a_terminal_run(tmp_path: Path) -> None:
     assert not run.root.exists()
 
 
-def test_retire_refuses_a_run_that_could_still_resume(tmp_path: Path) -> None:
-    run = workspace(tmp_path)
+def test_retire_refuses_a_release_that_could_still_resume(tmp_path: Path) -> None:
+    run = RunWorkspace.create(
+        state_home=tmp_path / "state",
+        immutable_inputs={"sourceRevision": "b" * 40, "version": "1.0.0"},
+        id_factory=IdFactory(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    for state in (RunState.CREATED, RunState.INCOMPLETE):
+        if state is not RunState.CREATED:
+            run.transition(state, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+        with pytest.raises(InvalidInvocationError, match="only promoted, completed"):
+            retire_run(run, state_home=tmp_path / "state")
+        assert run.root.is_dir()
 
+
+def test_retire_accepts_an_interrupted_run_that_is_not_a_release(
+    tmp_path: Path,
+) -> None:
+    running = workspace(tmp_path)
     with pytest.raises(InvalidInvocationError, match="only promoted, completed"):
-        retire_run(run, state_home=tmp_path / "state")
-    assert run.root.is_dir()
+        retire_run(running, state_home=tmp_path / "state")
+    assert running.root.is_dir()
+
+    running.transition(RunState.INCOMPLETE, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+    removed = retire_run(running, state_home=tmp_path / "state")
+
+    assert removed == running.root.resolve()
+    assert not running.root.exists()
 
 
 def test_retire_refuses_a_workspace_outside_the_state_home(tmp_path: Path) -> None:

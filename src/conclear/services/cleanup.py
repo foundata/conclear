@@ -16,6 +16,8 @@ from conclear.workspace import (
     ResourceEntry,
     ResourceKind,
     ResourceStatus,
+    RunSnapshot,
+    RunState,
     RunWorkspace,
 )
 
@@ -282,19 +284,35 @@ def workspace_size_bytes(root: Path) -> int:
     return total
 
 
+def retirable(snapshot: RunSnapshot) -> bool:
+    """Return whether a run can never resume and may therefore be retired.
+
+    Promoted, completed and rejected runs are terminal. An interrupted run may
+    resume only when it is a release, which `release --resume` recognises by its
+    bound source revision; an interrupted rescan has nothing to resume.
+    """
+    if snapshot.state in TERMINAL_STATES:
+        return True
+    return (
+        snapshot.state is RunState.INCOMPLETE
+        and "sourceRevision" not in snapshot.immutable_inputs
+    )
+
+
 def retire_run(workspace: RunWorkspace, *, state_home: Path) -> Path:
-    """Delete the whole workspace of a run in a terminal state.
+    """Delete the whole workspace of a run that can never resume.
 
     Layouts and records stay after ordinary cleanup because an interrupted
-    release needs them to resume. A promoted, completed or rejected run can
-    never resume, so once its archive is safely retained its directory is only
-    disk usage. The caller is responsible for that retention judgement.
+    release needs them to resume. Once a run is terminal, or interrupted without
+    a resume path, its directory is only disk usage after its archive is safely
+    retained. The caller is responsible for that retention judgement.
     """
     snapshot = workspace.load()
-    if snapshot.state not in TERMINAL_STATES:
+    if not retirable(snapshot):
         raise InvalidInvocationError(
             f"Run {workspace.run_id} is {snapshot.state.value}; only promoted, "
-            "completed or rejected runs can be retired"
+            "completed or rejected runs, or interrupted runs that are not "
+            "releases, can be retired"
         )
     runs = (state_home / "conclear" / "runs").resolve()
     root = workspace.root.resolve()

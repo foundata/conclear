@@ -39,7 +39,12 @@ from conclear.release_profile import ReleaseProfile
 from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime, ToolProblem
 from conclear.services.archive_rescan import ArchiveRescanInput, archived_rescan_input
-from conclear.services.cleanup import cleanup_run, retire_run, workspace_size_bytes
+from conclear.services.cleanup import (
+    cleanup_run,
+    retirable,
+    retire_run,
+    workspace_size_bytes,
+)
 from conclear.services.doctor import DoctorScope, diagnose_environment
 from conclear.services.registry_diagnostics import DiagnosticStatus
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
@@ -53,7 +58,6 @@ from conclear.tools import ToolName
 from conclear.triage import load_triage
 from conclear.values import OCIReference, validate_release_version
 from conclear.workspace import (
-    TERMINAL_STATES,
     ResourceKind,
     ResourceStatus,
     RunWorkspace,
@@ -488,10 +492,9 @@ def cleanup_command(
             f"Run {run_id} is {snapshot.state.value}; its directory keeps layouts "
             f"and evidence ({size:.0f} MiB) at {workspace.root}"
         )
-        if snapshot.state in TERMINAL_STATES:
+        if retirable(snapshot):
             details.append(
-                "Once the release archive is safely retained, rerun with --retire "
-                "to delete it"
+                "Once its archive is safely retained, rerun with --retire to delete it"
             )
     emit(
         CommandResult(

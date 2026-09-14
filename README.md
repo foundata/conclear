@@ -394,7 +394,9 @@ conclear cleanup "<run-id>" --profile foundata --retire
 ```
 
 `--retire` also deletes the run directory with its layouts and evidence once the
-run is finished; omit it to keep the directory for inspection.
+run is finished; omit it to keep the directory for inspection. A failed rescan
+can be retired the same way. An interrupted release cannot, because it may
+still resume.
 
 
 ### Advanced<a id="usage-advanced"></a>
