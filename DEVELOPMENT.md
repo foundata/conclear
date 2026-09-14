@@ -646,6 +646,58 @@ then remove only manifest-owned registry resources. Interrupted commands may
 leave additional journaled resources; reconcile the dedicated state directory
 before declaring cleanup complete. No result report belongs in this checkout.
 
+#### External drill
+
+Release step 7 drills the installed wheel against a project that already uses
+ConClear. Keep everything for one drill below one workspace outside this
+checkout, with a JSON evidence index that names the candidate revision, the
+disposable registry resources, every stage result and every observation. The
+network tests read that index as `CONCLEAR_TEST_RESOURCE_MANIFEST`.
+
+```text
+<workspace>/
+  manifest.json      evidence index
+  secrets/           copies of the disposable robot auth, API token, test key
+  wheel-env/         virtual environment installed from the retained wheel only
+  project/           consumer project clone with drill-only commits on top
+  consumer/          XDG config, state and cache homes for the dogfood CLI
+  artifacts/ logs/   one JSON result and one stderr file per command
+```
+
+The drill-only commits point every image at the disposable repository and
+change nothing else. Keep the clone's `origin` URL at the public project so the
+profile's source-origin allowlist sees the real origin (CC0004). Run every
+command from the clone with `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and
+`XDG_CACHE_HOME` set to the consumer homes and a disposable release profile in
+that config home.
+
+Stages, in dependency order, each recorded in the index:
+
+1. The complete local tier, alone.
+2. Installed identity: `version --format json`, and the command set from
+   `--help` compared with the compatibility inventory.
+3. `check` and `pins check` for every image of the consumer project.
+4. The network baseline and the repeat-release lifecycle test, with a fresh
+   fixture version per attempt: the same source and version reproduce the same
+   digest, and signed attestations survive tag deletion until garbage
+   collection.
+5. Part A: `release` of one image on all its platforms, arm64 through emulation
+   when no hardware is available.
+6. Part B: the composable path on the same image with a new version: `qualify`
+   per platform, `transport export` per worker, then `assemble`, `provenance`,
+   `publish`, `attest`, `verify` and `promote` as separate invocations.
+7. Part C: `qualify` of every further image, including one whose configuration
+   declares exceptions, checking the applied exceptions in the platform record.
+8. Independent verification: `skopeo inspect` of every promoted tag,
+   `cosign verify` and `cosign verify-attestation` for the SBOM and provenance
+   types, `archive verify` for every archive, one authoritative `rescan`.
+
+Afterwards, `cleanup --retire` every run in the consumer state home, remove only
+index-owned tags from the disposable repositories, and archive the index. Any
+change to a tracked file of this repository supersedes the candidate: record the
+superseded revision with its results in the index, rebuild `wheel-env` from the
+new retained wheel and repeat from stage 1.
+
 
 ## Generated conformance catalog<a id="conformance-catalog"></a>
 
@@ -1117,7 +1169,8 @@ test workspaces and resource manifests outside the repository.
    `verify` and `promote` as separate invocations. This proves run reopening and
    first-use tool binding, which the monolithic command cannot. Verify that the
    disposable registry and every run workspace have no unresolved owned
-   resources.
+   resources. [External drill](#external-drill) describes the workspace layout
+   and the stage order.
 
 8. **Freeze the validated candidate.** Confirm that every result of steps 4 to 7
    belongs to the candidate revision named in `artifacts.json`. Do not continue
