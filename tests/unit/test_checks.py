@@ -479,7 +479,10 @@ def test_hadolint_diagnostics_use_the_adapter_check_identifier(
     finding = outcome.findings[0]
     assert finding.check_id == "CC0114"
     assert finding.severity == "error"
-    assert finding.message == "Hadolint DL3003: Use WORKDIR to switch to a directory"
+    assert (
+        finding.message
+        == "Hadolint DL3003 (error): Use WORKDIR to switch to a directory"
+    )
     assert finding.location == "Containerfile:7:5"
     # DL3008 and DL3041 demand exact distribution package versions, which the
     # guide forbids by default (IG0181); they never surface as findings.
@@ -738,3 +741,58 @@ def test_scratch_builds_carry_only_buildahs_empty_base_annotations() -> None:
         ("CC0118", "org.opencontainers.image.base.name"),
         ("CC0118", "org.opencontainers.image.vendor"),
     ]
+
+
+class AdvisoryHadolint:
+    def check(
+        self, _containerfile: Path, *, config_directory: Path
+    ) -> tuple[HadolintFinding, ...]:
+        del config_directory
+        return (
+            HadolintFinding(
+                code="DL3059",
+                level="info",
+                message="Multiple consecutive `RUN` instructions",
+                line=11,
+                column=1,
+            ),
+            HadolintFinding(
+                code="DL3015",
+                level="style",
+                message="Avoid additional packages by specifying `--no-install-recommends`",
+                line=12,
+                column=1,
+            ),
+            HadolintFinding(
+                code="DL1000",
+                level="surprise",
+                message="A level this adapter has never seen",
+                line=13,
+                column=1,
+            ),
+        )
+
+
+def test_advisory_hadolint_levels_become_info_and_name_the_upstream_level(
+    repository_factory: Callable[..., Path],
+) -> None:
+    """`info` and `style` are advice; an unknown level must not be downgraded."""
+    root = repository_factory()
+    config = load_repository_config(root / "conclear.toml")
+
+    outcome = check_image(config.release_image("app"), cast(Any, AdvisoryHadolint()))
+
+    # Findings sort by location, so the order follows the Containerfile lines.
+    assert [(item.severity, item.message) for item in outcome.findings] == [
+        ("info", "Hadolint DL3059 (info): Multiple consecutive `RUN` instructions"),
+        (
+            "info",
+            "Hadolint DL3015 (style): Avoid additional packages by specifying "
+            "`--no-install-recommends`",
+        ),
+        ("error", "Hadolint DL1000 (surprise): A level this adapter has never seen"),
+    ]
+    # Only an error rejects, so advice never blocks a build.
+    assert not outcome.accepted
+    advisory_only = tuple(item for item in outcome.findings if item.severity == "info")
+    assert all(item.check_id == "CC0114" for item in advisory_only)

@@ -30,6 +30,18 @@ class CheckOutcome:
         return not any(finding.severity == "error" for finding in self.findings)
 
 
+# Hadolint classifies its own output; ConClear keeps three severities and states
+# the tool's level in the message. `error` rejects, `warning` asks for a look and
+# `info` is advice this project does not police. An unknown level is treated as
+# an error rather than silently downgraded.
+_HADOLINT_SEVERITY = {
+    "error": "error",
+    "warning": "warning",
+    "info": "info",
+    "style": "info",
+}
+
+
 def check_image(image: ImageConfig, hadolint: HadolintAdapter) -> CheckOutcome:
     """Run deterministic source checks and the supported Hadolint adapter."""
     findings = list(check_image_static(image))
@@ -42,12 +54,11 @@ def check_image(image: ImageConfig, hadolint: HadolintAdapter) -> CheckOutcome:
             and image.runtime.root_requirement is not None
         ):
             continue
-        severity = "warning" if item.level in {"warning", "info", "style"} else "error"
         findings.append(
             Finding(
                 check_id="CC0114",
-                severity=severity,
-                message=f"Hadolint {item.code}: {item.message}",
+                severity=_HADOLINT_SEVERITY.get(item.level, "error"),
+                message=f"Hadolint {item.code} ({item.level}): {item.message}",
                 location=f"{evidence_path(image.containerfile, image.context)}:{item.line}:{item.column}",
             )
         )

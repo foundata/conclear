@@ -225,6 +225,13 @@ rule; removal leaves a retired entry so historical findings remain
 understandable. Findings, narrow suppressions and documentation use these
 identifiers.
 
+A finding carries one of three severities. `error` rejects the command,
+`warning` reports something the project polices but does not reject, and `info`
+is advice this project does not police, such as a style hint from an external
+linter. Only `error` changes a verdict; a finding that names an external tool
+also states that tool's own level, so its taxonomy stays visible without
+entering this contract.
+
 One machine-readable check catalog is the implementation source for each
 identifier, summary, severity, automatable behavior and the guide requirement
 identifiers (`IGnnnn`) the check covers. ConClear ships the guide's requirement
