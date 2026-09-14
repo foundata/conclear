@@ -554,16 +554,23 @@ Maintain your supported-release inventory and schedules separately.
 
 #### Retiring a published tag<a id="usage-retire-tag"></a>
 
-Remove the referrers before the tag, or they stay behind as orphans. Cosign
-needs the same `DOCKER_CONFIG` credentials as above:
+Delete tags through the registry's own API with the same token ConClear uses
+for its owned tags. On Quay a robot account with write access cannot delete
+through `skopeo delete`, and `cosign clean` does not remove OCI referrers:
 
 ```sh
-cosign clean --type all --force "${image}:${version}"   # signature, SBOM, provenance, verification
-skopeo delete "docker://${image}:${version}"
+api="https://quay.io/api/v1/repository/foundata/example"
+for tag in latest "${version}"; do
+  curl -X DELETE -H "Authorization: Bearer $(cat ~/.config/conclear/quay.token)" "${api}/tag/${tag}"
+done
+skopeo list-tags "docker://${image}"
 ```
 
-Repoint or delete `latest` yourself. Transparency-log entries are permanent;
-the release archive remains your evidence.
+Quay drops the manifest with its last tag and garbage-collects the signatures
+and attestations that referred to it. Transparency-log entries are permanent;
+the release archive remains your evidence, and `conclear archive verify` still
+works on it. A rescan of a retired subject fails because the registry no longer
+holds it.
 
 
 #### Distributed qualification<a id="usage-distributed"></a>
