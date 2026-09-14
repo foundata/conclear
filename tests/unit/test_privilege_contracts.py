@@ -561,3 +561,34 @@ def test_presence_only_cannot_omit_an_installed_setid_sudo(
     else:
         findings, results = probe()
         assert not findings and results[0]["status"] == "passed"
+
+
+def test_escalation_under_emulation_needs_the_credentials_flag(
+    repository_factory: Callable[..., Path], tmp_path: Path
+) -> None:
+    from conclear.errors import OperationalError as _OperationalError
+    from conclear.services.privilege_tests import require_emulated_escalation_support
+    from conclear.values import Platform as _Platform
+
+    path = configure_sudo(repository_factory(), mode="escalation")
+    value = inputs(path.parent, tmp_path)
+    binfmt = tmp_path / "binfmt"
+    binfmt.mkdir()
+    handler = binfmt / "qemu-aarch64"
+    emulated = replace(
+        value, platform=_Platform.parse("linux/arm64"), binfmt_root=binfmt
+    )
+
+    handler.write_text(
+        "enabled\ninterpreter /usr/bin/qemu-aarch64-static\nflags: F\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(_OperationalError, match="without C"):
+        require_emulated_escalation_support(emulated)
+
+    handler.write_text(
+        "enabled\ninterpreter /usr/bin/qemu-aarch64-static\nflags: FC\n",
+        encoding="utf-8",
+    )
+    require_emulated_escalation_support(emulated)
+    require_emulated_escalation_support(value)

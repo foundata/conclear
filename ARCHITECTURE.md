@@ -1161,6 +1161,10 @@ also receives a restrictive probe with read-only root, no capabilities and
 `no-new-privileges`. Sudo escalation must fail there. Generic restrictive probes
 check effective controls without requiring administrative startup to succeed.
 Set-ID inspection requires a POSIX shell, `sleep`, `readlink` and `stat`.
+Escalation tests on an emulated platform need a `binfmt_misc` handler
+registered with the `C` flag, because without it a set-user-ID binary runs with
+the caller's credentials under user-mode emulation; ConClear refuses the test
+with the host cause instead of reporting a policy failure.
 Sudo tests also require `id`, `cat`, `env` and the image's sudo/visudo
 implementation. The probes are
 removed before the primary lifecycle test; declared launch fixtures are the

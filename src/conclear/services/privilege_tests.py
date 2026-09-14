@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 
 from conclear.adapters.podman import BindMount, ExecObservation
 from conclear.config import SudoRequirement, SudoTestConfig
+from conclear.emulation import detect_execution_mode
 from conclear.errors import OperationalError
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
 from conclear.presentation import Finding
@@ -17,6 +18,26 @@ from conclear.workspace import ResourceKind, ResourceStatus
 
 LOGGER = logging.getLogger(__name__)
 _KEEPALIVE = ("/bin/sh", "-c", "trap 'exit 0' TERM; while :; do sleep 1; done")
+
+
+def require_emulated_escalation_support(inputs: QualificationInputs) -> None:
+    """Refuse escalation tests under an emulation handler without credentials.
+
+    A `binfmt_misc` handler registered without the `C` flag runs a set-user-ID
+    binary with the caller's credentials, so `sudo` cannot become root under
+    user-mode emulation and every escalation test would fail for a reason the
+    image cannot fix. Naming the host cause beats a misleading rejection.
+    """
+    mode = detect_execution_mode(
+        inputs.host_architecture, inputs.platform, binfmt_root=inputs.binfmt_root
+    )
+    if mode.handler is not None and "C" not in mode.handler.flags:
+        raise OperationalError(
+            f"Set-ID escalation cannot be tested under user-mode emulation: the "
+            f"binfmt handler {mode.handler.name} for {inputs.platform} has flags "
+            f"'{mode.handler.flags}' without C (credentials); register it with "
+            f"C or test {inputs.platform} natively"
+        )
 
 
 def test_privileges(
@@ -33,6 +54,11 @@ def test_privileges(
     needs_inspection = configured.sudo_requirement is not None or bool(
         configured.setid_paths
     )
+    if (
+        configured.sudo_requirement is not None
+        and configured.sudo_requirement.mode == "escalation"
+    ):
+        require_emulated_escalation_support(inputs)
     modes = (["functional"] if needs_inspection else []) + (
         ["restrictive"] if configured.requires_restrictive_test else []
     )
