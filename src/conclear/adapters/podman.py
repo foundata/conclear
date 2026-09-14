@@ -1,5 +1,6 @@
 """Rootless Podman runtime-test adapter."""
 
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -422,7 +423,7 @@ class PodmanAdapter(ToolAdapter):
         peak_pids = _read_counter(cgroup / "pids.peak")
         if peak_pids is None:
             peak_pids = _read_counter(cgroup / "pids.current")
-        processes = _read_counters(cgroup / "cgroup.procs")
+        processes = _cgroup_processes(cgroup)
         open_files: int | None = None
         if processes:
             try:
@@ -578,6 +579,20 @@ class PodmanAdapter(ToolAdapter):
             timeout_seconds=300,
             operation=OperationKind.WRITE,
         )
+
+
+def _cgroup_processes(cgroup: Path) -> tuple[int, ...]:
+    """Collect the processes of a cgroup and its children.
+
+    The peaks of the top-level files aggregate the whole subtree, but each
+    `cgroup.procs` lists only direct members, and the systemd manager places
+    the container's processes in a child of the scope.
+    """
+    found: list[int] = []
+    for directory, _children, files in os.walk(cgroup):
+        if "cgroup.procs" in files:
+            found.extend(_read_counters(Path(directory) / "cgroup.procs"))
+    return tuple(sorted(set(found)))
 
 
 def _read_counter(path: Path) -> int | None:

@@ -617,7 +617,10 @@ def test_podman_observes_footprint_from_cgroup_files_and_counts_files_in_namespa
     scope.mkdir(parents=True)
     (scope / "memory.peak").write_text("65011712\n", encoding="ascii")
     (scope / "pids.peak").write_text("9\n", encoding="ascii")
-    (scope / "cgroup.procs").write_text("4242\n4243\n", encoding="ascii")
+    # The systemd manager keeps the container's processes in a child cgroup.
+    (scope / "cgroup.procs").write_text("", encoding="ascii")
+    (scope / "container").mkdir()
+    (scope / "container" / "cgroup.procs").write_text("4243\n4242\n", encoding="ascii")
     runner = FakeRunner(result("/user.slice/libpod-abc.scope\n"), result("94\n"))
     adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
 
