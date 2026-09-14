@@ -1670,12 +1670,14 @@ publication, candidate expiration, referrers, partial signing, log inclusion and
 verification, tag races, promotion and candidate deletion. Destructive tests
 never target a shared production repository or use a release signing key.
 
-Projects already using ConClear, such as the
-[foundata declarative OpenLDAP image](https://github.com/foundata/oci-openldap-declarative),
-serve as continuing end-to-end checks. They exercise the documented supervisor
-contract, root-owned immutable runtime files, deployment-owned health checks and
-measured resource limits. Compatibility is asserted by running their normal
-release configuration, not by adding product-specific rules to ConClear.
+The dedicated drill project
+[oci-conclear-drill](https://github.com/foundata/oci-conclear-drill) serves as
+the continuing end-to-end check. Its synthetic images exercise every runtime
+profile, the documented supervisor contract, root-owned immutable runtime
+files, health checks, measured resource limits, hooks, exceptions and the
+negative cases a real project must never carry. Compatibility with real
+projects is asserted by running their normal release configuration, not by
+adding product-specific rules to ConClear.
 
 The acceptance test for release behavior is a complete workstation invocation
 from an ordinary checkout, even when that checkout is dirty: ConClear must

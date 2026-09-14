@@ -648,55 +648,20 @@ before declaring cleanup complete. No result report belongs in this checkout.
 
 #### External drill
 
-Release step 7 drills the installed wheel against a project that already uses
-ConClear. Keep everything for one drill below one workspace outside this
-checkout, with a JSON evidence index that names the candidate revision, the
-disposable registry resources, every stage result and every observation. The
-network tests read that index as `CONCLEAR_TEST_RESOURCE_MANIFEST`.
+The release drill lives in
+[oci-conclear-drill](https://github.com/foundata/oci-conclear-drill): four
+synthetic images covering the `service`, `systemd` and `one-shot` profiles plus
+a test-only dependency, hooks, exceptions, version sources, negative cases and
+the scripts that run everything against a disposable registry. It depends on no
+product, so a drill failure means the release procedure failed, not that a
+consumer changed.
 
-```text
-<workspace>/
-  manifest.json      evidence index
-  secrets/           copies of the disposable robot auth, API token, test key
-  wheel-env/         virtual environment installed from the retained wheel only
-  project/           consumer project clone with drill-only commits on top
-  consumer/          XDG config, state and cache homes for the dogfood CLI
-  artifacts/ logs/   one JSON result and one stderr file per command
-```
-
-The drill-only commits point every image at the disposable repository and
-change nothing else. Keep the clone's `origin` URL at the public project so the
-profile's source-origin allowlist sees the real origin (CC0004). Run every
-command from the clone with `XDG_CONFIG_HOME`, `XDG_STATE_HOME` and
-`XDG_CACHE_HOME` set to the consumer homes and a disposable release profile in
-that config home.
-
-Stages, in dependency order, each recorded in the index:
-
-1. The complete local tier, alone.
-2. Installed identity: `version --format json`, and the command set from
-   `--help` compared with the compatibility inventory.
-3. `check` and `pins check` for every image of the consumer project.
-4. The network baseline and the repeat-release lifecycle test, with a fresh
-   fixture version per attempt: the same source and version reproduce the same
-   digest, and signed attestations survive tag deletion until garbage
-   collection.
-5. Part A: `release` of one image on all its platforms, arm64 through emulation
-   when no hardware is available.
-6. Part B: the composable path on the same image with a new version: `qualify`
-   per platform, `transport export` per worker, then `assemble`, `provenance`,
-   `publish`, `attest`, `verify` and `promote` as separate invocations.
-7. Part C: `qualify` of every further image, including one whose configuration
-   declares exceptions, checking the applied exceptions in the platform record.
-8. Independent verification: `skopeo inspect` of every promoted tag,
-   `cosign verify` and `cosign verify-attestation` for the SBOM and provenance
-   types, `archive verify` for every archive, one authoritative `rescan`.
-
-Afterwards, `cleanup --retire` every run in the consumer state home, remove only
-index-owned tags from the disposable repositories, and archive the index. Any
-change to a tracked file of this repository supersedes the candidate: record the
-superseded revision with its results in the index, rebuild `wheel-env` from the
-new retained wheel and repeat from stage 1.
+This repository owns three things in that procedure: the retained candidate
+wheel the drill installs, the network tests of step 7 (the drill's
+`lifecycle-fixture.sh` provides their single-image fixture), and the retention
+of the drill's `manifest.json` with the candidate's other evidence. Any change
+to a tracked file of this repository supersedes the candidate: rebuild the
+wheel, note the superseded revision and repeat from step 4.
 
 
 ## Generated conformance catalog<a id="conformance-catalog"></a>
@@ -1108,7 +1073,7 @@ test workspaces and resource manifests outside the repository.
    Supply `CONCLEAR_TEST_TRIVY_DOWNLOAD=1` only when the recorded cache needs a
    database snapshot. An emulation skip means the platform remains unverified.
 
-6. **Verify the installed identity against a project already using ConClear.**
+6. **Verify the installed identity against the drill project.**
    The installed command must report the selected version, candidate revision
    and embedded guide revision. Its help hierarchy must agree with the
    compatibility inventory.
@@ -1119,12 +1084,13 @@ test workspaces and resource manifests outside the repository.
    ```
 
    From the retained wheel, run `conclear check` and `conclear pins check` for
-   every image of one of our projects already using ConClear, for example
-   [oci-openldap-declarative](https://github.com/foundata/oci-openldap-declarative).
-   Record every `CCnnnn` finding verbatim and do not add an exception to obtain
-   an accepted result. Also complete one `conclear qualify` with Cosign absent
-   from the executable search path; qualification must not acquire a signing
-   dependency.
+   every image of the drill project
+   [oci-conclear-drill](https://github.com/foundata/oci-conclear-drill), which
+   exists only to exercise ConClear and depends on no product. Record every
+   `CCnnnn` finding verbatim and do not add an exception to obtain an accepted
+   result. Also complete one `conclear qualify` of its `service` image with
+   Cosign absent from the executable search path; qualification must not acquire
+   a signing dependency.
 
 7. **Exercise the external trust boundaries.** Follow
    [Network tests](#network-tests) with an explicitly authorized disposable Quay
@@ -1148,29 +1114,28 @@ test workspaces and resource manifests outside the repository.
    uv run pytest -m network -rs
    ```
 
-   Run a complete `conclear release` of a project already using ConClear into a
-   disposable repository. It must cover publication, attestation, verification,
-   promotion, public transparency-log verification and candidate cleanup. Run an
-   arm64 qualification on native hardware or through an enabled emulation
-   handler.
+   The repeat-release lifecycle test needs a single-image fixture; the drill
+   project's `drill/lifecycle-fixture.sh` creates it for the scenario version.
+
+   Then run the release drill of
+   [oci-conclear-drill](https://github.com/foundata/oci-conclear-drill) against
+   the retained wheel, following its `DEVELOPMENT.md`:
 
    ```sh
-   "${dogfood}/bin/conclear" release \
-     --source <project-checkout> \
-     --revision <full-project-revision> \
-     --image <image-id> \
-     --version <disposable-release-version> \
-     --profile <disposable-release-profile> \
-     --format json
+   drill/prepare.sh --wheel "${distribution}/conclear-${version}-py3-none-any.whl" --workspace "${workspace}"
+   drill/run.sh --workspace "${workspace}"
+   drill/verify.sh --workspace "${workspace}"
    ```
 
-   Exercise the composable path separately: `qualify` and `transport export` on
-   each worker, followed by `assemble`, `provenance`, `publish`, `attest`,
-   `verify` and `promote` as separate invocations. This proves run reopening and
-   first-use tool binding, which the monolithic command cannot. Verify that the
-   disposable registry and every run workspace have no unresolved owned
-   resources. [External drill](#external-drill) describes the workspace layout
-   and the stage order.
+   The drill releases every profile ConClear supports on `linux/amd64` and
+   `linux/arm64` (emulated where no hardware is available), runs the composable
+   path with `qualify` and `transport export` per worker followed by `assemble`,
+   `provenance`, `publish`, `attest`, `verify` and `promote` as separate
+   invocations, rejects every negative case by its expected check, verifies the
+   promoted images independently and retires its runs. Every stage must be
+   `passed` in the drill's `manifest.json`; keep that file with the candidate's
+   evidence. See [External drill](#external-drill) for what this repository owns
+   in that procedure.
 
 8. **Freeze the validated candidate.** Confirm that every result of steps 4 to 7
    belongs to the candidate revision named in `artifacts.json`. Do not continue
