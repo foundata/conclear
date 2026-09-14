@@ -1,6 +1,6 @@
 {
  "schemaVersion": 1,
- "guideRevision": "cd95e231b73e023d91b47c91c58fc6acadf56f61",
+ "guideRevision": "b179c89cd51f79cdb7f6d713a3e260b781b8b121",
  "requirements": [
   {
    "id": "IG0001",
@@ -2170,7 +2170,7 @@
    "modality": "MUST",
    "section": "Vulnerability and configuration scanning",
    "anchor": "vulnerability-and-configuration-scanning",
-   "text": "Identify the image, component and advisory; explain the lack of remediation; assess reachability and exposure; list compensating controls; and name the accountable owner, expiry and review trigger."
+   "text": "For a vulnerability finding: identify the image, component and advisory; explain the lack of remediation; assess reachability and exposure; and list compensating controls. For a configuration finding: identify the image, the file path or path pattern inside the image and the check identifiers it covers, and explain why the flagged content is acceptable, for example a template shipped inside an installed package that is not the image's own build definition. In both cases name the accountable owner, expiry and review trigger."
   },
   {
    "id": "IG0311",
