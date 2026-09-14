@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -387,7 +388,7 @@ def test_retire_refuses_a_release_that_could_still_resume(tmp_path: Path) -> Non
     for state in (RunState.CREATED, RunState.INCOMPLETE):
         if state is not RunState.CREATED:
             run.transition(state, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
-        with pytest.raises(InvalidInvocationError, match="only promoted, completed"):
+        with pytest.raises(InvalidInvocationError, match="could still resume"):
             retire_run(run, state_home=tmp_path / "state")
         assert run.root.is_dir()
 
@@ -396,7 +397,7 @@ def test_retire_accepts_an_interrupted_run_that_is_not_a_release(
     tmp_path: Path,
 ) -> None:
     running = workspace(tmp_path)
-    with pytest.raises(InvalidInvocationError, match="only promoted, completed"):
+    with pytest.raises(InvalidInvocationError, match="could still resume"):
         retire_run(running, state_home=tmp_path / "state")
     assert running.root.is_dir()
 
@@ -428,6 +429,67 @@ def test_retire_accepts_a_qualification_without_a_release_profile(
     run.transition(RunState.QUALIFIED, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
 
     removed = retire_run(run, state_home=tmp_path / "state")
+
+    assert removed == run.root.resolve()
+    assert not run.root.exists()
+
+
+def _release_run_with_window(tmp_path: Path, expires_at: str) -> RunWorkspace:
+    run = RunWorkspace.create(
+        state_home=tmp_path / "state",
+        immutable_inputs={"sourceRevision": "b" * 40, "profile": "foundata"},
+        id_factory=IdFactory(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    run.transition(RunState.QUALIFIED, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+    records = run.root / "records"
+    records.mkdir(exist_ok=True)
+    (records / "platform-qualification-linux-amd64.json").write_text(
+        json.dumps(
+            {
+                "payload": {
+                    "qualificationWindow": {
+                        "startedAt": "2026-01-01T00:00:00Z",
+                        "expiresAt": expires_at,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return run
+
+
+def test_retire_accepts_a_release_whose_qualification_window_expired(
+    tmp_path: Path,
+) -> None:
+    run = _release_run_with_window(tmp_path, "2026-01-03T00:00:00Z")
+
+    with pytest.raises(InvalidInvocationError, match="until its qualification"):
+        retire_run(
+            run,
+            state_home=tmp_path / "state",
+            now=datetime(2026, 1, 2, tzinfo=UTC),
+        )
+    assert run.root.is_dir()
+
+    removed = retire_run(
+        run, state_home=tmp_path / "state", now=datetime(2026, 1, 3, tzinfo=UTC)
+    )
+
+    assert removed == run.root.resolve()
+    assert not run.root.exists()
+
+
+def test_abandon_retires_a_release_that_could_still_resume(tmp_path: Path) -> None:
+    run = _release_run_with_window(tmp_path, "2026-01-03T00:00:00Z")
+
+    removed = retire_run(
+        run,
+        state_home=tmp_path / "state",
+        now=datetime(2026, 1, 2, tzinfo=UTC),
+        abandon=True,
+    )
 
     assert removed == run.root.resolve()
     assert not run.root.exists()

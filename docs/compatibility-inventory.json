@@ -1194,6 +1194,17 @@
           "type": "boolean"
         },
         {
+          "declarations": [
+            "--abandon"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "abandon",
+          "required": false,
+          "type": "boolean"
+        },
+        {
           "choices": [
             "human",
             "json"

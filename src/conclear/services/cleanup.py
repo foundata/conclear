@@ -3,10 +3,14 @@
 import shutil
 import stat
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.errors import ConClearError, InvalidInvocationError, OperationalError
+from conclear.freshness import QualificationWindow
+from conclear.jsonutil import load_json
+from conclear.records import format_timestamp, utc_now
 from conclear.registry_control import TagObservation
 from conclear.runtime_directory import remove_runtime_directory
 from conclear.test_inputs import remove_materialized_test_inputs
@@ -284,36 +288,84 @@ def workspace_size_bytes(root: Path) -> int:
     return total
 
 
-def retirable(snapshot: RunSnapshot) -> bool:
-    """Return whether a run can never resume and may therefore be retired.
+def qualification_expiry(root: Path) -> datetime | None:
+    """Return the latest recorded qualification expiry of a run, if any.
 
-    Promoted, completed and rejected runs are terminal. `release --resume`
-    continues only a release, recognised by its bound source revision, and only
-    with the release profile the run was bound to; a run without a profile, such
-    as a local qualification, and an interrupted rescan have nothing to resume.
+    Platform qualifications and assembled candidates record the window that
+    bounds every later release step; after it no phase can continue (CC0505).
+    """
+    latest: datetime | None = None
+    records = root / "records"
+    if not records.is_dir():
+        return None
+    for path in sorted(records.glob("*.json")):
+        try:
+            value = load_json(path)
+        except ConClearError:
+            continue
+        if not isinstance(value, dict):
+            continue
+        payload = value.get("payload")
+        window = (
+            payload.get("qualificationWindow") if isinstance(payload, dict) else None
+        )
+        if not isinstance(window, dict):
+            continue
+        try:
+            expiry = QualificationWindow.from_dict(window).expires_at
+        except ConClearError:
+            continue
+        if latest is None or expiry > latest:
+            latest = expiry
+    return latest
+
+
+def retirable(snapshot: RunSnapshot, *, root: Path, now: datetime) -> bool:
+    """Return whether a run is dead and may therefore be retired.
+
+    A run is dead when it is terminal (promoted, completed, rejected), when it
+    has nothing to resume (an interrupted rescan, or a qualification that was
+    never bound to a release profile), or when its recorded qualification
+    window has expired, because no release phase may continue after that.
     """
     if snapshot.state in TERMINAL_STATES:
         return True
     inputs = snapshot.immutable_inputs
     if inputs.get("profile") == "none":
         return True
-    return snapshot.state is RunState.INCOMPLETE and "sourceRevision" not in inputs
+    if snapshot.state is RunState.INCOMPLETE and "sourceRevision" not in inputs:
+        return True
+    expiry = qualification_expiry(root)
+    return expiry is not None and now >= expiry
 
 
-def retire_run(workspace: RunWorkspace, *, state_home: Path) -> Path:
-    """Delete the whole workspace of a run that can never resume.
+def retire_run(
+    workspace: RunWorkspace,
+    *,
+    state_home: Path,
+    now: datetime | None = None,
+    abandon: bool = False,
+) -> Path:
+    """Delete the whole workspace of a dead run, or of an abandoned one.
 
     Layouts and records stay after ordinary cleanup because an interrupted
-    release needs them to resume. Once a run is terminal, or interrupted without
-    a resume path, its directory is only disk usage after its archive is safely
-    retained. The caller is responsible for that retention judgement.
+    release needs them to resume. Once a run is dead (see `retirable`) its
+    directory is only disk usage after its archive is safely retained; with
+    `abandon` the operator declares a live run dead. The caller is responsible
+    for the retention judgement.
     """
     snapshot = workspace.load()
-    if not retirable(snapshot):
+    current = utc_now() if now is None else now
+    if not abandon and not retirable(snapshot, root=workspace.root, now=current):
+        expiry = qualification_expiry(workspace.root)
+        until = (
+            f" until its qualification expires at {format_timestamp(expiry)}"
+            if expiry is not None
+            else ""
+        )
         raise InvalidInvocationError(
-            f"Run {workspace.run_id} is {snapshot.state.value}; only promoted, "
-            "completed or rejected runs, or runs that cannot resume (no release "
-            "profile, or interrupted without being a release), can be retired"
+            f"Run {workspace.run_id} is {snapshot.state.value} and could still "
+            f"resume{until}; retire it with --abandon to give it up"
         )
     runs = (state_home / "conclear" / "runs").resolve()
     root = workspace.root.resolve()

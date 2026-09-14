@@ -438,15 +438,31 @@ def _lookup_details(proposal: PinUpdateProposal) -> tuple[str, ...]:
     is_flag=True,
     help=(
         "Also delete the run directory with its layouts and evidence. Allowed "
-        "only for promoted, completed or rejected runs, after the release "
-        "archive has been retained elsewhere."
+        "for dead runs: promoted, completed or rejected, interrupted without a "
+        "resume path, or with an expired qualification window; retain the "
+        "release archive elsewhere first."
+    ),
+)
+@click.option(
+    "abandon",
+    "--abandon",
+    is_flag=True,
+    help=(
+        "With --retire: give up a run that could still resume and delete its "
+        "directory anyway."
     ),
 )
 @format_option
 def cleanup_command(
-    run_id: str, profile_name: str | None, retire: bool, output_format: str
+    run_id: str,
+    profile_name: str | None,
+    retire: bool,
+    abandon: bool,
+    output_format: str,
 ) -> None:
     """Remove only ephemeral resources owned by one release run."""
+    if abandon and not retire:
+        raise InvalidInvocationError("--abandon requires --retire")
     workspace = RunWorkspace.open(state_home=state_home(), run_id=run_id)
     runtime = ApplicationRuntime.create(
         workspace.root / "environment",
@@ -483,18 +499,28 @@ def cleanup_command(
     if result.retained:
         details.append("Retained: " + ", ".join(result.retained))
     retired_path: Path | None = None
+    now = utc_now()
     if retire:
-        retired_path = retire_run(workspace, state_home=state_home())
-        details.append(f"Retired run directory {retired_path}")
+        retired_path = retire_run(
+            workspace, state_home=state_home(), now=now, abandon=abandon
+        )
+        details.append(
+            f"Retired run directory {retired_path}"
+            + (" (abandoned while it could still resume)" if abandon else "")
+        )
     else:
         size = workspace_size_bytes(workspace.root) / (1024 * 1024)
         details.append(
             f"Run {run_id} is {snapshot.state.value}; its directory keeps layouts "
             f"and evidence ({size:.0f} MiB) at {workspace.root}"
         )
-        if retirable(snapshot):
+        if retirable(snapshot, root=workspace.root, now=now):
             details.append(
                 "Once its archive is safely retained, rerun with --retire to delete it"
+            )
+        else:
+            details.append(
+                "It could still resume; rerun with --retire --abandon to give it up"
             )
     emit(
         CommandResult(

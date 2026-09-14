@@ -394,9 +394,9 @@ conclear cleanup "<run-id>" --profile foundata --retire
 ```
 
 `--retire` also deletes the run directory with its layouts and evidence once the
-run is finished; omit it to keep the directory for inspection. A failed rescan
-or a `qualify` run without a profile can be retired the same way. An
-interrupted release cannot, because it may still resume.
+run is dead: finished, interrupted without a way to resume, or past its
+qualification window. Omit it to keep the directory for inspection. A release
+that could still resume is refused; add `--abandon` to give it up anyway.
 
 
 ### Advanced<a id="usage-advanced"></a>

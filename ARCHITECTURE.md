@@ -863,11 +863,15 @@ transported inputs, caller-owned paths or pre-existing registry content.
 
 Rejected runs retain reports with `verdict: rejected`. Interrupted runs are
 `incomplete`; finished rescans are `completed`. Workspaces may be removed after
-authoritative evidence has been retained: `cleanup --retire` deletes the whole
-workspace of a promoted, completed or rejected run and refuses any run that
-could still resume, and `cleanup` reports what it removed, what it retained and
-what the workspace still holds. ConClear never presents its local state
-directory as an archive or registry backup.
+authoritative evidence has been retained. A run is dead when it is promoted,
+completed or rejected; when it has nothing to resume, which covers an
+interrupted rescan and a qualification never bound to a release profile; or when
+its recorded qualification window has expired, since no release phase may
+continue past it. `cleanup --retire` deletes the whole workspace of a dead run
+and refuses a live one unless the operator adds `--abandon`, which declares the
+run dead. `cleanup` reports what it removed, what it retained and what the
+workspace still holds. ConClear never presents its local state directory as an
+archive or registry backup.
 
 `release`, `promote` and `rescan` write a compressed evidence archive after
 completion to `--archive-dir`, or to the protected profile's `archive_dir` when
