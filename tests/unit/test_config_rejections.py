@@ -238,6 +238,27 @@ command = ["/app"]
             "contains NUL",
         ),
         (
+            _before_release(
+                """[[images.hooks]]
+name = "smoke"
+command = ["tests/smoke.sh"]
+[[images.hooks]]
+name = "smoke"
+command = ["tests/smoke-again.sh"]
+"""
+            ),
+            "unique",
+        ),
+        (
+            _before_release(
+                """[[images.hooks]]
+name = "../escape"
+command = ["tests/smoke.sh"]
+"""
+            ),
+            "Invalid",
+        ),
+        (
             lambda text: text.replace(
                 'health_command = ["/app", "health"]',
                 'writable_mounts = ["/tmp", "/tmp"]\nhealth_command = ["/app", "health"]',
@@ -269,6 +290,8 @@ command = ["/app"]
         "duplicate-preparation-name",
         "preparation-name",
         "nul-in-command",
+        "duplicate-hook-name",
+        "hook-name",
         "duplicate-writable-mount",
         "duplicate-release-tag",
     ],

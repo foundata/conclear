@@ -759,9 +759,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         native_test_platforms=native_platforms,
         rescan_scope=toml_string(value.get("rescan_scope", "sbom-vulnerabilities")),
         test=test,
-        hooks=tuple(
-            _parse_hook(toml_table(item)) for item in _list(value.get("hooks", []))
-        ),
+        hooks=_parse_hooks(_list(value.get("hooks", []))),
         vulnerability_exceptions=exceptions,
         package_assessment_exception=package_assessment_exception,
         configuration_exceptions=configuration_exceptions,
@@ -1305,9 +1303,22 @@ def _parse_sudo_requirement(value: dict[str, Any]) -> SudoRequirement:
     )
 
 
+def _parse_hooks(values: list[Any]) -> tuple[HookConfig, ...]:
+    """Parse hooks whose names are safe path components and unique per image.
+
+    The name becomes part of the hook's log filename and of its recorded
+    result, so it must not escape the logs directory or shadow another hook.
+    """
+    hooks = tuple(_parse_hook(toml_table(item)) for item in values)
+    names = [hook.name for hook in hooks]
+    if len(set(names)) != len(names):
+        raise InvalidInvocationError("Hook names must be unique within an image")
+    return hooks
+
+
 def _parse_hook(value: dict[str, Any]) -> HookConfig:
     return HookConfig(
-        name=toml_string(value["name"]),
+        name=_test_name(toml_string(value["name"]), "hook"),
         command=_command(value["command"], "hook command"),
         timeout_seconds=toml_integer(value.get("timeout_seconds", 300)),
         required=_boolean(value.get("required", True)),
