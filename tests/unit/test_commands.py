@@ -36,7 +36,7 @@ from conclear.errors import (
 )
 from conclear.freshness import QualificationWindow
 from conclear.presentation import Finding
-from conclear.records import SourceIdentity, Verdict
+from conclear.records import SourceIdentity, Verdict, utc_now
 from conclear.release_profile import (
     BuilderConfig,
     CIContextPolicy,
@@ -1362,10 +1362,49 @@ def test_cleanup_command_refuses_a_foreign_profile_and_reports_ownership(
         "retained": ["b"],
         "state": "created",
         "retired": False,
+        "abandoned": False,
     }
 
     code, value, err = invoke(["cleanup", run.workspace.run_id])
     assert code == 0, err
+
+
+def test_cleanup_retire_points_a_blocked_cleanup_at_abandon_and_reports_liveness(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[..., tuple[int, Any, str]],
+) -> None:
+    run = FakeSourceRun(repository_factory(), tmp_path)
+    state_home = run.workspace.root.parents[2]
+    monkeypatch.setattr(maintenance_commands, "state_home", lambda: state_home)
+    monkeypatch.setattr(
+        maintenance_commands,
+        "ApplicationRuntime",
+        SimpleNamespace(create=lambda root, names, journal: run.runtime),
+    )
+
+    def blocked(*args: Any, **kwargs: Any) -> Any:
+        raise OperationalError("Cleanup was incomplete: source-worktree: gone")
+
+    monkeypatch.setattr(maintenance_commands, "cleanup_run", blocked)
+    code, value, _ = invoke(["cleanup", run.workspace.run_id, "--retire"])
+    assert code != 0
+    assert "rerun with --retire --abandon" in value["message"]
+    assert run.workspace.root.is_dir()
+
+    code, value, _ = invoke(["cleanup", run.workspace.run_id])
+    assert code != 0
+    assert "--abandon" not in value["message"]
+
+    run.workspace.transition(RunState.COMPLETED, now=utc_now())
+    code, value, err = invoke(
+        ["cleanup", run.workspace.run_id, "--retire", "--abandon"]
+    )
+    assert code == 0, err
+    assert value["data"]["retired"] is True
+    assert value["data"]["abandoned"] is False
+    assert not run.workspace.root.exists()
 
 
 def test_pins_check_reports_observations_and_rejections(

@@ -946,6 +946,9 @@
               },
               "retired": {
                 "type": "boolean"
+              },
+              "abandoned": {
+                "type": "boolean"
               }
             }
           }
@@ -2221,6 +2224,9 @@
           "minLength": 1
         },
         "retired": {
+          "type": "boolean"
+        },
+        "abandoned": {
           "type": "boolean"
         }
       },

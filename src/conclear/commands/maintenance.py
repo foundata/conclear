@@ -494,6 +494,11 @@ def cleanup_command(
         # An abandoned run is given up with whatever it still owns; every other
         # caller must see the failure.
         if not abandon:
+            if retire:
+                raise OperationalError(
+                    f"{exc}; rerun with --retire --abandon to delete the run "
+                    "directory anyway"
+                ) from exc
             raise
         incomplete = str(exc)
         result = CleanupResult((), ())
@@ -511,13 +516,14 @@ def cleanup_command(
         details.append("Retained: " + ", ".join(result.retained))
     retired_path: Path | None = None
     now = utc_now()
+    dead = retirable(snapshot, root=workspace.root, now=now)
     if retire:
         retired_path = retire_run(
             workspace, state_home=state_home(), now=now, abandon=abandon
         )
         details.append(
             f"Retired run directory {retired_path}"
-            + (" (abandoned while it could still resume)" if abandon else "")
+            + (" (abandoned while it could still resume)" if not dead else "")
         )
     else:
         size = workspace_size_bytes(workspace.root) / (1024 * 1024)
@@ -525,7 +531,7 @@ def cleanup_command(
             f"Run {run_id} is {snapshot.state.value}; its directory keeps layouts "
             f"and evidence ({size:.0f} MiB) at {workspace.root}"
         )
-        if retirable(snapshot, root=workspace.root, now=now):
+        if dead:
             details.append(
                 "Once its archive is safely retained, rerun with --retire to delete it"
             )
@@ -543,6 +549,7 @@ def cleanup_command(
                 "retained": list(result.retained),
                 "state": snapshot.state.value,
                 "retired": retired_path is not None,
+                "abandoned": retired_path is not None and not dead,
             },
             details=tuple(details),
         ),
