@@ -5,6 +5,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
 ## [Unreleased]
 
-Initial development towards 1.0.0; nothing has been released yet.
+- Nothing worth mentioning right now.
+
+
+## [1.0.0] - 2026-09-14
+
+### Added
+
+- All functionality and files.
+
+[unreleased]: https://github.com/foundata/conclear/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/foundata/conclear/releases/tag/v1.0.0

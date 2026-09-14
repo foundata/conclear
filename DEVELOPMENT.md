@@ -775,9 +775,8 @@ A diff in this file is a compatibility-review signal, not automatically a public
 contract change. A diff that only changes internal inventory structure or
 metadata is internal. A diff caused by a removed or renamed command, option,
 schema identifier, record type, exit status or other inventoried surface changes
-public behavior and needs a deliberate decision before the first 1.0.0 release;
-after that release, an incompatible change needs a new major version. The unit
-suite and the release gate fail while the committed inventory is stale.
+public behavior and needs a new major version. The unit suite and the release
+gate fail while the committed inventory is stale.
 
 
 ## Generated supported-tools table<a id="supported-tools-table"></a>
