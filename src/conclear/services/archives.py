@@ -117,7 +117,9 @@ def create_run_archive(
         )
         for platform, _path, _digest in release_evidence.sboms:
             descriptor = next(
-                item.descriptor for item in graph.manifests if item.platform == platform
+                item.descriptor
+                for item in graph.manifests
+                if item.platform.semantically_matches(platform)
             )
             _collect_attestations(
                 sources,

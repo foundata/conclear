@@ -34,6 +34,7 @@ from conclear.services.attestation import (
     ReleaseEvidence,
     Signer,
     has_verified_statement,
+    match_sboms_to_platforms,
     provenance_subjects,
     require_verified_predicate,
     require_verified_statement,
@@ -141,8 +142,14 @@ def verify_candidate(
     manifest_map = {
         item.platform: item.descriptor.digest for item in published.graph.manifests
     }
-    for platform, path, expected_digest in evidence.sboms:
-        if manifest_map.get(platform) is None or sha256_file(path) != expected_digest:
+    try:
+        sbom_map = match_sboms_to_platforms(tuple(manifest_map), evidence.sboms)
+    except RuleRejectionError as exc:
+        raise RuleRejectionError(
+            "SBOM evidence does not cover the published platforms", code="CC0703"
+        ) from exc
+    for platform, (path, expected_digest) in sorted(sbom_map.items()):
+        if sha256_file(path) != expected_digest:
             raise RuleRejectionError(
                 f"SBOM evidence changed for {platform}", code="CC0703"
             )

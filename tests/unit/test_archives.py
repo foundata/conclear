@@ -327,9 +327,11 @@ def test_multiplatform_release_archive_retains_all_qualifications(
     shutil.copytree(harness.source_root, harness.workspace.root / "source")
     with open_archive(_create(harness)) as archive:
         graph = validate_layout_metadata(archive.root / "image")
+        # Buildah records arm64 with its implicit variant; the archive keeps
+        # the published spelling.
         assert {str(platform) for platform in graph.platforms} == {
             "linux/amd64",
-            "linux/arm64",
+            "linux/arm64/v8",
         }
         for key in ("linux-amd64", "linux-arm64"):
             assert (

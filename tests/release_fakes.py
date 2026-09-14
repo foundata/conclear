@@ -59,6 +59,13 @@ BASE_PLATFORM_DIGEST = Digest("sha256:" + "d" * 64)
 PINNED_BASE_NAME = "quay.io/example/base@sha256:" + "a" * 64
 
 
+def _buildah_variant(platform: Platform) -> dict[str, str]:
+    """Spell arm64 the way Buildah records it: with the implicit `v8` variant."""
+    if platform.architecture == "arm64" and platform.variant is None:
+        return {"variant": "v8"}
+    return {} if platform.variant is None else {"variant": platform.variant}
+
+
 def base_annotations(created: str) -> dict[str, str]:
     """Return the manifest annotations Buildah writes for the fixture base."""
     return {
@@ -121,6 +128,7 @@ class FakeBuilder:
                 {
                     "architecture": platform.architecture,
                     "os": platform.os,
+                    **_buildah_variant(platform),
                     "config": {"User": "10001", "Labels": labels},
                     "rootfs": {
                         "type": "layers",
@@ -157,6 +165,7 @@ class FakeBuilder:
                             "platform": {
                                 "os": platform.os,
                                 "architecture": platform.architecture,
+                                **_buildah_variant(platform),
                             },
                             "annotations": {
                                 "org.opencontainers.image.ref.name": "qualified"

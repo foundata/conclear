@@ -308,7 +308,7 @@ def scan_identity(inputs: QualificationInputs, build: BuildEvidence) -> ScanIden
         (
             item
             for item in build.observation.graph.manifests
-            if item.platform == inputs.platform
+            if item.platform.semantically_matches(inputs.platform)
         ),
         None,
     )
