@@ -894,8 +894,12 @@ run dead and gives the run up with whatever it still owns. `cleanup` reports
 what it removed, what it retained and what the workspace still holds. Removing
 run-owned test inputs keeps their ownership marker until the rest of the tree is
 gone, so a removal a repository hook blocks stays retryable and names the
-blocking path. ConClear never presents its local state directory as an
-archive or registry backup.
+blocking path. `cleanup --retire` removes the run directory in an order that
+keeps `run.json`, `resources.json` and `records/` until everything else is
+gone; what it cannot remove, such as content a hook wrote outside its scratch
+directory, is named with the deepest blocking path first, and the run stays
+openable so the next attempt continues where this one stopped. ConClear never
+presents its local state directory as an archive or registry backup.
 
 `release`, `promote` and `rescan` write a compressed evidence archive after
 completion to `--archive-dir`, or to the protected profile's `archive_dir` when

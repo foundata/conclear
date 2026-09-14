@@ -384,5 +384,79 @@ def retire_run(
     root = workspace.root.resolve()
     if root.parent != runs or root.name != workspace.run_id:
         raise OperationalError(f"Refusing to retire a workspace outside {runs}")
-    shutil.rmtree(root)
+    _remove_run_directory(root)
     return root
+
+
+RETIRE_LAST = ("records", "run.json", "resources.json", "resources.lock")
+
+
+def _remove_run_directory(root: Path) -> None:
+    """Remove a run directory so that a blocked removal stays retryable.
+
+    Everything else goes before the state and records that `retire_run` needs
+    to judge the run again. Content this user cannot unlink, such as files a
+    repository hook left outside its scratch directory, is named exactly; the
+    run stays openable and the next attempt continues where this one stopped.
+    """
+    remaining = _remove_children(
+        root, exclude=frozenset(RETIRE_LAST), label="Run directory"
+    )
+    if remaining:
+        raise OperationalError(
+            f"Run directory {root} was retired only partially; this user cannot "
+            f"remove {_describe_paths(remaining)}. A repository hook may have "
+            "written it outside its scratch directory. Remove it with "
+            f"`podman unshare rm -rf -- <path>` after checking that nothing is "
+            "mounted below it, then rerun cleanup --retire"
+        )
+    remaining = _remove_children(root, exclude=frozenset(), label="Run directory")
+    if remaining:
+        raise OperationalError(
+            f"Unable to remove run state below {root}: {_describe_paths(remaining)}"
+        )
+    try:
+        root.rmdir()
+    except OSError as exc:
+        raise OperationalError(f"Unable to remove run directory {root}") from exc
+
+
+def _remove_children(root: Path, *, exclude: frozenset[str], label: str) -> list[Path]:
+    failed: list[Path] = []
+
+    def record(_function: object, path: str | Path, _exc: BaseException) -> None:
+        failed.append(Path(path))
+
+    try:
+        children = sorted(root.iterdir())
+    except OSError as exc:
+        raise OperationalError(f"{label} {root} cannot be listed") from exc
+    for child in children:
+        if child.name in exclude:
+            continue
+        try:
+            mode = child.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        except OSError:
+            failed.append(child)
+            continue
+        if stat.S_ISDIR(mode) and not stat.S_ISLNK(mode):
+            shutil.rmtree(child, onexc=record)
+        else:
+            try:
+                child.unlink()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                failed.append(child)
+    return failed
+
+
+def _describe_paths(paths: list[Path]) -> str:
+    # Deepest first: the blocking file, not the directories that failed after it.
+    unique = sorted(set(paths), key=lambda item: (-len(item.parts), str(item)))
+    shown = ", ".join(str(item) for item in unique[:5])
+    if len(unique) > 5:
+        shown += f" and {len(unique) - 5} more"
+    return shown

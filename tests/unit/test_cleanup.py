@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -555,3 +556,39 @@ def test_cleanup_removes_blocked_hook_scratch_through_the_namespace(
     assert podman.mapped_removals == [(scratch, run.root / "hook-scratch" / ".unshare")]
     assert not scratch.exists()
     assert not (run.root / "hook-scratch" / ".unshare").exists()
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root ignores directory permissions")
+def test_retire_names_what_it_cannot_remove_and_stays_retryable(
+    tmp_path: Path,
+) -> None:
+    run = workspace(tmp_path)
+    run.transition(RunState.COMPLETED, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+    (run.root / "records" / "result.json").write_text("{}", encoding="utf-8")
+    (run.root / "layouts" / "linux-amd64").mkdir(parents=True)
+    litter = run.root / "checkout" / ".pytest" / "podman-root" / "layer"
+    litter.mkdir(parents=True)
+    blocked = litter / "root-mapped"
+    blocked.write_text("subordinate uid", encoding="utf-8")
+    # A read-only parent blocks the unlink the way a subordinate owner would.
+    litter.chmod(0o500)
+    try:
+        with pytest.raises(OperationalError, match="retired only partially") as caught:
+            retire_run(run, state_home=tmp_path / "state")
+    finally:
+        litter.chmod(0o700)
+
+    message = str(caught.value)
+    assert str(blocked) in message
+    assert "podman unshare rm -rf" in message
+    # The blocked file is named first, not the directories that failed after it.
+    assert message.split("cannot remove ", 1)[1].startswith(str(blocked))
+    assert not (run.root / "layouts").exists()
+    assert (run.root / "run.json").is_file()
+    assert (run.root / "records" / "result.json").is_file()
+    assert run.load().state is RunState.COMPLETED
+
+    removed = retire_run(run, state_home=tmp_path / "state")
+
+    assert removed == run.root.resolve()
+    assert not run.root.exists()

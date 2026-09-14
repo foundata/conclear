@@ -397,6 +397,8 @@ conclear cleanup "<run-id>" --profile foundata --retire
 run is dead: finished, interrupted without a way to resume, or past its
 qualification window. Omit it to keep the directory for inspection. A release
 that could still resume is refused; add `--abandon` to give it up anyway.
+Working data a repository hook left in its scratch directory is removed as well;
+if anything else blocks the removal, the command names the exact path.
 
 
 ### Advanced<a id="usage-advanced"></a>
