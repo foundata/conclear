@@ -284,6 +284,7 @@ class RunWorkspace:
                 created_at=snapshot.created_at,
                 updated_at=format_timestamp(now or utc_now()),
                 immutable_inputs={**snapshot.immutable_inputs, **additions},
+                resume_state=snapshot.resume_state,
             )
             atomic_write_json(self.root / "run.json", updated.to_dict())
             return updated
@@ -332,6 +333,7 @@ class RunWorkspace:
                 created_at=snapshot.created_at,
                 updated_at=format_timestamp(now or utc_now()),
                 immutable_inputs={**snapshot.immutable_inputs, **new},
+                resume_state=snapshot.resume_state,
             )
             atomic_write_json(self.root / "run.json", updated.to_dict())
             return updated

@@ -592,3 +592,21 @@ def test_retire_names_what_it_cannot_remove_and_stays_retryable(
 
     assert removed == run.root.resolve()
     assert not run.root.exists()
+
+
+def test_binding_after_an_interruption_keeps_the_run_openable(tmp_path: Path) -> None:
+    """Tool identities bound while a failure unwinds must keep the resume marker."""
+    run = workspace(tmp_path)
+    run.transition(RunState.INCOMPLETE, now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+    run.bind_tool_identities(
+        {"tool.skopeo": "1.20.0@sha256:" + "c" * 64},
+        now=datetime(2026, 1, 1, 0, 2, tzinfo=UTC),
+    )
+
+    reopened = RunWorkspace.open(state_home=tmp_path / "state", run_id=run.run_id)
+    snapshot = reopened.load()
+
+    assert snapshot.state is RunState.INCOMPLETE
+    assert snapshot.resume_state is RunState.CREATED
+    assert "tool.skopeo" in snapshot.immutable_inputs
+    assert retire_run(reopened, state_home=tmp_path / "state") == run.root.resolve()
