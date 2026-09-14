@@ -38,6 +38,9 @@ from conclear.values import Digest, Platform
 
 _HEALTH_POLL_INTERVAL_SECONDS = 0.25
 _HEALTH_DIAGNOSTIC_TIMEOUT_SECONDS = 5.0
+# Less remaining budget than this cannot start a Podman call, so the deadline
+# counts as reached instead of handing Podman a millisecond timeout.
+_MINIMUM_PROBE_SECONDS = 0.1
 
 
 class RuntimeAdapter(Protocol):
@@ -483,7 +486,7 @@ def _exercise_systemd_readiness(
     if systemd is None:
         raise OperationalError("Systemd readiness requires systemd configuration")
     remaining = readiness_deadline - timing.monotonic()
-    if remaining <= 0:
+    if remaining < _MINIMUM_PROBE_SECONDS:
         findings.append(
             Finding("CC0403", "error", "Systemd readiness deadline expired")
         )
@@ -509,7 +512,7 @@ def _exercise_systemd_readiness(
         return container, _container_is_running(container)
 
     remaining = readiness_deadline - timing.monotonic()
-    if remaining <= 0:
+    if remaining < _MINIMUM_PROBE_SECONDS:
         findings.append(
             Finding("CC0403", "error", "Systemd readiness deadline expired")
         )
@@ -681,7 +684,7 @@ def _wait_for_service_health(
                 current,
             )
         remaining = deadline - now
-        if remaining <= 0:
+        if remaining < _MINIMUM_PROBE_SECONDS:
             return _HealthObservation(
                 "timeout",
                 attempts,
