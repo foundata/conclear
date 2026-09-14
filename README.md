@@ -34,13 +34,16 @@ without requiring you to maintain your own release scripts or CI service.
 - [Usage](#usage)
   - [Configuration (Host)](#usage-host-config)
   - [Configuration (Container repos)](#usage-repo-config)
+  - [Quick start: First release of a repository](#usage-first-release)
   - [Quick start: Running a release](#usage-release)
   - [Advanced](#usage-advanced)
     - [Checking locally](#usage-check)
     - [Resuming an interrupted run](#usage-resume)
     - [Archives](#usage-archives)
+    - [Verifying a release without ConClear](#usage-independent-verification)
     - [Updating image pins](#usage-pins)
     - [Rescans and triage](#usage-rescan-triage)
+    - [Retiring a published tag](#usage-retire-tag)
     - [Distributed qualification](#usage-distributed)
     - [Command help](#usage-commands)
     - [JSON output and exit codes](#usage-json-exit-codes)
@@ -61,7 +64,7 @@ without requiring you to maintain your own release scripts or CI service.
   commands when you need it.
 - **Auditable releases:** retrieve signed SBOMs and release evidence from the
   registry. [Cosign](https://docs.sigstore.dev/cosign/) records signatures in
-  the public transparency log.
+  the [public transparency log](https://search.sigstore.dev/).
 - **Multi-platform builds and pin updates:** qualify platforms on separate
   machines and update base-image digests without running an update bot.
 
@@ -346,6 +349,26 @@ Git revision, not uncommitted changes. You can [check locally](#usage-check)
 before releasing.
 
 
+### Quick start: First release of a repository<a id="usage-first-release"></a>
+
+Once, from the root of a configured repository:
+
+```sh
+version=1.2.3
+conclear adopt --output conclear.toml   # draft; resolve every DECIDE value by hand
+# Containerfile: pinned FROM, IMAGE_* build arguments, OCI labels, numeric USER
+# .containerignore: "*" first, then allow only the build inputs
+git add Containerfile .containerignore conclear.toml && git commit
+conclear check                          # static Containerfile and context checks
+conclear pins check                     # declared base digests are still current
+conclear qualify --revision HEAD --version "$version"   # build, test, scan; publishes nothing
+conclear doctor --scope release --profile foundata      # registry, key, tools
+```
+
+Then continue with [running a release](#usage-release). Qualification takes a
+few minutes; the release repeats it, so fix findings here first.
+
+
 ### Quick start: Running a release<a id="usage-release"></a>
 
 From a configured repository on your configured host:
@@ -444,6 +467,41 @@ conclear archive create "<run-id>" --profile foundata --archive-dir "$archives"
 Clean up the run only after the archive is safely retained.
 
 
+#### Verifying a release without ConClear<a id="usage-independent-verification"></a>
+
+Anyone with Skopeo, Cosign and your public key can check a release. Cosign
+reads Docker-style credentials; for a private repository point it at a copy of
+your auth file:
+
+```sh
+image=quay.io/foundata/example
+version=1.2.3
+key=~/.config/conclear/cosign.pub
+export DOCKER_CONFIG=$(mktemp -d); cp ~/.config/conclear/auth.json "$DOCKER_CONFIG/config.json"
+
+skopeo inspect --format '{{.Digest}}' docker://$image:$version
+skopeo inspect --format '{{.Digest}}' docker://$image:latest      # same digest
+skopeo inspect docker://$image:$version | jq '.Labels'            # source, revision, version, created
+cosign tree $image:$version                                       # signature, provenance, SBOM, release verification
+cosign verify --key "$key" $image:$version
+cosign verify-attestation --key "$key" --type slsaprovenance1 $image:$version
+cosign verify-attestation --key "$key" --type spdxjson $image:$version
+```
+
+Each release archive keeps the Sigstore bundles under `signatures/`. Their
+`logIndex` names the entry in the
+[public transparency log](https://search.sigstore.dev/):
+
+```sh
+tar -xzf "$bundle" -C "$dir"
+jq '.verificationMaterial.tlogEntries[] | {logIndex, integratedTime}' "$dir"/signatures/*.sigstore.json
+# https://search.sigstore.dev/?logIndex=<logIndex>
+```
+
+`conclear archive verify` checks the inclusion proofs offline. The lookup adds
+the one thing it cannot: that the entry is visible in the live log.
+
+
 #### Updating image pins<a id="usage-pins"></a>
 
 Generate a proposal at a new path:
@@ -491,6 +549,20 @@ rescans per digest. Keep the resulting archives, assign triage and rebuild
 owners, and alert on rejected, failed or overdue assessments. A completed
 authoritative assessment is retained even when its verdict is rejected (exit 2).
 Maintain your supported-release inventory and schedules separately.
+
+
+#### Retiring a published tag<a id="usage-retire-tag"></a>
+
+Remove the referrers before the tag, or they stay behind as orphans. Cosign
+needs the same `DOCKER_CONFIG` credentials as above:
+
+```sh
+cosign clean --type all --force $image:$version   # signature, SBOM, provenance, verification
+skopeo delete docker://$image:$version
+```
+
+Repoint or delete `latest` yourself. Transparency-log entries are permanent;
+the release archive remains your evidence.
 
 
 #### Distributed qualification<a id="usage-distributed"></a>

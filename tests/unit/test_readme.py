@@ -87,7 +87,7 @@ def test_documented_conclear_commands_parse_without_invoking_operations(
         for line in block.replace("\\\n", " ").splitlines():
             if not line.startswith("conclear "):
                 continue
-            arguments = shlex.split(line)[1:]
+            arguments = shlex.split(line, comments=True)[1:]
             command: click.Command = root
             while isinstance(command, click.Group):
                 name = arguments.pop(0)
