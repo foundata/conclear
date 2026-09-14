@@ -1,6 +1,11 @@
 """Domain failure categories and public exit statuses."""
 
+from collections.abc import Sequence
 from enum import IntEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from conclear.presentation import Finding
 
 
 class ExitStatus(IntEnum):
@@ -18,10 +23,22 @@ class ConClearError(RuntimeError):
     exit_status: ExitStatus
     error_type: str
 
-    def __init__(self, message: str, *, code: str | None = None) -> None:
-        """Create an expected failure with an optional stable check code."""
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        findings: Sequence["Finding"] = (),
+    ) -> None:
+        """Create an expected failure with an optional stable check code.
+
+        `findings` carries the concrete findings behind an aggregate failure,
+        such as the platform findings behind a rejected qualification, so the
+        command result names the cause instead of only the summary.
+        """
         super().__init__(message)
         self.code = code
+        self.findings: tuple[Finding, ...] = tuple(findings)
         self.run_id: str | None = None
 
 

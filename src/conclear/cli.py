@@ -120,13 +120,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         return int(ExitStatus.OPERATIONAL_FAILURE)
     except ConClearError as exc:
-        finding = Finding(exc.code, "error", str(exc)) if exc.code is not None else None
-        diagnostic = (
-            f"{finding.check_id} {finding.severity}: {finding.message}"
-            if finding is not None
-            else str(exc)
-        )
-        print(diagnostic, file=sys.stderr)
+        findings = _error_findings(exc)
+        if findings:
+            for finding in findings:
+                where = f" ({finding.location})" if finding.location else ""
+                print(
+                    f"{finding.check_id} {finding.severity}: {finding.message}{where}",
+                    file=sys.stderr,
+                )
+        else:
+            print(str(exc), file=sys.stderr)
         data = _failed_run_data(exc)
         if wants_json:
             status = ResultStatus(exc.error_type)
@@ -134,7 +137,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 command=_command_name(arguments),
                 status=status,
                 message=str(exc),
-                findings=(() if finding is None else (finding,)),
+                findings=findings,
                 data=data,
             )
         return int(exc.exit_status)
@@ -158,6 +161,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return int(ExitStatus.OPERATIONAL_FAILURE)
     return int(result) if isinstance(result, int) else int(ExitStatus.SUCCESS)
+
+
+def _error_findings(exc: ConClearError) -> tuple[Finding, ...]:
+    """Return the concrete findings behind a failure, or its summary as one."""
+    if exc.findings:
+        return exc.findings
+    if exc.code is not None:
+        return (Finding(exc.code, "error", str(exc)),)
+    return ()
 
 
 def _failed_run_data(failure: BaseException) -> dict[str, object]:

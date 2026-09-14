@@ -537,6 +537,10 @@ def test_qualification_phase_rejects_before_later_state_changes(
     with pytest.raises(RuleRejectionError, match="rejected linux/amd64") as caught:
         run()
     assert caught.value.code == "CC0403"
+    # The platform's own findings travel with the summary, located by platform.
+    assert caught.value.findings == (
+        Finding("CC0403", "error", "runtime", "linux/amd64"),
+    )
     assert calls == ["pins", "qualify"]
 
     calls.clear()

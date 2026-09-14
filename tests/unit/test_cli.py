@@ -18,7 +18,7 @@ from conclear.errors import (
     bind_failed_run,
     failed_run_id,
 )
-from conclear.presentation import CommandResult, ResultStatus
+from conclear.presentation import CommandResult, Finding, ResultStatus
 
 DOCUMENTED_COMMANDS = {
     "adopt",
@@ -400,3 +400,43 @@ def test_main_names_the_bound_run_in_every_failure_output(
     value = json.loads(captured.out)
     assert (value["status"], value["data"]) == (status, {"runId": RUN_ID})
     assert f"conclear cleanup {RUN_ID}" in captured.err
+
+
+def test_main_renders_the_findings_behind_an_aggregate_rejection(
+    repository_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root_path = repository_factory()
+    monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
+    nested = Finding("CC0403", "error", "Repository hook failed: smoke", "linux/arm64")
+    monkeypatch.setattr(
+        local_commands,
+        "check_image",
+        lambda image, hadolint: (_ for _ in ()).throw(
+            RuleRejectionError(
+                "Platform qualification rejected linux/arm64",
+                code="CC0403",
+                findings=(nested,),
+            )
+        ),
+    )
+
+    exit_status = main(
+        [
+            "check",
+            "--config",
+            str(root_path / "conclear.toml"),
+            "--image",
+            "app",
+            "--format",
+            "json",
+        ]
+    )
+
+    assert exit_status == 2
+    captured = capsys.readouterr()
+    value = json.loads(captured.out)
+    assert value["message"] == "Platform qualification rejected linux/arm64"
+    assert value["findings"] == [nested.to_dict()]
+    assert "Repository hook failed: smoke (linux/arm64)" in captured.err

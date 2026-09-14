@@ -2,7 +2,7 @@
 
 import platform as host_platform
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import override
@@ -512,12 +512,15 @@ def _qualify_release(
             record_clock=now_factory,
         )
         if result.verdict is Verdict.REJECTED:
-            rejecting_finding = next(
-                finding for finding in result.findings if finding.severity == "error"
+            errors = tuple(
+                replace(finding, location=finding.location or str(platform))
+                for finding in result.findings
+                if finding.severity == "error"
             )
             raise RuleRejectionError(
                 f"Platform qualification rejected {platform}",
-                code=rejecting_finding.check_id,
+                code=errors[0].check_id,
+                findings=errors,
             )
         if result.verdict is Verdict.INCOMPLETE:
             raise OperationalError(f"Platform qualification was incomplete: {platform}")
