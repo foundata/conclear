@@ -42,6 +42,7 @@ from conclear.records import (
 )
 from conclear.scan_identity import ScanIdentity
 from conclear.scan_policy import (
+    AppliedConfigurationException,
     AppliedException,
     PackageAssessment,
     evaluate_trivy_report,
@@ -136,6 +137,7 @@ class ScanEvidence:
     findings: tuple[Finding, ...]
     applied_runtime_requirements: tuple[dict[str, object], ...] = ()
     package_assessment: PackageAssessment | None = None
+    applied_configuration_exceptions: tuple[AppliedConfigurationException, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,12 +391,16 @@ def generate_evidence(
         runtime=inputs.image.runtime,
         expect_packages=True,
         package_assessment_exception=inputs.image.package_assessment_exception,
+        configuration_exceptions=inputs.image.configuration_exceptions,
     )
     return ScanEvidence(
         package_assessment=image_evaluation.package_assessment,
         sbom=sbom,
         scans=(source_scan, containerfile_scan, image_scan),
         applied_exceptions=image_evaluation.applied_exceptions,
+        applied_configuration_exceptions=(
+            image_evaluation.applied_configuration_exceptions
+        ),
         applied_runtime_requirements=(
             containerfile_evaluation.applied_runtime_requirements
             + image_evaluation.applied_runtime_requirements
@@ -516,6 +522,9 @@ def qualify_platform(
         ],
         "appliedExceptions": [
             item.to_dict() for item in scan_evidence.applied_exceptions
+        ],
+        "appliedConfigurationExceptions": [
+            item.to_dict() for item in scan_evidence.applied_configuration_exceptions
         ],
         "appliedRuntimeRequirements": list(scan_evidence.applied_runtime_requirements),
         "packageAssessment": (

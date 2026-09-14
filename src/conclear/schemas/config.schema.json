@@ -283,6 +283,19 @@
         "tag_intent": {"enum": ["immutable-version", "moving-release-line"]}
       }
     },
+    "configurationException": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "rationale", "owner", "review_trigger", "expires"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "pattern": "^[^/\\\\\\u0000][^\\\\\\u0000]*$"},
+        "checks": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$"}, "uniqueItems": true},
+        "rationale": {"$ref": "#/$defs/nonEmptyString"},
+        "owner": {"$ref": "#/$defs/nonEmptyString"},
+        "review_trigger": {"$ref": "#/$defs/nonEmptyString"},
+        "expires": {"type": "string", "format": "date"}
+      }
+    },
     "packageAssessmentException": {
       "type": "object",
       "additionalProperties": false,
@@ -339,6 +352,7 @@
         "pins": {"type": "array", "items": {"$ref": "#/$defs/pin"}},
         "vulnerability_exceptions": {"type": "array", "items": {"$ref": "#/$defs/exception"}},
         "package_assessment_exception": {"$ref": "#/$defs/packageAssessmentException"},
+        "configuration_exceptions": {"type": "array", "items": {"$ref": "#/$defs/configurationException"}},
         "limits": {"$ref": "#/$defs/limits"}
       },
       "allOf": [
@@ -352,6 +366,7 @@
               "rescan_scope": false,
               "hooks": false,
               "vulnerability_exceptions": false,
+              "configuration_exceptions": false,
               "test": {
                 "properties": {
                   "fixtures": false,

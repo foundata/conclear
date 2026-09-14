@@ -20,6 +20,7 @@ from conclear.attestations import (
 )
 from conclear.config import (
     MAX_REMEDIATION,
+    ConfigurationException,
     PackageAssessmentException,
     RuntimeConfig,
     VulnerabilityException,
@@ -261,6 +262,7 @@ def rescan_release(
     record_clock: Callable[[], datetime],
     runtime_rules: RuntimeConfig | None = None,
     package_assessment_exception: PackageAssessmentException | None = None,
+    configuration_exceptions: tuple[ConfigurationException, ...] = (),
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -356,6 +358,7 @@ def rescan_release(
     report_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     findings: list[dict[str, object]] = []
     applied_exceptions: list[dict[str, object]] = []
+    applied_configuration_exceptions: list[dict[str, object]] = []
     applied_runtime_requirements: list[dict[str, object]] = []
     active_findings: set[RemediationFindingKey] = set()
     evidence = object_value(payload.get("evidence"), "release evidence")
@@ -435,6 +438,11 @@ def rescan_release(
             runtime=runtime_rules,
             expect_packages=True,
             package_assessment_exception=package_assessment_exception,
+            configuration_exceptions=configuration_exceptions,
+        )
+        applied_configuration_exceptions.extend(
+            {"platform": str(platform), **item.to_dict()}
+            for item in evaluation.applied_configuration_exceptions
         )
         scan_results[-1]["packageAssessment"] = (
             None
@@ -541,6 +549,7 @@ def rescan_release(
             "scope": scope,
             "findings": findings,
             "appliedExceptions": applied_exceptions,
+            "appliedConfigurationExceptions": applied_configuration_exceptions,
             "appliedRuntimeRequirements": applied_runtime_requirements,
             "triage": [item.to_dict() for item in triage],
             "previousResultDigest": previous_result_digest,

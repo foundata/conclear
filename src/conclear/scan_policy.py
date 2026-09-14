@@ -1,9 +1,11 @@
 """Workflow-level evaluation of untrusted scanner observations."""
 
+import re
 from dataclasses import dataclass
 from datetime import date
 
 from conclear.config import (
+    ConfigurationException,
     PackageAssessmentException,
     RuntimeConfig,
     VulnerabilityException,
@@ -30,6 +32,55 @@ class AppliedException:
             "advisory": self.advisory,
             "expires": self.expires,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class AppliedConfigurationException:
+    """One unexpired configuration exception matched to a failed check on a path."""
+
+    image: str
+    path: str
+    checks: tuple[str, ...]
+    target: str
+    check: str
+    expires: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the evidence representation."""
+        return {
+            "image": self.image,
+            "path": self.path,
+            "checks": list(self.checks),
+            "target": self.target,
+            "check": self.check,
+            "expires": self.expires,
+        }
+
+
+def path_pattern_matches(pattern: str, target: str) -> bool:
+    """Match an image path against a relative glob.
+
+    `*` and `?` stay within one path segment, `**` spans any number of
+    segments. Leading slashes are ignored on both sides because scanners and
+    configurations spell image paths inconsistently.
+    """
+    return _pattern_regex(pattern).fullmatch(target.lstrip("/")) is not None
+
+
+def _pattern_regex(pattern: str) -> re.Pattern[str]:
+    parts: list[str] = []
+    for segment in pattern.lstrip("/").split("/"):
+        if segment == "**":
+            parts.append("(?:[^/]+/)*")
+            continue
+        piece = "".join(
+            "[^/]*" if char == "*" else "[^/]" if char == "?" else re.escape(char)
+            for char in segment
+        )
+        parts.append(piece + "/")
+    body = "".join(parts)
+    body = body.removesuffix("/") if not pattern.endswith("/") else body
+    return re.compile(body)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +129,7 @@ class ScanEvaluation:
     fixable_vulnerabilities: tuple[FixableVulnerability, ...]
     applied_runtime_requirements: tuple[dict[str, object], ...] = ()
     package_assessment: PackageAssessment | None = None
+    applied_configuration_exceptions: tuple[AppliedConfigurationException, ...] = ()
 
     @property
     def accepted(self) -> bool:
@@ -99,6 +151,7 @@ def evaluate_trivy_report(
     runtime: RuntimeConfig | None = None,
     expect_packages: bool = False,
     package_assessment_exception: PackageAssessmentException | None = None,
+    configuration_exceptions: tuple[ConfigurationException, ...] = (),
 ) -> ScanEvaluation:
     """Reject secrets, failed misconfigurations and unexcepted fixable vulnerabilities.
 
@@ -111,6 +164,7 @@ def evaluate_trivy_report(
     results = array_value(results_value, label="Trivy results")
     findings: list[Finding] = []
     applied: list[AppliedException] = []
+    applied_configuration: list[AppliedConfigurationException] = []
     vulnerabilities: list[FixableVulnerability] = []
     runtime_requirements: list[dict[str, object]] = []
     for raw_result in results:
@@ -151,6 +205,26 @@ def evaluate_trivy_report(
                         "requirement": "root_requirement",
                         **runtime.root_requirement.to_dict(),
                     }
+                )
+                continue
+            matched_exception, expired_exception = _match_configuration_exception(
+                image_id=image_id,
+                target=location,
+                identifier=identifier,
+                exceptions=configuration_exceptions,
+                today=today,
+            )
+            if matched_exception is not None:
+                applied_configuration.append(matched_exception)
+                continue
+            if expired_exception:
+                findings.append(
+                    Finding(
+                        "CC0503",
+                        "error",
+                        f"Configuration exception expired for {identifier}",
+                        location,
+                    )
                 )
                 continue
             findings.append(
@@ -235,6 +309,9 @@ def evaluate_trivy_report(
         applied_exceptions=tuple(
             sorted(applied, key=lambda item: (item.component, item.advisory))
         ),
+        applied_configuration_exceptions=tuple(
+            sorted(applied_configuration, key=lambda item: (item.target, item.check))
+        ),
         fixable_vulnerabilities=tuple(
             sorted(
                 vulnerabilities,
@@ -276,6 +353,48 @@ def _match_exception(
         return None, True
     return (
         AppliedException(item.image, item.component, item.advisory, item.expires),
+        False,
+    )
+
+
+def _match_configuration_exception(
+    *,
+    image_id: str,
+    target: str | None,
+    identifier: str,
+    exceptions: tuple[ConfigurationException, ...],
+    today: date,
+) -> tuple[AppliedConfigurationException | None, bool]:
+    if target is None:
+        return None, False
+    candidates = [
+        item
+        for item in exceptions
+        if item.image == image_id
+        and path_pattern_matches(item.path, target)
+        and (not item.checks or identifier in item.checks)
+    ]
+    if not candidates:
+        return None, False
+    # The most specific declaration decides: named checks before blanket paths.
+    item = sorted(candidates, key=lambda entry: (not entry.checks, entry.path))[0]
+    try:
+        expiry = date.fromisoformat(item.expires)
+    except ValueError as exc:
+        raise OperationalError(
+            f"Configuration exception has invalid expiry: {item.expires}"
+        ) from exc
+    if expiry < today:
+        return None, True
+    return (
+        AppliedConfigurationException(
+            image=item.image,
+            path=item.path,
+            checks=item.checks,
+            target=target.lstrip("/"),
+            check=identifier,
+            expires=item.expires,
+        ),
         False,
     )
 

@@ -1179,6 +1179,7 @@ def test_common_model_holds_only_build_facts() -> None:
         "hooks",
         "vulnerability_exceptions",
         "package_assessment_exception",
+        "configuration_exceptions",
         "release_limits",
     }
     assert {item.name for item in fields(config_module.TestConfig)} == {
@@ -1389,4 +1390,96 @@ expires = "soon"
     )
 
     with pytest.raises(InvalidInvocationError, match="not an ISO date"):
+        load_repository_config(path)
+
+
+def test_configuration_exceptions_are_parsed_and_bound_to_their_image(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[[images.configuration_exceptions]]
+path = "usr/lib/python3/dist-packages/ansible/galaxy/data/**/Dockerfile.j2"
+checks = ["DS-0011", "DS-0001"]
+rationale = "Galaxy template data shipped by ansible-core, not the image's build definition."
+owner = "security@example.com"
+review_trigger = "ansible-core package update"
+expires = "2026-12-31"
+
+[[images.configuration_exceptions]]
+path = "**/*.j2"
+rationale = "Templates are never evaluated as infrastructure code in this image."
+owner = "security@example.com"
+review_trigger = "Any new template-bearing package"
+expires = "2026-12-31"
+
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+
+    exceptions = (
+        load_repository_config(path).release_image("app").configuration_exceptions
+    )
+
+    assert [(item.image, item.path, item.checks) for item in exceptions] == [
+        (
+            "app",
+            "usr/lib/python3/dist-packages/ansible/galaxy/data/**/Dockerfile.j2",
+            ("DS-0001", "DS-0011"),
+        ),
+        ("app", "**/*.j2", ()),
+    ]
+    assert exceptions[0].to_dict()["reviewTrigger"] == "ansible-core package update"
+
+
+@pytest.mark.parametrize(
+    ("table", "message"),
+    [
+        ('path = "/etc/Dockerfile"', "does not match"),
+        ('path = "etc/../Dockerfile"', "relative image path"),
+        ('path = "etc/Dockerfile"\nchecks = ["ds-0001"]', "does not match"),
+        ('path = "etc/Dockerfile"\nexpires = "soon"', "not an ISO date"),
+    ],
+)
+def test_configuration_exceptions_reject_unsafe_paths_checks_and_expiry(
+    repository_factory: Callable[..., Path], table: str, message: str
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    fields = 'rationale = "r"\nowner = "o"\nreview_trigger = "t"\n'
+    if "expires" not in table:
+        fields += 'expires = "2026-12-31"\n'
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            f"[[images.configuration_exceptions]]\n{table}\n{fields}\n[images.release]",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match=message):
+        load_repository_config(path)
+
+
+def test_configuration_exceptions_must_be_unique_per_image(
+    repository_factory: Callable[..., Path],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    entry = (
+        '[[images.configuration_exceptions]]\npath = "**/*.j2"\nrationale = "r"\n'
+        'owner = "o"\nreview_trigger = "t"\nexpires = "2026-12-31"\n\n'
+    )
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]", entry + entry + "[images.release]"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(InvalidInvocationError, match="must be unique"):
         load_repository_config(path)

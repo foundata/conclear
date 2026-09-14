@@ -1,7 +1,12 @@
+from dataclasses import replace
 from datetime import date
 
-from conclear.config import PackageAssessmentException, VulnerabilityException
-from conclear.scan_policy import evaluate_trivy_report
+from conclear.config import (
+    ConfigurationException,
+    PackageAssessmentException,
+    VulnerabilityException,
+)
+from conclear.scan_policy import evaluate_trivy_report, path_pattern_matches
 
 
 def exception(expires: str) -> VulnerabilityException:
@@ -229,3 +234,152 @@ def test_scan_policy_leaves_filesystem_reports_unassessed_by_default() -> None:
 
     assert evaluation.findings == ()
     assert evaluation.package_assessment is None
+
+
+def configuration_exception(
+    expires: str, *, path: str, checks: tuple[str, ...] = ()
+) -> ConfigurationException:
+    return ConfigurationException(
+        image="app",
+        path=path,
+        checks=checks,
+        rationale="Template data shipped inside an installed package.",
+        owner="security@example.com",
+        review_trigger="ansible-core package update",
+        expires=expires,
+    )
+
+
+def misconfiguration_report() -> object:
+    return {
+        "Results": [
+            {
+                "Target": "usr/lib/python3/dist-packages/ansible/galaxy/data/apb/Dockerfile.j2",
+                "Misconfigurations": [
+                    {"ID": "DS-0001", "Status": "FAIL"},
+                    {"ID": "DS-0011", "Status": "FAIL"},
+                ],
+            },
+            {
+                "Target": "etc/app/Dockerfile",
+                "Misconfigurations": [{"ID": "DS-0001", "Status": "FAIL"}],
+                "Secrets": [{"RuleID": "aws-access-key-id"}],
+            },
+        ]
+    }
+
+
+def test_path_patterns_match_segments_and_directory_spans() -> None:
+    assert path_pattern_matches("**/Dockerfile.j2", "usr/lib/x/Dockerfile.j2")
+    assert path_pattern_matches("**/Dockerfile.j2", "Dockerfile.j2")
+    assert path_pattern_matches(
+        "usr/lib/*/data/**/Dockerfile.*", "usr/lib/py/data/a/b/Dockerfile.j2"
+    )
+    assert path_pattern_matches("/etc/app/Dockerfile", "etc/app/Dockerfile")
+    assert not path_pattern_matches("usr/*/Dockerfile.j2", "usr/lib/x/Dockerfile.j2")
+    assert not path_pattern_matches("etc/app/Dockerfile", "etc/app/Dockerfile.j2")
+    assert not path_pattern_matches("etc/app/Dockerfil?", "etc/app/Dockerfile.j2")
+
+
+def test_scan_policy_applies_configuration_exceptions_only_to_matching_paths() -> None:
+    evaluation = evaluate_trivy_report(
+        misconfiguration_report(),
+        image_id="app",
+        exceptions=(),
+        today=date(2026, 6, 1),
+        configuration_exceptions=(
+            configuration_exception(
+                "2026-12-31",
+                path="usr/lib/python3/dist-packages/ansible/galaxy/data/**/Dockerfile.j2",
+                checks=("DS-0001", "DS-0011"),
+            ),
+        ),
+    )
+
+    assert [(item.check_id, item.message) for item in evaluation.findings] == [
+        ("CC0501", "Configuration finding DS-0001"),
+        ("CC0501", "Secret finding aws-access-key-id"),
+    ]
+    assert [item.location for item in evaluation.findings] == ["etc/app/Dockerfile"] * 2
+    assert [
+        (item.target, item.check)
+        for item in evaluation.applied_configuration_exceptions
+    ] == [
+        (
+            "usr/lib/python3/dist-packages/ansible/galaxy/data/apb/Dockerfile.j2",
+            "DS-0001",
+        ),
+        (
+            "usr/lib/python3/dist-packages/ansible/galaxy/data/apb/Dockerfile.j2",
+            "DS-0011",
+        ),
+    ]
+    assert evaluation.applied_configuration_exceptions[0].to_dict()["checks"] == [
+        "DS-0001",
+        "DS-0011",
+    ]
+
+
+def test_scan_policy_limits_configuration_exceptions_to_named_checks() -> None:
+    evaluation = evaluate_trivy_report(
+        misconfiguration_report(),
+        image_id="app",
+        exceptions=(),
+        today=date(2026, 6, 1),
+        configuration_exceptions=(
+            configuration_exception(
+                "2026-12-31", path="**/Dockerfile.j2", checks=("DS-0011",)
+            ),
+        ),
+    )
+
+    assert sorted(
+        (item.location, item.message)
+        for item in evaluation.findings
+        if item.check_id == "CC0501"
+    ) == [
+        ("etc/app/Dockerfile", "Configuration finding DS-0001"),
+        ("etc/app/Dockerfile", "Secret finding aws-access-key-id"),
+        (
+            "usr/lib/python3/dist-packages/ansible/galaxy/data/apb/Dockerfile.j2",
+            "Configuration finding DS-0001",
+        ),
+    ]
+    assert [item.check for item in evaluation.applied_configuration_exceptions] == [
+        "DS-0011"
+    ]
+
+
+def test_scan_policy_rejects_an_expired_configuration_exception() -> None:
+    evaluation = evaluate_trivy_report(
+        misconfiguration_report(),
+        image_id="app",
+        exceptions=(),
+        today=date(2027, 1, 1),
+        configuration_exceptions=(
+            configuration_exception("2026-12-31", path="**/Dockerfile.j2"),
+        ),
+    )
+
+    expired = [item for item in evaluation.findings if item.check_id == "CC0503"]
+    assert [item.message for item in expired] == [
+        "Configuration exception expired for DS-0001",
+        "Configuration exception expired for DS-0011",
+    ]
+    assert evaluation.applied_configuration_exceptions == ()
+    assert not evaluation.accepted
+
+
+def test_scan_policy_ignores_configuration_exceptions_of_other_images() -> None:
+    other = replace(
+        configuration_exception("2026-12-31", path="**/Dockerfile.j2"), image="other"
+    )
+    evaluation = evaluate_trivy_report(
+        misconfiguration_report(),
+        image_id="app",
+        exceptions=(),
+        today=date(2026, 6, 1),
+        configuration_exceptions=(other,),
+    )
+
+    assert len([item for item in evaluation.findings if item.check_id == "CC0501"]) == 4

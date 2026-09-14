@@ -317,6 +317,38 @@ class VulnerabilityException:
 
 
 @dataclass(frozen=True, slots=True)
+class ConfigurationException:
+    """A reviewed, expiring acceptance of configuration-scan findings by path.
+
+    The configuration scanner walks the whole image filesystem, so it also
+    evaluates infrastructure files that installed packages ship as data, such
+    as a Dockerfile template inside a Python package. The exception names the
+    image path or path pattern and, optionally, the check identifiers it
+    covers; it never widens to other paths.
+    """
+
+    image: str
+    path: str
+    checks: tuple[str, ...]
+    rationale: str
+    owner: str
+    review_trigger: str
+    expires: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the evidence representation."""
+        return {
+            "image": self.image,
+            "path": self.path,
+            "checks": list(self.checks),
+            "rationale": self.rationale,
+            "owner": self.owner,
+            "reviewTrigger": self.review_trigger,
+            "expires": self.expires,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class PackageAssessmentException:
     """A reviewed, expiring acceptance of packages no scanner can assess.
 
@@ -387,6 +419,7 @@ class ReleaseImageConfig(ImageConfig):
     vulnerability_exceptions: tuple[VulnerabilityException, ...]
     release_limits: ReleaseLimits
     package_assessment_exception: PackageAssessmentException | None = None
+    configuration_exceptions: tuple[ConfigurationException, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -703,6 +736,15 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         if assessment_value is None
         else _parse_package_assessment_exception(toml_table(assessment_value))
     )
+    configuration_exceptions = tuple(
+        _parse_configuration_exception(toml_table(item), image_id)
+        for item in _list(value.get("configuration_exceptions", []))
+    )
+    configuration_keys = [(item.path, item.checks) for item in configuration_exceptions]
+    if len(configuration_keys) != len(set(configuration_keys)):
+        raise InvalidInvocationError(
+            f"Configuration exceptions for {image_id} must be unique"
+        )
     return ReleaseImageConfig(
         image_id=image_id,
         containerfile=containerfile,
@@ -722,6 +764,7 @@ def _parse_image(value: dict[str, Any], source_root: Path) -> ImageConfig:
         ),
         vulnerability_exceptions=exceptions,
         package_assessment_exception=package_assessment_exception,
+        configuration_exceptions=configuration_exceptions,
         release_limits=ReleaseLimits(
             candidate_lifetime=parse_duration(
                 toml_string(limits_value.get("candidate_lifetime", "7d")),
@@ -744,6 +787,7 @@ _RELEASE_ONLY_KEYS = (
     "hooks",
     "vulnerability_exceptions",
     "package_assessment_exception",
+    "configuration_exceptions",
 )
 _RELEASE_ONLY_TEST_KEYS = ("fixtures", "outputs", "preparations", "launch")
 _RELEASE_ONLY_LIMIT_KEYS = ("candidate_lifetime", "remediation")
@@ -1330,6 +1374,49 @@ def _parse_exception(value: dict[str, Any], image_id: str) -> VulnerabilityExcep
         owner=toml_string(value["owner"]),
         expires=expires,
         review_trigger=toml_string(value["review_trigger"]),
+    )
+
+
+_CHECK_IDENTIFIER = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$")
+
+
+def _parse_configuration_exception(
+    value: dict[str, Any], image_id: str
+) -> ConfigurationException:
+    expires = toml_string(value["expires"])
+    try:
+        date.fromisoformat(expires)
+    except ValueError as exc:
+        raise InvalidInvocationError(
+            f"Configuration exception expiry is not an ISO date: {expires}"
+        ) from exc
+    path = toml_string(value["path"]).strip()
+    if (
+        not path
+        or path.startswith("/")
+        or "\\" in path
+        or "\x00" in path
+        or any(part in {"", ".", ".."} for part in path.split("/"))
+    ):
+        raise InvalidInvocationError(
+            "Configuration exception path must be a relative image path or "
+            f"pattern without empty, dot or parent segments: {path!r}"
+        )
+    checks = tuple(sorted(set(_string_list(value.get("checks", [])))))
+    for check in checks:
+        if not _CHECK_IDENTIFIER.fullmatch(check):
+            raise InvalidInvocationError(
+                f"Configuration exception names an invalid check identifier: {check}"
+            )
+    review = _parse_requirement(value)
+    return ConfigurationException(
+        image=image_id,
+        path=path,
+        checks=checks,
+        rationale=review.rationale,
+        owner=review.owner,
+        review_trigger=review.review_trigger,
+        expires=expires,
     )
 
 

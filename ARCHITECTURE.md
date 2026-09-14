@@ -463,6 +463,15 @@ and an exact finding match, and records the image identifier with every applied
 exception. Security-owner review remains a repository merge-control
 responsibility and is not inferred from a self-declared field.
 
+Configuration exceptions use the same shape for the configuration scanner,
+which walks the whole image filesystem and therefore also evaluates
+infrastructure files that installed packages ship as data. Each exception names
+the image path or path pattern (`*` and `?` within a segment, `**` across
+segments), optionally the check identifiers it covers, and rationale, owner,
+expiry and review trigger. ConClear applies it only to failed checks on matching
+paths, rejects it when expired, records target, check and declaration with every
+applied exception and never lets it suppress secret or vulnerability findings.
+
 <a id="promise-ip0010"></a>
 Maintainer-controlled release configuration is separate from the application
 repository. A named profile under `$XDG_CONFIG_HOME/conclear/` supplies a public

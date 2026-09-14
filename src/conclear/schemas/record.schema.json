@@ -490,6 +490,33 @@
         "path": {"type": "string", "pattern": "^[^/\\\\]+$"}
       }
     },
+    "appliedConfigurationException": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image", "path", "checks", "target", "check", "expires"],
+      "properties": {
+        "image": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "checks": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "target": {"type": "string", "minLength": 1},
+        "check": {"type": "string", "minLength": 1},
+        "expires": {"type": "string", "format": "date"}
+      }
+    },
+    "rescanAppliedConfigurationException": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "image", "path", "checks", "target", "check", "expires"],
+      "properties": {
+        "platform": {"$ref": "#/$defs/platform"},
+        "image": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "checks": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "target": {"type": "string", "minLength": 1},
+        "check": {"type": "string", "minLength": 1},
+        "expires": {"type": "string", "format": "date"}
+      }
+    },
     "appliedException": {
       "type": "object",
       "additionalProperties": false,
@@ -602,6 +629,7 @@
         "sbom": {"type": "object", "additionalProperties": false, "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"const": "SPDX-2.3"}}},
         "scans": {"type": "array", "items": {"$ref": "#/$defs/scan"}},
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
+        "appliedConfigurationExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedConfigurationException"}},
         "packageAssessment": {"$ref": "#/$defs/packageAssessment"},
         "appliedRuntimeRequirements": {
           "type": "array", "items": {
@@ -742,6 +770,7 @@
         "scope": {"enum": ["sbom-vulnerabilities", "full-image"]},
         "findings": {"type": "array", "items": {"$ref": "#/$defs/rescanFinding"}},
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/rescanAppliedException"}},
+        "appliedConfigurationExceptions": {"type": "array", "items": {"$ref": "#/$defs/rescanAppliedConfigurationException"}},
         "appliedRuntimeRequirements": {
           "type": "array", "items": {
             "type": "object", "additionalProperties": false,
