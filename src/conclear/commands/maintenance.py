@@ -45,6 +45,7 @@ from conclear.services.registry_diagnostics import DiagnosticStatus
 from conclear.services.release import AuthenticatedPinResolver, profile_inputs
 from conclear.services.rescan import (
     RescanSigning,
+    require_present_subject,
     rescan_release,
     verified_rescan_history,
 )
@@ -677,6 +678,7 @@ def _execute_rescan(
                 for tool in runtime.tools.values()
             }
         )
+        require_present_subject(runtime.skopeo(), subject, auth_file=selected.auth_file)
         history_store = RescanHistoryStore(state_home())
         attested_history = verified_rescan_history(
             subject,

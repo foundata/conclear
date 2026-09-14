@@ -68,6 +68,31 @@ class Registry(Protocol):
         ...
 
 
+class SubjectResolver(Protocol):
+    """Registry lookup that distinguishes an absent subject from other failures."""
+
+    def resolve_optional(
+        self, reference: OCIReference, *, auth_file: Path | None = None
+    ) -> Digest | None:
+        """Return no digest only for an unambiguously absent registry reference."""
+
+
+def require_present_subject(
+    resolver: SubjectResolver, subject: OCIReference, *, auth_file: Path | None
+) -> None:
+    """Fail early when the released subject was retired from the registry.
+
+    A retired subject has no retrievable attestations. Without this check the
+    empty registry view would be compared with durable rescan history and be
+    reported as a conflict, hiding the actual cause.
+    """
+    if resolver.resolve_optional(subject, auth_file=auth_file) is None:
+        raise OperationalError(
+            f"Released subject {subject} is no longer present in the registry; "
+            "its release archive remains the retained evidence"
+        )
+
+
 class Signer(Protocol):
     """Signature operations required by a rescan."""
 

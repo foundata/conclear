@@ -54,6 +54,7 @@ from conclear.rescan_history import (
 from conclear.services.rescan import (
     RescanResult,
     RescanSigning,
+    require_present_subject,
     rescan_release,
     verified_rescan_history,
 )
@@ -781,3 +782,26 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
         assert len(history) == 1
         assert history[0].record_digest == result.record_digest
         assert history[0].verified_at == datetime(2026, 2, 1, 0, 5, tzinfo=UTC)
+
+
+def test_rescan_names_a_retired_subject_instead_of_a_history_conflict() -> None:
+    class Resolver:
+        def __init__(self, digest: Digest | None) -> None:
+            self.digest = digest
+            self.calls: list[tuple[OCIReference, Path | None]] = []
+
+        def resolve_optional(
+            self, reference: OCIReference, *, auth_file: Path | None = None
+        ) -> Digest | None:
+            self.calls.append((reference, auth_file))
+            return self.digest
+
+    subject = OCIReference.parse(
+        "quay.io/example/app@sha256:" + "a" * 64, require_digest=True
+    )
+    present = Resolver(subject.digest)
+    require_present_subject(present, subject, auth_file=Path("auth.json"))
+    assert present.calls == [(subject, Path("auth.json"))]
+
+    with pytest.raises(OperationalError, match="no longer present in the registry"):
+        require_present_subject(Resolver(None), subject, auth_file=None)

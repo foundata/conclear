@@ -353,7 +353,12 @@ class FakeRegistry:
         self, reference: OCIReference, *, auth_file: Path | None = None
     ) -> Digest | None:
         del auth_file
-        return None if reference.tag is None else self.tags.get(reference.tag)
+        if reference.tag is not None:
+            return self.tags.get(reference.tag)
+        # A digest is present while any tag of this fake registry still names it.
+        if reference.digest is not None and reference.digest in self.tags.values():
+            return reference.digest
+        return None
 
     def copy_layout_to_registry(
         self,

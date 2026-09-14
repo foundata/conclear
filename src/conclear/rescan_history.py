@@ -97,6 +97,11 @@ class RescanHistoryStore:
         self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
         with locked_file(path.with_suffix(".lock"), label="rescan history"):
             cached = self._load(subject)
+            if cached and not authoritative:
+                raise OperationalError(
+                    "Registry holds none of the signed rescan attestations recorded "
+                    "in durable history for this subject"
+                )
             if (
                 len(cached) > len(authoritative)
                 or cached != authoritative[: len(cached)]

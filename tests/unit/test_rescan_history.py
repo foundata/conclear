@@ -216,6 +216,8 @@ def test_history_rejects_cache_conflicts_and_signed_forks(
     )
     with pytest.raises(OperationalError, match="conflicts with signed"):
         store.synchronize(SUBJECT, signed_history, first_digest)
+    with pytest.raises(OperationalError, match="holds none of the signed rescan"):
+        store.synchronize(SUBJECT, (), first_digest)
 
     left = _record(first_digest, datetime(2026, 1, 2, tzinfo=UTC))
     right = _record(
