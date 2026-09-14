@@ -205,6 +205,7 @@ class Runtime:
         write_preparation_outputs: bool = True,
         main_exit_status: int = 0,
         timeout_preparation: bool = False,
+        timeout_main: bool = False,
         fail_import_call: int | None = None,
         fail_create_call: int | None = None,
         timeout_health: bool = False,
@@ -226,6 +227,7 @@ class Runtime:
         self.write_preparation_outputs = write_preparation_outputs
         self.main_exit_status = main_exit_status
         self.timeout_preparation = timeout_preparation
+        self.timeout_main = timeout_main
         self.fail_import_call = fail_import_call
         self.fail_create_call = fail_create_call
         self.timeout_health = timeout_health
@@ -374,6 +376,8 @@ class Runtime:
     def wait(self, **values: Any) -> int:
         if self.timeout_preparation and "-prepare-" in str(values["name"]):
             raise CommandTimeoutError("injected preparation timeout")
+        if self.timeout_main and "-prepare-" not in str(values["name"]):
+            raise CommandTimeoutError("injected main container timeout")
         return 0 if "-prepare-" in str(values["name"]) else self.main_exit_status
 
     def remove(self, **values: Any) -> None:
@@ -1902,6 +1906,55 @@ def test_qualification_record_binds_test_inputs_and_sibling_result(
     assert dependency["effectiveLimits"] == payload["effectiveLimits"]
     secret = next(item for item in payload["testInputs"]["outputs"] if item["secret"])
     assert "digest" not in secret
+
+
+def test_a_service_that_outlives_its_shutdown_budget_is_rejected(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    runtime = Runtime(timeout_main=True)
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        configured_hook_runner(value, CapturingRunner()),
+        dependencies=build_test_dependencies(value, Builder()),
+    )
+
+    assert [f.message for f in evidence.findings if f.check_id == "CC0403"] == [
+        "Service did not stop within 30s after SIGTERM"
+    ]
+    assert {"name": "signalAndShutdown", "status": "failed", "timedOut": True} in (
+        evidence.test_results
+    )
+    assert runtime.removals >= 1
+
+
+def test_a_one_shot_that_outlives_its_startup_budget_is_rejected(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root, profile="one-shot")
+    value = inputs(root, tmp_path)
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        Runtime(timeout_main=True),
+        configured_hook_runner(value, CapturingRunner()),
+        dependencies=build_test_dependencies(value, Builder()),
+    )
+
+    assert any(
+        f.message.startswith("One-shot image did not exit within")
+        for f in evidence.findings
+    )
+    assert {"name": "oneShotExit", "status": "failed", "timedOut": True} in (
+        evidence.test_results
+    )
 
 
 def test_one_shot_launch_uses_arguments_and_expected_exit_contract(

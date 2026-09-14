@@ -26,7 +26,7 @@ from conclear.adapters.podman import (
     RuntimeControlObservation,
 )
 from conclear.config import SYSTEMD_STOP_SIGNAL, RuntimeConfig
-from conclear.errors import OperationalError
+from conclear.errors import CommandTimeoutError, OperationalError
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
 from conclear.presentation import Finding
 from conclear.services.qualification_inputs import (
@@ -238,30 +238,44 @@ def exercise_container(
             readiness_timing=readiness_timing,
         )
     else:
-        exit_status = runtime.wait(
+        budget = inputs.image.runtime.startup_timeout_seconds
+        exit_status = _wait_for_exit(
+            runtime,
             root=storage_root,
             runroot=runroot,
             name=container_name,
-            timeout_seconds=inputs.image.runtime.startup_timeout_seconds,
+            timeout_seconds=budget,
         )
         expected_exit_status = inputs.image.test.launch.expected_exit_status
-        if exit_status != expected_exit_status:
+        if exit_status is None:
             findings.append(
                 Finding(
                     "CC0403",
                     "error",
-                    f"One-shot image exited with {exit_status}, expected {expected_exit_status}",
+                    f"One-shot image did not exit within {budget}s",
                 )
             )
-        results.append(
-            {
-                "name": "oneShotExit",
-                "status": (
-                    "passed" if exit_status == expected_exit_status else "failed"
-                ),
-                "exitStatus": exit_status,
-            }
-        )
+            results.append(
+                {"name": "oneShotExit", "status": "failed", "timedOut": True}
+            )
+        else:
+            if exit_status != expected_exit_status:
+                findings.append(
+                    Finding(
+                        "CC0403",
+                        "error",
+                        f"One-shot image exited with {exit_status}, expected {expected_exit_status}",
+                    )
+                )
+            results.append(
+                {
+                    "name": "oneShotExit",
+                    "status": (
+                        "passed" if exit_status == expected_exit_status else "failed"
+                    ),
+                    "exitStatus": exit_status,
+                }
+            )
         results.append(
             {
                 "name": "footprint",
@@ -391,12 +405,26 @@ def _exercise_service(
         name=container_name,
         signal_name=signal_name,
     )
-    exit_status = runtime.wait(
+    budget = inputs.image.runtime.shutdown_timeout_seconds
+    exit_status = _wait_for_exit(
+        runtime,
         root=storage_root,
         runroot=runroot,
         name=container_name,
-        timeout_seconds=inputs.image.runtime.shutdown_timeout_seconds,
+        timeout_seconds=budget,
     )
+    if exit_status is None:
+        findings.append(
+            Finding(
+                "CC0403",
+                "error",
+                f"Service did not stop within {budget}s after SIG{signal_name}",
+            )
+        )
+        results.append(
+            {"name": "signalAndShutdown", "status": "failed", "timedOut": True}
+        )
+        return
     expected_exit_status = inputs.image.test.launch.expected_exit_status
     if exit_status != expected_exit_status:
         findings.append(
@@ -413,6 +441,28 @@ def _exercise_service(
             "exitStatus": exit_status,
         }
     )
+
+
+def _wait_for_exit(
+    runtime: RuntimeAdapter,
+    *,
+    root: Path,
+    runroot: Path,
+    name: str,
+    timeout_seconds: float,
+) -> int | None:
+    """Return the exit status, or None when the container outlives its budget.
+
+    The budget is the declared startup or shutdown timeout, part of the image's
+    runtime contract, so exceeding it is a rejection rather than an inability
+    to observe Podman; the container is removed by force afterwards.
+    """
+    try:
+        return runtime.wait(
+            root=root, runroot=runroot, name=name, timeout_seconds=timeout_seconds
+        )
+    except CommandTimeoutError:
+        return None
 
 
 def _exercise_systemd_readiness(
