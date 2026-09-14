@@ -7,10 +7,10 @@ from conclear.jsonutil import structure_depth_is_bounded
 
 DECIDE = "DECIDE"
 RESOURCE_DECISIONS = {
-    "memory": "Measure peak memory under representative load and allow a justified margin.",
+    "memory": "Set a provisional value, run `conclear test`, read the footprint result and allow a justified margin over its memory peak.",
     "cpus": "Measure CPU demand and choose the CPU quota the application needs.",
-    "pids": "Measure process and thread demand, including startup and shutdown.",
-    "nofile": "Measure open-file demand under representative load.",
+    "pids": "Set a provisional value, run `conclear test` and allow a margin over the footprint result's task peak.",
+    "nofile": "Set a provisional value, run `conclear test` and allow a margin over the footprint result's open files.",
 }
 
 

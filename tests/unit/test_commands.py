@@ -328,14 +328,17 @@ def test_test_command_distinguishes_pass_rejection_and_incompleteness(
         run,
         load_build_evidence=lambda inputs: build_evidence(),
         test_platform=lambda *args, **kwargs: SimpleNamespace(
-            incomplete=incomplete, findings=findings, test_report_digest=DIGEST
+            incomplete=incomplete,
+            findings=findings,
+            test_report_digest=DIGEST,
+            test_results=(),
         ),
     )
 
     code, value, _ = invoke(["test", run.workspace.run_id, "--platform", "linux/amd64"])
 
     assert (code, value["status"]) == (exit_code, status)
-    assert value["data"] == {"reportDigest": DIGEST}
+    assert value["data"] == {"reportDigest": DIGEST, "footprint": None}
     assert run.workspace.load().state is state
 
 
@@ -389,6 +392,7 @@ def test_qualify_command_transitions_state_from_preflight_and_verdict(
             qualification_window=QualificationWindow.start(
                 datetime(2026, 1, 1, tzinfo=UTC)
             ),
+            test_results=(),
         )
 
     def by_digest(
@@ -2105,6 +2109,7 @@ def test_qualify_defaults_to_the_single_declared_platform(
             qualification_window=QualificationWindow.start(
                 datetime(2026, 1, 1, tzinfo=UTC)
             ),
+            test_results=(),
         )
 
     monkeypatch.setattr(

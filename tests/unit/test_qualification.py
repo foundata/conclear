@@ -12,6 +12,7 @@ from conclear.adapters.buildah import BuildObservation
 from conclear.adapters.podman import (
     ContainerObservation,
     ExecObservation,
+    FootprintObservation,
     ImportObservation,
     RuntimeControlObservation,
 )
@@ -187,6 +188,7 @@ class Runtime:
     ) -> None:
         self.fail_health = fail_health
         self.mapped_removals: list[Path] = []
+        self.footprint_observations = 0
         self.fail_remove = fail_remove
         self.effective_capabilities = effective_capabilities
         self.bounding_capabilities = bounding_capabilities
@@ -248,6 +250,10 @@ class Runtime:
                 )
                 output.chmod(0o600)
         return ContainerObservation(name, "container-id", "running", 100, None)
+
+    def observe_footprint(self, **values: Any) -> FootprintObservation:
+        self.footprint_observations += 1
+        return FootprintObservation(48 * 1024 * 1024, 7, 61)
 
     def inspect_controls(self, **values: Any) -> RuntimeControlObservation:
         runtime = self.runtimes.get(str(values["name"]))
@@ -1795,6 +1801,14 @@ def test_service_uses_exact_dependency_preparation_and_cleans_secrets(
     ).exists()
     scratch = value.workspace.root / "hook-scratch" / "app" / "linux-amd64"
     assert runner.requests[0].environment["CC_HOOK_SCRATCH"] == str(scratch)
+    assert runtime.footprint_observations == 1
+    assert {
+        "name": "footprint",
+        "status": "passed",
+        "peakMemoryBytes": 48 * 1024 * 1024,
+        "peakPids": 7,
+        "openFiles": 61,
+    } in evidence.test_results
     assert runner.scratch_was_empty_directory == [True]
     assert not scratch.exists()
     assert runtime.mapped_removals == []
@@ -1877,6 +1891,11 @@ def test_one_shot_launch_uses_arguments_and_expected_exit_contract(
 
     assert not evidence.findings
     assert evidence.test_results[-2] == {
+        "name": "footprint",
+        "status": "skipped",
+        "reason": "one-shot containers exit before the observation",
+    }
+    assert evidence.test_results[-3] == {
         "name": "oneShotExit",
         "status": "passed",
         "exitStatus": 7,

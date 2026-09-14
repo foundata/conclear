@@ -12,7 +12,7 @@ session in `conclear.services.runtime_tests` owns every resource.
 """
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -21,6 +21,7 @@ from conclear.adapters.podman import (
     BindMount,
     ContainerObservation,
     ExecObservation,
+    FootprintObservation,
     ImportObservation,
     RuntimeControlObservation,
 )
@@ -70,6 +71,12 @@ class RuntimeAdapter(Protocol):
         entrypoint: tuple[str, ...] = (),
     ) -> ContainerObservation:
         """Create one constrained runtime container."""
+        ...
+
+    def observe_footprint(
+        self, *, root: Path, runroot: Path, name: str
+    ) -> FootprintObservation:
+        """Read the resource high-water marks of one running container."""
         ...
 
     def inspect_controls(
@@ -255,6 +262,13 @@ def exercise_container(
                 "exitStatus": exit_status,
             }
         )
+        results.append(
+            {
+                "name": "footprint",
+                "status": "skipped",
+                "reason": "one-shot containers exit before the observation",
+            }
+        )
     return findings, results, execution_observation(inputs)
 
 
@@ -358,6 +372,13 @@ def _exercise_service(
             shutdown_result["exitStatus"] = container.exit_code
         results.append(shutdown_result)
         return
+    results.append(
+        footprint_result(
+            runtime.observe_footprint(
+                root=storage_root, runroot=runroot, name=container_name
+            )
+        )
+    )
     _check_immutable_paths(
         inputs, runtime, storage_root, runroot, container_name, findings
     )
@@ -499,6 +520,68 @@ def _exercise_systemd_readiness(
             )
             return container, _container_is_running(container)
     return container, _container_is_running(container)
+
+
+def footprint_result(observation: FootprintObservation) -> dict[str, object]:
+    """Record the observed footprint of a ready service as an advisory result.
+
+    The numbers inform the declared `memory`, `pids` and `nofile` limits; the
+    memory peak includes page cache, so a margin above it is expected.
+    """
+    if observation.is_empty():
+        return {
+            "name": "footprint",
+            "status": "skipped",
+            "reason": "cgroup statistics are not readable on this host",
+        }
+    result: dict[str, object] = {"name": "footprint", "status": "passed"}
+    if observation.peak_memory_bytes is not None:
+        result["peakMemoryBytes"] = observation.peak_memory_bytes
+    if observation.peak_pids is not None:
+        result["peakPids"] = observation.peak_pids
+    if observation.open_files is not None:
+        result["openFiles"] = observation.open_files
+    return result
+
+
+def footprint_summary(
+    results: Sequence[Mapping[str, object]], runtime_config: RuntimeConfig
+) -> str | None:
+    """Return one human line comparing the observed footprint with the limits."""
+    observed = next((item for item in results if item.get("name") == "footprint"), None)
+    if observed is None:
+        return None
+    if observed.get("status") != "passed":
+        return f"Footprint not observed: {observed.get('reason', 'unknown reason')}"
+    parts: list[str] = []
+    memory = observed.get("peakMemoryBytes")
+    if isinstance(memory, int):
+        parts.append(
+            f"{memory / (1024 * 1024):.0f} MiB peak memory (page cache included)"
+        )
+    pids = observed.get("peakPids")
+    if isinstance(pids, int):
+        parts.append(f"{pids} tasks at peak")
+    files = observed.get("openFiles")
+    if isinstance(files, int):
+        parts.append(f"{files} open files")
+    return (
+        "Observed footprint: " + ", ".join(parts) + f"; declared memory "
+        f"{runtime_config.memory}, pids {runtime_config.pids}, nofile "
+        f"{runtime_config.nofile}"
+    )
+
+
+def footprint_data(results: Sequence[Mapping[str, object]]) -> dict[str, object] | None:
+    """Return the observed footprint numbers for machine output, if any."""
+    observed = next((item for item in results if item.get("name") == "footprint"), None)
+    if observed is None or observed.get("status") != "passed":
+        return None
+    return {
+        key: observed[key]
+        for key in ("peakMemoryBytes", "peakPids", "openFiles")
+        if key in observed
+    }
 
 
 def _command_test_result(

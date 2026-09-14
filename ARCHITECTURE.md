@@ -1184,6 +1184,16 @@ final command status, final container state and a digest of the final bounded
 redacted command output; run-owned command logs retain that bounded output for
 diagnostics.
 
+Once a service or systemd container is ready, ConClear records its footprint as
+an advisory `footprint` test result: the cgroup memory peak, which includes
+page cache, the task peak and the number of open files of its processes,
+counted inside the rootless user namespace. `test` and `qualify` show these
+numbers next to the declared `memory`, `pids` and `nofile` limits so that the
+limits can start provisional and be tightened from evidence. A host without
+readable cgroup statistics records the result as skipped; a one-shot container
+exits before the observation and is skipped as well. The footprint never gates
+a qualification.
+
 Smoke tests apply explicit memory, CPU, process and file-descriptor limits from
 repository configuration and record the effective values. Health checks run the
 repository-declared command; ConClear does not expect an OCI image to contain

@@ -1,6 +1,7 @@
 """Rootless Podman runtime-test adapter."""
 
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +30,36 @@ class ContainerObservation:
     status: str
     pid: int
     exit_code: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class FootprintObservation:
+    """Resource high-water marks of one running container's cgroup."""
+
+    peak_memory_bytes: int | None
+    peak_pids: int | None
+    open_files: int | None
+
+    def is_empty(self) -> bool:
+        """Return whether nothing could be observed."""
+        return (
+            self.peak_memory_bytes is None
+            and self.peak_pids is None
+            and self.open_files is None
+        )
+
+
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+_FD_COUNTER = (
+    "import os, sys\n"
+    "total = 0\n"
+    "for pid in sys.argv[1:]:\n"
+    "    try:\n"
+    "        total += len(os.listdir(f'/proc/{pid}/fd'))\n"
+    "    except OSError:\n"
+    "        pass\n"
+    "print(total)\n"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,6 +391,57 @@ class PodmanAdapter(ToolAdapter):
             raise OperationalError("Podman exec output exceeds the observation limit")
         return ExecObservation(result.returncode, result.stdout, result.stderr)
 
+    def observe_footprint(
+        self, *, root: Path, runroot: Path, name: str, cgroup_root: Path = CGROUP_ROOT
+    ) -> FootprintObservation:
+        """Read the cgroup high-water marks and open files of a running container.
+
+        Memory and task peaks come from the container's cgroup v2 files, which
+        the rootless user can read. Open files are counted from `/proc` inside
+        the rootless user namespace, because the container's processes run as
+        mapped users. Unreadable statistics are reported as absent, not as an
+        error, since the footprint informs the declared limits without gating.
+        """
+        output = self._run(
+            (
+                *self._storage(root, runroot),
+                "container",
+                "inspect",
+                "--format",
+                "{{.State.CgroupPath}}",
+                name,
+            ),
+            timeout_seconds=120,
+        ).stdout.strip()
+        if not output.startswith("/"):
+            return FootprintObservation(None, None, None)
+        cgroup = cgroup_root / output.lstrip("/")
+        peak_memory = _read_counter(cgroup / "memory.peak")
+        if peak_memory is None:
+            peak_memory = _read_counter(cgroup / "memory.current")
+        peak_pids = _read_counter(cgroup / "pids.peak")
+        if peak_pids is None:
+            peak_pids = _read_counter(cgroup / "pids.current")
+        processes = _read_counters(cgroup / "cgroup.procs")
+        open_files: int | None = None
+        if processes:
+            try:
+                counted = self._run(
+                    (
+                        *self._storage(root, runroot),
+                        "unshare",
+                        sys.executable,
+                        "-c",
+                        _FD_COUNTER,
+                        *(str(pid) for pid in processes),
+                    ),
+                    timeout_seconds=120,
+                ).stdout.strip()
+                open_files = int(counted)
+            except (CommandExecutionError, ValueError):
+                open_files = None
+        return FootprintObservation(peak_memory, peak_pids, open_files)
+
     def inspect_controls(
         self, *, root: Path, runroot: Path, name: str
     ) -> RuntimeControlObservation:
@@ -496,6 +578,22 @@ class PodmanAdapter(ToolAdapter):
             timeout_seconds=300,
             operation=OperationKind.WRITE,
         )
+
+
+def _read_counter(path: Path) -> int | None:
+    values = _read_counters(path)
+    return values[0] if len(values) == 1 else None
+
+
+def _read_counters(path: Path) -> tuple[int, ...]:
+    try:
+        text = path.read_text(encoding="ascii")
+    except (OSError, UnicodeError):
+        return ()
+    try:
+        return tuple(int(line) for line in text.split())
+    except ValueError:
+        return ()
 
 
 def _int(value: object, label: str) -> int:

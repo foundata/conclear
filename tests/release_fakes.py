@@ -16,6 +16,7 @@ from conclear.adapters.hadolint import HadolintFinding
 from conclear.adapters.podman import (
     ContainerObservation,
     ExecObservation,
+    FootprintObservation,
     ImportObservation,
     RuntimeControlObservation,
 )
@@ -195,6 +196,10 @@ class FakePodman:
         return ContainerObservation(
             str(values["name"]), "container-id", "running", 100, None
         )
+
+    def observe_footprint(self, **values: Any) -> FootprintObservation:
+        del values
+        return FootprintObservation(64 * 1024 * 1024, 9, 94)
 
     def inspect_controls(self, **values: Any) -> RuntimeControlObservation:
         del values

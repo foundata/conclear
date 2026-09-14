@@ -285,7 +285,9 @@ conclear adopt --output conclear.toml
 
 If the file already exists, edit it instead. Resolve every `DECIDE` value and
 use your project's identities, measured resource limits and health command.
-A service image configuration looks like this:
+Provisional limits are fine at first: `conclear test` and `conclear qualify`
+report the observed footprint of the running container, so you can tighten
+them afterwards. A service image configuration looks like this:
 
 ```toml
 schema_version = 1

@@ -43,6 +43,7 @@ from conclear.services.run_context import (
     hook_runner,
     open_source_run,
 )
+from conclear.services.runtime_lifecycle import footprint_data, footprint_summary
 from conclear.services.runtime_tests import test_platform
 from conclear.transport import ImportedTransport, import_transport
 from conclear.values import Digest, Platform
@@ -226,7 +227,17 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
                 else "Runtime tests did not pass"
             ),
             findings=result.findings,
-            data={"reportDigest": result.test_report_digest},
+            data={
+                "reportDigest": result.test_report_digest,
+                "footprint": footprint_data(result.test_results),
+            },
+            details=tuple(
+                line
+                for line in (
+                    footprint_summary(result.test_results, inputs.image.runtime),
+                )
+                if line is not None
+            ),
         ),
         output_format,
     )
@@ -368,7 +379,15 @@ def qualify_command(
                     "layout": str(result.layout_path),
                     "databaseDigest": database.digest,
                     "qualificationWindow": result.qualification_window.to_dict(),
+                    "footprint": footprint_data(result.test_results),
                 },
+                details=tuple(
+                    line
+                    for line in (
+                        footprint_summary(result.test_results, inputs.image.runtime),
+                    )
+                    if line is not None
+                ),
             ),
             output_format,
         )

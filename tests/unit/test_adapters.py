@@ -18,7 +18,7 @@ from conclear.adapters.buildah import BuildahAdapter
 from conclear.adapters.cosign import CosignAdapter
 from conclear.adapters.git import GitAdapter
 from conclear.adapters.hadolint import HadolintAdapter
-from conclear.adapters.podman import BindMount, PodmanAdapter
+from conclear.adapters.podman import BindMount, FootprintObservation, PodmanAdapter
 from conclear.adapters.quay import QuayAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
@@ -607,6 +607,54 @@ def test_podman_cleanup_is_idempotent_and_resets_only_selected_storage(
     assert runner.requests[1].argv[-3:] == ("system", "reset", "--force")
     assert str(root) in runner.requests[1].argv
     assert str(runroot) in runner.requests[1].argv
+
+
+def test_podman_observes_footprint_from_cgroup_files_and_counts_files_in_namespace(
+    tmp_path: Path,
+) -> None:
+    cgroup_root = tmp_path / "cgroup"
+    scope = cgroup_root / "user.slice" / "libpod-abc.scope"
+    scope.mkdir(parents=True)
+    (scope / "memory.peak").write_text("65011712\n", encoding="ascii")
+    (scope / "pids.peak").write_text("9\n", encoding="ascii")
+    (scope / "cgroup.procs").write_text("4242\n4243\n", encoding="ascii")
+    runner = FakeRunner(result("/user.slice/libpod-abc.scope\n"), result("94\n"))
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    observed = adapter.observe_footprint(
+        root=tmp_path / "root",
+        runroot=tmp_path / "runroot",
+        name="cc-run-linux-amd64",
+        cgroup_root=cgroup_root,
+    )
+
+    assert observed == FootprintObservation(65011712, 9, 94)
+    assert runner.requests[0].argv[-4:] == (
+        "inspect",
+        "--format",
+        "{{.State.CgroupPath}}",
+        "cc-run-linux-amd64",
+    )
+    unshare = runner.requests[1].argv
+    assert unshare[5] == "unshare"
+    assert unshare[-2:] == ("4242", "4243")
+
+
+def test_podman_footprint_is_absent_when_cgroup_statistics_are_unreadable(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(result("/user.slice/libpod-missing.scope\n"))
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+
+    observed = adapter.observe_footprint(
+        root=tmp_path / "root",
+        runroot=tmp_path / "runroot",
+        name="cc",
+        cgroup_root=tmp_path / "cgroup",
+    )
+
+    assert observed.is_empty()
+    assert len(runner.requests) == 1
 
 
 def test_podman_removes_mapped_trees_inside_the_namespace_with_a_throwaway_store(

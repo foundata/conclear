@@ -151,6 +151,7 @@ class QualificationResult:
     verdict: Verdict
     findings: tuple[Finding, ...]
     qualification_window: QualificationWindow
+    test_results: tuple[dict[str, object], ...] = ()
 
 
 def build_platform(inputs: BuildInputs, builder: Builder) -> BuildEvidence:
@@ -571,6 +572,7 @@ def qualify_platform(
         verdict=verdict,
         findings=findings,
         qualification_window=window,
+        test_results=runtime_evidence.test_results,
     )
 
 
