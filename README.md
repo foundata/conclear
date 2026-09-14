@@ -191,9 +191,9 @@ On SELinux hosts, label ConClear's private state directory for container storage
 before the first build:
 
 ```sh
-state="${XDG_STATE_HOME:-$HOME/.local/state}/conclear"
-install -d -m 0700 "$state"
-chcon -t container_file_t "$state"
+state="${XDG_STATE_HOME:-${HOME}/.local/state}/conclear"
+install -d -m 0700 "${state}"
+chcon -t container_file_t "${state}"
 ```
 
 Keep SELinux enforcing. Repeat this after a filesystem relabel or state path
@@ -205,15 +205,16 @@ Otherwise, create credentials and an encrypted key outside source repositories:
 
 ```sh
 umask 077
-install -d -m 0700 "$HOME/.config/conclear"
-podman login --authfile "$HOME/.config/conclear/auth.json" quay.io
-cosign generate-key-pair --output-key-prefix "$HOME/.config/conclear/cosign"
+install -d -m 0700 "${HOME}/.config/conclear"
+podman login --authfile "${HOME}/.config/conclear/auth.json" quay.io
+cosign generate-key-pair --output-key-prefix "${HOME}/.config/conclear/cosign"
 ```
 
 Obtain a Quay API token with tag read, write and delete access and store it in
-`~/.config/conclear/quay.token`. Create `~/.config/conclear/foundata.toml`
-(or `$XDG_CONFIG_HOME/conclear/foundata.toml` if set), adjusting paths,
-ownership and policy choices:
+`~/.config/conclear/quay.token`. Create `~/.config/conclear/foundata.toml` (or
+`$XDG_CONFIG_HOME/conclear/foundata.toml` if set; adapt the name to fit your
+organization if not working for foundata), adjusting paths, ownership and policy
+choices:
 
 ```toml
 schema_version = 1
@@ -267,7 +268,7 @@ release user, outside source repositories and ConClear working directories:
 
 ```sh
 archives=/srv/archives/conclear
-install -d -m 0700 "$archives"
+install -d -m 0700 "${archives}"
 ```
 
 Back up keys and host settings separately; see [backup](./docs/backup.md).
@@ -361,7 +362,7 @@ conclear adopt --output conclear.toml   # draft; resolve every DECIDE value by h
 git add Containerfile .containerignore conclear.toml && git commit
 conclear check                          # static Containerfile and context checks
 conclear pins check                     # declared base digests are still current
-conclear qualify --revision HEAD --version "$version"   # build, test, scan; publishes nothing
+conclear qualify --revision HEAD --version "${version}"   # build, test, scan; publishes nothing
 conclear doctor --scope release --profile foundata      # registry, key, tools
 ```
 
@@ -376,9 +377,9 @@ From a configured repository on your configured host:
 ```sh
 version=1.2.3
 archives=/srv/archives/conclear
-conclear doctor --profile foundata --version "$version"
-conclear release --revision HEAD --version "$version" --profile foundata \
-  --archive-dir "$archives"
+conclear doctor --profile foundata --version "${version}"
+conclear release --revision HEAD --version "${version}" --profile foundata \
+  --archive-dir "${archives}"
 ```
 
 Replace `HEAD` with a Git tag or commit to release another revision. With the
@@ -402,7 +403,7 @@ run is finished; omit it to keep the directory for inspection.
 
 ```sh
 version=1.2.3
-conclear config show --version "$version"
+conclear config show --version "${version}"
 conclear check
 conclear pins check
 conclear doctor --scope qualify
@@ -412,7 +413,7 @@ Fix errors and commit changes. To build, test and scan one platform without
 publishing:
 
 ```sh
-conclear qualify --revision HEAD --version "$version" --platform linux/amd64
+conclear qualify --revision HEAD --version "${version}" --platform linux/amd64
 ```
 
 This separate qualification is optional; `release` runs its own checks.
@@ -423,7 +424,7 @@ This separate qualification is optional; `release` runs its own checks.
 From the same repository, with the original profile and tools:
 
 ```sh
-conclear release --resume "<run-id>" --profile foundata --archive-dir "$archives"
+conclear release --resume "<run-id>" --profile foundata --archive-dir "${archives}"
 ```
 
 If the qualification or candidate has expired, or required inputs have changed,
@@ -450,8 +451,8 @@ afterward. Keep referenced source archives beside their rescans. See
 Verify an archive against your trusted profile key:
 
 ```sh
-bundle="$archives/<archive-name>.tar.gz"
-conclear archive verify "$bundle" --profile foundata
+bundle="${archives}/<archive-name>.tar.gz"
+conclear archive verify "${bundle}" --profile foundata
 ```
 
 Verification needs Cosign trust data but not registry access. Unsigned
@@ -461,7 +462,7 @@ If a release or rescan completed but archiving failed, keep its workspace and
 retry the archive without publishing or rescanning:
 
 ```sh
-conclear archive create "<run-id>" --profile foundata --archive-dir "$archives"
+conclear archive create "<run-id>" --profile foundata --archive-dir "${archives}"
 ```
 
 Clean up the run only after the archive is safely retained.
@@ -477,15 +478,15 @@ your auth file:
 image=quay.io/foundata/example
 version=1.2.3
 key=~/.config/conclear/cosign.pub
-export DOCKER_CONFIG=$(mktemp -d); cp ~/.config/conclear/auth.json "$DOCKER_CONFIG/config.json"
+export DOCKER_CONFIG=$(mktemp -d); cp ~/.config/conclear/auth.json "${DOCKER_CONFIG}/config.json"
 
 skopeo inspect --format '{{.Digest}}' "docker://${image}:${version}"
 skopeo inspect --format '{{.Digest}}' "docker://${image}:latest"      # same digest
 skopeo inspect "docker://${image}:${version}" | jq '.Labels'            # source, revision, version, created
 cosign tree "${image}:${version}"                                       # signature, provenance, SBOM, release verification
-cosign verify --key "$key" "${image}:${version}"
-cosign verify-attestation --key "$key" --type slsaprovenance1 "${image}:${version}"
-cosign verify-attestation --key "$key" --type spdxjson "${image}:${version}"
+cosign verify --key "${key}" "${image}:${version}"
+cosign verify-attestation --key "${key}" --type slsaprovenance1 "${image}:${version}"
+cosign verify-attestation --key "${key}" --type spdxjson "${image}:${version}"
 ```
 
 Each release archive keeps the Sigstore bundles under `signatures/`. Their
@@ -493,8 +494,8 @@ Each release archive keeps the Sigstore bundles under `signatures/`. Their
 [public transparency log](https://search.sigstore.dev/):
 
 ```sh
-tar -xzf "$bundle" -C "$dir"
-jq '.verificationMaterial.tlogEntries[] | {logIndex, integratedTime}' "$dir"/signatures/*.sigstore.json
+tar -xzf "${bundle}" -C "${dir}"
+jq '.verificationMaterial.tlogEntries[] | {logIndex, integratedTime}' "${dir}"/signatures/*.sigstore.json
 # https://search.sigstore.dev/?logIndex=<logIndex>
 ```
 
@@ -530,9 +531,9 @@ referenced source archive beside it:
 
 ```sh
 archives=/srv/archives/conclear
-bundle="$archives/<archive-name>.tar.gz"
-conclear rescan --archive "$bundle" --profile foundata \
-  --authoritative --archive-dir "$archives"
+bundle="${archives}/<archive-name>.tar.gz"
+conclear rescan --archive "${bundle}" --profile foundata \
+  --authoritative --archive-dir "${archives}"
 ```
 
 On a restored host, install ConClear and its supported tools, then restore

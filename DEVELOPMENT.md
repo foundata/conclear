@@ -439,14 +439,14 @@ visudo, UID 10001 and the denied account `nobody`. After recording an absolute
 test manifest, build and export it with isolated rootless storage:
 
 ```sh
-buildah --root "$RUN/builder/root" --runroot "$RUN/builder/runroot" \
+buildah --root "${RUN}/builder/root" --runroot "${RUN}/builder/runroot" \
   --storage-driver vfs bud --platform linux/amd64 --format oci \
   --tag localhost/conclear-sudo:fixture tests/local_integration/sudo_fixture
-buildah --root "$RUN/builder/root" --runroot "$RUN/builder/runroot" \
-  --storage-driver vfs push localhost/conclear-sudo:fixture "oci:$RUN/layout:sudo-fixture"
-CONCLEAR_TEST_SUDO_LAYOUT="$RUN/layout" uv run pytest -m local_integration \
-  tests/local_integration/test_sudo.py --basetemp "$RUN/pytest"
-buildah --root "$RUN/builder/root" --runroot "$RUN/builder/runroot" \
+buildah --root "${RUN}/builder/root" --runroot "${RUN}/builder/runroot" \
+  --storage-driver vfs push localhost/conclear-sudo:fixture "oci:${RUN}/layout:sudo-fixture"
+CONCLEAR_TEST_SUDO_LAYOUT="${RUN}/layout" uv run pytest -m local_integration \
+  tests/local_integration/test_sudo.py --basetemp "${RUN}/pytest"
+buildah --root "${RUN}/builder/root" --runroot "${RUN}/builder/runroot" \
   --storage-driver vfs rmi --all
 ```
 
