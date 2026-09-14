@@ -127,6 +127,39 @@ class ReleaseEvidence:
     qualification_digests: tuple[str, ...]
 
 
+def match_sboms_to_platforms(
+    platforms: tuple[Platform, ...],
+    sboms: tuple[tuple[Platform, Path, str], ...],
+) -> dict[Platform, tuple[Path, str]]:
+    """Pair every published platform manifest with exactly one SBOM (CC0504).
+
+    Buildah records the emulated arm64 manifest as `linux/arm64/v8` while the
+    qualification names the declared `linux/arm64`; both spell the same
+    target, so the pairing uses semantic platform matching. Every platform
+    needs one SBOM and every SBOM must belong to one platform.
+    """
+    matched: dict[Platform, tuple[Path, str]] = {}
+    used: set[int] = set()
+    for platform in platforms:
+        candidates = [
+            index
+            for index, (sbom_platform, _path, _digest) in enumerate(sboms)
+            if sbom_platform.semantically_matches(platform)
+        ]
+        if len(candidates) != 1 or candidates[0] in used:
+            raise RuleRejectionError(
+                "SBOM platform coverage does not match published graph", code="CC0504"
+            )
+        used.add(candidates[0])
+        _sbom_platform, path, digest = sboms[candidates[0]]
+        matched[platform] = (path, digest)
+    if len(used) != len(sboms):
+        raise RuleRejectionError(
+            "SBOM platform coverage does not match published graph", code="CC0504"
+        )
+    return matched
+
+
 def attest_candidate(
     published: PublishedCandidate,
     evidence: ReleaseEvidence,
@@ -157,11 +190,7 @@ def attest_candidate(
     manifest_map = {
         item.platform: item.descriptor.digest for item in published.graph.manifests
     }
-    sbom_map = {platform: (path, digest) for platform, path, digest in evidence.sboms}
-    if set(sbom_map) != set(manifest_map):
-        raise RuleRejectionError(
-            "SBOM platform coverage does not match published graph", code="CC0504"
-        )
+    sbom_map = match_sboms_to_platforms(tuple(manifest_map), evidence.sboms)
     for platform, digest in sorted(manifest_map.items()):
         sbom_path, expected_digest = sbom_map[platform]
         if sha256_file(sbom_path) != expected_digest:

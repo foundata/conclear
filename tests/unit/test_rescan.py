@@ -805,3 +805,34 @@ def test_rescan_names_a_retired_subject_instead_of_a_history_conflict() -> None:
 
     with pytest.raises(OperationalError, match="no longer present in the registry"):
         require_present_subject(Resolver(None), subject, auth_file=None)
+
+
+def test_triage_platforms_resolve_to_the_graph_variant_spelling() -> None:
+    from conclear.services.rescan import resolve_triage_platforms
+
+    def decision(platform: str) -> TriageDecision:
+        return TriageDecision(
+            subject=OCIReference.parse(
+                "quay.io/example/app@sha256:" + "a" * 64, require_digest=True
+            ),
+            platform=Platform.parse(platform),
+            component="libssl",
+            advisory="CVE-2026-0001",
+            decision="not-applicable",
+            rationale="Not reachable.",
+            owner="security@example.com",
+            decided_at="2026-02-01T00:00:00Z",
+            remediating_digest=None,
+        )
+
+    graph = (Platform.parse("linux/amd64"), Platform.parse("linux/arm64/v8"))
+    resolved = resolve_triage_platforms(
+        (decision("linux/arm64"), decision("linux/amd64"), decision("linux/s390x")),
+        graph,
+    )
+
+    assert resolved == {
+        Platform.parse("linux/arm64"): Platform.parse("linux/arm64/v8"),
+        Platform.parse("linux/amd64"): Platform.parse("linux/amd64"),
+        Platform.parse("linux/s390x"): None,
+    }

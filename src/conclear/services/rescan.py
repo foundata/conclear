@@ -49,7 +49,7 @@ from conclear.services.rescan_evidence import (
     verified_predicates,
 )
 from conclear.triage import TriageDecision
-from conclear.values import Digest, OCIReference
+from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 
 
@@ -203,6 +203,28 @@ def verified_rescan_history(
     return history_from_records(tuple(predicates.values()), subject)
 
 
+def resolve_triage_platforms(
+    triage: tuple[TriageDecision, ...], platforms: tuple[Platform, ...]
+) -> dict[Platform, Platform | None]:
+    """Map each triage platform to the graph platform it selects, or None.
+
+    Triage names the declared platform spelling; the graph may carry the
+    variant Buildah wrote (`linux/arm64/v8`). Both spell the same target, so
+    decisions are keyed by the graph's platform.
+    """
+    return {
+        item.platform: next(
+            (
+                candidate
+                for candidate in platforms
+                if candidate.semantically_matches(item.platform)
+            ),
+            None,
+        )
+        for item in triage
+    }
+
+
 def _settle_rescan_run(workspace: RunWorkspace, verdict: Verdict) -> None:
     """Move a rescan run to its terminal state once its record exists.
 
@@ -301,8 +323,13 @@ def rescan_release(
     expected_platforms = {
         str(platform): str(digest) for platform, digest in manifest_map.items()
     }
+    graph_platform = resolve_triage_platforms(triage, tuple(manifest_map))
     unknown_triage_platforms = sorted(
-        {str(item.platform) for item in triage if item.platform not in manifest_map}
+        {
+            str(platform)
+            for platform, resolved in graph_platform.items()
+            if resolved is None
+        }
     )
     if unknown_triage_platforms:
         raise InvalidInvocationError(
@@ -318,7 +345,8 @@ def rescan_release(
                 "Rescan triage decisions cannot be dated in the future"
             )
     triage_map = {
-        (item.platform, item.component, item.advisory): item for item in triage
+        (graph_platform[item.platform], item.component, item.advisory): item
+        for item in triage
     }
     if recorded_platforms != expected_platforms:
         raise OperationalError(

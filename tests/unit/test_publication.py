@@ -1011,3 +1011,35 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         ResourceStatus.CREATED if delete_fails else ResourceStatus.REMOVED
     )
     assert sha256_file(verification.record_path) == verification.record_digest
+
+
+def test_sboms_pair_with_published_platforms_across_variant_spellings(
+    tmp_path: Path,
+) -> None:
+    from conclear.services.attestation import match_sboms_to_platforms
+    from conclear.values import Platform
+
+    amd64 = Platform.parse("linux/amd64")
+    arm64 = Platform.parse("linux/arm64")
+    arm64_v8 = Platform.parse("linux/arm64/v8")
+    sboms = (
+        (amd64, tmp_path / "amd64.spdx.json", "sha256:" + "a" * 64),
+        (arm64, tmp_path / "arm64.spdx.json", "sha256:" + "b" * 64),
+    )
+
+    matched = match_sboms_to_platforms((amd64, arm64_v8), sboms)
+
+    assert matched == {
+        amd64: (tmp_path / "amd64.spdx.json", "sha256:" + "a" * 64),
+        arm64_v8: (tmp_path / "arm64.spdx.json", "sha256:" + "b" * 64),
+    }
+    for platforms, evidence in (
+        ((amd64, arm64_v8), sboms[:1]),
+        ((amd64,), sboms),
+        (
+            (amd64, arm64_v8),
+            (*sboms, (arm64_v8, tmp_path / "dup", "sha256:" + "c" * 64)),
+        ),
+    ):
+        with pytest.raises(RuleRejectionError, match="SBOM platform coverage"):
+            match_sboms_to_platforms(platforms, evidence)
