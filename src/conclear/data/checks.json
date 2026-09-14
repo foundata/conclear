@@ -30,7 +30,7 @@
     {"id": "CC0115", "summary": "Require systemd stop-signal metadata to match the runtime contract", "severity": "error", "behavior": "automated", "requirements": ["IG0224", "IG0231"]},
     {"id": "CC0116", "summary": "Require final-stage VOLUME destinations to be declared writable runtime mounts", "severity": "error", "behavior": "automated", "requirements": ["IG0209", "IG0253"]},
     {"id": "CC0117", "summary": "Reject image labels the Containerfile did not declare, such as labels inherited from the base image", "severity": "error", "behavior": "automated", "requirements": ["IG0431"]},
-    {"id": "CC0118", "summary": "Verify the base image annotations of every platform manifest against the declared pin", "severity": "error", "behavior": "automated", "requirements": ["IG0432", "IG0433"]},
+    {"id": "CC0118", "summary": "Verify the base image annotations of every platform manifest against the declared pin and reject hand-written base labels", "severity": "error", "behavior": "automated", "requirements": ["IG0432", "IG0433"]},
     {"id": "CC0201", "summary": "Require a .containerignore at the build-context root", "severity": "error", "behavior": "automated", "requirements": ["IG0139"]},
     {"id": "CC0202", "summary": "Require context exclusions for source control, credentials and local output", "severity": "error", "behavior": "automated", "requirements": ["IG0140", "IG0147"]},
     {"id": "CC0203", "summary": "Match every declared pin to exactly one Containerfile image input", "severity": "error", "behavior": "automated", "requirements": ["IG0116", "IG0120"]},

@@ -10,6 +10,7 @@ from conclear.checks import (
     analyze_containerfile,
     check_image_static,
     declared_label_keys,
+    forbidden_label_findings,
     validate_base_annotations,
     validate_declared_labels,
     validate_image_labels,
@@ -665,3 +666,51 @@ def test_base_annotations_must_match_the_pin_and_nothing_else() -> None:
     assert "base.name" in findings[0].message
     assert "base.digest" in findings[1].message
     assert "inherited from the base image" in findings[2].message
+
+
+def test_static_analysis_rejects_license_and_hand_written_base_labels(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "Containerfile"
+    path.write_text(
+        "FROM quay.io/example/base:1@sha256:" + "a" * 64 + "\n"
+        'LABEL org.opencontainers.image.title="Example"\n'
+        'LABEL org.opencontainers.image.licenses="MIT" \\\n'
+        '      org.opencontainers.image.base.name="quay.io/example/base:1"\n'
+        "LABEL license MIT\n"
+        "LABEL org.opencontainers.image.base.digest=sha256:" + "b" * 64 + "\n"
+        "USER 65532\n"
+        'ENTRYPOINT ["/bin/true"]\n',
+        encoding="utf-8",
+    )
+
+    findings = analyze_containerfile(path).findings
+
+    assert [
+        (item.check_id, item.message.split(" ")[2], item.location) for item in findings
+    ] == [
+        ("CC0118", "org.opencontainers.image.base.name", f"{path}:3"),
+        ("CC0113", "org.opencontainers.image.licenses", f"{path}:3"),
+        ("CC0113", "license", f"{path}:5"),
+        ("CC0118", "org.opencontainers.image.base.digest", f"{path}:6"),
+    ]
+    assert forbidden_label_findings(frozenset({"org.opencontainers.image.title"})) == ()
+
+
+def test_built_image_labels_reject_hand_written_base_labels() -> None:
+    findings = validate_image_labels(
+        {
+            "org.opencontainers.image.source": "https://github.com/example/app",
+            "org.opencontainers.image.revision": "a" * 40,
+            "org.opencontainers.image.title": "Example",
+            "org.opencontainers.image.base.name": "quay.io/example/base:1",
+        },
+        source="https://github.com/example/app",
+        revision="a" * 40,
+        version=None,
+        created="2026-01-01T00:00:00Z",
+    )
+
+    assert [(item.check_id, item.message.split(" ")[2]) for item in findings] == [
+        ("CC0118", "org.opencontainers.image.base.name")
+    ]

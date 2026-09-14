@@ -153,6 +153,12 @@ def analyze_containerfile_source(
                         line_location,
                     )
                 )
+        elif keyword == "LABEL":
+            findings.extend(
+                forbidden_label_findings(
+                    _label_keys(instruction, source), line_location
+                )
+            )
         elif keyword == "USER":
             final_user = instruction
         elif keyword == "STOPSIGNAL":
@@ -289,6 +295,9 @@ _FORBIDDEN_LABELS = frozenset(
 _TOOL_LABELS = frozenset({"io.buildah.version"})
 BASE_NAME_ANNOTATION = "org.opencontainers.image.base.name"
 BASE_DIGEST_ANNOTATION = "org.opencontainers.image.base.digest"
+# The base facts are manifest annotations written by the build; the same keys
+# as config labels can only have been typed by hand or inherited.
+_BASE_LABELS = frozenset({BASE_NAME_ANNOTATION, BASE_DIGEST_ANNOTATION})
 # Buildah writes exactly these manifest annotations for a build; anything else
 # on a platform manifest was inherited from the base.
 _MANIFEST_ANNOTATIONS = frozenset(
@@ -296,27 +305,59 @@ _MANIFEST_ANNOTATIONS = frozenset(
 )
 
 
+def _label_keys(
+    instruction: Instruction, containerfile: Containerfile
+) -> frozenset[str]:
+    """Return the label keys one LABEL instruction declares."""
+    try:
+        words = shlex.split(instruction.body, posix=True)
+    except ValueError as exc:
+        raise InvalidInvocationError(
+            f"Unparseable LABEL instruction at {containerfile.path.name}:"
+            f"{instruction.line_number}"
+        ) from exc
+    if not words:
+        return frozenset()
+    if all("=" in word for word in words):
+        return frozenset(word.split("=", 1)[0] for word in words)
+    # Legacy `LABEL key value` form names one key.
+    return frozenset({words[0].split("=", 1)[0]})
+
+
 def declared_label_keys(containerfile: Containerfile) -> frozenset[str]:
     """Return every label key a Containerfile declares in its LABEL instructions."""
     keys: set[str] = set()
     for instruction in containerfile.instructions:
-        if instruction.keyword != "LABEL":
-            continue
-        try:
-            words = shlex.split(instruction.body, posix=True)
-        except ValueError as exc:
-            raise InvalidInvocationError(
-                f"Unparseable LABEL instruction at {containerfile.path.name}:"
-                f"{instruction.line_number}"
-            ) from exc
-        if not words:
-            continue
-        if all("=" in word for word in words):
-            keys.update(word.split("=", 1)[0] for word in words)
-        else:
-            # Legacy `LABEL key value` form names one key.
-            keys.add(words[0].split("=", 1)[0])
+        if instruction.keyword == "LABEL":
+            keys.update(_label_keys(instruction, containerfile))
     return frozenset(keys)
+
+
+def forbidden_label_findings(
+    keys: frozenset[str], location: str | None = None
+) -> tuple[Finding, ...]:
+    """Reject license labels (IG0234) and hand-written base labels (IG0433)."""
+    findings: list[Finding] = []
+    for key in sorted(keys):
+        if key in _FORBIDDEN_LABELS:
+            findings.append(
+                _finding(
+                    "CC0113",
+                    f"Image label {key} is forbidden; license information belongs "
+                    "in the SBOM and REUSE metadata",
+                    location,
+                )
+            )
+        elif key in _BASE_LABELS:
+            findings.append(
+                _finding(
+                    "CC0118",
+                    f"Image label {key} must not be written by hand; the build "
+                    "derives the base annotations from the pinned FROM reference",
+                    location,
+                )
+            )
+    return tuple(findings)
 
 
 def validate_declared_labels(
@@ -398,15 +439,7 @@ def validate_image_labels(
         expected["org.opencontainers.image.version"] = version
     required_presence = {"org.opencontainers.image.title"}
     findings: list[Finding] = []
-    for key in sorted(_FORBIDDEN_LABELS):
-        if key in labels:
-            findings.append(
-                _finding(
-                    "CC0113",
-                    f"Image label {key} is forbidden; license information belongs "
-                    "in the SBOM and REUSE metadata",
-                )
-            )
+    findings.extend(forbidden_label_findings(frozenset(labels)))
     for key, expected_value in expected.items():
         if labels.get(key) != expected_value:
             findings.append(

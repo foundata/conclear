@@ -54,7 +54,7 @@ below links every identifier to the guide.
 | `CC0115` | automated | error    | Require systemd stop-signal metadata to match the runtime contract                                                                 | `IG0224`, `IG0231` |
 | `CC0116` | automated | error    | Require final-stage VOLUME destinations to be declared writable runtime mounts                                                     | `IG0209`, `IG0253` |
 | `CC0117` | automated | error    | Reject image labels the Containerfile did not declare, such as labels inherited from the base image                                | `IG0431`           |
-| `CC0118` | automated | error    | Verify the base image annotations of every platform manifest against the declared pin                                              | `IG0432`, `IG0433` |
+| `CC0118` | automated | error    | Verify the base image annotations of every platform manifest against the declared pin and reject hand-written base labels          | `IG0432`, `IG0433` |
 | `CC0201` | automated | error    | Require a .containerignore at the build-context root                                                                               | `IG0139`           |
 | `CC0202` | automated | error    | Require context exclusions for source control, credentials and local output                                                        | `IG0140`, `IG0147` |
 | `CC0203` | automated | error    | Match every declared pin to exactly one Containerfile image input                                                                  | `IG0116`, `IG0120` |
