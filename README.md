@@ -479,13 +479,13 @@ version=1.2.3
 key=~/.config/conclear/cosign.pub
 export DOCKER_CONFIG=$(mktemp -d); cp ~/.config/conclear/auth.json "$DOCKER_CONFIG/config.json"
 
-skopeo inspect --format '{{.Digest}}' docker://$image:$version
-skopeo inspect --format '{{.Digest}}' docker://$image:latest      # same digest
-skopeo inspect docker://$image:$version | jq '.Labels'            # source, revision, version, created
-cosign tree $image:$version                                       # signature, provenance, SBOM, release verification
-cosign verify --key "$key" $image:$version
-cosign verify-attestation --key "$key" --type slsaprovenance1 $image:$version
-cosign verify-attestation --key "$key" --type spdxjson $image:$version
+skopeo inspect --format '{{.Digest}}' "docker://${image}:${version}"
+skopeo inspect --format '{{.Digest}}' "docker://${image}:latest"      # same digest
+skopeo inspect "docker://${image}:${version}" | jq '.Labels'            # source, revision, version, created
+cosign tree "${image}:${version}"                                       # signature, provenance, SBOM, release verification
+cosign verify --key "$key" "${image}:${version}"
+cosign verify-attestation --key "$key" --type slsaprovenance1 "${image}:${version}"
+cosign verify-attestation --key "$key" --type spdxjson "${image}:${version}"
 ```
 
 Each release archive keeps the Sigstore bundles under `signatures/`. Their
@@ -557,8 +557,8 @@ Remove the referrers before the tag, or they stay behind as orphans. Cosign
 needs the same `DOCKER_CONFIG` credentials as above:
 
 ```sh
-cosign clean --type all --force $image:$version   # signature, SBOM, provenance, verification
-skopeo delete docker://$image:$version
+cosign clean --type all --force "${image}:${version}"   # signature, SBOM, provenance, verification
+skopeo delete "docker://${image}:${version}"
 ```
 
 Repoint or delete `latest` yourself. Transparency-log entries are permanent;
