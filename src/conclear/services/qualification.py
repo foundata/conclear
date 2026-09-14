@@ -21,6 +21,7 @@ from conclear.checks import (
     validate_base_annotations,
     validate_declared_labels,
     validate_image_labels,
+    validate_scratch_annotations,
 )
 from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig
 from conclear.containerfile import Containerfile, ImageInput, load_containerfile
@@ -264,11 +265,7 @@ def verify_base_annotations(
     base = final_stage_base(containerfile)
     manifest = build.observation.graph.manifests[0]
     if base is None:
-        findings = tuple(
-            _finding_for_unexpected_annotation(key)
-            for key, _value in manifest.annotations
-            if key != "org.opencontainers.image.created"
-        )
+        findings = validate_scratch_annotations(manifest.annotations)
     else:
         pinned = next(
             (
@@ -288,15 +285,6 @@ def verify_base_annotations(
             ),
         )
     return replace(build, findings=build.findings + findings)
-
-
-def _finding_for_unexpected_annotation(key: str) -> Finding:
-    return Finding(
-        "CC0118",
-        "error",
-        f"Manifest annotation {key} is not written by the build "
-        "(inherited from the base image?)",
-    )
 
 
 def build_test_dependencies(

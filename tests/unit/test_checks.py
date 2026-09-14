@@ -14,6 +14,7 @@ from conclear.checks import (
     validate_base_annotations,
     validate_declared_labels,
     validate_image_labels,
+    validate_scratch_annotations,
 )
 from conclear.config import load_repository_config
 from conclear.containerfile import load_containerfile
@@ -713,4 +714,27 @@ def test_built_image_labels_reject_hand_written_base_labels() -> None:
 
     assert [(item.check_id, item.message.split(" ")[2]) for item in findings] == [
         ("CC0118", "org.opencontainers.image.base.name")
+    ]
+
+
+def test_scratch_builds_carry_only_buildahs_empty_base_annotations() -> None:
+    created = ("org.opencontainers.image.created", "2026-01-01T00:00:00Z")
+    empty = (
+        ("org.opencontainers.image.base.digest", ""),
+        ("org.opencontainers.image.base.name", ""),
+        created,
+    )
+    assert validate_scratch_annotations(empty) == ()
+    assert validate_scratch_annotations((created,)) == ()
+
+    findings = validate_scratch_annotations(
+        (
+            ("org.opencontainers.image.base.name", "docker.io/library/debian:13"),
+            ("org.opencontainers.image.vendor", "Someone"),
+            created,
+        )
+    )
+    assert [(item.check_id, item.message.split(" ")[2]) for item in findings] == [
+        ("CC0118", "org.opencontainers.image.base.name"),
+        ("CC0118", "org.opencontainers.image.vendor"),
     ]

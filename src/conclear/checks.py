@@ -420,6 +420,41 @@ def validate_base_annotations(
     return tuple(findings)
 
 
+def validate_scratch_annotations(
+    annotations: tuple[tuple[str, str], ...],
+) -> tuple[Finding, ...]:
+    """Verify the manifest annotations of a build without an external base (IG0432).
+
+    Buildah writes empty `base.name` and `base.digest` annotations for a
+    `FROM scratch` build; any value there, or any other annotation besides the
+    creation time, was inherited from somewhere the reviewed Containerfile did
+    not name.
+    """
+    findings: list[Finding] = []
+    for key, value in annotations:
+        if key == "org.opencontainers.image.created":
+            continue
+        if key in _MANIFEST_ANNOTATIONS and value == "":
+            continue
+        if key in _MANIFEST_ANNOTATIONS:
+            findings.append(
+                _finding(
+                    "CC0118",
+                    f"Manifest annotation {key} names a base for a build without "
+                    f"an external base image: {value}",
+                )
+            )
+        else:
+            findings.append(
+                _finding(
+                    "CC0118",
+                    f"Manifest annotation {key} is not written by the build "
+                    "(inherited from the base image?)",
+                )
+            )
+    return tuple(findings)
+
+
 def validate_image_labels(
     labels: object,
     *,
