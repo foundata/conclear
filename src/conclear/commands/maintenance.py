@@ -40,6 +40,7 @@ from conclear.rescan_history import RescanHistoryEntry, RescanHistoryStore
 from conclear.runtime import ApplicationRuntime, ToolProblem
 from conclear.services.archive_rescan import ArchiveRescanInput, archived_rescan_input
 from conclear.services.cleanup import (
+    CleanupResult,
     cleanup_run,
     retirable,
     retire_run,
@@ -480,6 +481,7 @@ def cleanup_command(
             if recorded is not None and recorded != value:
                 raise InvalidInvocationError("Cleanup release trust profile changed")
         registry_control = create_registry_control(selected)
+    incomplete: str | None = None
     try:
         result = cleanup_run(
             workspace,
@@ -488,6 +490,13 @@ def cleanup_command(
             registry_control=registry_control,
             git=runtime.git(),
         )
+    except OperationalError as exc:
+        # An abandoned run is given up with whatever it still owns; every other
+        # caller must see the failure.
+        if not abandon:
+            raise
+        incomplete = str(exc)
+        result = CleanupResult((), ())
     finally:
         if registry_control is not None:
             registry_control.close()
@@ -496,6 +505,8 @@ def cleanup_command(
         f"Removed {len(result.removed)} owned resource(s)"
         + (": " + ", ".join(result.removed) if result.removed else ""),
     ]
+    if incomplete is not None:
+        details.append(incomplete)
     if result.retained:
         details.append("Retained: " + ", ".join(result.retained))
     retired_path: Path | None = None

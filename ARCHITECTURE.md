@@ -869,8 +869,11 @@ interrupted rescan and a qualification never bound to a release profile; or when
 its recorded qualification window has expired, since no release phase may
 continue past it. `cleanup --retire` deletes the whole workspace of a dead run
 and refuses a live one unless the operator adds `--abandon`, which declares the
-run dead. `cleanup` reports what it removed, what it retained and what the
-workspace still holds. ConClear never presents its local state directory as an
+run dead and gives the run up with whatever it still owns. `cleanup` reports
+what it removed, what it retained and what the workspace still holds. Removing
+run-owned test inputs keeps their ownership marker until the rest of the tree is
+gone, so a removal a repository hook blocks stays retryable and names the
+blocking path. ConClear never presents its local state directory as an
 archive or registry backup.
 
 `release`, `promote` and `rescan` write a compressed evidence archive after

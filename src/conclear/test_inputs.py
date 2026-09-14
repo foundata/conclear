@@ -126,7 +126,14 @@ def materialize_test_inputs(
 
 
 def remove_materialized_test_inputs(root: Path, *, run_id: str) -> None:
-    """Remove only a test-input tree carrying this run's ownership marker."""
+    """Remove only a test-input tree carrying this run's ownership marker.
+
+    The marker is removed last, so a removal that fails partway keeps proving
+    ownership and the next attempt continues where this one stopped. Repository
+    hooks receive the test-input manifest from this tree and may leave content
+    the caller cannot unlink, such as a rootless container store owned by a
+    subordinate user ID; the diagnostic then names that exact path.
+    """
     marker = root / ".conclear-owner"
     try:
         root_value = root.lstat()
@@ -153,9 +160,32 @@ def remove_materialized_test_inputs(root: Path, *, run_id: str) -> None:
             or stat.S_IMODE(root_value.st_mode) & 0o077
         ):
             raise OperationalError("Test-input directory ownership is invalid")
-        shutil.rmtree(root)
     except FileNotFoundError as exc:
-        raise OperationalError("Test-input ownership marker is missing") from exc
+        raise OperationalError(
+            f"Test-input ownership marker is missing below {root}"
+        ) from exc
+    except OSError as exc:
+        raise OperationalError(
+            f"Unable to inspect run-owned test inputs {root}"
+        ) from exc
+    for entry in sorted(root.iterdir()):
+        if entry == marker:
+            continue
+        try:
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+        except OSError as exc:
+            raise OperationalError(
+                f"Unable to remove run-owned test inputs below {entry}; a "
+                "repository hook may have written content this user cannot "
+                f"unlink. Inspect it, then remove it with: podman unshare rm "
+                f"-rf {root}"
+            ) from exc
+    try:
+        marker.unlink()
+        root.rmdir()
     except OSError as exc:
         raise OperationalError(
             f"Unable to remove run-owned test inputs {root}"

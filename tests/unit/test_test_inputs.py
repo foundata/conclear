@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -128,3 +129,56 @@ def test_partial_materialization_removes_the_new_run_owned_root(
         materialize_test_inputs(root, run_id="01arz3ndektsv4rrffq69g5fav", test=test)
 
     assert not root.exists()
+
+
+def test_removal_keeps_the_marker_until_the_tree_is_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hook may leave content this user cannot unlink; retries must still work."""
+    test = RuntimeTestConfig(
+        fixtures=(),
+        outputs=(RuntimeTestOutputConfig("result", False),),
+        preparations=(),
+        launch=RuntimeTestLaunchConfig((), (), (), 0),
+    )
+    run_id = "01arz3ndektsv4rrffq69g5fav"
+    root = tmp_path / "test-inputs"
+    value = materialize_test_inputs(root, run_id=run_id, test=test)
+    # Sorted last, so the entries before it are already gone when it refuses.
+    hook_store = root / "zz-hook-podman-root"
+    hook_store.mkdir()
+    (hook_store / "layer").write_text("root-mapped", encoding="utf-8")
+    (value.outputs["result"] / "report.txt").write_text("kept", encoding="utf-8")
+
+    real_rmtree = shutil.rmtree
+
+    def refuse_hook_store(path: Path) -> None:
+        if path == hook_store:
+            raise PermissionError(13, "Permission denied", str(path))
+        real_rmtree(path)
+
+    monkeypatch.setattr(shutil, "rmtree", refuse_hook_store)
+    with pytest.raises(OperationalError, match="podman unshare rm -rf") as caught:
+        remove_materialized_test_inputs(root, run_id=run_id)
+
+    assert str(hook_store) in str(caught.value)
+    assert (root / ".conclear-owner").is_file()
+    assert not value.outputs["result"].exists()
+
+    monkeypatch.setattr(shutil, "rmtree", real_rmtree)
+    remove_materialized_test_inputs(root, run_id=run_id)
+
+    assert not root.exists()
+
+
+def test_removal_of_an_absent_tree_is_silent_and_a_stripped_tree_is_named(
+    tmp_path: Path,
+) -> None:
+    run_id = "01arz3ndektsv4rrffq69g5fav"
+    remove_materialized_test_inputs(tmp_path / "absent", run_id=run_id)
+
+    stripped = tmp_path / "stripped"
+    stripped.mkdir(mode=0o700)
+    with pytest.raises(OperationalError, match="ownership marker is missing below"):
+        remove_materialized_test_inputs(stripped, run_id=run_id)
+    assert stripped.is_dir()
