@@ -485,10 +485,18 @@ export DOCKER_CONFIG=$(mktemp -d); cp ~/.config/conclear/auth.json "${DOCKER_CON
 skopeo inspect --format '{{.Digest}}' "docker://${image}:${version}"
 skopeo inspect --format '{{.Digest}}' "docker://${image}:latest"      # same digest
 skopeo inspect "docker://${image}:${version}" | jq '.Labels'            # source, revision, version, created
-cosign tree "${image}:${version}"                                       # signature, provenance, SBOM, release verification
+cosign tree "${image}:${version}"                                       # signature, provenance, release verification
 cosign verify --key "${key}" "${image}:${version}"
 cosign verify-attestation --key "${key}" --type slsaprovenance1 "${image}:${version}"
-cosign verify-attestation --key "${key}" --type spdxjson "${image}:${version}"
+```
+
+The SPDX SBOM is attached to each platform manifest, not to the image index.
+Verify it per platform digest; a single-platform image has exactly one:
+
+```sh
+for digest in $(skopeo inspect --raw "docker://${image}:${version}" | jq -r '.manifests[]?.digest // empty'); do
+  cosign verify-attestation --key "${key}" --type spdxjson "${image}@${digest}"
+done
 ```
 
 Each release archive keeps the Sigstore bundles under `signatures/`. Their
