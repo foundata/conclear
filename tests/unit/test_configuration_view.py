@@ -286,3 +286,52 @@ expected_stdout = "0\\n"
     assert values["runtime.no_new_privileges"]["value"] is (mode == "presence-only")
     assert values["runtime.sudo_requirement"]["value"]["mode"] == mode
     assert values["runtime.setid_requirements"]["value"][0]["path"] == "/usr/bin/helper"
+
+
+def test_effective_configuration_lists_declared_exceptions(
+    repository_factory: Callable[..., Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = repository_factory()
+    path = root / "conclear.toml"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "[images.release]",
+            """[[images.configuration_exceptions]]
+path = "usr/lib/python3/dist-packages/ansible/galaxy/data/**/Dockerfile.j2"
+checks = ["DS-0011", "DS-0001"]
+rationale = "Galaxy template data shipped by ansible-core, not the build definition."
+owner = "security@example.com"
+review_trigger = "ansible-core package update"
+expires = "2026-12-31"
+
+[images.release]""",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PATH", "")
+    assert main(["config", "show", "--config", str(path), "--format", "json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    [image] = result["data"]["images"]
+    values = image["values"]
+    assert values["configuration_exceptions"] == {
+        "value": [
+            {
+                "path": "usr/lib/python3/dist-packages/ansible/galaxy/data/**/Dockerfile.j2",
+                "checks": ["DS-0001", "DS-0011"],
+                "owner": "security@example.com",
+                "expires": "2026-12-31",
+            }
+        ],
+        "origin": "repository",
+        "reason": "",
+        "maximum": None,
+    }
+    assert values["vulnerability_exceptions"]["value"] == []
+    assert values["package_assessment_exception"]["value"] is None
+
+    assert main(["config", "show", "--config", str(path)]) == 0
+    human = capsys.readouterr().out
+    assert "configuration_exceptions = " in human
+    assert "Dockerfile.j2" in human

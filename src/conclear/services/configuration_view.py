@@ -246,6 +246,39 @@ def _image_values(
         )
         add("rescan_scope", image.rescan_scope)
         add(
+            "vulnerability_exceptions",
+            [
+                {
+                    "component": item.component,
+                    "advisory": item.advisory,
+                    "owner": item.owner,
+                    "expires": item.expires,
+                }
+                for item in image.vulnerability_exceptions
+            ],
+        )
+        add(
+            "configuration_exceptions",
+            [
+                {
+                    "path": item.path,
+                    "checks": list(item.checks),
+                    "owner": item.owner,
+                    "expires": item.expires,
+                }
+                for item in image.configuration_exceptions
+            ],
+        )
+        add(
+            "package_assessment_exception",
+            None
+            if image.package_assessment_exception is None
+            else {
+                "owner": image.package_assessment_exception.owner,
+                "expires": image.package_assessment_exception.expires,
+            },
+        )
+        add(
             "release.version_tags",
             list(image.release.version_tags),
             "Requires --version."
