@@ -116,7 +116,9 @@ class HookRunner:
 
     def _resolve(self, value: str) -> Path | None:
         if "/" in value:
-            path = contained_path(self._source_root, value)
+            # A missing optional hook is skipped, not rejected, so the path
+            # is confined first and only then checked for existence.
+            path = contained_path(self._source_root, value, must_exist=False)
             return path if _is_executable(path) else None
         found = shutil.which(value, path=self._environment.get("PATH", ""))
         if found is None:
