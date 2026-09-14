@@ -949,11 +949,10 @@ test workspaces and resource manifests outside the repository.
 
 ### Release procedure<a id="release-procedure"></a>
 
-1. **Choose the release version and open a release issue.** Select the version
-   according to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-   Use the issue to record the candidate revision, artifact digests, local and
-   external test results, every skip and final cleanup. A skip is a missing
-   result, not a pass.
+1. **Choose the release version.** Select the version according to
+   [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The numbered
+   steps below are the checklist; every step must produce its result before the
+   next one starts. A skip is a missing result, not a pass.
 
    ```sh
    version="<major.minor.patch>"
@@ -1058,10 +1057,10 @@ test workspaces and resource manifests outside the repository.
    Supply `CONCLEAR_TEST_TRIVY_DOWNLOAD=1` only when the recorded cache needs a
    database snapshot. An emulation skip means the platform remains unverified.
 
-6. **Verify the installed identity and compatibility projects.** The installed
-   command must report the selected version, candidate revision and embedded
-   guide revision. Its help hierarchy must agree with the compatibility
-   inventory.
+6. **Verify the installed identity against a project already using ConClear.**
+   The installed command must report the selected version, candidate revision
+   and embedded guide revision. Its help hierarchy must agree with the
+   compatibility inventory.
 
    ```sh
    "${dogfood}/bin/conclear" version --format json
@@ -1069,8 +1068,8 @@ test workspaces and resource manifests outside the repository.
    ```
 
    From the retained wheel, run `conclear check` and `conclear pins check` for
-   every image in the current
-   [OpenLDAP compatibility project](https://github.com/foundata/oci-openldap-declarative).
+   every image of one of our projects already using ConClear, for example
+   [oci-openldap-declarative](https://github.com/foundata/oci-openldap-declarative).
    Record every `CCnnnn` finding verbatim and do not add an exception to obtain
    an accepted result. Also complete one `conclear qualify` with Cosign absent
    from the executable search path; qualification must not acquire a signing
@@ -1098,16 +1097,16 @@ test workspaces and resource manifests outside the repository.
    uv run pytest -m network -rs
    ```
 
-   Run a complete `conclear release` of the OpenLDAP compatibility project into
-   a disposable repository. It must cover publication, attestation,
-   verification, promotion, public transparency-log verification and candidate
-   cleanup. Run an arm64 qualification on native hardware or through an enabled
-   emulation handler.
+   Run a complete `conclear release` of a project already using ConClear into a
+   disposable repository. It must cover publication, attestation, verification,
+   promotion, public transparency-log verification and candidate cleanup. Run an
+   arm64 qualification on native hardware or through an enabled emulation
+   handler.
 
    ```sh
    "${dogfood}/bin/conclear" release \
-     --source <openldap-checkout> \
-     --revision <full-openldap-revision> \
+     --source <project-checkout> \
+     --revision <full-project-revision> \
      --image <image-id> \
      --version <disposable-release-version> \
      --profile <disposable-release-profile> \
@@ -1119,13 +1118,14 @@ test workspaces and resource manifests outside the repository.
    `verify` and `promote` as separate invocations. This proves run reopening and
    first-use tool binding, which the monolithic command cannot. Verify that the
    disposable registry and every run workspace have no unresolved owned
-   resources, then record cleanup in the release issue.
+   resources.
 
-8. **Freeze the validated candidate.** Compare the release issue with the
-   candidate revision and `artifacts.json`. Do not continue when any mandatory
-   result is absent. Any tracked-file change invalidates the retained artifacts
-   and all results that depend on them: commit the change, choose a new
-   revision-specific artifact directory and repeat validation from step 4.
+8. **Freeze the validated candidate.** Confirm that every result of steps 4 to 7
+   belongs to the candidate revision named in `artifacts.json`. Do not continue
+   when any mandatory result is absent. Any tracked-file change invalidates the
+   retained artifacts and all results that depend on them: commit the change,
+   choose a new revision-specific artifact directory and repeat validation from
+   step 4.
 
 9. **Create and push the release tag.** Tag the exact revision recorded by the
    gate, inspect it, then push the branch and that tag explicitly.
@@ -1199,9 +1199,8 @@ test workspaces and resource manifests outside the repository.
     gh release view "${tag}"
     ```
 
-    Confirm that GitHub reports the new release as latest, that the attached
-    files match `artifacts.json`, and that the release issue contains the final
-    public URLs and cleanup result.
+    Confirm that GitHub reports the new release as latest and that the attached
+    files match `artifacts.json`.
 
 Before either PyPI or a GitHub release exposes an artifact, a bad tag may be
 deleted and the procedure restarted. Once either service has published the
