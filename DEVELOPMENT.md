@@ -611,14 +611,14 @@ candidate deletion, terminal-resume rejection and preservation of promoted tags
 during cleanup. A stop between commands does not test crashes during writes or
 lost provider acknowledgements.
 
-Prepare a disposable native Linux host with supported tools and a reviewed,
-reproducible fixture. Its committed configuration must contain exactly one
-release image, the manifest-owned Quay destination and `latest` as a moving tag.
-Use an unused version and repository. Put the installed wheel, source checkout,
-dedicated file-based signing credentials and XDG directories under the
-manifest's `workspace`. Keep the same configuration bytes for rescans. The
-selected profile must include a passphrase file and match the two policy-mode
-variables above.
+The fixture is a committed repository with exactly one release image, the
+manifest-owned Quay destination and `latest` as a moving tag; the
+[drill project](https://github.com/foundata/oci-conclear-drill/blob/master/README.md)
+creates one with `drill/lifecycle-fixture.sh`. Use an unused version and
+repository. Put the installed wheel, the fixture, dedicated file-based signing
+credentials and the XDG directories under the manifest's `workspace`. Keep the
+same configuration bytes for rescans. The selected profile must include a
+passphrase file and match the two policy-mode variables above.
 
 Set `CONCLEAR_TEST_RELEASE_LIFECYCLE=yes` and
 `CONCLEAR_TEST_RELEASE_SCENARIO` to an external JSON file containing:
@@ -645,24 +645,6 @@ After reviewing evidence, clean those runs with their original state/profile,
 then remove only manifest-owned registry resources. Interrupted commands may
 leave additional journaled resources; reconcile the dedicated state directory
 before declaring cleanup complete. No result report belongs in this checkout.
-
-#### External drill
-
-The release drill lives in
-[oci-conclear-drill](https://github.com/foundata/oci-conclear-drill): four
-synthetic images covering the `service`, `systemd` and `one-shot` profiles plus
-a test-only dependency, hooks, exceptions, version sources, negative cases and
-the scripts that run everything against a disposable registry. It depends on no
-product, so a drill failure means the release procedure failed, not that a
-consumer changed.
-
-This repository owns three things in that procedure: the retained candidate
-wheel the drill installs, the network tests of step 7 (the drill's
-`lifecycle-fixture.sh` provides their single-image fixture), and the retention
-of the drill's `manifest.json` with the candidate's other evidence. Any change
-to a tracked file of this repository supersedes the candidate: rebuild the
-wheel, note the superseded revision and repeat from step 4.
-
 
 ## Generated conformance catalog<a id="conformance-catalog"></a>
 
@@ -1084,13 +1066,12 @@ test workspaces and resource manifests outside the repository.
    ```
 
    From the retained wheel, run `conclear check` and `conclear pins check` for
-   every image of the drill project
-   [oci-conclear-drill](https://github.com/foundata/oci-conclear-drill), which
-   exists only to exercise ConClear and depends on no product. Record every
-   `CCnnnn` finding verbatim and do not add an exception to obtain an accepted
-   result. Also complete one `conclear qualify` of its `service` image with
-   Cosign absent from the executable search path; qualification must not acquire
-   a signing dependency.
+   every image of the
+   [drill project](https://github.com/foundata/oci-conclear-drill/blob/master/README.md).
+   Record every `CCnnnn` finding verbatim and do not add an exception to obtain
+   an accepted result. Also complete one `conclear qualify` of its `service`
+   image with Cosign absent from the executable search path; qualification must
+   not acquire a signing dependency.
 
 7. **Exercise the external trust boundaries.** Follow
    [Network tests](#network-tests) with an explicitly authorized disposable Quay
@@ -1114,12 +1095,9 @@ test workspaces and resource manifests outside the repository.
    uv run pytest -m network -rs
    ```
 
-   The repeat-release lifecycle test needs a single-image fixture; the drill
-   project's `drill/lifecycle-fixture.sh` creates it for the scenario version.
-
-   Then run the release drill of
-   [oci-conclear-drill](https://github.com/foundata/oci-conclear-drill) against
-   the retained wheel, following its `DEVELOPMENT.md`:
+   Then run the release drill of the
+   [drill project](https://github.com/foundata/oci-conclear-drill/blob/master/README.md)
+   against the retained wheel:
 
    ```sh
    drill/prepare.sh --wheel "${distribution}/conclear-${version}-py3-none-any.whl" --workspace "${workspace}"
@@ -1127,15 +1105,8 @@ test workspaces and resource manifests outside the repository.
    drill/verify.sh --workspace "${workspace}"
    ```
 
-   The drill releases every profile ConClear supports on `linux/amd64` and
-   `linux/arm64` (emulated where no hardware is available), runs the composable
-   path with `qualify` and `transport export` per worker followed by `assemble`,
-   `provenance`, `publish`, `attest`, `verify` and `promote` as separate
-   invocations, rejects every negative case by its expected check, verifies the
-   promoted images independently and retires its runs. Every stage must be
-   `passed` in the drill's `manifest.json`; keep that file with the candidate's
-   evidence. See [External drill](#external-drill) for what this repository owns
-   in that procedure.
+   Every stage must be `passed` in the drill's `manifest.json`. Keep that file
+   with the candidate's evidence.
 
 8. **Freeze the validated candidate.** Confirm that every result of steps 4 to 7
    belongs to the candidate revision named in `artifacts.json`. Do not continue
