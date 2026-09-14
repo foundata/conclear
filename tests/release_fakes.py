@@ -244,6 +244,9 @@ class FakePodman:
     def remove_storage(self, **values: Any) -> None:
         del values
 
+    def remove_mapped_tree(self, path: Path, **values: Any) -> None:
+        del path, values
+
 
 class FakeTrivy:
     """Provide one immutable database and empty successful scan observations."""

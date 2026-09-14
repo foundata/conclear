@@ -23,6 +23,12 @@ from conclear.config import (
     TestMountConfig,
 )
 from conclear.errors import InvalidInvocationError, OperationalError
+from conclear.hook_scratch import (
+    UNSHARE_STORAGE_NAME,
+    create_hook_scratch,
+    hook_scratch_root,
+    remove_hook_scratch,
+)
 from conclear.hooks import HookObservation, HookRunner, HookStatus
 from conclear.jsonutil import (
     atomic_write_json,
@@ -139,6 +145,16 @@ def test_platform(
         identifier=str(test_inputs_root),
         ephemeral=True,
     )
+    hook_scratch_id = f"hook-scratch-{inputs.image.image_id}-{platform_key}"
+    hook_scratch = hook_scratch_root(
+        inputs.workspace.root, inputs.image.image_id, platform_key
+    )
+    inputs.workspace.journal.plan(
+        resource_id=hook_scratch_id,
+        kind=ResourceKind.HOOK_SCRATCH,
+        identifier=str(hook_scratch),
+        ephemeral=True,
+    )
     materialized: MaterializedTestInputs | None = None
     try:
         materialized = materialize_test_inputs(
@@ -228,10 +244,12 @@ def test_platform(
             input_observation,
         )
         destroy_secret_test_outputs(materialized)
-        hook_results = (
-            ()
-            if any(finding.severity == "error" for finding in findings)
-            else tuple(
+        if inputs.image.hooks and not any(
+            finding.severity == "error" for finding in findings
+        ):
+            create_hook_scratch(hook_scratch)
+            inputs.workspace.journal.update(hook_scratch_id, ResourceStatus.CREATED)
+            hook_results = tuple(
                 hooks.run(
                     hook,
                     supplied_environment={
@@ -240,11 +258,13 @@ def test_platform(
                         "CC_PLATFORM": str(inputs.platform),
                         "CC_SOURCE_ROOT": str(inputs.workspace.root / "checkout"),
                         "CC_TEST_INPUT_MANIFEST": str(manifest_path),
+                        "CC_HOOK_SCRATCH": str(hook_scratch),
                     },
                 )
                 for hook in inputs.image.hooks
             )
-        )
+        else:
+            hook_results = ()
         for hook in hook_results:
             if hook.status is HookStatus.FAILED:
                 findings.append(
@@ -287,6 +307,8 @@ def test_platform(
             resource_id=resource_id,
             materialized=materialized,
             test_inputs_id=test_inputs_id,
+            hook_scratch=hook_scratch,
+            hook_scratch_id=hook_scratch_id,
             preserve_failure=True,
         )
         raise
@@ -299,6 +321,8 @@ def test_platform(
         resource_id=resource_id,
         materialized=materialized,
         test_inputs_id=test_inputs_id,
+        hook_scratch=hook_scratch,
+        hook_scratch_id=hook_scratch_id,
         preserve_failure=False,
     )
     return RuntimeEvidence(
@@ -665,10 +689,24 @@ def _cleanup_test_session(
     resource_id: str,
     materialized: MaterializedTestInputs | None,
     test_inputs_id: str,
+    hook_scratch: Path,
+    hook_scratch_id: str,
     preserve_failure: bool,
 ) -> None:
     errors: list[BaseException] = []
     _mark_planned_resource_failed(inputs.workspace, resource_id)
+    try:
+        remove_hook_scratch(
+            hook_scratch,
+            runtime=runtime,
+            storage=inputs.workspace.root / "hook-scratch" / UNSHARE_STORAGE_NAME,
+        )
+    except BaseException as exc:
+        inputs.workspace.journal.mark_failed(hook_scratch_id)
+        errors.append(exc)
+    else:
+        _mark_planned_resource_failed(inputs.workspace, hook_scratch_id)
+        inputs.workspace.journal.update(hook_scratch_id, ResourceStatus.REMOVED)
     try:
         _remove_test_container(
             inputs,

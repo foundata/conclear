@@ -1,5 +1,6 @@
 """Rootless Podman runtime-test adapter."""
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -468,6 +469,30 @@ class PodmanAdapter(ToolAdapter):
         """Reset one isolated Podman storage root after container removal."""
         self._run(
             (*self._storage(root, runroot), "system", "reset", "--force"),
+            timeout_seconds=300,
+            operation=OperationKind.WRITE,
+        )
+
+    def remove_mapped_tree(self, path: Path, *, storage: Path) -> None:
+        """Remove one run-owned tree inside the rootless user namespace.
+
+        Files a hook's container store left behind belong to subordinate user
+        IDs that only that namespace can unlink. Podman initializes a storage
+        location even for `unshare`, so a throwaway one below `storage` keeps
+        the step away from the run's own store and the caller removes it after.
+        """
+        remove = shutil.which("rm", path=self._environment.get("PATH", ""))
+        if remove is None:
+            raise OperationalError("rm is not available on the executable search path")
+        self._run(
+            (
+                *self._storage(storage / "root", storage / "runroot"),
+                "unshare",
+                remove,
+                "-rf",
+                "--",
+                str(path),
+            ),
             timeout_seconds=300,
             operation=OperationKind.WRITE,
         )

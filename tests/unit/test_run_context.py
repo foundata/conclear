@@ -96,6 +96,9 @@ class NoRuntime:
     def remove_storage(self, *, root: Path, runroot: Path) -> None:
         raise AssertionError("no storage was created")
 
+    def remove_mapped_tree(self, path: Path, *, storage: Path) -> None:
+        raise AssertionError("no hook scratch was created")
+
 
 class FakeRuntime:
     def __init__(self, git: FakeGit, names: tuple[ToolName, ...], digest: str) -> None:

@@ -1,6 +1,8 @@
 import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -36,6 +38,7 @@ class FakePodman:
     def __init__(self) -> None:
         self.removed: list[str] = []
         self.reset: list[tuple[Path, Path]] = []
+        self.mapped_removals: list[tuple[Path, Path]] = []
 
     def remove(
         self, *, root: Path, runroot: Path, name: str, force: bool = False
@@ -46,6 +49,10 @@ class FakePodman:
 
     def remove_storage(self, *, root: Path, runroot: Path) -> None:
         self.reset.append((root, runroot))
+
+    def remove_mapped_tree(self, path: Path, *, storage: Path) -> None:
+        self.mapped_removals.append((path, storage))
+        shutil.rmtree(path, ignore_errors=True)
 
 
 class FakeRegistryControl:
@@ -493,3 +500,58 @@ def test_abandon_retires_a_release_that_could_still_resume(tmp_path: Path) -> No
 
     assert removed == run.root.resolve()
     assert not run.root.exists()
+
+
+def _planned_hook_scratch(run: RunWorkspace) -> Path:
+    scratch = run.root / "hook-scratch" / "app" / "linux-amd64"
+    scratch.mkdir(parents=True)
+    (scratch / "store").mkdir()
+    (scratch / "store" / "layer").write_text("hook litter", encoding="utf-8")
+    run.journal.plan(
+        resource_id="hook-scratch-app-linux-amd64",
+        kind=ResourceKind.HOOK_SCRATCH,
+        identifier=str(scratch),
+        ephemeral=True,
+    )
+    run.journal.update("hook-scratch-app-linux-amd64", ResourceStatus.CREATED)
+    return scratch
+
+
+def test_cleanup_removes_hook_scratch_plainly_when_it_can(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    scratch = _planned_hook_scratch(run)
+    podman = FakePodman()
+
+    result = cleanup_run(
+        run, buildah=FakeBuildah(), podman=podman, registry_control=None
+    )
+
+    assert result.removed == ("hook-scratch-app-linux-amd64",)
+    assert not scratch.exists()
+    assert podman.mapped_removals == []
+
+
+def test_cleanup_removes_blocked_hook_scratch_through_the_namespace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = workspace(tmp_path)
+    scratch = _planned_hook_scratch(run)
+    real_rmtree = shutil.rmtree
+
+    def refuse_scratch(path: Path, *args: Any, **kwargs: Any) -> None:
+        if path == scratch and not kwargs.get("ignore_errors"):
+            raise PermissionError(13, "Permission denied", str(scratch / "store"))
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", refuse_scratch)
+    monkeypatch.setattr("conclear.hook_scratch.active_mounts_below", lambda *a, **k: ())
+    podman = FakePodman()
+
+    result = cleanup_run(
+        run, buildah=FakeBuildah(), podman=podman, registry_control=None
+    )
+
+    assert result.removed == ("hook-scratch-app-linux-amd64",)
+    assert podman.mapped_removals == [(scratch, run.root / "hook-scratch" / ".unshare")]
+    assert not scratch.exists()
+    assert not (run.root / "hook-scratch" / ".unshare").exists()

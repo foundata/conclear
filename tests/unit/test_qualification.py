@@ -1,4 +1,5 @@
 import json
+import shutil
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -185,6 +186,7 @@ class Runtime:
         unreachable_manager_queries: int = 0,
     ) -> None:
         self.fail_health = fail_health
+        self.mapped_removals: list[Path] = []
         self.fail_remove = fail_remove
         self.effective_capabilities = effective_capabilities
         self.bounding_capabilities = bounding_capabilities
@@ -347,6 +349,10 @@ class Runtime:
     def remove_storage(self, **values: Any) -> None:
         return None
 
+    def remove_mapped_tree(self, path: Path, **values: Any) -> None:
+        self.mapped_removals.append(path)
+        shutil.rmtree(path, ignore_errors=True)
+
 
 class FakeReadinessTiming:
     def __init__(self, *, interval_seconds: float = 0.25) -> None:
@@ -425,14 +431,23 @@ class NoopRunner:
 
 
 class CapturingRunner:
-    def __init__(self) -> None:
+    def __init__(self, *, litter: bool = False) -> None:
         self.requests: list[CommandRequest] = []
         self.manifests: list[dict[str, object]] = []
+        self.scratch_was_empty_directory: list[bool] = []
+        self.litter = litter
 
     def run(self, request: CommandRequest) -> ProcessResult:
         self.requests.append(request)
         manifest_path = Path(request.environment["CC_TEST_INPUT_MANIFEST"])
         self.manifests.append(json.loads(manifest_path.read_text(encoding="utf-8")))
+        scratch = Path(request.environment["CC_HOOK_SCRATCH"])
+        self.scratch_was_empty_directory.append(
+            scratch.is_dir() and not scratch.is_symlink() and not any(scratch.iterdir())
+        )
+        if self.litter:
+            (scratch / "podman-root").mkdir()
+            (scratch / "podman-root" / "layer").write_text("left", encoding="utf-8")
         return ProcessResult(
             argv=request.argv,
             returncode=0,
@@ -1778,6 +1793,15 @@ def test_service_uses_exact_dependency_preparation_and_cleans_secrets(
     assert not (
         value.workspace.root / "reports" / "app" / "linux-amd64" / "test-inputs"
     ).exists()
+    scratch = value.workspace.root / "hook-scratch" / "app" / "linux-amd64"
+    assert runner.requests[0].environment["CC_HOOK_SCRATCH"] == str(scratch)
+    assert runner.scratch_was_empty_directory == [True]
+    assert not scratch.exists()
+    assert runtime.mapped_removals == []
+    statuses = {
+        item.resource_id: item.status for item in value.workspace.journal.entries()
+    }
+    assert statuses["hook-scratch-app-linux-amd64"] is ResourceStatus.REMOVED
     output_observations = evidence.test_inputs["outputs"]
     assert isinstance(output_observations, list)
     secret_observation = next(
@@ -1949,6 +1973,45 @@ def test_preparation_timeout_preserves_failure_and_cleans_private_inputs(
     assert statuses["podman-preparation-app-linux-amd64-1"] is ResourceStatus.REMOVED
     assert statuses["podman-app-linux-amd64"] is ResourceStatus.REMOVED
     assert statuses["test-inputs-app-linux-amd64"] is ResourceStatus.REMOVED
+    assert statuses["hook-scratch-app-linux-amd64"] is ResourceStatus.REMOVED
+    assert not (value.workspace.root / "hook-scratch").exists()
+
+
+def test_hook_litter_the_user_cannot_unlink_is_removed_through_the_namespace(
+    repository_factory: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    runtime = Runtime()
+    runner = CapturingRunner(litter=True)
+    scratch = value.workspace.root / "hook-scratch" / "app" / "linux-amd64"
+    real_rmtree = shutil.rmtree
+
+    def refuse_scratch(path: Path, *args: Any, **kwargs: Any) -> None:
+        if path == scratch and not kwargs.get("ignore_errors"):
+            raise PermissionError(13, "Permission denied", str(scratch / "podman-root"))
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", refuse_scratch)
+    monkeypatch.setattr("conclear.hook_scratch.active_mounts_below", lambda *a, **k: ())
+
+    evidence = run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        configured_hook_runner(value, runner),
+        dependencies=build_test_dependencies(value, Builder()),
+    )
+
+    assert not evidence.findings
+    assert runtime.mapped_removals == [scratch]
+    assert not scratch.exists()
+    assert not (value.workspace.root / "hook-scratch" / ".unshare").exists()
+    statuses = {
+        item.resource_id: item.status for item in value.workspace.journal.entries()
+    }
+    assert statuses["hook-scratch-app-linux-amd64"] is ResourceStatus.REMOVED
 
 
 class RefusingBuilder:

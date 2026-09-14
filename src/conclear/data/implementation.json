@@ -252,9 +252,10 @@
     {
       "id": "IP0024",
       "summary": "Expose only non-secret exact-image facts to reviewed hooks and destroy generated private test material",
-      "implementation": ["src/conclear/hooks.py", "src/conclear/test_inputs.py", "src/conclear/test_output_archive.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/cleanup.py"],
+      "implementation": ["src/conclear/hooks.py", "src/conclear/hook_scratch.py", "src/conclear/test_inputs.py", "src/conclear/test_output_archive.py", "src/conclear/services/runtime_tests.py", "src/conclear/services/cleanup.py"],
       "tests": [
         {"path": "tests/unit/test_test_output_archive.py", "tier": "unit"},
+        {"path": "tests/unit/test_hook_scratch.py", "tier": "unit"},
         {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
         {"path": "tests/unit/test_secrets.py", "tier": "unit"},
         {"path": "tests/unit/test_cleanup.py", "tier": "unit"}

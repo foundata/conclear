@@ -145,6 +145,10 @@ class RuntimeAdapter(Protocol):
         """Reset one isolated run-owned Podman storage root."""
         ...
 
+    def remove_mapped_tree(self, path: Path, *, storage: Path) -> None:
+        """Remove one run-owned tree inside the rootless user namespace."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class ReadinessTiming:

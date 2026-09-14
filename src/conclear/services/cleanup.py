@@ -9,6 +9,7 @@ from typing import Protocol
 
 from conclear.errors import ConClearError, InvalidInvocationError, OperationalError
 from conclear.freshness import QualificationWindow
+from conclear.hook_scratch import UNSHARE_STORAGE_NAME, remove_hook_scratch
 from conclear.jsonutil import load_json
 from conclear.records import format_timestamp, utc_now
 from conclear.registry_control import TagObservation
@@ -45,6 +46,10 @@ class RuntimeStorage(Protocol):
 
     def remove_storage(self, *, root: Path, runroot: Path) -> None:
         """Reset one isolated run-owned Podman storage root."""
+        ...
+
+    def remove_mapped_tree(self, path: Path, *, storage: Path) -> None:
+        """Remove one run-owned tree inside the rootless user namespace."""
         ...
 
 
@@ -189,6 +194,14 @@ def _cleanup_entry(
     if entry.kind is ResourceKind.TEST_INPUTS:
         path = _owned_path(workspace, entry.identifier)
         remove_materialized_test_inputs(path, run_id=workspace.run_id)
+        return True
+    if entry.kind is ResourceKind.HOOK_SCRATCH:
+        path = _owned_path(workspace, entry.identifier)
+        remove_hook_scratch(
+            path,
+            runtime=podman,
+            storage=workspace.root / "hook-scratch" / UNSHARE_STORAGE_NAME,
+        )
         return True
     if entry.kind is ResourceKind.PODMAN_IMPORT:
         storage = _metadata_path(workspace, entry, "storageRoot")

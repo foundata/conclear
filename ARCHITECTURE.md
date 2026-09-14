@@ -390,6 +390,20 @@ documented paths and immutable references as individual environment values.
 Hooks cannot interpolate command text and cannot override release state,
 evidence fields, registry subjects or signer identity.
 
+A hook runs in the run's Git checkout and receives `CC_LAYOUT`, the qualified
+OCI layout; `CC_IMAGE_DIGEST`; `CC_PLATFORM`; `CC_SOURCE_ROOT`, the checkout
+path; `CC_TEST_INPUT_MANIFEST`, the non-secret test-input manifest; and
+`CC_HOOK_SCRATCH`. The scratch directory is created empty and private below the
+run workspace before the first hook of a platform runs and is shared by that
+platform's hooks. It is the one place a hook may write working data such as a
+container store. Hooks own that content and should remove it when they finish;
+ConClear removes what remains: directly where it can, otherwise inside the
+rootless container user namespace, because a container store leaves files owned
+by subordinate user IDs that the invoking user cannot unlink. That step is
+limited to the scratch directory, refuses to run while anything is mounted
+below it and uses a throwaway Podman storage location that is removed
+afterwards.
+
 <a id="promise-ip0009"></a>
 An image may declare a `test` table containing repository fixture handles,
 run-owned output handles, ordered preparation steps, launch inputs and
@@ -1179,7 +1193,8 @@ values, paths and content digests.
 Repository hooks add application-specific assertions but cannot skip built-in
 gates. A hook receives a run-owned non-secret test-input manifest containing the
 primary and dependency layout paths, immutable digests and non-secret generated
-output handles; it receives no mutable image reference or secret output path.
+output handles, and a run-owned scratch directory for its own working data; it
+receives no mutable image reference or secret output path.
 Hooks are reviewed source commands run with ConClear's sanitized host
 environment, but ConClear cannot sandbox them from invoking other host
 executables. Their recorded executable and output identities make that trust

@@ -33,6 +33,7 @@ from conclear.errors import (
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes, sha256_file
 from conclear.process import (
     CommandRequest,
+    OperationKind,
     ProcessEnvironment,
     ProcessResult,
     ProcessRunner,
@@ -606,6 +607,29 @@ def test_podman_cleanup_is_idempotent_and_resets_only_selected_storage(
     assert runner.requests[1].argv[-3:] == ("system", "reset", "--force")
     assert str(root) in runner.requests[1].argv
     assert str(runroot) in runner.requests[1].argv
+
+
+def test_podman_removes_mapped_trees_inside_the_namespace_with_a_throwaway_store(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner(result())
+    adapter = adapter_arguments(tmp_path, ToolName.PODMAN, runner).create(PodmanAdapter)
+    storage = tmp_path / "hook-scratch" / ".unshare"
+    target = tmp_path / "hook-scratch" / "app" / "linux-amd64"
+
+    adapter.remove_mapped_tree(target, storage=storage)
+
+    argv = runner.requests[0].argv
+    assert argv[1:5] == (
+        "--root",
+        str(storage / "root"),
+        "--runroot",
+        str(storage / "runroot"),
+    )
+    assert argv[5] == "unshare"
+    assert Path(argv[6]).is_absolute() and Path(argv[6]).name == "rm"
+    assert argv[7:] == ("-rf", "--", str(target))
+    assert runner.requests[0].operation is OperationKind.WRITE
 
 
 def test_git_adapter_observes_full_source_facts(tmp_path: Path) -> None:

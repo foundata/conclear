@@ -100,6 +100,7 @@ class ResourceKind(StrEnum):
     BUILDAH_STORAGE = "buildahStorage"
     PODMAN_IMPORT = "podmanImport"
     TEST_INPUTS = "testInputs"
+    HOOK_SCRATCH = "hookScratch"
     CANDIDATE_REFERENCE = "candidateReference"
     TAG_WRITE = "tagWrite"
     SIGNATURE = "signature"
