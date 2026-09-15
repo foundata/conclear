@@ -1330,11 +1330,34 @@ incompatible destination before qualification or remote mutation. The local
 `check`, `pins check`, `build`, `test`, `qualify`, `assemble` and `provenance`
 stages remain available for destinations without a supported backend.
 
-A supported registry backend must provide exact tag observation,
-digest-preserving manifest-list and platform graph handling, OCI referrer
-support compatible with Cosign,
-exact digest tag assignment, owned-tag deletion and post-write observation that
-resolves ambiguous writes. `quay` is the only implemented backend.
+`quay` is the only implemented backend. Another one is added only for a named
+provider that a maintained consumer must publish to, never as a generic OCI
+backend, because the contract needs control-plane operations the distribution
+API does not have. Before admission, the network tests must prove against the
+real service:
+
+1. Exact tag observation: digest, expiration and immutability from a
+   single-tag query, `None` for an absent tag, and a refusal on duplicate or
+   prefix matches.
+2. Digest-preserving graph handling: a multi-platform index round-trips through
+   Skopeo with an unchanged graph fingerprint.
+3. Cosign referrers: signing, attesting, verifying and downloading
+   attestations succeed under the protection policy production will use; a
+   provider without the referrers API needs the `sha256-<digest>` fallback tag
+   to stay writable under that policy, asserted by a test.
+4. Independently enforced candidate lifetime: a per-tag deadline or a
+   pattern-scoped retention policy that reads back through the API.
+5. Exact tag assignment with a refusal when the tag already names another
+   digest.
+6. Owned-tag deletion, and the provider's refusal to delete a protected
+   version tag.
+7. Recovery from an ambiguous write by re-reading the state after an injected
+   transport failure.
+8. Immutability against the real service: a protected tag rejects a re-push,
+   selective policies are accepted and repository-wide protection is rejected.
+9. Provider independence: publication, promotion and registry policy code stay
+   unchanged; the backend lives in its own adapter module and reports through
+   the existing `doctor`, `config show` and release summary fields.
 
 The protected profile requires two explicit choices:
 
