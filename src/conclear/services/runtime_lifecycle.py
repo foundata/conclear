@@ -770,7 +770,9 @@ def _check_immutable_paths(
         root=root,
         runroot=runroot,
         name=name,
-        command=("stat", "--format=%u:%a", "--", *paths),
+        # `-c` is the portable spelling: GNU coreutils and BusyBox both
+        # accept it, and a minimal image often ships only BusyBox.
+        command=("stat", "-c", "%u:%a", "--", *paths),
         timeout_seconds=120,
     )
     lines = output.splitlines()

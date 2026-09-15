@@ -1160,7 +1160,8 @@ A functional contract with escalation, a writable root or extra capabilities
 also receives a restrictive probe with read-only root, no capabilities and
 `no-new-privileges`. Sudo escalation must fail there. Generic restrictive probes
 check effective controls without requiring administrative startup to succeed.
-Set-ID inspection requires a POSIX shell, `sleep`, `readlink` and `stat`.
+Set-ID inspection and the immutable-path probe require a POSIX shell, `sleep`,
+`readlink` and `stat`; both are spelled so that BusyBox satisfies them.
 Escalation tests on an emulated platform need a `binfmt_misc` handler
 registered with the `C` flag, because without it a set-user-ID binary runs with
 the caller's credentials under user-mode emulation; ConClear refuses the test

@@ -220,6 +220,7 @@ class Runtime:
     ) -> None:
         self.fail_health = fail_health
         self.mapped_removals: list[Path] = []
+        self.exec_commands: list[tuple[str, ...]] = []
         self.footprint_observations = 0
         self.fail_remove = fail_remove
         self.effective_capabilities = effective_capabilities
@@ -331,6 +332,7 @@ class Runtime:
         )
 
     def exec(self, **values: Any) -> str:
+        self.exec_commands.append(tuple(values["command"]))
         return self.immutable_stat_output
 
     def inspect_pid1(self, **values: Any) -> str:
@@ -2509,3 +2511,34 @@ def test_runtime_creation_boundary_failure_cleans_only_run_owned_resources(
     assert not (
         value.workspace.root / "reports" / "app" / "linux-amd64" / "test-inputs"
     ).exists()
+
+
+def test_immutable_path_probe_uses_the_portable_stat_spelling(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    """BusyBox rejects `--format=`; both it and GNU coreutils accept `-c`."""
+    root = repository_factory()
+    configure_test_inputs(root)
+    value = inputs(root, tmp_path)
+    value = replace(
+        value,
+        image=replace(
+            value.image,
+            runtime=replace(
+                value.image.runtime, immutable_paths=("/usr/local/lib/app",)
+            ),
+        ),
+    )
+    runtime = Runtime()
+    runtime.immutable_stat_output = "0:555\n"
+
+    run_platform_tests(
+        value,
+        build_platform(value, Builder()),
+        runtime,
+        configured_hook_runner(value, CapturingRunner()),
+        dependencies=build_test_dependencies(value, Builder()),
+    )
+
+    [probe] = [item for item in runtime.exec_commands if item[0] == "stat"]
+    assert probe == ("stat", "-c", "%u:%a", "--", "/usr/local/lib/app")
