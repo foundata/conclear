@@ -4,7 +4,7 @@ import platform as host_platform
 from dataclasses import dataclass
 from enum import StrEnum
 
-from conclear.config import RepositoryConfig
+from conclear.config import ReleaseImageConfig, RepositoryConfig
 from conclear.dependencies import (
     DOCTOR_SCOPES,
     require_profile_capabilities,
@@ -46,6 +46,32 @@ class DoctorObservation:
     registry_access: bool
     sigstore_access: bool
     registry_checks: tuple[RegistryCheck, ...] = ()
+
+
+def _require_credentials_flag_for_escalation(
+    images: tuple[ReleaseImageConfig, ...], native: str
+) -> None:
+    """Refuse early when escalation tests would run under a handler without `C`.
+
+    Without the credentials flag a set-user-ID binary runs with the caller's
+    credentials under user-mode emulation, so `sudo` cannot become root and the
+    escalation tests of every emulated platform would fail for a host reason.
+    """
+    for image in images:
+        requirement = image.runtime.sudo_requirement
+        if requirement is None or requirement.mode != "escalation":
+            continue
+        for platform in image.platforms:
+            if platform.architecture == native:
+                continue
+            handler = binfmt_handler(platform.architecture)
+            if handler is not None and "C" not in handler.flags:
+                raise OperationalError(
+                    f"Image {image.image_id} tests sudo escalation on {platform}, "
+                    f"but the binfmt handler {handler.name} has flags "
+                    f"'{handler.flags}' without C (credentials); register it with "
+                    f"C or test {platform} natively"
+                )
 
 
 def diagnose_environment(
@@ -98,6 +124,7 @@ def diagnose_environment(
             raise OperationalError(
                 "No enabled binfmt handler was observed for: " + ", ".join(unavailable)
             )
+        _require_credentials_flag_for_escalation(release_images, native)
     registry_provider: str | None = None
     registry_checks: tuple[RegistryCheck, ...] = ()
     if scope is DoctorScope.RELEASE:

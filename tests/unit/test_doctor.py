@@ -254,3 +254,54 @@ def test_other_scopes_require_the_repository_configuration(tmp_path: Path) -> No
         diagnose_environment(
             None, cast(Any, _FakeRuntime(tmp_path)), scope=DoctorScope.QUALIFY
         )
+
+
+def test_escalation_under_emulation_needs_a_handler_with_the_credentials_flag(
+    repository_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from conclear.emulation import BinfmtHandler
+    from tests.unit.test_privilege_contracts import configure_sudo
+
+    path = configure_sudo(repository_factory(), mode="escalation")
+    repository = load_repository_config(path)
+    image = repository.release_image("app")
+    repository = replace(
+        repository,
+        images=(
+            replace(
+                image,
+                platforms=(
+                    Platform.parse("linux/amd64"),
+                    Platform.parse("linux/arm64"),
+                ),
+            ),
+        ),
+    )
+    monkeypatch.setattr(platform, "machine", lambda: "x86_64")
+    flags = {"value": "F"}
+    monkeypatch.setattr(
+        doctor_module,
+        "binfmt_handler",
+        lambda architecture: BinfmtHandler(
+            "qemu-aarch64", "/usr/bin/qemu-aarch64-static", flags["value"]
+        ),
+    )
+
+    with pytest.raises(OperationalError, match="without C"):
+        diagnose_environment(
+            repository,
+            cast(Any, _FakeRuntime(tmp_path)),
+            scope=DoctorScope.QUALIFY,
+            profile=None,
+        )
+
+    flags["value"] = "OCF"
+    observation = diagnose_environment(
+        repository,
+        cast(Any, _FakeRuntime(tmp_path)),
+        scope=DoctorScope.QUALIFY,
+        profile=None,
+    )
+    assert observation.emulated_architectures == ("arm64",)
