@@ -421,7 +421,8 @@ def _exercise_service(
             Finding(
                 "CC0403",
                 "error",
-                f"Service did not stop within {budget}s after SIG{signal_name}",
+                f"Service did not stop within {budget}s after "
+                f"{signal_name if signal_name.startswith('SIG') else 'SIG' + signal_name}",
             )
         )
         results.append(
