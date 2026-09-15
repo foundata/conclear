@@ -817,9 +817,9 @@ OCI descriptor and manifest digest; Containerfile, context and effective build
 arguments; external image digests; build and test host, target and execution
 architectures; emulation or cross-build mechanism; runtime constraints;
 non-secret test-input and preparation identities; exact test-image dependency
-descriptors and manifest digests; test result digests; SBOM digest and SPDX
-version; scan-result and vulnerability-database identities; applied exceptions;
-and the platform verdict.
+descriptors and manifest digests; test result digests; SBOM digest, SPDX
+version and attestation predicate type; scan-result and vulnerability-database
+identities; applied exceptions; and the platform verdict.
 
 `transport.json` is the `qualificationTransport` record written by
 `transport export`. It carries the worker run identity, source, configuration
@@ -1515,7 +1515,12 @@ subject graph.
 The signed SPDX attestation is the repository-scoped consumer copy. ConClear
 retrieves and validates its predicate through Cosign during verification and
 rescans; it does not use Cosign's deprecated unsigned raw SBOM attachment
-command.
+command. The platform qualification and the release-verification record name
+the SPDX version of each SBOM and the exact predicate type it was attached
+under. Verification, rescans and archive checks take both values from the record
+and reject a retrieved document that declares another SPDX version; a record
+written before these fields existed is read as SPDX 2.3 under
+`https://spdx.dev/Document`.
 
 Attestation consumers decode the DSSE envelopes returned by
 `cosign verify-attestation` with the approved public key. Those authenticated
