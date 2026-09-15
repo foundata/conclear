@@ -592,3 +592,38 @@ def test_escalation_under_emulation_needs_the_credentials_flag(
     )
     require_emulated_escalation_support(emulated)
     require_emulated_escalation_support(value)
+
+
+def test_a_declared_setid_path_without_its_bit_is_rejected_not_operational(
+    repository_factory: Callable[..., Path], tmp_path: Path
+) -> None:
+    path = configure_sudo(repository_factory())
+    path.write_text(
+        path.read_text(encoding="utf-8")
+        + "\n[[images.runtime.setid_requirements]]\n"
+        + 'path = "/usr/bin/other"\n'
+        + 'rationale = "Declared helper."\nowner = "platform"\nreview_trigger = "Helper changes."\n',
+        encoding="utf-8",
+    )
+    value = inputs(path.parent, tmp_path)
+
+    findings, results = run_privilege_tests(
+        value,
+        PrivilegeRuntime(),
+        storage_root=tmp_path / "store",
+        runroot=tmp_path / "run",
+        image_name="localhost/test:qualified",
+        mounts=(),
+    )
+
+    [finding] = [item for item in findings if item.check_id == "CC0406"]
+    assert finding.location == "/usr/bin/other"
+    assert "unsafe ownership or mode" in finding.message
+    functional = next(item for item in results if "setidExecutables" in item)
+    executables = functional["setidExecutables"]
+    assert isinstance(executables, list)
+    assert [item["path"] for item in executables] == ["/usr/bin/sudo"]
+    assert all(
+        item.status is ResourceStatus.REMOVED
+        for item in value.workspace.journal.entries()
+    )

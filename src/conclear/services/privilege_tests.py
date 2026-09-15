@@ -20,6 +20,16 @@ LOGGER = logging.getLogger(__name__)
 _KEEPALIVE = ("/bin/sh", "-c", "trap 'exit 0' TERM; while :; do sleep 1; done")
 
 
+class PrivilegeContractError(OperationalError):
+    """An image fact that breaks a declared privilege contract.
+
+    Raised by the probe for a declared executable's mode, ownership or parent
+    directories. For declared set-ID paths it becomes a `CC0406` rejection; on
+    the sudo path it stays an operational failure, because the functional
+    tests cannot proceed without a usable executable.
+    """
+
+
 def require_emulated_escalation_support(inputs: QualificationInputs) -> None:
     """Refuse escalation tests under an emulation handler without credentials.
 
@@ -118,9 +128,15 @@ def test_privileges(
             if not mismatches and needs_inspection:
                 probe = _Probe(runtime, storage_root, runroot, name)
                 if not restricted:
-                    result["setidExecutables"] = [
-                        probe.setid(path) for path in configured.setid_paths
-                    ]
+                    executables: list[dict[str, object]] = []
+                    for path in configured.setid_paths:
+                        try:
+                            executables.append(probe.setid(path))
+                        except PrivilegeContractError as exc:
+                            findings.append(
+                                Finding("CC0406", "error", str(exc), location=path)
+                            )
+                    result["setidExecutables"] = executables
                     if configured.sudo_requirement is not None:
                         sudo_path, policy = probe.sudo_policy(
                             configured.sudo_requirement
@@ -207,7 +223,7 @@ class _Probe:
             or not mode & (stat.S_ISUID | stat.S_ISGID)
             or mode & 0o022
         ):
-            raise OperationalError(
+            raise PrivilegeContractError(
                 f"Declared set-ID executable has unsafe ownership or mode: {path}"
             )
         self._protected_parents(path, resolved)
@@ -224,7 +240,7 @@ class _Probe:
         ):
             owner, mode = self._mode(str(parent))
             if owner != 0 or mode & 0o022:
-                raise OperationalError(
+                raise PrivilegeContractError(
                     f"Privileged file has an unsafe parent directory: {parent}"
                 )
 
