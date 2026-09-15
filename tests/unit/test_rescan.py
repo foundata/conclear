@@ -715,6 +715,8 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
                 "component": "libssl",
                 "advisory": "CVE-2026-0001",
                 "expires": "2026-12-31",
+                "severity": "CRITICAL",
+                "severitySource": None,
             }
         ]
         if use_exception
@@ -748,6 +750,8 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
                 "startedAt": "2026-01-01T00:00:00Z",
                 "deadline": "2026-01-31T00:00:00Z",
                 "overdue": True,
+                "severity": "CRITICAL",
+                "severitySource": None,
             }
         ]
         if triage_decision == "affected" and not use_exception

@@ -17,12 +17,18 @@ from conclear.presentation import Finding
 
 @dataclass(frozen=True, slots=True)
 class AppliedException:
-    """One exact unexpired exception matched to a scanner finding."""
+    """One exact unexpired exception matched to a scanner finding.
+
+    The severity and its source are those of the finding the exception
+    covered, so a review can see whether a vendor or NVD rating was excepted.
+    """
 
     image: str
     component: str
     advisory: str
     expires: str
+    severity: str | None = None
+    severity_source: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Return the evidence representation."""
@@ -31,6 +37,8 @@ class AppliedException:
             "component": self.component,
             "advisory": self.advisory,
             "expires": self.expires,
+            "severity": self.severity,
+            "severitySource": self.severity_source,
         }
 
 
@@ -85,13 +93,20 @@ def _pattern_regex(pattern: str) -> re.Pattern[str]:
 
 @dataclass(frozen=True, slots=True)
 class FixableVulnerability:
-    """One structured fixable HIGH or CRITICAL scanner observation."""
+    """One structured fixable HIGH or CRITICAL scanner observation.
+
+    `severity` is the rating the scanner selected; `severity_source` names
+    where it came from (a distribution vendor or NVD) and `vendor_severities`
+    keeps every rating the scanner saw, because vendors and NVD often disagree.
+    """
 
     component: str
     advisory: str
     severity: str
     fixed_version: str
     finding: Finding | None
+    severity_source: str | None = None
+    vendor_severities: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,12 +270,16 @@ def evaluate_trivy_report(
             component = string_value(
                 vulnerability.get("PkgName"), label="Trivy component"
             )
+            severity_source, vendor_severities = _severity_provenance(vulnerability)
+            by_source = f" (severity by {severity_source})" if severity_source else ""
             matched, expired = _match_exception(
                 image_id=image_id,
                 component=component,
                 advisory=advisory,
                 exceptions=exceptions,
                 today=today,
+                severity=severity,
+                severity_source=severity_source,
             )
             finding: Finding | None = None
             if matched is not None:
@@ -277,7 +296,8 @@ def evaluate_trivy_report(
                 finding = Finding(
                     "CC0502",
                     "error",
-                    f"Fixable {severity} vulnerability {advisory} in {component}",
+                    f"Fixable {severity} vulnerability {advisory} in {component}"
+                    f"{by_source}",
                     location,
                 )
                 findings.append(finding)
@@ -288,6 +308,8 @@ def evaluate_trivy_report(
                     severity=severity,
                     fixed_version=fixed,
                     finding=finding,
+                    severity_source=severity_source,
+                    vendor_severities=vendor_severities,
                 )
             )
     assessment = None
@@ -328,6 +350,8 @@ def _match_exception(
     advisory: str,
     exceptions: tuple[VulnerabilityException, ...],
     today: date,
+    severity: str | None = None,
+    severity_source: str | None = None,
 ) -> tuple[AppliedException | None, bool]:
     candidates = [
         item
@@ -352,9 +376,31 @@ def _match_exception(
     if expiry < today:
         return None, True
     return (
-        AppliedException(item.image, item.component, item.advisory, item.expires),
+        AppliedException(
+            item.image,
+            item.component,
+            item.advisory,
+            item.expires,
+            severity=severity,
+            severity_source=severity_source,
+        ),
         False,
     )
+
+
+def _severity_provenance(
+    vulnerability: dict[str, object],
+) -> tuple[str | None, tuple[tuple[str, str], ...]]:
+    """Return Trivy's selected severity source and every vendor rating it saw."""
+    source_value = vulnerability.get("SeveritySource")
+    source = source_value if isinstance(source_value, str) and source_value else None
+    vendor_value = vulnerability.get("VendorSeverity")
+    ratings: list[tuple[str, str]] = []
+    if isinstance(vendor_value, dict):
+        for name, rating in vendor_value.items():
+            if isinstance(name, str) and name:
+                ratings.append((name, str(rating).upper()))
+    return source, tuple(sorted(ratings))
 
 
 def _match_configuration_exception(

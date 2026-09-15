@@ -383,3 +383,69 @@ def test_scan_policy_ignores_configuration_exceptions_of_other_images() -> None:
     )
 
     assert len([item for item in evaluation.findings if item.check_id == "CC0501"]) == 4
+
+
+def test_scan_policy_records_the_severity_source_and_vendor_ratings() -> None:
+    rated: dict[str, object] = {
+        "Results": [
+            {
+                "Target": "app",
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2026-0002",
+                        "PkgName": "perl-base",
+                        "Severity": "critical",
+                        "SeveritySource": "debian",
+                        "VendorSeverity": {"nvd": "HIGH", "debian": "CRITICAL"},
+                        "FixedVersion": "5.40.1-1",
+                    }
+                ],
+                "Secrets": None,
+                "Misconfigurations": [],
+            }
+        ]
+    }
+
+    rejected = evaluate_trivy_report(
+        rated, image_id="app", exceptions=(), today=date(2026, 8, 31)
+    )
+    [vulnerability] = rejected.fixable_vulnerabilities
+    assert vulnerability.severity_source == "debian"
+    assert vulnerability.vendor_severities == (("debian", "CRITICAL"), ("nvd", "HIGH"))
+    assert rejected.findings[0].message == (
+        "Fixable CRITICAL vulnerability CVE-2026-0002 in perl-base (severity by debian)"
+    )
+
+    excepted = evaluate_trivy_report(
+        rated,
+        image_id="app",
+        exceptions=(
+            VulnerabilityException(
+                image="app",
+                component="perl-base",
+                advisory="CVE-2026-0002",
+                rationale="Not reachable",
+                reachability="No network path",
+                exposure="None",
+                compensating_controls="Seccomp",
+                owner="security@example.com",
+                expires="2026-12-31",
+                review_trigger="Package update",
+            ),
+        ),
+        today=date(2026, 8, 31),
+    )
+    assert excepted.applied_exceptions[0].to_dict() == {
+        "image": "app",
+        "component": "perl-base",
+        "advisory": "CVE-2026-0002",
+        "expires": "2026-12-31",
+        "severity": "CRITICAL",
+        "severitySource": "debian",
+    }
+
+    unsourced = evaluate_trivy_report(
+        report(), image_id="app", exceptions=(), today=date(2026, 8, 31)
+    )
+    assert unsourced.fixable_vulnerabilities[0].severity_source is None
+    assert "(severity by" not in unsourced.findings[0].message

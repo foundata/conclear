@@ -361,6 +361,7 @@ def rescan_release(
     applied_configuration_exceptions: list[dict[str, object]] = []
     applied_runtime_requirements: list[dict[str, object]] = []
     active_findings: set[RemediationFindingKey] = set()
+    severities: dict[tuple[Platform, str, str], tuple[str, str | None]] = {}
     evidence = object_value(payload.get("evidence"), "release evidence")
     raw_sboms = evidence.get("sboms")
     if not isinstance(raw_sboms, list) or not all(
@@ -451,6 +452,10 @@ def rescan_release(
         )
         suppressed = set()
         for vulnerability in evaluation.fixable_vulnerabilities:
+            severities[(platform, vulnerability.component, vulnerability.advisory)] = (
+                vulnerability.severity,
+                vulnerability.severity_source,
+            )
             triage_decision = triage_map.get(
                 (platform, vulnerability.component, vulnerability.advisory)
             )
@@ -493,9 +498,14 @@ def rescan_release(
         started_at = _remediation_start(finding, remediation_history)
         deadline = None if started_at is None else started_at + remediation_limit
         overdue = deadline is not None and now.astimezone(UTC) >= deadline
+        severity, severity_source = severities.get(
+            (finding.platform, finding.component, finding.advisory), (None, None)
+        )
         remediation_findings.append(
             {
                 **finding.to_dict(),
+                "severity": severity,
+                "severitySource": severity_source,
                 "startedAt": (
                     None if started_at is None else format_timestamp(started_at)
                 ),
