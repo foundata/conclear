@@ -395,3 +395,6 @@ $RECYCLE.BIN/
 
 # rumdl Markdown check cache
 .rumdl_cache/
+
+# Local agent worktrees
+.claude/
