@@ -1100,6 +1100,7 @@ test workspaces and resource manifests outside the repository.
    against the retained wheel:
 
    ```sh
+   drill/profile.sh --workspace "${workspace}" --credentials "${credentials}"
    drill/prepare.sh --wheel "${distribution}/conclear-${version}-py3-none-any.whl" --workspace "${workspace}"
    drill/run.sh --workspace "${workspace}"
    drill/verify.sh --workspace "${workspace}"
