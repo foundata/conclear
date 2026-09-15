@@ -29,6 +29,9 @@
     "platform": {"type": "string", "pattern": "^[a-z0-9._-]+/[a-z0-9._-]+(?:/[a-z0-9._-]+)?$"},
     "stringArray": {"type": "array", "items": {"type": "string"}},
     "digestArray": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}},
+    "spdxVersion": {"enum": ["SPDX-2.3"]},
+    "predicateType": {"type": "string", "pattern": "^https://"},
+    "sbomFormat": {"type": "object", "additionalProperties": false, "required": ["spdxVersion", "predicateType"], "properties": {"spdxVersion": {"$ref": "#/$defs/spdxVersion"}, "predicateType": {"$ref": "#/$defs/predicateType"}}},
     "databaseComponent": {
       "type": "object",
       "additionalProperties": false,
@@ -631,7 +634,7 @@
         "testImageDependencies": {"type": "array", "items": {"$ref": "#/$defs/testImageDependency"}},
         "testResults": {"type": "array", "items": {"$ref": "#/$defs/testResult"}},
         "testOutputArchive": {"type": "object", "additionalProperties": false, "required": ["path", "digest"], "properties": {"path": {"const": "test-outputs.tar"}, "digest": {"$ref": "#/$defs/digest"}}},
-        "sbom": {"type": "object", "additionalProperties": false, "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"const": "SPDX-2.3"}}},
+        "sbom": {"type": "object", "additionalProperties": false, "required": ["digest", "spdxVersion"], "properties": {"digest": {"$ref": "#/$defs/digest"}, "spdxVersion": {"$ref": "#/$defs/spdxVersion"}, "predicateType": {"$ref": "#/$defs/predicateType"}}},
         "scans": {"type": "array", "items": {"$ref": "#/$defs/scan"}},
         "appliedExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedException"}},
         "appliedConfigurationExceptions": {"type": "array", "items": {"$ref": "#/$defs/appliedConfigurationException"}},
@@ -820,6 +823,7 @@
         "releaseEnvironment": {"type": "object", "additionalProperties": false, "required": ["hostArchitecture", "runId"], "properties": {"hostArchitecture": {"type": "string"}, "runId": {"type": "string", "pattern": "^[0-9a-hjkmnp-tv-z]{26}$"}, "ciContext": {"$ref": "#/$defs/ciContext"}}},
         "builder": {"$ref": "#/$defs/builderIdentity"},
         "signer": {"type": "object", "additionalProperties": false, "required": ["mode", "keyId"], "properties": {"mode": {"enum": ["managed-key", "kms", "hsm"]}, "keyId": {"type": "string", "minLength": 1}}},
+        "sbom": {"$ref": "#/$defs/sbomFormat"},
         "evidence": {"type": "object", "additionalProperties": false, "required": ["platformQualifications", "scanResults", "sboms", "provenance", "candidateRecord"], "properties": {"platformQualifications": {"$ref": "#/$defs/digestArray"}, "scanResults": {"$ref": "#/$defs/digestArray"}, "sboms": {"$ref": "#/$defs/digestArray"}, "provenance": {"$ref": "#/$defs/digest"}, "candidateRecord": {"$ref": "#/$defs/digest"}}}
       }
     },

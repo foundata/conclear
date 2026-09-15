@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 
 import conclear.records as records_module
 from conclear.artifacts import load_candidate
+from conclear.attestations import SPDX_DOCUMENT_TYPE
 from conclear.config import load_repository_config
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.identity import ApplicationIdentity
@@ -19,6 +20,7 @@ from conclear.jsonutil import load_json
 from conclear.presentation import CommandResult, Finding, ResultStatus
 from conclear.records import validate_record
 from conclear.schema import load_schema, validate_external
+from conclear.spdx import SPDX_2_3, SpdxFormat
 from tests.registry_policy_fixtures import REGISTRY_POLICY_TOML
 from tests.unit.test_release_workflow import Harness
 from tests.unit.test_rescan_history import _record as rescan_record
@@ -110,6 +112,59 @@ def test_release_records_validate_and_reject_security_significant_mutations(
             "payload": {
                 **verification["payload"],
                 "builder": {"id": "http://insecure.example/builder"},
+            },
+        },
+    )
+
+    # Both records name the SBOM format readers follow. Records written before
+    # the format was recorded omit it and read as SPDX 2.3 under the legacy URI.
+    legacy = SpdxFormat(SPDX_2_3, SPDX_DOCUMENT_TYPE)
+    qualification_payload = fixtures["platformQualification"]["payload"]
+    assert qualification_payload["sbom"]["spdxVersion"] == "SPDX-2.3"
+    assert qualification_payload["sbom"]["predicateType"] == "https://spdx.dev/Document"
+    assert verification["payload"]["sbom"] == legacy.to_dict()
+    older_sbom = {
+        key: item
+        for key, item in qualification_payload["sbom"].items()
+        if key != "predicateType"
+    }
+    older_qualification = {
+        **fixtures["platformQualification"],
+        "payload": {**qualification_payload, "sbom": older_sbom},
+    }
+    validate_record(older_qualification)
+    assert SpdxFormat.from_record(older_sbom, label="SBOM") == legacy
+    older_verification = {
+        **verification,
+        "payload": {
+            key: item for key, item in verification["payload"].items() if key != "sbom"
+        },
+    }
+    validate_record(older_verification)
+    assert (
+        SpdxFormat.from_record(older_verification["payload"].get("sbom"), label="SBOM")
+        == legacy
+    )
+    assert _errors(
+        "record.schema.json",
+        {
+            **verification,
+            "payload": {
+                **verification["payload"],
+                "sbom": {
+                    "spdxVersion": "SPDX-3.0.1",
+                    "predicateType": SPDX_DOCUMENT_TYPE,
+                },
+            },
+        },
+    )
+    assert _errors(
+        "record.schema.json",
+        {
+            **older_qualification,
+            "payload": {
+                **qualification_payload,
+                "sbom": {**older_sbom, "predicateType": "spdxjson"},
             },
         },
     )

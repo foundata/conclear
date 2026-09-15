@@ -16,10 +16,7 @@ from conclear.adapters.cosign import (
     SignatureObservation,
     VerificationObservation,
 )
-from conclear.attestations import (
-    SPDX_DOCUMENT_TYPE,
-    statement_matches,
-)
+from conclear.attestations import statement_matches
 from conclear.config import ReleaseImageConfig
 from conclear.errors import (
     InvalidInvocationError,
@@ -40,7 +37,7 @@ from conclear.services.publication import (
     require_remote_graph_unchanged,
     retry_entry,
 )
-from conclear.spdx import SPDX_2_3, validate_spdx_document
+from conclear.spdx import SpdxFormat, validate_spdx_document
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 
@@ -119,6 +116,7 @@ class ReleaseEvidence:
     configuration_digest: str
     tools: tuple[ToolIdentity, ...]
     sboms: tuple[tuple[Platform, Path, str], ...]
+    sbom_format: SpdxFormat
     scan_digests: tuple[str, ...]
     provenance_path: Path
     provenance_digest: str
@@ -198,12 +196,14 @@ def attest_candidate(
                 f"SBOM digest changed for {platform}", code="CC0504"
             )
         sbom = validate_spdx_document(
-            load_json(sbom_path), label=f"SBOM for {platform}", spdx_version=SPDX_2_3
+            load_json(sbom_path),
+            label=f"SBOM for {platform}",
+            spdx_version=evidence.sbom_format.version,
         )
         subject = published.reference.with_digest(digest)
         resource = f"sbom-{platform.key}"
         metadata: dict[str, object] = {
-            "predicateType": SPDX_DOCUMENT_TYPE,
+            "predicateType": evidence.sbom_format.predicate_type,
             "payloadDigest": expected_digest,
         }
         existing = retry_entry(
@@ -218,7 +218,7 @@ def attest_candidate(
                 signer,
                 public_key=public_key,
                 subject=subject,
-                predicate_type=SPDX_DOCUMENT_TYPE,
+                predicate_type=evidence.sbom_format.predicate_type,
                 expected=sbom,
             ):
                 workspace.journal.update(resource, ResourceStatus.CREATED)
@@ -239,7 +239,7 @@ def attest_candidate(
             signer.attest(
                 subject=subject,
                 predicate=sbom_path,
-                predicate_type="spdxjson",
+                predicate_type=evidence.sbom_format.predicate_type,
                 private_key=private_key,
                 passphrase=passphrase,
                 passphrase_path=passphrase_path,

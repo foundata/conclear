@@ -14,7 +14,6 @@ from pathlib import Path
 
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
-    SPDX_DOCUMENT_TYPE,
     STATEMENT_TYPE,
     write_statement,
 )
@@ -48,7 +47,7 @@ from conclear.services.publication import (
     require_remote_graph_unchanged,
     retry_entry,
 )
-from conclear.spdx import SPDX_2_3, validate_spdx_document
+from conclear.spdx import validate_spdx_document
 from conclear.values import Digest, OCIReference
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 
@@ -155,13 +154,15 @@ def verify_candidate(
             )
         subject = published.reference.with_digest(manifest_map[platform])
         sbom = validate_spdx_document(
-            load_json(path), label=f"SBOM for {platform}", spdx_version=SPDX_2_3
+            load_json(path),
+            label=f"SBOM for {platform}",
+            spdx_version=evidence.sbom_format.version,
         )
         require_verified_predicate(
             signer,
             public_key=profile.cosign_public_key,
             subject=subject,
-            predicate_type=SPDX_DOCUMENT_TYPE,
+            predicate_type=evidence.sbom_format.predicate_type,
             expected=sbom,
         )
     provenance = object_value(load_json(evidence.provenance_path), "provenance")
@@ -203,6 +204,7 @@ def verify_candidate(
         },
         "builder": {"id": profile.builder.id},
         "signer": {"mode": signer_mode, "keyId": signer_key_id},
+        "sbom": evidence.sbom_format.to_dict(),
         "evidence": {
             "platformQualifications": list(evidence.qualification_digests),
             "scanResults": sorted(set(evidence.scan_digests)),

@@ -61,6 +61,7 @@ from conclear.services.runtime_lifecycle import RuntimeAdapter
 from conclear.services.runtime_tests import test_platform
 from conclear.setid_inventory import inventory_setid, setid_findings
 from conclear.source_integrity import require_source_integrity
+from conclear.spdx import SPDX_2_3, SpdxFormat
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import (
     ResourceKind,
@@ -525,7 +526,11 @@ def qualify_platform(
             dependency_builds, preflight.dependencies, runtime_evidence.dependencies
         ),
         "testResults": list(runtime_evidence.test_results),
-        "sbom": {"digest": scan_evidence.sbom.digest, "spdxVersion": "SPDX-2.3"},
+        # Trivy writes SPDX 2.3 and its adapter validated the document as such.
+        "sbom": {
+            "digest": scan_evidence.sbom.digest,
+            **SpdxFormat.for_version(SPDX_2_3).to_dict(),
+        },
         "scans": [
             {"digest": scan.digest, "path": scan.path.name}
             for scan in scan_evidence.scans

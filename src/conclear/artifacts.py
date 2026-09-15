@@ -22,6 +22,7 @@ from conclear.services.assembly import CandidateResult, QualificationTransport
 from conclear.services.attestation import ReleaseEvidence, validate_release_provenance
 from conclear.services.publication import PublishedCandidate
 from conclear.services.verification import VerificationResult
+from conclear.spdx import SpdxFormat
 from conclear.values import (
     Digest,
     OCIReference,
@@ -285,6 +286,7 @@ def load_release_evidence(
         for item in tools_value
     )
     sboms: list[tuple[Platform, Path, str]] = []
+    sbom_formats: set[SpdxFormat] = set()
     scan_digests: list[str] = []
     windows: list[QualificationWindow] = []
     bound_runs = _bound_runs(candidate, image)
@@ -307,6 +309,9 @@ def load_release_evidence(
         if sha256_file(sbom_path) != sbom_digest:
             raise RuleRejectionError(f"SBOM changed for {platform}", code="CC0504")
         sboms.append((platform, sbom_path, sbom_digest))
+        sbom_formats.add(
+            SpdxFormat.from_record(sbom_value, label=f"SBOM format for {platform}")
+        )
         scans = payload.get("scans")
         if not isinstance(scans, list):
             raise InvalidInvocationError("Qualification scans are malformed")
@@ -325,6 +330,10 @@ def load_release_evidence(
                     f"Scan report changed for {platform}", code="CC0501"
                 )
             scan_digests.append(scan_digest)
+    if len(sbom_formats) != 1:
+        raise RuleRejectionError(
+            "Platform qualifications name different SBOM formats", code="CC0504"
+        )
     if common_window(tuple(windows)) != candidate.qualification_window:
         raise RuleRejectionError(
             "Candidate qualification window changed", code="CC0505"
@@ -340,6 +349,7 @@ def load_release_evidence(
         ),
         tools=tools,
         sboms=tuple(sboms),
+        sbom_format=sbom_formats.pop(),
         scan_digests=tuple(sorted(scan_digests)),
         provenance_path=provenance_path,
         provenance_digest=sha256_file(provenance_path),

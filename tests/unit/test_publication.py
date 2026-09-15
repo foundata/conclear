@@ -60,6 +60,7 @@ from conclear.services.ci_context import PublicCIContext
 from conclear.services.promotion import promote_candidate
 from conclear.services.publication import publish_candidate
 from conclear.services.verification import VerificationResult, verify_candidate
+from conclear.spdx import SpdxFormat
 from conclear.values import (
     CANDIDATE_TAG_PATTERN,
     Digest,
@@ -639,6 +640,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
             ),
         ),
         sboms=((platform, sbom, sbom_digest),),
+        sbom_format=SpdxFormat.for_version("SPDX-2.3"),
         scan_digests=("sha256:" + "3" * 64,),
         provenance_path=provenance,
         provenance_digest=provenance_digest,
