@@ -26,7 +26,7 @@ from conclear.scan_identity import (
     neutralize_scan_report,
     neutralize_spdx_document,
 )
-from conclear.spdx import validate_spdx_document
+from conclear.spdx import SPDX_2_3, validate_spdx_document
 from conclear.values import Digest
 
 
@@ -237,7 +237,7 @@ class TrivyAdapter(ToolAdapter):
             output_path,
         )
         document = validate_spdx_document(
-            observation.value, label="Trivy SPDX document"
+            observation.value, label="Trivy SPDX document", spdx_version=SPDX_2_3
         )
         if identity is not None:
             document = neutralize_spdx_document(document, identity)

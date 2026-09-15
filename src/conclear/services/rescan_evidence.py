@@ -7,7 +7,7 @@ from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
 from conclear.parsing import object_value
 from conclear.records import parse_timestamp, validate_record
-from conclear.spdx import validate_spdx_document
+from conclear.spdx import SPDX_2_3, validate_spdx_document
 from conclear.values import OCIReference
 
 
@@ -133,5 +133,5 @@ def select_release_sbom(
         )
     digest = matches.pop()
     return digest, validate_spdx_document(
-        predicates[digest], label=f"SBOM for {subject}"
+        predicates[digest], label=f"SBOM for {subject}", spdx_version=SPDX_2_3
     )

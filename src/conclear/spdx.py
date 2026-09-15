@@ -1,21 +1,95 @@
-"""Runtime validation for retained SPDX 2.3 JSON documents."""
+"""Runtime validation for retained SPDX JSON documents and their recorded format."""
 
 import re
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import MappingProxyType
+from typing import Self
 from urllib.parse import urlsplit
 
+from conclear.attestations import SPDX_DOCUMENT_TYPE
 from conclear.errors import OperationalError
 from conclear.parsing import object_value, string_value
+
+SPDX_2_3 = "SPDX-2.3"
+SPDX_PREDICATE_TYPES: Mapping[str, str] = MappingProxyType(
+    {SPDX_2_3: SPDX_DOCUMENT_TYPE}
+)
+"""The predicate type each supported SPDX version is attested under.
+
+Cosign resolves its `--type spdxjson` alias to `https://spdx.dev/Document`.
+ConClear hands Cosign the URI itself, so the type written into a record is the
+type that was attached and `cosign verify-attestation --type spdxjson` keeps
+matching releases attested under the legacy URI.
+"""
 
 _SPDX_IDENTIFIER = re.compile(r"^SPDXRef-[A-Za-z0-9.-]+$")
 _CREATOR = re.compile(r"^(?:Person|Organization|Tool):\s*\S.*$")
 
 
-def validate_spdx_document(value: object, *, label: str) -> dict[str, object]:
-    """Validate mandatory SPDX 2.3 document creation and element identities."""
+@dataclass(frozen=True, slots=True)
+class SpdxFormat:
+    """The SPDX version of an SBOM and the predicate type it is attested under."""
+
+    version: str
+    predicate_type: str
+
+    @classmethod
+    def for_version(cls, version: str) -> Self:
+        """Pair a supported SPDX version with the predicate type ConClear attaches."""
+        predicate_type = SPDX_PREDICATE_TYPES.get(version)
+        if predicate_type is None:
+            raise OperationalError(f"Unsupported SPDX version {version}")
+        return cls(version, predicate_type)
+
+    @classmethod
+    def from_record(cls, value: object, *, label: str) -> Self:
+        """Read the format a record names for its SBOM.
+
+        Records written before the format was recorded carry SPDX 2.3 under the
+        legacy predicate type, so both fields default on read. New records name
+        both fields explicitly.
+        """
+        if value is None:
+            return cls(SPDX_2_3, SPDX_DOCUMENT_TYPE)
+        item = object_value(value, label)
+        version = string_value(
+            item.get("spdxVersion", SPDX_2_3), f"{label} SPDX version"
+        )
+        predicate_type = string_value(
+            item.get("predicateType", SPDX_DOCUMENT_TYPE),
+            f"{label} predicate type",
+        )
+        if not predicate_type.startswith("https://"):
+            raise OperationalError(f"{label} predicate type must be an HTTPS URI")
+        return cls(version, predicate_type)
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the format as the record fields readers follow."""
+        return {"spdxVersion": self.version, "predicateType": self.predicate_type}
+
+
+def validate_spdx_document(
+    value: object, *, label: str, spdx_version: str
+) -> dict[str, object]:
+    """Validate a document against the SPDX version its record names.
+
+    The declared `spdxVersion` must equal the recorded version; a document of
+    another version, including an SPDX 3 JSON-LD document that declares no
+    `spdxVersion` at all, is rejected before any structural check. Structural
+    validation covers SPDX 2.3 only.
+    """
     document = object_value(value, label)
-    if document.get("spdxVersion") != "SPDX-2.3":
-        raise OperationalError(f"{label} is not an SPDX 2.3 document")
+    if document.get("spdxVersion") != spdx_version:
+        raise OperationalError(
+            f"{label} does not declare the recorded SPDX version {spdx_version}"
+        )
+    if spdx_version != SPDX_2_3:
+        raise OperationalError(
+            f"{label} names SPDX version {spdx_version}, "
+            "which ConClear does not validate"
+        )
     if document.get("dataLicense") != "CC0-1.0":
         raise OperationalError(f"{label} has an invalid SPDX data license")
     if document.get("SPDXID") != "SPDXRef-DOCUMENT":

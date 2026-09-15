@@ -1,7 +1,8 @@
 import pytest
 
+from conclear.attestations import SPDX_DOCUMENT_TYPE
 from conclear.errors import OperationalError
-from conclear.spdx import validate_spdx_document
+from conclear.spdx import SPDX_2_3, SpdxFormat, validate_spdx_document
 
 
 def _document() -> dict[str, object]:
@@ -28,7 +29,12 @@ def _document() -> dict[str, object]:
 
 
 def test_spdx_document_validates_mandatory_creation_and_package_fields() -> None:
-    assert validate_spdx_document(_document(), label="SBOM")["name"] == "example"
+    assert (
+        validate_spdx_document(_document(), label="SBOM", spdx_version="SPDX-2.3")[
+            "name"
+        ]
+        == "example"
+    )
 
 
 @pytest.mark.parametrize(
@@ -46,7 +52,7 @@ def test_spdx_document_rejects_invalid_mandatory_field(
     document[field] = value
 
     with pytest.raises(OperationalError, match=message):
-        validate_spdx_document(document, label="SBOM")
+        validate_spdx_document(document, label="SBOM", spdx_version="SPDX-2.3")
 
 
 def test_spdx_document_rejects_duplicate_element_identifiers() -> None:
@@ -56,4 +62,53 @@ def test_spdx_document_rejects_duplicate_element_identifiers() -> None:
     packages.append(dict(packages[0]))
 
     with pytest.raises(OperationalError, match="repeats SPDX identifier"):
-        validate_spdx_document(document, label="SBOM")
+        validate_spdx_document(document, label="SBOM", spdx_version="SPDX-2.3")
+
+
+def test_records_without_format_fields_read_as_spdx_2_3_under_legacy_type() -> None:
+    legacy = SpdxFormat(SPDX_2_3, SPDX_DOCUMENT_TYPE)
+
+    assert SpdxFormat.from_record(None, label="release SBOM") == legacy
+    assert (
+        SpdxFormat.from_record(
+            {"digest": "sha256:" + "0" * 64, "spdxVersion": "SPDX-2.3"},
+            label="qualification SBOM",
+        )
+        == legacy
+    )
+    assert legacy.predicate_type == "https://spdx.dev/Document"
+
+
+def test_recorded_format_is_read_verbatim() -> None:
+    recorded = SpdxFormat.from_record(
+        {
+            "spdxVersion": "SPDX-2.3",
+            "predicateType": "https://example.invalid/predicates/spdx/v1",
+        },
+        label="release SBOM",
+    )
+
+    assert recorded == SpdxFormat(
+        "SPDX-2.3", "https://example.invalid/predicates/spdx/v1"
+    )
+    assert recorded.to_dict() == {
+        "spdxVersion": "SPDX-2.3",
+        "predicateType": "https://example.invalid/predicates/spdx/v1",
+    }
+
+
+def test_recorded_format_rejects_a_non_uri_predicate_type() -> None:
+    with pytest.raises(OperationalError, match="HTTPS URI"):
+        SpdxFormat.from_record(
+            {"spdxVersion": "SPDX-2.3", "predicateType": "spdxjson"},
+            label="release SBOM",
+        )
+
+
+def test_attached_format_follows_the_version_table() -> None:
+    assert SpdxFormat.for_version("SPDX-2.3").to_dict() == {
+        "spdxVersion": "SPDX-2.3",
+        "predicateType": "https://spdx.dev/Document",
+    }
+    with pytest.raises(OperationalError, match="Unsupported SPDX version"):
+        SpdxFormat.for_version("SPDX-3.0.1")

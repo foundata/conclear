@@ -48,7 +48,7 @@ from conclear.services.publication import (
     require_remote_graph_unchanged,
     retry_entry,
 )
-from conclear.spdx import validate_spdx_document
+from conclear.spdx import SPDX_2_3, validate_spdx_document
 from conclear.values import Digest, OCIReference
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 
@@ -154,7 +154,9 @@ def verify_candidate(
                 f"SBOM evidence changed for {platform}", code="CC0703"
             )
         subject = published.reference.with_digest(manifest_map[platform])
-        sbom = validate_spdx_document(load_json(path), label=f"SBOM for {platform}")
+        sbom = validate_spdx_document(
+            load_json(path), label=f"SBOM for {platform}", spdx_version=SPDX_2_3
+        )
         require_verified_predicate(
             signer,
             public_key=profile.cosign_public_key,

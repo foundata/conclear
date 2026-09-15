@@ -5,6 +5,25 @@ import pytest
 from conclear.errors import OperationalError
 from conclear.spdx import validate_spdx_document
 
+VERSION_MESSAGE = "SBOM does not declare the recorded SPDX version SPDX-2.3"
+SPDX_3_DOCUMENT: dict[str, Any] = {
+    "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+    "@graph": [
+        {
+            "type": "SpdxDocument",
+            "spdxId": "https://example.invalid/spdx/app/document",
+            "creationInfo": "_:creationinfo",
+            "rootElement": ["https://example.invalid/spdx/app/package"],
+        },
+        {
+            "type": "software_Package",
+            "spdxId": "https://example.invalid/spdx/app/package",
+            "creationInfo": "_:creationinfo",
+            "name": "app",
+        },
+    ],
+}
+
 
 def document(**changes: Any) -> dict[str, Any]:
     value: dict[str, Any] = {
@@ -41,13 +60,13 @@ def document(**changes: Any) -> dict[str, Any]:
 
 def test_complete_document_is_accepted() -> None:
     value = document()
-    assert validate_spdx_document(value, label="SBOM") is value
+    assert validate_spdx_document(value, label="SBOM", spdx_version="SPDX-2.3") is value
 
 
 @pytest.mark.parametrize(
     ("changes", "message"),
     [
-        ({"spdxVersion": "SPDX-2.2"}, "not an SPDX 2.3 document"),
+        ({"spdxVersion": "SPDX-2.2"}, VERSION_MESSAGE),
         ({"dataLicense": "MIT"}, "invalid SPDX data license"),
         ({"SPDXID": "SPDXRef-OTHER"}, "invalid document SPDX identifier"),
         ({"name": ""}, "name must be a non-empty string"),
@@ -151,9 +170,35 @@ def test_malformed_documents_are_operational_failures(
     changes: dict[str, Any], message: str
 ) -> None:
     with pytest.raises(OperationalError, match=message):
-        validate_spdx_document(document(**changes), label="SBOM")
+        validate_spdx_document(
+            document(**changes), label="SBOM", spdx_version="SPDX-2.3"
+        )
 
 
 def test_document_must_be_an_object() -> None:
     with pytest.raises(OperationalError, match="must be a JSON object"):
-        validate_spdx_document([], label="SBOM")
+        validate_spdx_document([], label="SBOM", spdx_version="SPDX-2.3")
+
+
+def test_spdx_3_json_ld_document_is_rejected_against_a_2_3_record() -> None:
+    with pytest.raises(OperationalError, match=VERSION_MESSAGE):
+        validate_spdx_document(SPDX_3_DOCUMENT, label="SBOM", spdx_version="SPDX-2.3")
+
+
+def test_document_version_must_equal_the_recorded_version() -> None:
+    value = document(spdxVersion="SPDX-2.2")
+
+    with pytest.raises(OperationalError, match=VERSION_MESSAGE):
+        validate_spdx_document(value, label="SBOM", spdx_version="SPDX-2.3")
+    with pytest.raises(
+        OperationalError,
+        match=r"SBOM does not declare the recorded SPDX version SPDX-2\.2",
+    ):
+        validate_spdx_document(document(), label="SBOM", spdx_version="SPDX-2.2")
+
+
+def test_unsupported_recorded_versions_are_not_validated_structurally() -> None:
+    with pytest.raises(OperationalError, match="does not validate"):
+        validate_spdx_document(
+            document(spdxVersion="SPDX-2.2"), label="SBOM", spdx_version="SPDX-2.2"
+        )

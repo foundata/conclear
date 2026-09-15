@@ -40,7 +40,7 @@ from conclear.services.publication import (
     require_remote_graph_unchanged,
     retry_entry,
 )
-from conclear.spdx import validate_spdx_document
+from conclear.spdx import SPDX_2_3, validate_spdx_document
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
 
@@ -198,7 +198,7 @@ def attest_candidate(
                 f"SBOM digest changed for {platform}", code="CC0504"
             )
         sbom = validate_spdx_document(
-            load_json(sbom_path), label=f"SBOM for {platform}"
+            load_json(sbom_path), label=f"SBOM for {platform}", spdx_version=SPDX_2_3
         )
         subject = published.reference.with_digest(digest)
         resource = f"sbom-{platform.key}"
