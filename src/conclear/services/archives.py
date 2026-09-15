@@ -428,9 +428,8 @@ def _collect_attestations(
     subject: OCIReference,
     kind: str,
 ) -> None:
-    alias = "spdxjson" if kind == SPDX_DOCUMENT_TYPE else kind
     verified = signer.verify_attestation(
-        subject=subject, public_key=public_key, predicate_type=alias
+        subject=subject, public_key=public_key, predicate_type=kind
     )
     if verified.subject != subject or not verified.entries:
         raise OperationalError(

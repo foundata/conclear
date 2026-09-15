@@ -324,9 +324,7 @@ class CosignAdapter(ToolAdapter):
                 "--digestAlg",
                 "sha256",
                 "--type",
-                "spdxjson"
-                if predicate_type == "https://spdx.dev/Document"
-                else predicate_type,
+                predicate_type,
             ),
             secret_paths=(public_key,),
             check_code="CC0701",

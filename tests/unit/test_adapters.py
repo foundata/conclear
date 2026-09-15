@@ -22,7 +22,7 @@ from conclear.adapters.podman import BindMount, FootprintObservation, PodmanAdap
 from conclear.adapters.quay import QuayAdapter
 from conclear.adapters.skopeo import SkopeoAdapter
 from conclear.adapters.trivy import TrivyAdapter
-from conclear.attestations import decode_dsse_statements
+from conclear.attestations import SPDX_DOCUMENT_TYPE, decode_dsse_statements
 from conclear.config import load_repository_config
 from conclear.errors import (
     CommandExecutionError,
@@ -1431,6 +1431,55 @@ def test_cosign_attestation_verification_reads_one_envelope_per_line(
             public_key=tmp_path / "cosign.pub",
             predicate_type="spdxjson",
         )
+
+
+def test_cosign_passes_the_recorded_spdx_predicate_type_verbatim(
+    tmp_path: Path,
+) -> None:
+    envelope = json.dumps(
+        {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": "e30=",
+            "signatures": [{"sig": "0"}],
+        }
+    )
+    runner = FakeRunner(result("attested"), result(envelope + "\n"), result(""))
+    adapter = adapter_arguments(tmp_path, ToolName.COSIGN, runner).create(CosignAdapter)
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "2" * 64)
+    predicate = tmp_path / "sbom.spdx.json"
+    predicate.write_text("{}", encoding="utf-8")
+    bundle = tmp_path / "sbom.sigstore.json"
+    bundle.write_text(envelope, encoding="utf-8")
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("key", encoding="utf-8")
+
+    adapter.attest(
+        subject=subject,
+        predicate=predicate,
+        predicate_type=SPDX_DOCUMENT_TYPE,
+        private_key="/secret/cosign.key",
+        passphrase="pw",
+    )
+    adapter.verify_attestation(
+        subject=subject, public_key=public_key, predicate_type=SPDX_DOCUMENT_TYPE
+    )
+    adapter.verify_attestation_bundle(
+        bundle=bundle,
+        subject=subject,
+        public_key=public_key,
+        predicate_type=SPDX_DOCUMENT_TYPE,
+    )
+
+    assert [request.argv[1] for request in runner.requests] == [
+        "attest",
+        "verify-attestation",
+        "verify-blob-attestation",
+    ]
+    for request in runner.requests:
+        assert request.argv[request.argv.index("--type") + 1] == (
+            "https://spdx.dev/Document"
+        )
+        assert "spdxjson" not in request.argv
 
 
 def test_cosign_verification_requires_a_verified_entry(tmp_path: Path) -> None:

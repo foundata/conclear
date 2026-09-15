@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Protocol
 
 from conclear.adapters.cosign import VerificationObservation
-from conclear.attestations import SPDX_DOCUMENT_TYPE, decode_dsse_statements
+from conclear.attestations import decode_dsse_statements
 from conclear.errors import OperationalError
 from conclear.values import OCIReference
 
@@ -26,13 +26,12 @@ def verified_statements(
     public_key: Path,
     predicate_type: str,
 ) -> tuple[dict[str, object], ...]:
-    """Decode verified envelopes without a second, unauthenticated payload fetch."""
+    """Decode verified envelopes without a second, unauthenticated payload fetch.
+
+    The predicate type is the URI a record names; Cosign matches it verbatim.
+    """
     observation = verifier.verify_attestation(
-        subject=subject,
-        public_key=public_key,
-        predicate_type="spdxjson"
-        if predicate_type == SPDX_DOCUMENT_TYPE
-        else predicate_type,
+        subject=subject, public_key=public_key, predicate_type=predicate_type
     )
     if observation.subject != subject or not observation.entries:
         raise OperationalError(
