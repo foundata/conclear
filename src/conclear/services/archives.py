@@ -11,7 +11,6 @@ from conclear.artifacts import load_candidate, load_release_evidence
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
     RESCAN_TYPE,
-    SPDX_DOCUMENT_TYPE,
     decode_dsse_statements,
 )
 from conclear.config import load_repository_config
@@ -23,6 +22,7 @@ from conclear.provenance import SLSA_PROVENANCE_TYPE
 from conclear.records import validate_record
 from conclear.services.rescan_evidence import verified_predicates
 from conclear.source_integrity import require_source_integrity
+from conclear.spdx import SpdxFormat
 from conclear.values import OCIReference
 from conclear.workspace import RunState, RunWorkspace
 
@@ -127,7 +127,7 @@ def create_run_archive(
                 signer,
                 public_key,
                 subject.with_digest(descriptor.digest),
-                SPDX_DOCUMENT_TYPE,
+                release_evidence.sbom_format.predicate_type,
             )
     else:
         if record.get("recordType") != "rescanResult":
@@ -357,6 +357,9 @@ def validate_archive_contents(archive: OpenArchive) -> None:
             raise InvalidInvocationError("Archive omits the signed release provenance")
         bound = _narrow.object_value(payload["evidence"], "release evidence")
         sboms = set(_narrow.string_array_value(bound["sboms"], "release SBOMs"))
+        sbom_type = SpdxFormat.from_record(
+            payload.get("sbom"), label="release SBOM"
+        ).predicate_type
         included: set[str] = set()
         for item in graph.manifests:
             matches = (
@@ -364,7 +367,7 @@ def validate_archive_contents(archive: OpenArchive) -> None:
                 & predicates.get(
                     (
                         str(archive.subject.with_digest(item.descriptor.digest)),
-                        SPDX_DOCUMENT_TYPE,
+                        sbom_type,
                     ),
                     {},
                 ).keys()

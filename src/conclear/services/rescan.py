@@ -15,7 +15,6 @@ from conclear.adapters.trivy import DatabaseObservation, ScanObservation
 from conclear.attestations import (
     RELEASE_VERIFICATION_TYPE,
     RESCAN_TYPE,
-    SPDX_DOCUMENT_TYPE,
     write_statement,
 )
 from conclear.config import (
@@ -49,6 +48,7 @@ from conclear.services.rescan_evidence import (
     select_release_sbom,
     verified_predicates,
 )
+from conclear.spdx import SpdxFormat
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
@@ -369,6 +369,7 @@ def rescan_release(
     ):
         raise OperationalError("Release SBOM references are malformed")
     sbom_digests = frozenset(string_value(item, "SBOM digest") for item in raw_sboms)
+    sbom_format = SpdxFormat.from_record(payload.get("sbom"), label="release SBOM")
     consumed_sboms: set[str] = set()
     scan_results: list[dict[str, object]] = []
     for platform, digest in sorted(manifest_map.items()):
@@ -382,10 +383,11 @@ def rescan_release(
                 signer,
                 subject=manifest_subject,
                 public_key=public_key,
-                predicate_type=SPDX_DOCUMENT_TYPE,
+                predicate_type=sbom_format.predicate_type,
             ),
             subject=manifest_subject,
             evidence_digests=sbom_digests,
+            sbom_format=sbom_format,
         )
         consumed_sboms.add(sbom_digest)
         sbom_path = report_root / f"{platform.key}.spdx.json"

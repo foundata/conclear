@@ -2,12 +2,12 @@
 
 from dataclasses import dataclass
 
-from conclear.attestations import RELEASE_VERIFICATION_TYPE, SPDX_DOCUMENT_TYPE
+from conclear.attestations import RELEASE_VERIFICATION_TYPE
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import canonical_json_bytes, sha256_bytes
 from conclear.parsing import object_value
 from conclear.records import parse_timestamp, validate_record
-from conclear.spdx import SPDX_2_3, validate_spdx_document
+from conclear.spdx import SpdxFormat, validate_spdx_document
 from conclear.values import OCIReference
 
 
@@ -120,10 +120,16 @@ def select_release_sbom(
     *,
     subject: OCIReference,
     evidence_digests: frozenset[str],
+    sbom_format: SpdxFormat,
 ) -> tuple[str, dict[str, object]]:
-    """Select exactly one signed platform inventory referenced by the release."""
+    """Select exactly one signed platform inventory referenced by the release.
+
+    The release record names the predicate type and SPDX version of its SBOMs;
+    statements are matched under that type and the selected document must
+    declare that version.
+    """
     predicates = verified_predicates(
-        statements, predicate_type=SPDX_DOCUMENT_TYPE, subject=subject
+        statements, predicate_type=sbom_format.predicate_type, subject=subject
     )
     matches = predicates.keys() & evidence_digests
     if len(matches) != 1:
@@ -133,5 +139,7 @@ def select_release_sbom(
         )
     digest = matches.pop()
     return digest, validate_spdx_document(
-        predicates[digest], label=f"SBOM for {subject}", spdx_version=SPDX_2_3
+        predicates[digest],
+        label=f"SBOM for {subject}",
+        spdx_version=sbom_format.version,
     )

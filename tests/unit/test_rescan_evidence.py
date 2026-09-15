@@ -22,11 +22,21 @@ from conclear.services.rescan_evidence import (
     select_release_sbom,
     verified_predicates,
 )
+from conclear.spdx import SPDX_2_3, SpdxFormat
 from tests.registry_policy_fixtures import STRICT_POLICY
 from tests.unit.test_rescan_history import SUBJECT, _entry, _record
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 CONFIGURATION_DIGEST = "sha256:" + "c" * 64
+LEGACY_FORMAT = SpdxFormat(SPDX_2_3, SPDX_DOCUMENT_TYPE)
+SBOM_2_3: dict[str, object] = {
+    "spdxVersion": "SPDX-2.3",
+    "dataLicense": "CC0-1.0",
+    "SPDXID": "SPDXRef-DOCUMENT",
+    "name": "app",
+    "documentNamespace": "https://example.invalid/spdx/app",
+    "creationInfo": {"creators": ["Tool: test"], "created": "2026-01-01T00:00:00Z"},
+}
 
 
 @pytest.fixture
@@ -195,18 +205,29 @@ def test_sboms_are_bound_to_signed_subject_and_referenced_bytes() -> None:
         statement(item, SPDX_DOCUMENT_TYPE) for item in (unrelated, sbom, sbom)
     )
     assert select_release_sbom(
-        statements, subject=SUBJECT, evidence_digests=frozenset({digest})
+        statements,
+        subject=SUBJECT,
+        evidence_digests=frozenset({digest}),
+        sbom_format=LEGACY_FORMAT,
     ) == (digest, sbom)
     for digests in (
         frozenset({"sha256:" + "0" * 64}),
         frozenset({digest, sha256_bytes(canonical_json_bytes(unrelated))}),
     ):
         with pytest.raises(OperationalError, match="exactly one release-bound SBOM"):
-            select_release_sbom(statements, subject=SUBJECT, evidence_digests=digests)
+            select_release_sbom(
+                statements,
+                subject=SUBJECT,
+                evidence_digests=digests,
+                sbom_format=LEGACY_FORMAT,
+            )
     bad_subject = {**statements[1], "subject": []}
     with pytest.raises(OperationalError, match="unexpected subject"):
         select_release_sbom(
-            (bad_subject,), subject=SUBJECT, evidence_digests=frozenset({digest})
+            (bad_subject,),
+            subject=SUBJECT,
+            evidence_digests=frozenset({digest}),
+            sbom_format=LEGACY_FORMAT,
         )
     with pytest.raises(OperationalError, match="predicate type"):
         verified_predicates(
@@ -234,4 +255,59 @@ def test_signed_and_durable_history_cannot_change_the_release_anchor(
             SUBJECT,
             replace(_entry("b", START), release_record_digest="sha256:" + "0" * 64),
             expected_previous=entry.record_digest,
+        )
+
+
+def test_release_sbom_follows_the_recorded_predicate_type() -> None:
+    recorded = SpdxFormat("SPDX-2.3", "https://example.invalid/predicates/spdx/v1")
+    digest = sha256_bytes(canonical_json_bytes(SBOM_2_3))
+    statements = (statement(SBOM_2_3, recorded.predicate_type),)
+
+    assert select_release_sbom(
+        statements,
+        subject=SUBJECT,
+        evidence_digests=frozenset({digest}),
+        sbom_format=recorded,
+    ) == (digest, SBOM_2_3)
+    with pytest.raises(OperationalError, match="predicate type"):
+        select_release_sbom(
+            statements,
+            subject=SUBJECT,
+            evidence_digests=frozenset({digest}),
+            sbom_format=LEGACY_FORMAT,
+        )
+
+
+@pytest.mark.parametrize(
+    "retrieved",
+    [
+        {
+            "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+            "@graph": [
+                {
+                    "type": "SpdxDocument",
+                    "spdxId": "https://example.invalid/spdx/app/document",
+                    "creationInfo": "_:creationinfo",
+                    "rootElement": ["https://example.invalid/spdx/app/package"],
+                }
+            ],
+        },
+        {**SBOM_2_3, "spdxVersion": "SPDX-2.2"},
+    ],
+    ids=["spdx-3-json-ld", "other-2.x-version"],
+)
+def test_release_sbom_must_declare_the_recorded_spdx_version(
+    retrieved: dict[str, object],
+) -> None:
+    digest = sha256_bytes(canonical_json_bytes(retrieved))
+
+    with pytest.raises(
+        OperationalError,
+        match=r"does not declare the recorded SPDX version SPDX-2\.3",
+    ):
+        select_release_sbom(
+            (statement(retrieved, SPDX_DOCUMENT_TYPE),),
+            subject=SUBJECT,
+            evidence_digests=frozenset({digest}),
+            sbom_format=LEGACY_FORMAT,
         )
