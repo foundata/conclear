@@ -11,7 +11,7 @@ and the project adheres to
 - Nothing worth mentioning right now.
 
 
-## [1.0.0] - 2026-09-14
+## [1.0.0] - 2026-09-15
 
 ### Added
 

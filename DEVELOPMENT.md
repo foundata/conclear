@@ -32,7 +32,6 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Making changes](#making-changes)
   - [Before committing](#before-committing)
 - [Releases](#releases)
-  - [Release procedure](#release-procedure)
 - [Troubleshooting](#troubleshooting)
   - [Common issues](#common-issues)
 
@@ -945,8 +944,6 @@ Quay and Sigstore test inputs described below. Keep credentials, signing keys,
 test workspaces and resource manifests outside the repository.
 
 
-### Release procedure<a id="release-procedure"></a>
-
 1. **Choose the release version.** Select the version according to
    [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The numbered
    steps below are the checklist; every step must produce its result before the
@@ -968,23 +965,56 @@ test workspaces and resource manifests outside the repository.
    `No unreleased changes.` above it. Add a link for the new release; after a
    previous release exists, also add or update the comparison links.
 
-   Keep the version in `pyproject.toml`, `src/conclear/identity.py`,
-   `src/conclear/data/implementation.json` and
-   `src/conclear/data/guide-options.json` aligned. Review version-specific prose
-   and links in `README.md`, `ARCHITECTURE.md`, `DEVELOPMENT.md` and `docs/`.
-   Each released tag carries the generated documents of its own revision, so no
-   earlier copy is kept in the working tree.
-
-   Regenerate the lock file and every version-dependent document rather than
-   editing generated output:
+   Four files carry the version by hand and must all state the same one:
+   [`pyproject.toml`](./pyproject.toml) (`version`),
+   [`src/conclear/identity.py`](./src/conclear/identity.py) (`VERSION`),
+   [`src/conclear/data/implementation.json`](./src/conclear/data/implementation.json)
+   and
+   [`src/conclear/data/guide-options.json`](./src/conclear/data/guide-options.json)
+   (`productVersion`). `uv.lock` records the version too and is updated by
+   running `uv lock`, never by hand, as are `docs/compatibility-inventory.json`
+   and the other generated documents. The snippet below covers all of it:
 
    ```sh
-   uv lock
+   old_version="<FIXME version>" # major.minor.patch
+   new_version="<FIXME version>" # major.minor.patch
+
+   files=(
+    "./pyproject.toml"
+    "./src/conclear/identity.py"
+    "./src/conclear/data/implementation.json"
+    "./src/conclear/data/guide-options.json"
+   )
+
+   old_version_regex="${old_version//./\\.}"
+   version_pattern="^([[:space:]]*(\"productVersion\"|VERSION|version)[[:space:]]*[:=][[:space:]]*)\"${old_version_regex}\"(,?)$"
+
+   for file in "${files[@]}"; do
+     echo "Before: $file"
+     grep -nE "$version_pattern" "$file" || true
+     sed -i -E "s@${version_pattern}@\\1\"${new_version}\"\\3@" "$file"
+     echo "After: $file"
+     grep -nE "^([[:space:]]*(\"productVersion\"|VERSION|version)[[:space:]]*[:=][[:space:]]*)\"${new_version}\"(,?)$" "$file" || true
+     echo
+   done
+
+   uv lock # the lockfile records the project version
    uv run python -m conclear.implementation
    uv run python -m conclear.compatibility_inventory
    uv run python -m conclear.conformance
    uv run python -m conclear.tool_matrix
    ```
+
+   Each file must report exactly one line before and after; a file that reports
+   none was already changed or spells the version differently. The unit tests
+   compare the four values against each other, and the distribution gate
+   installs from the lockfile, so a site left behind fails step 4 rather than
+   reaching a release.
+
+   Then review version-specific prose and links in `README.md`,
+   `ARCHITECTURE.md`, `DEVELOPMENT.md` and `docs/`. Each released tag carries
+   the generated documents of its own revision, so no earlier copy is kept in
+   the working tree.
 
 3. **Review and commit the release preparation.** Inspect every changed file,
    stage only the reviewed release changes and create one release commit.
