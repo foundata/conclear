@@ -219,7 +219,7 @@ duplicated here; the release gate applies the same `check` policy together with
 ### Commit messages and scopes<a id="commit-scopes"></a>
 
 Commit messages follow the
-[foundata guideline (`guidelines/git-commits.md`)](https://github.com/foundata/guidelines/blob/master/git-commits.md):
+[foundata guideline (`guidelines/git-commits.md`)](https://github.com/foundata/guidelines/blob/main/git-commits.md):
 `<scope>: <description>`, imperative, lowercase description, body only for
 context the diff cannot preserve. Choose the narrowest stable project area
 affected by the commit. ConClear uses these recurring scopes:
