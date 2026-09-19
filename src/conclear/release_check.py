@@ -12,6 +12,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from releasing.artifacts import check as check_artifacts
+from releasing.artifacts import inspect as inspect_artifact
+from releasing.build import BuildError, prepare_readmes
+from releasing.config import ConfigError, load_release_config
+from releasing.forges import forge_for
+
 from conclear.build_identity import write_embedded_identity
 from conclear.errors import (
     CommandExecutionError,
@@ -19,7 +25,7 @@ from conclear.errors import (
     ConClearError,
     OperationalError,
 )
-from conclear.identity import GUIDE_REVISION
+from conclear.identity import GUIDE_REVISION, VERSION
 from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.path_safety import extract_tar_safely
 from conclear.process import (
@@ -215,6 +221,7 @@ def run_release_check(
         write_embedded_identity(staged / "src" / "conclear", revision)
         _run_source_gates(runtime, staged)
         _clear_generated_files(staged)
+        _prepare_index_readme(staged)
         artifacts = temporary_root / "artifacts"
         artifacts.mkdir(mode=0o700)
         runtime.run(
@@ -232,6 +239,7 @@ def run_release_check(
         )
         sdist = _one_artifact(artifacts, "*.tar.gz")
         validate_distribution_artifact(sdist, kind="sdist")
+        validate_index_page(sdist)
         runtime.run(
             "build wheel from source distribution",
             (
@@ -247,6 +255,7 @@ def run_release_check(
         )
         wheel = _one_artifact(artifacts, "*.whl")
         validate_distribution_artifact(wheel, kind="wheel")
+        validate_index_page(wheel)
         _smoke_wheel(runtime, temporary_root, wheel, revision)
         retained = (
             None
@@ -367,6 +376,20 @@ def validate_distribution_artifact(path: Path, *, kind: str) -> None:
             raise OperationalError(f"{kind} contains generated path {name}")
         if member.suffix in {".pyc", ".pyo"} or member.name == ".coverage":
             raise OperationalError(f"{kind} contains generated file {name}")
+
+
+def validate_index_page(path: Path) -> None:
+    """Refuse a built distribution whose package-index page would be broken.
+
+    The description carried in the distribution metadata becomes the page on
+    the index. A repository-relative destination there is a broken link for
+    every reader of that page, which is how version 1.0.0 was published.
+    """
+    problems = check_artifacts([inspect_artifact(path)], version=VERSION)
+    if problems:
+        raise OperationalError(
+            f"{path.name} is not publishable: " + "; ".join(problems)
+        )
 
 
 def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
@@ -679,6 +702,26 @@ def _artifact_member(value: str) -> PurePosixPath:
     if member.is_absolute() or any(part in {"", ".", ".."} for part in member.parts):
         raise OperationalError(f"Distribution contains unsafe path {value!r}")
     return member
+
+
+def _prepare_index_readme(staged: Path) -> None:
+    """Rewrite the README's relative destinations for the package index.
+
+    Runs inside the exported tree, so the committed README keeps the relative
+    links that work on the forge and nothing has to be restored afterwards.
+    Version 1.0.0 shipped a package page with broken links because this step
+    had no place in the gate.
+    """
+    try:
+        configuration = load_release_config(staged)
+        prepare_readmes(
+            staged,
+            configuration,
+            version_string=VERSION,
+            forge=forge_for(configuration),
+        )
+    except (BuildError, ConfigError) as exc:
+        raise OperationalError(f"Unable to prepare the index README: {exc}") from exc
 
 
 def _clear_generated_files(staged: Path) -> None:

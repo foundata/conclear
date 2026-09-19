@@ -1041,6 +1041,12 @@ test workspaces and resource manifests outside the repository.
    source distribution, validates their contents, installs the wheel into a
    clean environment and smoke-tests its import, version and help output.
 
+   The gate also prepares the README that ships in the artifacts: inside the
+   exported tree it rewrites the repository-relative links to absolute ones, so
+   the package-index page resolves them. The committed README is never touched.
+   Validation rejects a distribution whose description still carries a relative
+   destination.
+
    ```sh
    install -d -m 0700 "${HOME}/.local/share/conclear/distributions"
    artifact_dir="${HOME}/.local/share/conclear/distributions/${revision}"

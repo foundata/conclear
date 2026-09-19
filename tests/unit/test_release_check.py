@@ -11,12 +11,14 @@ from pathlib import Path
 import pytest
 
 from conclear.errors import OperationalError
+from conclear.identity import VERSION
 from conclear.process import ProcessResult
 from conclear.release_check import (
     GateRuntime,
     retain_distribution_artifacts,
     run_release_check,
     validate_distribution_artifact,
+    validate_index_page,
 )
 
 
@@ -236,3 +238,33 @@ def test_dirty_source_rejects_retention_without_creating_output(
         run_release_check(repository, output_directory=destination)
 
     assert not destination.exists()
+
+
+def test_index_page_rejects_a_description_with_repository_relative_links(
+    tmp_path: Path,
+) -> None:
+    wheel = tmp_path / f"conclear-{VERSION}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, mode="w") as archive:
+        archive.writestr("conclear/__init__.py", b"")
+        archive.writestr(
+            f"conclear-{VERSION}.dist-info/METADATA",
+            f"Metadata-Version: 2.4\nName: conclear\nVersion: {VERSION}\n"
+            "Description-Content-Type: text/markdown\n\n"
+            "# ConClear\n\nSee the [guide](./docs/guide.md).\n",
+        )
+    with pytest.raises(OperationalError, match="relative destination"):
+        validate_index_page(wheel)
+
+
+def test_index_page_accepts_a_prepared_description(tmp_path: Path) -> None:
+    wheel = tmp_path / f"conclear-{VERSION}-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, mode="w") as archive:
+        archive.writestr("conclear/__init__.py", b"")
+        archive.writestr(
+            f"conclear-{VERSION}.dist-info/METADATA",
+            f"Metadata-Version: 2.4\nName: conclear\nVersion: {VERSION}\n"
+            "Description-Content-Type: text/markdown\n\n"
+            "# ConClear\n\nSee the "
+            "[guide](https://github.com/foundata/conclear/blob/main/docs/guide.md).\n",
+        )
+    validate_index_page(wheel)

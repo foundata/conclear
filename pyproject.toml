@@ -84,12 +84,22 @@ source-include = [
 ]
 wheel-exclude = ["src/conclear/_development_identity.py"]
 
+[tool.releasing]
+repository = "foundata/conclear"
+version-files = [
+  "pyproject.toml",
+  "src/conclear/identity.py",
+  "src/conclear/data/implementation.json",
+  "src/conclear/data/guide-options.json",
+]
+
 [dependency-groups]
 dev = [
   "hypothesis>=6.138.15",
   "mypy>=1.17.1",
   "pytest>=9.0.0",
   "pytest-cov>=6.2.1",
+  "releasing>=1,<2",
   "ruff>=0.12.11",
   "rumdl>=0.2.66",
   "types-jsonschema>=4.25.1.20250822",
