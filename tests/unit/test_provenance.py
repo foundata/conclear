@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 import conclear.provenance as provenance_module
-from conclear.identity import ApplicationIdentity
+from conclear.identity import VERSION, ApplicationIdentity
 from conclear.jsonutil import load_json
 from conclear.provenance import (
     ProvenanceInput,
@@ -49,7 +49,7 @@ def test_provenance_separates_configured_builder_and_conclear_identities(
     assert value["predicate"]["runDetails"]["builder"] == {
         "id": "https://foundata.com/en/projects/conclear/builder/simple-v1/",
         "version": {
-            "conclear": "1.0.0",
+            "conclear": VERSION,
             "conclearSourceRevision": "c" * 40,
         },
     }

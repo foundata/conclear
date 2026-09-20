@@ -17,7 +17,7 @@ from conclear.errors import (
     OperationalError,
     RuleRejectionError,
 )
-from conclear.identity import ApplicationIdentity
+from conclear.identity import VERSION, ApplicationIdentity
 from conclear.jsonutil import sha256_bytes
 from conclear.records import SourceIdentity
 from conclear.release_profile import (
@@ -339,7 +339,7 @@ def test_execute_release_drives_every_phase_to_verified_promotion(
     assert provenance["predicate"]["runDetails"]["builder"] == {
         "id": BUILDER_ID,
         "version": {
-            "conclear": "1.0.0",
+            "conclear": VERSION,
             "conclearSourceRevision": "c" * 40,
         },
     }

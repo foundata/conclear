@@ -18,6 +18,7 @@ from conclear.errors import (
     bind_failed_run,
     failed_run_id,
 )
+from conclear.identity import VERSION
 from conclear.presentation import CommandResult, Finding, ResultStatus
 
 DOCUMENTED_COMMANDS = {
@@ -88,7 +89,7 @@ def test_qualify_help_exposes_distributed_database_digest() -> None:
 def test_root_version_reports_full_identity() -> None:
     result = CliRunner().invoke(root, ["--version"])
     assert result.exit_code == 0
-    assert "ConClear 1.0.0" in result.stdout
+    assert f"ConClear {VERSION}" in result.stdout
     assert "b179c89cd51f79cdb7f6d713a3e260b781b8b121" in result.stdout
     assert result.stderr == ""
 

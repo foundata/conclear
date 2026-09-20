@@ -6,6 +6,7 @@ from conclear.identity import (
     GUIDE_REVISION,
     IDENTITY,
     SOURCE_REVISION,
+    VERSION,
     human_version,
     is_release_build,
 )
@@ -15,7 +16,7 @@ def test_identity_exposes_selected_guide_revision() -> None:
     assert GUIDE_REVISION == "b179c89cd51f79cdb7f6d713a3e260b781b8b121"
     assert IDENTITY.to_public_dict() == {
         "name": "conclear",
-        "version": "1.0.0",
+        "version": VERSION,
         "sourceRevision": SOURCE_REVISION,
         "guide": {
             "title": "OCI container image build and release guide",
@@ -35,7 +36,7 @@ def test_identity_object_is_json_serializable() -> None:
 
 def test_human_identity_matches_normative_shape() -> None:
     assert human_version().splitlines() == [
-        f"ConClear 1.0.0 (commit {SOURCE_REVISION})",
+        f"ConClear {VERSION} (commit {SOURCE_REVISION})",
         'Implements the automatable rules of foundata "OCI container image build and release guide", oci-container-image-guide.md at commit b179c89cd51f79cdb7f6d713a3e260b781b8b121',
     ]
 
