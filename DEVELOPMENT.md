@@ -1196,7 +1196,8 @@ test workspaces and resource manifests outside the repository.
 
     ```sh
     published_identity="$(
-      uv run --isolated --no-project --with "conclear==${version}" -- \
+      uv run --isolated --no-project --refresh-package conclear \
+        --with "conclear==${version}" -- \
         conclear version --format json
     )"
     printf '%s\n' "${published_identity}" | jq -e \
@@ -1204,9 +1205,14 @@ test workspaces and resource manifests outside the repository.
       --arg revision "${revision}" \
       '.version == $version and .sourceRevision == $revision'
 
-    uv run --isolated --no-project --with "conclear==${version}" -- \
+    uv run --isolated --no-project --refresh-package conclear \
+      --with "conclear==${version}" -- \
       conclear --help
     ```
+
+    `--refresh-package` matters: this check runs moments after the upload, when
+    a cached index listing still predates the new version and reports it as
+    nonexistent.
 
 12. **Create and verify the GitHub release.** Use the matching changelog section
     as the release notes. Attach `artifacts.json` and the exact distributions
@@ -1219,7 +1225,7 @@ test workspaces and resource manifests outside the repository.
       "${artifact_dir}/conclear-${version}-py3-none-any.whl" \
       --verify-tag \
       --title "${tag}" \
-      --notes-file <release-notes-file>
+      --notes-file <(uv run release changelog show "${version}")
 
     gh release view "${tag}"
     ```
