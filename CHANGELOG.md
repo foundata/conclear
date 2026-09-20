@@ -8,6 +8,11 @@ and the project adheres to
 
 ## [Unreleased]
 
+No unreleased changes.
+
+
+## [1.0.2] - 2026-09-20
+
 ### Changed
 
 - `python -m conclear.release_check` writes `artifacts.json` in the shared
@@ -31,6 +36,7 @@ and the project adheres to
 
 - All functionality and files.
 
-[unreleased]: https://github.com/foundata/conclear/compare/v1.0.1...HEAD
+[unreleased]: https://github.com/foundata/conclear/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/foundata/conclear/releases/tag/v1.0.2
 [1.0.1]: https://github.com/foundata/conclear/releases/tag/v1.0.1
 [1.0.0]: https://github.com/foundata/conclear/releases/tag/v1.0.0

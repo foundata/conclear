@@ -1,6 +1,6 @@
 [project]
 name = "conclear"
-version = "1.0.1"
+version = "1.0.2"
 description = "Build and release OCI container images through digest-bound policy gates"
 keywords = [
   "oci",

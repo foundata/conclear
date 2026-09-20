@@ -20,7 +20,7 @@ def _load_source_revision() -> str:
     return value
 
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 SOURCE_REVISION = _load_source_revision()
 GUIDE_TITLE = "OCI container image build and release guide"
 GUIDE_REPOSITORY = "https://github.com/foundata/guidelines"

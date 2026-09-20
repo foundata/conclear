@@ -2511,7 +2511,7 @@
     ]
   },
   "inventorySchemaVersion": 1,
-  "productVersion": "1.0.1",
+  "productVersion": "1.0.2",
   "recordTypes": {
     "pinUpdateProposal": 1,
     "platformQualification": 1,
