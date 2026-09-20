@@ -415,6 +415,17 @@ run ID, run-owned rootless storage and a resource manifest outside the
 repository. Never reuse or clean up unrecorded Buildah, Podman, registry or
 virtual-machine resources.
 
+The run ID becomes part of an OCI repository name, so it must be lowercase. Use
+a UTC date and a short random suffix, such as `20260920-7f3a1c`: it stays short
+inside an image name and sorts next to the manifest entries. Generate one, then
+record it in the manifest before running anything:
+
+```sh
+uv run python -c \
+  "import datetime, secrets; \
+   print(f'{datetime.datetime.now(datetime.UTC):%Y%m%d}-{secrets.token_hex(3)}')"
+```
+
 ```sh
 CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration
 ```
@@ -423,9 +434,7 @@ The native archive-signature test also requires
 `CONCLEAR_TEST_PUBLIC_SIGSTORE=1`. It generates a disposable key, writes
 synthetic non-secret statements to the public transparency log and verifies
 saved bundles without registry access. The test removes its private key;
-transparency entries are permanent.
-
-The run ID becomes part of an OCI repository name, so it must be lowercase.
+[transparency entries are permanent](https://search.sigstore.dev/).
 
 On SELinux hosts, label the manifest-owned parent of `--basetemp` as
 `container_file_t` before creating test storage. Keep SELinux enforcing and use
@@ -438,15 +447,34 @@ visudo, UID 10001 and the denied account `nobody`. After recording an absolute
 test manifest, build and export it with isolated rootless storage:
 
 ```sh
-buildah --root "${RUN}/builder/root" --runroot "${RUN}/builder/runroot" \
-  --storage-driver vfs bud --platform linux/amd64 --format oci \
-  --tag localhost/conclear-sudo:fixture tests/local_integration/sudo_fixture
-buildah --root "${RUN}/builder/root" --runroot "${RUN}/builder/runroot" \
-  --storage-driver vfs push localhost/conclear-sudo:fixture "oci:${RUN}/layout:sudo-fixture"
-CONCLEAR_TEST_SUDO_LAYOUT="${RUN}/layout" uv run pytest -m local_integration \
-  tests/local_integration/test_sudo.py --basetemp "${RUN}/pytest"
-buildah --root "${RUN}/builder/root" --runroot "${RUN}/builder/runroot" \
-  --storage-driver vfs rmi --all
+buildah \
+  --root "${RUN}/builder/root" \
+  --runroot "${RUN}/builder/runroot" \
+  --storage-driver vfs \
+  bud \
+  --platform linux/amd64 \
+  --format oci \
+  --tag localhost/conclear-sudo:fixture \
+  tests/local_integration/sudo_fixture
+
+buildah \
+  --root "${RUN}/builder/root" \
+  --runroot "${RUN}/builder/runroot" \
+  --storage-driver vfs \
+  push \
+  localhost/conclear-sudo:fixture \
+  "oci:${RUN}/layout:sudo-fixture"
+
+CONCLEAR_TEST_SUDO_LAYOUT="${RUN}/layout" \
+  uv run pytest -m local_integration \
+  tests/local_integration/test_sudo.py \
+  --basetemp "${RUN}/pytest"
+
+buildah \
+  --root "${RUN}/builder/root" \
+  --runroot "${RUN}/builder/runroot" \
+  --storage-driver vfs \
+  rmi --all
 ```
 
 The fixture build downloads its pinned public Debian base and packages. The
@@ -469,10 +497,18 @@ The exact runtime-input integration case needs two additional manifest-owned
 lowercase ULIDs because its service and one-shot parameterizations create
 separate ConClear workspaces:
 
+Generate each one, then record it and the container names it implies in the
+manifest. The test cannot invent them, because the manifest has to name every
+resource before it exists; that is what makes cleanup possible after a crash.
+
 ```sh
-CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
-CONCLEAR_TEST_SERVICE_ULID=<manifest-owned-lowercase-ulid> \
-CONCLEAR_TEST_ONE_SHOT_ULID=<manifest-owned-lowercase-ulid> \
+uv run python -c "from ulid import ULID; print(str(ULID()).lower())"
+```
+
+```sh
+CONCLEAR_TEST_RUN_ID="<manifest-owned-run-id>" \
+CONCLEAR_TEST_SERVICE_ULID="<manifest-owned-lowercase-ulid>" \
+CONCLEAR_TEST_ONE_SHOT_ULID="<manifest-owned-lowercase-ulid>" \
 uv run pytest -m local_integration \
   tests/local_integration/test_tools.py::test_real_exact_image_preparation_and_launch_inputs \
   --basetemp <external-run-workspace>/tmp/pytest
@@ -502,9 +538,9 @@ without an enabled handler.
 uv venv --python python3.12 <external-run-workspace>/conclear-venv
 uv pip install --python <external-run-workspace>/conclear-venv/bin/python \
   "${HOME}/.local/share/conclear/distributions/<revision>"/*.whl
-CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
-CONCLEAR_TEST_CLI=<external-run-workspace>/conclear-venv/bin/conclear \
-CONCLEAR_TEST_TRIVY_CACHE=<manifest-owned-cache> \
+CONCLEAR_TEST_RUN_ID="<manifest-owned-run-id>" \
+CONCLEAR_TEST_CLI="<external-run-workspace>/conclear-venv/bin/conclear" \
+CONCLEAR_TEST_TRIVY_CACHE="<manifest-owned-cache>" \
 uv run pytest -m local_integration tests/local_integration/test_transport_cli.py \
   --basetemp <external-run-workspace>/tmp/pytest
 ```
@@ -577,7 +613,8 @@ evidence that arm64 qualification works.
 Network tests need an explicitly authorized disposable Quay repository, narrow
 credentials and dedicated test signing keys. Production release keys and shared
 repositories are never test inputs. These tests write to a real registry and
-create permanent public transparency-log entries, so they are opt-in by design.
+create permanent [public transparency-log](https://search.sigstore.dev/)
+entries, so they are opt-in by design.
 
 They remain the only check on behavior that fakes cannot reproduce. Run them at
 least once before trusting a production-signed release.
@@ -644,6 +681,7 @@ After reviewing evidence, clean those runs with their original state/profile,
 then remove only manifest-owned registry resources. Interrupted commands may
 leave additional journaled resources; reconcile the dedicated state directory
 before declaring cleanup complete. No result report belongs in this checkout.
+
 
 ## Generated conformance catalog<a id="conformance-catalog"></a>
 
@@ -926,11 +964,28 @@ uv run python -m conclear.tool_matrix --check
 
 ## Releases<a id="releases"></a>
 
-A ConClear release consists of one Semantic Versioning version, one annotated
-`vX.Y.Z` Git tag, one GitHub release and the source distribution and wheel
-published for that version. Release only a clean, committed revision. Test
-results and retained artifacts belong to that exact revision and cannot be
-carried over after another commit.
+A ConClear release consists of:
+
+- one Semantic Versioning `X.Y.Z` version
+- one annotated `vX.Y.Z` Git tag
+- one GitHub release for the `vX.Y.Z` Git tag
+- the source distribution and wheel published on PyPI for that `X.Y.Z` version.
+
+The maintainer performing a release also needs:
+
+- an authenticated `gh` installation
+- an authorized PyPI publishing identity
+- the container registry (currently: Quay.io only) and Sigstore test inputs
+  described below.
+- [our `release` tool](https://github.com/foundata/releasing/), which reads the
+  `[tool.releasing]` declaration in [`pyproject.toml`](./pyproject.toml). That
+  declaration names the repository, the changelog and every file carrying the
+  version, so no step repeats those paths.
+
+Release only a clean, committed revision. Test results and retained artifacts
+belong to that exact revision and cannot be carried over after another commit.
+Keep credentials, signing keys, test workspaces and resource manifests outside
+the repository.
 
 The source tree identifies itself as `development-source-tree` and cannot emit
 release evidence. The release check creates a clean source archive and embeds
@@ -938,81 +993,48 @@ the selected full Git revision as `conclear/_embedded_identity.py` before it
 builds the distributions. Runtime identity is never inferred from the consumer
 repository.
 
-The maintainer performing a release also needs `jq`, `sha256sum`, an
-authenticated `gh` installation, an authorized PyPI publishing identity and the
-Quay and Sigstore test inputs described below. Keep credentials, signing keys,
-test workspaces and resource manifests outside the repository.
+Follow the steps to create a release:
 
-
-1. **Choose the release version.** Select the version according to
-   [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The numbered
-   steps below are the checklist; every step must produce its result before the
-   next one starts. A skip is a missing result, not a pass.
+1. **Choose the version and confirm the starting point.** Select the version
+   according to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The
+   numbered steps below are the checklist; every step must produce its result
+   before the next one starts. A skip is a missing result, not a pass.
 
    ```sh
-   version="<FIXME version>" # major.minor.patch
+   version="<TODO version>" # major.minor.patch
    tag="v${version}"
 
    git status --short
    git tag --list "${tag}"
+
+   uv run release config check
+   uv run release version check
+   uv run release changelog check
    ```
 
-   Start from a clean branch and stop if the version or tag already exists.
+   Start from a clean branch and stop if the tag already exists or a check
+   reports a problem.
 
-2. **Prepare the versioned sources and changelog.** Move the accumulated entries
-   under `Unreleased` in [`CHANGELOG.md`](./CHANGELOG.md) to a section named for
-   the version and release date, then leave an `Unreleased` section containing
-   `No unreleased changes.` above it. Add a link for the new release; after a
-   previous release exists, also add or update the comparison links.
-
-   Four files carry the version by hand and must all state the same one:
-   [`pyproject.toml`](./pyproject.toml) (`version`),
-   [`src/conclear/identity.py`](./src/conclear/identity.py) (`VERSION`),
-   [`src/conclear/data/implementation.json`](./src/conclear/data/implementation.json)
-   and
-   [`src/conclear/data/guide-options.json`](./src/conclear/data/guide-options.json)
-   (`productVersion`). `uv.lock` records the version too and is updated by
-   running `uv lock`, never by hand, as are `docs/compatibility-inventory.json`
-   and the other generated documents. The snippet below covers all of it:
+2. **Prepare the versioned sources and changelog.**
 
    ```sh
-   old_version="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n1 | sed 's/^v//')" # major.minor.patch
-   new_version="${version:-<FIXME version>}" # major.minor.patch
+   uv run release changelog release "${version}"
+   uv run release version bump "${version}"
 
-   echo "Old: ${old_version}"
-   echo "New: ${new_version}"
-
-   files=(
-    "./pyproject.toml"
-    "./src/conclear/identity.py"
-    "./src/conclear/data/implementation.json"
-    "./src/conclear/data/guide-options.json"
-   )
-
-   old_version_regex="${old_version//./\\.}"
-   version_pattern="^([[:space:]]*(\"productVersion\"|VERSION|version)[[:space:]]*[:=][[:space:]]*)\"${old_version_regex}\"(,?)$"
-
-   for file in "${files[@]}"; do
-     echo "Before: ${file}"
-     grep -nE "${version_pattern}" "${file}" || true
-     sed -i -E "s@${version_pattern}@\\1\"${new_version}\"\\3@" "${file}"
-     echo "After: ${file}"
-     grep -nE "^([[:space:]]*(\"productVersion\"|VERSION|version)[[:space:]]*[:=][[:space:]]*)\"${new_version}\"(,?)$" "${file}" || true
-     echo
-   done
-
-   uv lock # the lockfile records the project version
    uv run python -m conclear.implementation
    uv run python -m conclear.compatibility_inventory
    uv run python -m conclear.conformance
    uv run python -m conclear.tool_matrix
+
+   uv run release version check --expect "${version}"
+   uv run release changelog check
    ```
 
-   Each file must report exactly one line before and after; a file that reports
-   none was already changed or spells the version differently. The unit tests
-   compare the four values against each other, and the distribution gate
-   installs from the lockfile, so a site left behind fails step 4 rather than
-   reaching a release.
+   `release changelog release` moves the `Unreleased` entries into a dated
+   section and updates the link definitions. `release version bump` rewrites
+   every declared version site, runs `uv lock` and prints a diff of what it
+   changed; it fails on a file whose spelling drifted rather than skipping it
+   silently. The four generators rewrite the documents that carry the version.
 
    Then review version-specific prose and links in `README.md`,
    `ARCHITECTURE.md`, `DEVELOPMENT.md` and `docs/`. Each released tag carries
@@ -1030,11 +1052,10 @@ test workspaces and resource manifests outside the repository.
    git commit -m "release: prepare ${version}"
 
    revision="$(git rev-parse --verify HEAD)"
-   git status --short
+   git status --short # must print nothing
    ```
 
-   The final command must print nothing. Do not amend the release commit after
-   its validation starts.
+   Do not amend the release commit after its validation starts.
 
 4. **Run the distribution gate and retain its exact artifacts.** The gate needs
    locally available Python 3.12, 3.13 and 3.14 interpreters. It checks clean
@@ -1044,11 +1065,11 @@ test workspaces and resource manifests outside the repository.
    source distribution, validates their contents, installs the wheel into a
    clean environment and smoke-tests its import, version and help output.
 
-   The gate also prepares the README that ships in the artifacts: inside the
-   exported tree it rewrites the repository-relative links to absolute ones, so
-   the package-index page resolves them. The committed README is never touched.
-   Validation rejects a distribution whose description still carries a relative
-   destination.
+   The gate also
+   [prepares the README](https://github.com/foundata/releasing/blob/main/docs/markdown.md)
+   that ships in the artifacts. The committed README is never touched.
+   Validation rejects a distribution whose description still does not comply to
+   these preparation rules.
 
    ```sh
    install -d -m 0700 "${HOME}/.local/share/conclear/distributions"
@@ -1056,19 +1077,18 @@ test workspaces and resource manifests outside the repository.
 
    uv run python -m conclear.release_check \
      --output-directory "${artifact_dir}"
+
+   uv run release artifacts verify "${artifact_dir}/artifacts.json"
    ```
 
-   The destination must not exist before the command starts. A successful gate
-   publishes it atomically. Verify the retained files against the generated
-   manifest:
+   The destination must not exist before the command starts; a successful gate
+   publishes it atomically. The manifest it writes is the record of what was
+   validated, and every later step compares against it.
 
-   ```sh
-   (
-     cd "${artifact_dir}"
-     jq -r '.artifacts[] | "\(.sha256)  \(.filename)"' artifacts.json |
-       sha256sum --check -
-   )
-   ```
+   Steps 5 to 7 validate the runtime surface. A release whose only source change
+   is to the gate itself or to documentation never reaches that surface, so they
+   *may* be skipped for such a patch. Any change to a runtime module requires
+   all three.
 
 5. **Run the complete local integration tier against the retained wheel.** Read
    [Local integration tests](#local-integration-tests) first. Create and record
@@ -1148,78 +1168,49 @@ test workspaces and resource manifests outside the repository.
    Every stage must be `passed` in the drill's `manifest.json`. Keep that file
    with the candidate's evidence.
 
-8. **Freeze the validated candidate.** Confirm that every result of steps 4 to 7
-   belongs to the candidate revision named in `artifacts.json`. Do not continue
-   when any mandatory result is absent. Any tracked-file change invalidates the
-   retained artifacts and all results that depend on them: commit the change,
-   choose a new revision-specific artifact directory and repeat validation from
-   step 4.
-
-9. **Create and push the release tag.** Tag the exact revision recorded by the
-   gate, inspect it, then push the branch and that tag explicitly.
+8. **Freeze the candidate, then tag and push it.** Confirm that every result of
+   steps 4 to 7 belongs to the revision named in `artifacts.json`. Any
+   tracked-file change invalidates the retained artifacts and everything derived
+   from them: commit it, choose a new revision-specific artifact directory and
+   repeat validation from step 4.
 
    ```sh
    test "$(git rev-parse --verify HEAD)" = "${revision}"
-   git status --short
 
-   git tag -a "${tag}" "${revision}" -m "version ${version}"
+   uv run release tag create "${version}"
    git show "${tag}"
 
    git push origin main
    git push origin "refs/tags/${tag}"
    ```
 
-   Stop if the status command prints anything or the tag does not point to the
-   validated revision.
+   `tag create` refuses unless the working tree is clean, every version site
+   states `${version}` and no release exists for the tag yet.
 
-10. **Publish the retained distributions to PyPI without rebuilding.** Upload
-    only the source distribution and wheel named in `artifacts.json`. Prefer the
-    configured trusted-publishing environment. When a maintainer token is the
-    configured mechanism, keep it out of shell history and process arguments:
+9. **Publish the retained distributions to PyPI without rebuilding.** Upload
+   only the files named in `artifacts.json`. Prefer the configured
+   trusted-publishing environment. When a maintainer token is the configured
+   mechanism, keep it out of shell history and process arguments:
 
-    ```sh
-    printf 'PyPI API token: '
-    read -rs UV_PUBLISH_TOKEN
-    printf '\n'
-    export UV_PUBLISH_TOKEN
+   ```sh
+   printf 'PyPI API token: '
+   read -rs UV_PUBLISH_TOKEN
+   printf '\n'
+   export UV_PUBLISH_TOKEN
 
-    uv publish \
-      "${artifact_dir}/conclear-${version}.tar.gz" \
-      "${artifact_dir}/conclear-${version}-py3-none-any.whl"
+   uv publish \
+     "${artifact_dir}/conclear-${version}.tar.gz" \
+     "${artifact_dir}/conclear-${version}-py3-none-any.whl"
 
-    unset UV_PUBLISH_TOKEN
-    ```
+   unset UV_PUBLISH_TOKEN
+   ```
 
-    PyPI versions are immutable. Never rebuild and retry the same version with
-    different bytes.
+   PyPI versions are immutable. Never rebuild and retry the same version with
+   different bytes.
 
-11. **Verify the public installation.** Install the exact version from PyPI in
-    an isolated environment. Check both the product version and the embedded
-    candidate revision rather than accepting version text alone.
-
-    ```sh
-    published_identity="$(
-      uv run --isolated --no-project --refresh-package conclear \
-        --with "conclear==${version}" -- \
-        conclear version --format json
-    )"
-    printf '%s\n' "${published_identity}" | jq -e \
-      --arg version "${version}" \
-      --arg revision "${revision}" \
-      '.version == $version and .sourceRevision == $revision'
-
-    uv run --isolated --no-project --refresh-package conclear \
-      --with "conclear==${version}" -- \
-      conclear --help
-    ```
-
-    `--refresh-package` matters: this check runs moments after the upload, when
-    a cached index listing still predates the new version and reports it as
-    nonexistent.
-
-12. **Create and verify the GitHub release.** Use the matching changelog section
-    as the release notes. Attach `artifacts.json` and the exact distributions
-    already published to PyPI.
+10. **Create the GitHub release.** Attach `artifacts.json` and the exact
+    distributions already published to PyPI. The release notes come from the
+    matching changelog section.
 
     ```sh
     gh release create "${tag}" \
@@ -1229,16 +1220,26 @@ test workspaces and resource manifests outside the repository.
       --verify-tag \
       --title "${tag}" \
       --notes-file <(uv run release changelog show "${version}")
-
-    gh release view "${tag}"
     ```
 
-    Confirm that GitHub reports the new release as latest and that the attached
-    files match `artifacts.json`.
+11. **Verify the published release.**
+
+    ```sh
+    uv run release verify "${artifact_dir}/artifacts.json" \
+      --version "${version}"
+    ```
+
+    Three questions, all of which must be answered: does the index serve files
+    for this version whose digests match the manifest, does an isolated install
+    of that version report it, and does the forge report the tag as the latest
+    release. The isolated install refreshes the package index, because this
+    check runs moments after the upload, when a cached listing still predates
+    the new version and reports it as nonexistent.
 
 Before either PyPI or a GitHub release exposes an artifact, a bad tag may be
-deleted and the procedure restarted. Once either service has published the
-version, do not replace it or reuse its tag. Yank a defective PyPI release when
+deleted with `release tag delete` and the procedure restarted; that command
+refuses once a release exists. Once either service has published the version,
+do not replace it or reuse its tag. Yank a defective PyPI release when
 appropriate and publish the correction under a new patch version.
 
 The release check itself never writes to a registry, signs content, creates

@@ -8,7 +8,7 @@ and the project adheres to
 
 ## [Unreleased]
 
-No unreleased changes.
+- Nothing worth mentioning right now.
 
 
 ## [1.0.2] - 2026-09-20
