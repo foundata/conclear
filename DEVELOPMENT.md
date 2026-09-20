@@ -1184,18 +1184,20 @@ performs no step and writes nothing.
    repeat validation from step 4.
 
    ```sh
-   test "$(git rev-parse --verify HEAD)" = "${revision}"
-
-   uv run release tag create "${version}"
+   uv run release tag create "${version}" \
+     --manifest "${artifact_dir}/artifacts.json"
    git show "${tag}"
 
    uv run release push "${version}"
    ```
 
    `tag create` refuses unless the working tree is clean, every version site
-   states `${version}` and no release exists for the tag yet. `push` sends the
-   branch before the tag and refuses a tag the branch does not contain, so the
-   forge never carries a release nobody can check out.
+   states `${version}`, the revision is the one `artifacts.json` records as its
+   source, and no release exists for the tag yet. That third refusal is what
+   catches a commit made after step 4: the tree is clean and the versions agree,
+   but the tag would name a revision whose artifacts nobody validated. `push`
+   sends the branch before the tag and refuses a tag the branch does not
+   contain, so the forge never carries a release nobody can check out.
 
 9. **Publish the retained distributions to PyPI without rebuilding.** Prefer
    the configured trusted-publishing environment. When a maintainer token is
