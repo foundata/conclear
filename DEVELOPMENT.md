@@ -993,7 +993,16 @@ the selected full Git revision as `conclear/_embedded_identity.py` before it
 builds the distributions. Runtime identity is never inferred from the consumer
 repository.
 
-Follow the steps to create a release:
+Follow the steps to create a release. A release spans several sittings, so ask
+where one stands rather than reconstructing it from Git and index queries. Once
+step 4 has retained a manifest, name it as well:
+
+```sh
+uv run release status "${version}" [--manifest "${artifact_dir}/artifacts.json"]
+```
+
+Every fact is reported as done, pending, broken or unreachable. The command
+performs no step and writes nothing.
 
 1. **Choose the version and confirm the starting point.** Select the version
    according to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The
@@ -1018,8 +1027,8 @@ Follow the steps to create a release:
 2. **Prepare the versioned sources and changelog.**
 
    ```sh
-   uv run release changelog release "${version}"
    uv run release version bump "${version}"
+   uv run release changelog release "${version}"
 
    uv run python -m conclear.implementation
    uv run python -m conclear.compatibility_inventory
@@ -1180,17 +1189,18 @@ Follow the steps to create a release:
    uv run release tag create "${version}"
    git show "${tag}"
 
-   git push origin main
-   git push origin "refs/tags/${tag}"
+   uv run release push "${version}"
    ```
 
    `tag create` refuses unless the working tree is clean, every version site
-   states `${version}` and no release exists for the tag yet.
+   states `${version}` and no release exists for the tag yet. `push` sends the
+   branch before the tag and refuses a tag the branch does not contain, so the
+   forge never carries a release nobody can check out.
 
-9. **Publish the retained distributions to PyPI without rebuilding.** Upload
-   only the files named in `artifacts.json`. Prefer the configured
-   trusted-publishing environment. When a maintainer token is the configured
-   mechanism, keep it out of shell history and process arguments:
+9. **Publish the retained distributions to PyPI without rebuilding.** Prefer
+   the configured trusted-publishing environment. When a maintainer token is
+   the configured mechanism, keep it out of shell history and process
+   arguments:
 
    ```sh
    printf 'PyPI API token: '
@@ -1198,29 +1208,25 @@ Follow the steps to create a release:
    printf '\n'
    export UV_PUBLISH_TOKEN
 
-   uv publish \
-     "${artifact_dir}/conclear-${version}.tar.gz" \
-     "${artifact_dir}/conclear-${version}-py3-none-any.whl"
+   uv run release publish "${artifact_dir}/artifacts.json"
 
    unset UV_PUBLISH_TOKEN
    ```
 
-   PyPI versions are immutable. Never rebuild and retry the same version with
-   different bytes.
+   `publish` uploads exactly the files the manifest names, re-checking each
+   digest first and refusing an unvalidated file beside them. PyPI versions are
+   immutable; never rebuild and retry the same version with different bytes.
 
-10. **Create the GitHub release.** Attach `artifacts.json` and the exact
-    distributions already published to PyPI. The release notes come from the
-    matching changelog section.
+10. **Create the GitHub release.**
 
     ```sh
-    gh release create "${tag}" \
-      "${artifact_dir}/artifacts.json" \
-      "${artifact_dir}/conclear-${version}.tar.gz" \
-      "${artifact_dir}/conclear-${version}-py3-none-any.whl" \
-      --verify-tag \
-      --title "${tag}" \
-      --notes-file <(uv run release changelog show "${version}")
+    uv run release forge release-create "${version}" \
+      --manifest "${artifact_dir}/artifacts.json"
     ```
+
+    The notes are the changelog section for the version and the assets are
+    `artifacts.json` and every file it names, verified before the entry is
+    created. The write goes through `gh`, which already holds the session.
 
 11. **Verify the published release.**
 
