@@ -950,7 +950,7 @@ test workspaces and resource manifests outside the repository.
    next one starts. A skip is a missing result, not a pass.
 
    ```sh
-   version="<major.minor.patch>"
+   version="<FIXME version>" # major.minor.patch
    tag="v${version}"
 
    git status --short
@@ -976,8 +976,11 @@ test workspaces and resource manifests outside the repository.
    and the other generated documents. The snippet below covers all of it:
 
    ```sh
-   old_version="<FIXME version>" # major.minor.patch
-   new_version="<FIXME version>" # major.minor.patch
+   old_version="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n1 | sed 's/^v//')" # major.minor.patch
+   new_version="${version:-<FIXME version>}" # major.minor.patch
+
+   echo "Old: ${old_version}"
+   echo "New: ${new_version}"
 
    files=(
     "./pyproject.toml"
@@ -990,11 +993,11 @@ test workspaces and resource manifests outside the repository.
    version_pattern="^([[:space:]]*(\"productVersion\"|VERSION|version)[[:space:]]*[:=][[:space:]]*)\"${old_version_regex}\"(,?)$"
 
    for file in "${files[@]}"; do
-     echo "Before: $file"
-     grep -nE "$version_pattern" "$file" || true
-     sed -i -E "s@${version_pattern}@\\1\"${new_version}\"\\3@" "$file"
-     echo "After: $file"
-     grep -nE "^([[:space:]]*(\"productVersion\"|VERSION|version)[[:space:]]*[:=][[:space:]]*)\"${new_version}\"(,?)$" "$file" || true
+     echo "Before: ${file}"
+     grep -nE "${version_pattern}" "${file}" || true
+     sed -i -E "s@${version_pattern}@\\1\"${new_version}\"\\3@" "${file}"
+     echo "After: ${file}"
+     grep -nE "^([[:space:]]*(\"productVersion\"|VERSION|version)[[:space:]]*[:=][[:space:]]*)\"${new_version}\"(,?)$" "${file}" || true
      echo
    done
 
