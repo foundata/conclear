@@ -1062,7 +1062,7 @@ test workspaces and resource manifests outside the repository.
    ```sh
    (
      cd "${artifact_dir}"
-     jq -r '.artifacts[] | "\(.sha256 | ltrimstr("sha256:"))  \(.filename)"' artifacts.json |
+     jq -r '.artifacts[] | "\(.sha256)  \(.filename)"' artifacts.json |
        sha256sum --check -
    )
    ```

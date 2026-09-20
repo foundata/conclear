@@ -49,13 +49,14 @@ def test_retained_artifacts_are_published_atomically_with_their_digests(
         wheel=wheel,
         destination=parent / REVISION,
         source_revision=REVISION,
+        repository="foundata/conclear",
     )
 
     assert retained.directory == parent / REVISION
     assert retained.sdist_digest == sha256_file(sdist)
     assert retained.wheel_digest == sha256_file(wheel)
     manifest = load_json(retained.directory / "artifacts.json")
-    assert manifest["conclearRevision"] == REVISION
+    assert manifest["sourceRevision"] == REVISION
     assert [item["filename"] for item in manifest["artifacts"]] == [
         sdist.name,
         wheel.name,
@@ -69,6 +70,7 @@ def test_retained_artifacts_are_published_atomically_with_their_digests(
             wheel=wheel,
             destination=parent / REVISION,
             source_revision=REVISION,
+            repository="foundata/conclear",
         )
 
 
@@ -77,7 +79,11 @@ def test_artifact_destination_refuses_unsafe_parents(tmp_path: Path) -> None:
 
     def attempt(destination: Path) -> None:
         retain_distribution_artifacts(
-            sdist=sdist, wheel=wheel, destination=destination, source_revision=REVISION
+            sdist=sdist,
+            wheel=wheel,
+            destination=destination,
+            source_revision=REVISION,
+            repository="foundata/conclear",
         )
 
     with pytest.raises(OperationalError, match="name a new directory"):
@@ -102,7 +108,11 @@ def test_artifact_destination_refuses_unsafe_parents(tmp_path: Path) -> None:
             attempt(shared / REVISION)
     with pytest.raises(InvalidInvocationError, match="lowercase hexadecimal"):
         retain_distribution_artifacts(
-            sdist=sdist, wheel=wheel, destination=real / "x", source_revision="HEAD"
+            sdist=sdist,
+            wheel=wheel,
+            destination=real / "x",
+            source_revision="HEAD",
+            repository="foundata/conclear",
         )
     assert list(real.iterdir()) == []
 
@@ -120,6 +130,7 @@ def test_retention_rejects_symlinked_or_missing_distributions(tmp_path: Path) ->
             wheel=linked,
             destination=parent / REVISION,
             source_revision=REVISION,
+            repository="foundata/conclear",
         )
     with pytest.raises(OperationalError, match="unavailable"):
         retain_distribution_artifacts(
@@ -127,6 +138,7 @@ def test_retention_rejects_symlinked_or_missing_distributions(tmp_path: Path) ->
             wheel=wheel,
             destination=parent / REVISION,
             source_revision=REVISION,
+            repository="foundata/conclear",
         )
     assert list(parent.iterdir()) == []
 

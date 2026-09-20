@@ -38,6 +38,7 @@ def test_documented_artifact_checksums_accept_exact_bytes_and_reject_changes(
         sdist=sdist,
         destination=destination,
         source_revision="a" * 40,
+        repository="foundata/conclear",
     )
 
     def verify() -> subprocess.CompletedProcess[str]:

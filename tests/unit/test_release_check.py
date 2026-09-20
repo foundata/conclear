@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import shutil
@@ -11,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from conclear.errors import OperationalError
-from conclear.identity import VERSION
+from conclear.identity import GUIDE_REVISION, VERSION
 from conclear.process import ProcessResult
 from conclear.release_check import (
     GateRuntime,
@@ -123,16 +124,29 @@ def test_validated_distribution_artifacts_are_retained_atomically(
         wheel=wheel,
         destination=destination,
         source_revision="a" * 40,
+        repository="foundata/conclear",
     )
 
     assert retained.directory == destination
     assert (destination / sdist.name).read_bytes() == sdist.read_bytes()
     assert (destination / wheel.name).read_bytes() == wheel.read_bytes()
     manifest = json.loads((destination / "artifacts.json").read_text(encoding="utf-8"))
-    assert manifest["conclearRevision"] == "a" * 40
+    assert manifest["generator"] == "releasing"
+    assert manifest["repository"] == "foundata/conclear"
+    assert manifest["sourceRevision"] == "a" * 40
+    assert manifest["version"] == VERSION
+    assert manifest["guideRevision"] == GUIDE_REVISION
     assert manifest["artifacts"] == [
-        {"filename": sdist.name, "sha256": retained.sdist_digest},
-        {"filename": wheel.name, "sha256": retained.wheel_digest},
+        {
+            "filename": sdist.name,
+            "sha256": hashlib.sha256(sdist.read_bytes()).hexdigest(),
+            "size": sdist.stat().st_size,
+        },
+        {
+            "filename": wheel.name,
+            "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+            "size": wheel.stat().st_size,
+        },
     ]
 
 
@@ -152,6 +166,7 @@ def test_retained_distribution_rejects_preexisting_and_symlink_destinations(
             wheel=wheel,
             destination=existing,
             source_revision="a" * 40,
+            repository="foundata/conclear",
         )
 
     target = tmp_path / "target"
@@ -164,6 +179,7 @@ def test_retained_distribution_rejects_preexisting_and_symlink_destinations(
             wheel=wheel,
             destination=link / "retained",
             source_revision="a" * 40,
+            repository="foundata/conclear",
         )
 
 
@@ -195,6 +211,7 @@ def test_retained_distribution_cleans_only_its_partial_staging_directory(
             wheel=wheel,
             destination=destination,
             source_revision="a" * 40,
+            repository="foundata/conclear",
         )
 
     assert not destination.exists()

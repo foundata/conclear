@@ -8,7 +8,12 @@ and the project adheres to
 
 ## [Unreleased]
 
-- Nothing worth mentioning right now.
+### Changed
+
+- `python -m conclear.release_check` writes `artifacts.json` in the shared
+  `releasing` manifest format. It now names the version and the repository, and
+  spells digests as bare hex the way a package index serves them.
+  `conclearRevision` became `sourceRevision`; `guideRevision` stayed.
 
 
 ## [1.0.1] - 2026-09-20

@@ -159,7 +159,7 @@ dev = [
     { name = "mypy", specifier = ">=1.17.1" },
     { name = "pytest", specifier = ">=9.0.0" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
-    { name = "releasing", specifier = ">=1,<2" },
+    { name = "releasing", specifier = ">=1.0.2,<2" },
     { name = "ruff", specifier = ">=0.12.11" },
     { name = "rumdl", specifier = ">=0.2.66" },
     { name = "types-jsonschema", specifier = ">=4.25.1.20250822" },
@@ -799,15 +799,15 @@ wheels = [
 
 [[package]]
 name = "releasing"
-version = "1.0.0"
+version = "1.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/aa/f9/d272bcd25c894379fbd7e48bd4a993e29fc1036ee8b1a4e14382182bc245/releasing-1.0.0.tar.gz", hash = "sha256:5fbf18c30183b33b856ed54d5a65f89171eab5716db4b283b4e3dd9ce23e3f63", size = 55351, upload-time = "2026-09-20T01:24:30.705Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/6c/f99fd7053302ee32e489ba3fc5e7686ba0965717a7c90bda947439d2a970/releasing-1.0.2.tar.gz", hash = "sha256:277d8c1927cd05560a8084e15c297ccc9ad48ec22dfad37d31cfee218779dd71", size = 55815, upload-time = "2026-09-20T02:23:26.652Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/08/8dbdf774bc17d539fdb9bea0ed294948283ee76ff574f92dec4a7d6a4cd2/releasing-1.0.0-py3-none-any.whl", hash = "sha256:973a88f5d432ce22fc32e4037e2e6b8a861b1430ee48f8d9af4b036772835daa", size = 61715, upload-time = "2026-09-20T01:24:28.967Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/b5/2254714e126d3663766ea37d6bcf25cf5049beea37eecfb6211ecb3f9a19/releasing-1.0.2-py3-none-any.whl", hash = "sha256:d16d31ea49992575b84861282539c7ac60f05d6aee158120e179736553b1dc34", size = 62239, upload-time = "2026-09-20T02:23:25.125Z" },
 ]
 
 [[package]]

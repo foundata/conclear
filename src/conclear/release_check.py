@@ -12,10 +12,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from releasing.artifacts import ArtifactError, build_manifest, dump_manifest
 from releasing.artifacts import check as check_artifacts
 from releasing.artifacts import inspect as inspect_artifact
 from releasing.build import BuildError, prepare_readmes
-from releasing.config import ConfigError, load_release_config
+from releasing.config import ConfigError, ReleaseConfig, load_release_config
 from releasing.forges import forge_for
 
 from conclear.build_identity import write_embedded_identity
@@ -26,7 +27,7 @@ from conclear.errors import (
     OperationalError,
 )
 from conclear.identity import GUIDE_REVISION, VERSION
-from conclear.jsonutil import atomic_write_json, sha256_file
+from conclear.jsonutil import atomic_write_bytes, sha256_file
 from conclear.path_safety import extract_tar_safely
 from conclear.process import (
     CommandRequest,
@@ -221,7 +222,8 @@ def run_release_check(
         write_embedded_identity(staged / "src" / "conclear", revision)
         _run_source_gates(runtime, staged)
         _clear_generated_files(staged)
-        _prepare_index_readme(staged)
+        configuration = _load_release_configuration(staged)
+        _prepare_index_readme(staged, configuration)
         artifacts = temporary_root / "artifacts"
         artifacts.mkdir(mode=0o700)
         runtime.run(
@@ -265,6 +267,7 @@ def run_release_check(
                 wheel=wheel,
                 destination=destination,
                 source_revision=revision,
+                repository=configuration.repository,
             )
         )
     print("release-check: all checks passed", flush=True)
@@ -279,6 +282,7 @@ def retain_distribution_artifacts(
     wheel: Path,
     destination: Path,
     source_revision: str,
+    repository: str,
 ) -> RetainedArtifacts:
     """Atomically publish the exact distributions that passed the release gate."""
     revision = validate_source_revision(source_revision)
@@ -289,17 +293,14 @@ def retain_distribution_artifacts(
         staging.chmod(0o700)
         sdist_digest = _copy_validated_artifact(sdist, staging / sdist.name)
         wheel_digest = _copy_validated_artifact(wheel, staging / wheel.name)
-        atomic_write_json(
+        atomic_write_bytes(
             staging / "artifacts.json",
-            {
-                "schemaVersion": 1,
-                "conclearRevision": revision,
-                "guideRevision": GUIDE_REVISION,
-                "artifacts": [
-                    {"filename": sdist.name, "sha256": sdist_digest},
-                    {"filename": wheel.name, "sha256": wheel_digest},
-                ],
-            },
+            _manifest_document(
+                staging / sdist.name,
+                staging / wheel.name,
+                repository=repository,
+                revision=revision,
+            ),
             mode=0o644,
         )
         directory_descriptor = os.open(
@@ -658,6 +659,23 @@ def _copy_validated_artifact(source: Path, destination: Path) -> str:
     return expected_digest
 
 
+def _manifest_document(*paths: Path, repository: str, revision: str) -> bytes:
+    """Record the retained distributions in the shared manifest format."""
+    try:
+        manifest = build_manifest(
+            list(paths),
+            repository=repository,
+            version=VERSION,
+            source_revision=revision,
+        )
+        document = dump_manifest(manifest, extra={"guideRevision": GUIDE_REVISION})
+    except ArtifactError as exc:
+        raise OperationalError(
+            f"Unable to record the artifact manifest: {exc}"
+        ) from exc
+    return document.encode("utf-8")
+
+
 def _tar_names(path: Path) -> tuple[str, ...]:
     try:
         with tarfile.open(path, mode="r:gz") as archive:
@@ -704,7 +722,17 @@ def _artifact_member(value: str) -> PurePosixPath:
     return member
 
 
-def _prepare_index_readme(staged: Path) -> None:
+def _load_release_configuration(staged: Path) -> ReleaseConfig:
+    """Read the release declaration from the exported tree."""
+    try:
+        return load_release_config(staged)
+    except ConfigError as exc:
+        raise OperationalError(
+            f"Unable to read the release declaration: {exc}"
+        ) from exc
+
+
+def _prepare_index_readme(staged: Path, configuration: ReleaseConfig) -> None:
     """Rewrite the README's relative destinations for the package index.
 
     Runs inside the exported tree, so the committed README keeps the relative
@@ -713,7 +741,6 @@ def _prepare_index_readme(staged: Path) -> None:
     had no place in the gate.
     """
     try:
-        configuration = load_release_config(staged)
         prepare_readmes(
             staged,
             configuration,
