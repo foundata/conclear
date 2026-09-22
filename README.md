@@ -5,9 +5,9 @@ the digest that passed its checks. It applies the technical requirements of
 [foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
 without requiring you to maintain your own release scripts or CI service.
 
-> **Important:** ConClear is built for foundata's release process. You are
-> welcome to use it if you adopt the linked guide's requirements. Pull requests
-> to adapt ConClear to different release policies are out of scope.
+> **Important:** ConClear is built for foundata's own release processes. You are
+> welcome to use it if you adopt the linked guide's requirements. Requests to
+> adapt ConClear to different release policies are out of scope.
 
 <!-- rumdl-disable MD033 -->
 <!-- HTML for consistent rendering across limited platform parsers -->
