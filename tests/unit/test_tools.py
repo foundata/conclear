@@ -211,6 +211,7 @@ def test_resolver_applies_the_bounded_policy(
         tool = resolver.resolve(ToolName.PODMAN, environment={"PATH": "/usr/bin"})
         assert tool.version == output.removeprefix("podman version ")
         assert tool.executable_digest.startswith("sha256:")
+        assert tool.binding_digest == tool.executable_digest
         assert tool.record_identity().to_dict()["version"] == tool.version
     else:
         with pytest.raises(

@@ -295,6 +295,11 @@ class ResolvedTool:
     executable_digest: str
     reported_version: str
 
+    @property
+    def binding_digest(self) -> str:
+        """Return the digest a run binds this tool's identity to."""
+        return self.executable_digest
+
     def assert_unchanged(self) -> None:
         """Reject a tool whose executable changed after release start."""
         current = sha256_file(self.path)
