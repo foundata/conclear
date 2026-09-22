@@ -20,6 +20,7 @@ from conclear.errors import OperationalError, RuleRejectionError
 from conclear.jsonutil import sha256_file
 from conclear.process import CommandRequest, ProcessResult, ProcessRunner
 from conclear.records import ToolIdentity
+from conclear.values import Digest
 
 
 class ToolName(StrEnum):
@@ -116,12 +117,62 @@ class VersionPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class ImageSigner:
+    """The keyless Sigstore identity a publisher signs its tool images with."""
+
+    issuer: str
+    identity_pattern: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolImage:
+    """A publisher's image of one tool, pinned by the digest of its image index.
+
+    The index digest is what ConClear pins, verifies and records; the platform
+    manifest a worker actually ran is recorded beside it. An image without a
+    publisher signature is trusted on the pin alone, which is the same trust a
+    host executable gets from its recorded digest.
+    """
+
+    reference: str
+    version: ToolVersion
+    digest: str
+    executable: str
+    signer: ImageSigner | None = None
+
+    def __post_init__(self) -> None:
+        """Reject an image description that cannot be pinned or executed."""
+        if "@" in self.reference or ":" in self.reference.rsplit("/", 1)[-1]:
+            raise OperationalError(
+                f"Tool image reference must name a repository only: {self.reference}"
+            )
+        Digest(self.digest)
+        if not self.executable.startswith("/"):
+            raise OperationalError(
+                f"Tool image executable must be an absolute path: {self.executable}"
+            )
+
+    @property
+    def pinned_reference(self) -> str:
+        """Return the reference resolved by digest, immune to tag movement."""
+        return f"{self.reference}@{self.digest}"
+
+
+@dataclass(frozen=True, slots=True)
 class ToolSpec:
     """Version invocation, version parsing and compatibility policy for one tool."""
 
     version_arguments: tuple[str, ...]
     version_pattern: re.Pattern[str]
     policy: VersionPolicy
+    image: ToolImage | None = None
+
+    def __post_init__(self) -> None:
+        """Require a pinned image to carry a version the real-tool tier exercised."""
+        if self.image is not None and self.image.version not in self.policy.tested:
+            raise OperationalError(
+                f"Tool image version {self.image.version} is not a tested version"
+            )
 
 
 def _pattern(prefix: str) -> re.Pattern[str]:
@@ -179,6 +230,14 @@ SUPPORTED_TOOLS: Mapping[ToolName, ToolSpec] = {
         VersionPolicy(
             _version("2.12.0"), _version("3.0.0"), frozenset({_version("2.14.0")})
         ),
+        # The publisher signs nothing, so the pin is the whole trust anchor and
+        # is reviewed like any other ConClear dependency.
+        image=ToolImage(
+            "ghcr.io/hadolint/hadolint",
+            _version("2.14.0"),
+            "sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e",
+            "/bin/hadolint",
+        ),
     ),
     # Trivy: 0.x minor lines change scanners and report schemas, so only the
     # tested 0.74 line is accepted. Its floor lies above 0.71.1, the release that
@@ -190,6 +249,19 @@ SUPPORTED_TOOLS: Mapping[ToolName, ToolSpec] = {
         _pattern(r"Version:\s*"),
         VersionPolicy(
             _version("0.74.0"), _version("0.75.0"), frozenset({_version("0.74.0")})
+        ),
+        # Trivy parses untrusted layer content, so a read-only rootfs without
+        # network is a real containment gain. The release workflow signs the
+        # index, not the platform manifests, which is why the index is pinned.
+        image=ToolImage(
+            "ghcr.io/aquasecurity/trivy",
+            _version("0.74.0"),
+            "sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969",
+            "/usr/local/bin/trivy",
+            signer=ImageSigner(
+                issuer="https://token.actions.githubusercontent.com",
+                identity_pattern=r"^https://github\.com/aquasecurity/trivy/",
+            ),
         ),
     ),
     # Cosign: every 3.x release below 3.1.3 has a verification bypass

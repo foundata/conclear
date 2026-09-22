@@ -8,12 +8,15 @@ from conclear.errors import OperationalError, RuleRejectionError
 from conclear.process import CommandRequest, ProcessResult
 from conclear.tools import (
     SUPPORTED_TOOLS,
+    ImageSigner,
+    ToolImage,
     ToolName,
     ToolResolver,
     ToolSpec,
     ToolVersion,
     VersionPolicy,
 )
+from conclear.values import Digest
 
 
 def _version(text: str) -> ToolVersion:
@@ -114,6 +117,59 @@ def test_production_policies_pin_the_documented_floors_and_ceilings() -> None:
         policy = SUPPORTED_TOOLS[name].policy
         assert (str(policy.minimum), str(policy.maximum)) == (minimum, maximum), name
         assert {str(item) for item in policy.excluded} == excluded, name
+
+
+def test_only_trivy_and_hadolint_have_pinned_images_of_tested_versions() -> None:
+    for name, spec in SUPPORTED_TOOLS.items():
+        image = spec.image
+        if name not in {ToolName.TRIVY, ToolName.HADOLINT}:
+            assert image is None, name
+            continue
+        assert image is not None, name
+        assert image.version in spec.policy.tested, name
+        Digest(image.digest)
+        assert image.pinned_reference == f"{image.reference}@{image.digest}"
+    trivy = SUPPORTED_TOOLS[ToolName.TRIVY].image
+    hadolint = SUPPORTED_TOOLS[ToolName.HADOLINT].image
+    assert trivy is not None and hadolint is not None
+    assert trivy.signer == ImageSigner(
+        issuer="https://token.actions.githubusercontent.com",
+        identity_pattern=r"^https://github\.com/aquasecurity/trivy/",
+    )
+    assert hadolint.signer is None
+
+
+@pytest.mark.parametrize(
+    ("reference", "digest", "executable", "message"),
+    [
+        ("ghcr.io/x/y:1.0", "sha256:" + "a" * 64, "/bin/y", "repository only"),
+        (
+            "ghcr.io/x/y@sha256:" + "a" * 64,
+            "sha256:" + "a" * 64,
+            "/bin/y",
+            "repository only",
+        ),
+        ("ghcr.io/x/y", "sha256:" + "a" * 63, "/bin/y", "Digest must use"),
+        ("ghcr.io/x/y", "sha256:" + "a" * 64, "bin/y", "absolute path"),
+    ],
+)
+def test_image_descriptions_that_cannot_be_pinned_are_rejected(
+    reference: str, digest: str, executable: str, message: str
+) -> None:
+    with pytest.raises(Exception, match=message):
+        ToolImage(reference, _version("1.0.0"), digest, executable)
+
+
+def test_a_spec_refuses_an_image_of_an_untested_version() -> None:
+    with pytest.raises(OperationalError, match="not a tested version"):
+        ToolSpec(
+            ("--version",),
+            SUPPORTED_TOOLS[ToolName.TRIVY].version_pattern,
+            POLICY,
+            image=ToolImage(
+                "ghcr.io/x/y", _version("1.2.0"), "sha256:" + "a" * 64, "/bin/y"
+            ),
+        )
 
 
 class _Runner:
