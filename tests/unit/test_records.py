@@ -75,6 +75,31 @@ def test_record_serialization_is_deterministic_and_schema_valid() -> None:
     assert record.digest().startswith("sha256:")
 
 
+def test_image_backed_tool_identity_round_trips_and_validates() -> None:
+    index_digest = "sha256:" + "1" * 64
+    manifest_digest = "sha256:" + "2" * 64
+    identity = ToolIdentity(
+        "trivy",
+        "0.74.0",
+        image_digest=index_digest,
+        image_manifest_digest=manifest_digest,
+    )
+
+    assert identity.to_dict() == {
+        "name": "trivy",
+        "version": "0.74.0",
+        "imageDigest": index_digest,
+        "imageManifestDigest": manifest_digest,
+    }
+    assert ToolIdentity.from_dict(identity.to_dict()) == identity
+    record = _record()
+    validate_record(
+        {**record.to_dict(), "tools": [identity.to_dict()]},
+    )
+    host = ToolIdentity.from_dict({"name": "git", "version": "2.55.0"})
+    assert (host.image_digest, host.image_manifest_digest) == (None, None)
+
+
 def test_each_public_record_type_has_an_independent_initial_version() -> None:
     assert RECORD_SCHEMA_VERSIONS == {
         "platformQualification": 1,

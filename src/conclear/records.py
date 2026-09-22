@@ -104,7 +104,10 @@ class ToolIdentity:
     name: str
     version: str
     executable_digest: str | None = None
+    # A tool run from an image records the pinned index digest and, beside it,
+    # the platform manifest that actually ran, which differs per architecture.
     image_digest: str | None = None
+    image_manifest_digest: str | None = None
 
     @classmethod
     def from_dict(
@@ -113,20 +116,18 @@ class ToolIdentity:
         """Rebuild one tool identity from its public record object."""
         narrow = Narrower(error)
         item = narrow.object_value(value, "tool identity")
-        executable = item.get("executableDigest")
-        image = item.get("imageDigest")
+
+        def optional(key: str, label: str) -> str | None:
+            raw = item.get(key)
+            return None if raw is None else narrow.string_value(raw, label)
+
         return cls(
             narrow.string_value(item.get("name"), "tool name"),
             narrow.string_value(item.get("version"), "tool version"),
-            executable_digest=(
-                narrow.string_value(executable, "tool executable digest")
-                if executable is not None
-                else None
-            ),
-            image_digest=(
-                narrow.string_value(image, "tool image digest")
-                if image is not None
-                else None
+            executable_digest=optional("executableDigest", "tool executable digest"),
+            image_digest=optional("imageDigest", "tool image digest"),
+            image_manifest_digest=optional(
+                "imageManifestDigest", "tool image manifest digest"
             ),
         )
 
@@ -137,6 +138,8 @@ class ToolIdentity:
             value["executableDigest"] = self.executable_digest
         if self.image_digest is not None:
             value["imageDigest"] = self.image_digest
+        if self.image_manifest_digest is not None:
+            value["imageManifestDigest"] = self.image_manifest_digest
         return value
 
 

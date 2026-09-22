@@ -157,12 +157,14 @@
         "name": {"type": "string", "minLength": 1},
         "version": {"type": "string", "minLength": 1},
         "executableDigest": {"$ref": "#/$defs/digest"},
-        "imageDigest": {"$ref": "#/$defs/digest"}
+        "imageDigest": {"$ref": "#/$defs/digest"},
+        "imageManifestDigest": {"$ref": "#/$defs/digest"}
       },
       "oneOf": [
         {"required": ["executableDigest"]},
         {"required": ["imageDigest"]}
-      ]
+      ],
+      "dependentRequired": {"imageManifestDigest": ["imageDigest"]}
     },
     "descriptor": {
       "type": "object",

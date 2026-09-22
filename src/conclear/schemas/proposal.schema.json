@@ -65,12 +65,14 @@
         "name": {"type": "string", "minLength": 1, "maxLength": 64},
         "version": {"type": "string", "minLength": 1, "maxLength": 128},
         "executableDigest": {"$ref": "#/$defs/digest"},
-        "imageDigest": {"$ref": "#/$defs/digest"}
+        "imageDigest": {"$ref": "#/$defs/digest"},
+        "imageManifestDigest": {"$ref": "#/$defs/digest"}
       },
       "oneOf": [
         {"required": ["executableDigest"]},
         {"required": ["imageDigest"]}
-      ]
+      ],
+      "dependentRequired": {"imageManifestDigest": ["imageDigest"]}
     },
     "lookup": {
       "type": "object",

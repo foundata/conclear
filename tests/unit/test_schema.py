@@ -202,3 +202,27 @@ def test_pin_update_proposal_schema_is_closed_and_bounded() -> None:
             {**proposal, "ruleset": {**ruleset, "guideRevision": "c" * 40}}
         )
     )
+
+    def with_tool(**identity: object) -> dict[str, object]:
+        return {
+            **proposal,
+            "tools": [{"name": "trivy", "version": "0.74.0", **identity}],
+        }
+
+    manifest_digest = "sha256:" + "d" * 64
+    validator.validate(with_tool(imageDigest=digest))
+    validator.validate(
+        with_tool(imageDigest=digest, imageManifestDigest=manifest_digest)
+    )
+    # A tool ran either as a host executable or from an image, never both, and
+    # a platform manifest digest only describes an image.
+    assert list(validator.iter_errors(with_tool()))
+    assert list(
+        validator.iter_errors(with_tool(executableDigest=digest, imageDigest=digest))
+    )
+    assert list(
+        validator.iter_errors(
+            with_tool(executableDigest=digest, imageManifestDigest=manifest_digest)
+        )
+    )
+    assert list(validator.iter_errors(with_tool(imageManifestDigest=manifest_digest)))
