@@ -19,6 +19,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Test structure](#test-structure)
   - [Writing tests](#writing-tests)
   - [Local integration tests](#local-integration-tests)
+  - [Tools from their images](#tool-images)
   - [Network tests](#network-tests)
 - [Generated conformance catalog](#conformance-catalog)
 - [Generated guide-option support inventory](#guide-option-inventory)
@@ -607,6 +608,49 @@ reported as skipped with the same diagnostic that `conclear build` and
 `conclear test` raise for that platform; a skipped emulation case is not
 evidence that arm64 qualification works.
 
+
+### Tools from their images<a id="tool-images"></a>
+
+Trivy and Hadolint can run from their publishers' images instead of the host
+executables. The mode carries no promise yet: it appears in no README,
+architecture text or configuration surface, and a maintainer enables it with an
+environment variable naming the tools:
+
+```sh
+CONCLEAR_TOOL_IMAGES=trivy,hadolint uv run conclear check --image <id>
+```
+
+`src/conclear/tools.py` pins each image by the digest of its index. The run's
+Podman pulls that digest into a store below the run's environment, the run's
+Cosign verifies the Trivy index against the publisher's GitHub Actions identity
+(Hadolint publishes no signature, so its pin is the trust anchor), and the tool
+version is read inside the image and must equal the pinned one. Records name the
+pinned index as `imageDigest` and the platform manifest that ran as
+`imageManifestDigest`; run bindings use the index digest where a host tool uses
+its executable digest. A command that runs a tool from an image therefore also
+resolves `podman`, and `cosign` for a signed image, and reports them as tools of
+the run.
+
+Inside the image a tool sees a read-only root, no network unless the call needs
+it, and only the paths the adapter mounted. Paths below the run workspace keep
+their workspace-relative position, so the evidence Trivy writes reads exactly as
+a host run's does. Pulled layers hold subordinate-owner files, which is why the
+store is reset by Podman before its directory is removed: at the end of a
+command-scoped runtime, or by `cleanup` for a run workspace, where it is
+journaled as `toolImageStore`.
+
+The local integration tier compares both modes against the real images:
+
+```sh
+CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> \
+uv run pytest -m local_integration tests/local_integration/test_tool_images.py \
+  --basetemp <external-run-workspace>/tmp/pytest
+```
+
+It needs network access for the pulls and the Sigstore verification, and it
+proves that findings and neutralized reports are identical to the host tools of
+the same version. Moving a pin means updating the digest and the version in
+`tools.py` together and running this tier before anything else trusts it.
 
 ### Network tests<a id="network-tests"></a>
 
