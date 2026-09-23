@@ -1,5 +1,6 @@
 """Centralized, bounded external process execution."""
 
+import logging
 import os
 import re
 import signal
@@ -13,12 +14,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import BinaryIO, cast
 
+from conclear import narration
 from conclear.errors import (
     CommandExecutionError,
     CommandTimeoutError,
     OperationalError,
 )
 from conclear.jsonutil import atomic_write_json
+
+LOGGER = logging.getLogger(__name__)
 
 _DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 _SENSITIVE_FLAG = re.compile(
@@ -238,6 +242,14 @@ class ProcessRunner:
         artifact: BinaryIO | None,
     ) -> ProcessResult:
         start = self._monotonic()
+        # The story shows what really ran, already redacted; a retry says so.
+        if attempt > 1:
+            LOGGER.info(
+                "Retrying %s (attempt %d)",
+                narration.program(request.argv[0]),
+                attempt,
+            )
+        narration.command(LOGGER, redactor.argv(request.argv), cwd=request.cwd)
         try:
             process = subprocess.Popen(
                 request.argv,

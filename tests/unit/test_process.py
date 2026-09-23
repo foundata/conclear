@@ -1,4 +1,5 @@
 import io
+import logging
 import signal
 import subprocess
 from pathlib import Path
@@ -6,6 +7,7 @@ from typing import Any, override
 
 import pytest
 
+from conclear import narration
 from conclear.errors import (
     CommandExecutionError,
     CommandTimeoutError,
@@ -400,3 +402,44 @@ def test_tool_resolver_rejects_unsupported_version(tmp_path: Path) -> None:
     assert "real-tool tested (not the only accepted versions): 3.1.3" in str(
         failure.value
     )
+
+
+def test_process_runner_narrates_each_attempt_with_the_redacted_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # The story shows what really ran, so it must be the redacted line the
+    # evidence log records, never the raw one.
+    processes = iter(
+        (FakeProcess(stderr=b"busy", returncode=1), FakeProcess(stdout=b"ok"))
+    )
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: next(processes))
+    caplog.set_level(logging.INFO, logger="conclear.process")
+
+    ProcessRunner(monotonic=iter((1.0, 2.0, 3.0, 4.0)).__next__).run(
+        request(
+            tmp_path,
+            argv=("/usr/bin/skopeo", "login", "--password", "hunter2", "r.invalid"),
+            retries=1,
+            cwd=tmp_path,
+        )
+    )
+
+    echoed = [
+        record.getMessage()
+        for record in caplog.records
+        if getattr(record, narration.COMMAND, False)
+    ]
+    assert echoed == ["skopeo login --password '[REDACTED]' r.invalid"] * 2
+    phases = [
+        record.getMessage()
+        for record in caplog.records
+        if not getattr(record, narration.COMMAND, False)
+    ]
+    assert phases == [
+        f"Running in {tmp_path}",
+        "Retrying skopeo (attempt 2)",
+        f"Running in {tmp_path}",
+    ]
+    assert "hunter2" not in caplog.text
