@@ -787,6 +787,12 @@ continue: a candidate reference is never reused for a second publication
 attempt, and the release restarts as a new run with a new run identifier and
 candidate reference.
 
+Standard output carries the product and standard error the story. Every
+command narrates its phases and every external command it runs as INFO
+logging, rendered by one handler the entry point installs for the duration of
+the command and removed afterwards; library callers and the evidence stay
+silent, and no narrated line enters a record, an archive or a hashed artifact.
+`-q`/`--quiet` on the group drops the story and never a warning or error.
 Commands support `--format json`. JSON mode writes one documented result object
 to standard output and diagnostics to standard error. The result schema
 documents the `data` object of every command: a successful result carries
