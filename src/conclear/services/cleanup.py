@@ -191,6 +191,11 @@ def _cleanup_entry(
         buildah.remove_storage(root=root / "root", runroot=root / "runroot")
         _remove_local(root)
         return True
+    if entry.kind is ResourceKind.TOOL_IMAGE_STORE:
+        root = _owned_path(workspace, entry.identifier)
+        podman.remove_storage(root=root / "root", runroot=root / "runroot")
+        _remove_local(root)
+        return True
     if entry.kind is ResourceKind.TEST_INPUTS:
         path = _owned_path(workspace, entry.identifier)
         remove_materialized_test_inputs(path, run_id=workspace.run_id)

@@ -610,3 +610,29 @@ def test_binding_after_an_interruption_keeps_the_run_openable(tmp_path: Path) ->
     assert snapshot.resume_state is RunState.CREATED
     assert "tool.skopeo" in snapshot.immutable_inputs
     assert retire_run(reopened, state_home=tmp_path / "state") == run.root.resolve()
+
+
+def test_cleanup_resets_and_removes_a_tool_image_store(tmp_path: Path) -> None:
+    run = workspace(tmp_path)
+    store = run.root / "environment" / "tool-images"
+    (store / "root").mkdir(parents=True)
+    (store / "runroot").mkdir()
+    run.journal.plan(
+        resource_id="tool-images",
+        kind=ResourceKind.TOOL_IMAGE_STORE,
+        identifier=str(store),
+        ephemeral=True,
+    )
+    run.journal.update("tool-images", ResourceStatus.CREATED)
+    podman = FakePodman()
+
+    result = cleanup_run(
+        run,
+        buildah=FakeBuildah(),
+        podman=podman,
+        registry_control=None,
+    )
+
+    assert result.removed == ("tool-images",)
+    assert podman.reset == [(store / "root", store / "runroot")]
+    assert not store.exists()

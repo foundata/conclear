@@ -1,11 +1,13 @@
 import hashlib
 import socket
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 import pytest
 
+import conclear.runtime as runtime_module
 from conclear.errors import OperationalError, RuleRejectionError
 from conclear.process import CommandRequest, ProcessResult, ProcessRunner
 from conclear.runtime import ApplicationRuntime
@@ -17,6 +19,12 @@ from conclear.tools import (
     ToolName,
     ToolResolver,
 )
+from conclear.workspace import ResourceKind, ResourceStatus, RunWorkspace
+
+
+class _Ids:
+    def create(self) -> str:
+        return "01arz3ndektsv4rrffq69g5fav"
 
 
 @pytest.mark.parametrize("order", [("local", "system"), ("system", "local")])
@@ -283,6 +291,7 @@ def test_a_tool_selected_to_run_from_its_image_adds_podman_to_the_host_tools(
 ) -> None:
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "login-runtime"))
     (tmp_path / "login-runtime").mkdir(mode=0o700)
+    monkeypatch.setattr(runtime_module, "reset_store", lambda *arguments: None)
     resolver = _Resolver({}, tmp_path)
     factory = _ImageFactory()
 
@@ -407,3 +416,123 @@ def test_diagnose_blames_every_image_when_podman_is_missing(
         "podman: unavailable",
         "hadolint: Running hadolint from an image requires the podman executable",
     ]
+
+
+def _login_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "login-runtime"))
+    (tmp_path / "login-runtime").mkdir(mode=0o700)
+
+
+def test_releasing_tool_images_resets_the_store_and_removes_its_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _login_runtime(tmp_path, monkeypatch)
+    resets: list[tuple[Path, ToolImageStore]] = []
+    monkeypatch.setattr(
+        runtime_module,
+        "reset_store",
+        lambda runner, environment, podman, store: resets.append((podman.path, store)),
+    )
+    runtime = ApplicationRuntime.create(
+        tmp_path / "environment",
+        names=(ToolName.HADOLINT,),
+        resolver=cast(ToolResolver, _Resolver({}, tmp_path)),
+        images=frozenset({ToolName.HADOLINT}),
+        image_resolver=_ImageFactory(),
+    )
+    store_directory = tmp_path / "environment" / "tool-images"
+    assert store_directory.is_dir()
+
+    runtime.close()
+
+    assert resets == [
+        (
+            tmp_path / "podman",
+            ToolImageStore(store_directory / "root", store_directory / "runroot"),
+        )
+    ]
+    assert not store_directory.exists()
+    runtime.release_tool_images()
+    assert len(resets) == 1
+
+
+def test_a_failed_image_resolution_releases_a_command_scoped_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _login_runtime(tmp_path, monkeypatch)
+    resets: list[Path] = []
+    monkeypatch.setattr(
+        runtime_module,
+        "reset_store",
+        lambda runner, environment, podman, store: resets.append(store.root),
+    )
+
+    with pytest.raises(OperationalError, match="pull failed"):
+        ApplicationRuntime.create(
+            tmp_path / "environment",
+            names=(ToolName.HADOLINT,),
+            resolver=cast(ToolResolver, _Resolver({}, tmp_path)),
+            images=frozenset({ToolName.HADOLINT}),
+            image_resolver=_ImageFactory(
+                {ToolName.HADOLINT: OperationalError("pull failed")}
+            ),
+        )
+
+    assert resets == [tmp_path / "environment" / "tool-images" / "root"]
+    assert not (tmp_path / "environment" / "tool-images").exists()
+
+
+def test_a_run_workspace_journals_its_tool_image_store_for_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _login_runtime(tmp_path, monkeypatch)
+    run = RunWorkspace.create(
+        state_home=tmp_path / "state",
+        immutable_inputs={"source": "b" * 40},
+        id_factory=_Ids(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    ApplicationRuntime.create(
+        run.root / "environment",
+        names=(ToolName.HADOLINT,),
+        resolver=cast(ToolResolver, _Resolver({}, tmp_path)),
+        journal=run.journal,
+        images=frozenset({ToolName.HADOLINT}),
+        image_resolver=_ImageFactory(),
+    )
+
+    (entry,) = [
+        item
+        for item in run.journal.entries()
+        if item.kind is ResourceKind.TOOL_IMAGE_STORE
+    ]
+    assert entry.identifier == str(run.root / "environment" / "tool-images")
+    assert entry.status is ResourceStatus.CREATED
+    assert entry.ephemeral is True
+    assert (run.root / "environment" / "tool-images").is_dir()
+
+    (tmp_path / "failing").mkdir()
+    failing = RunWorkspace.create(
+        state_home=tmp_path / "state-failing",
+        immutable_inputs={"source": "b" * 40},
+        id_factory=_Ids(),
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    with pytest.raises(OperationalError, match="pull failed"):
+        ApplicationRuntime.create(
+            failing.root / "environment",
+            names=(ToolName.HADOLINT,),
+            resolver=cast(ToolResolver, _Resolver({}, tmp_path / "failing")),
+            journal=failing.journal,
+            images=frozenset({ToolName.HADOLINT}),
+            image_resolver=_ImageFactory(
+                {ToolName.HADOLINT: OperationalError("pull failed")}
+            ),
+        )
+    (failed,) = [
+        item
+        for item in failing.journal.entries()
+        if item.kind is ResourceKind.TOOL_IMAGE_STORE
+    ]
+    assert failed.status is ResourceStatus.FAILED

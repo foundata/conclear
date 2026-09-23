@@ -99,6 +99,7 @@ class ResourceKind(StrEnum):
     GIT_WORKTREE = "gitWorktree"
     BUILDAH_STORAGE = "buildahStorage"
     PODMAN_IMPORT = "podmanImport"
+    TOOL_IMAGE_STORE = "toolImageStore"
     TEST_INPUTS = "testInputs"
     HOOK_SCRATCH = "hookScratch"
     CANDIDATE_REFERENCE = "candidateReference"

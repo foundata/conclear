@@ -92,6 +92,27 @@ class ToolImageStore:
         return ("--root", str(self.root), "--runroot", str(self.runroot))
 
 
+def reset_store(
+    runner: Runner,
+    environment: Mapping[str, str],
+    podman: ResolvedTool,
+    store: ToolImageStore,
+) -> None:
+    """Empty a tool image store inside the rootless user namespace.
+
+    Pulled layers hold files owned by subordinate user IDs that the host user
+    cannot unlink, so the store is reset by Podman before its directory goes.
+    """
+    runner.run(
+        CommandRequest(
+            argv=(str(podman.path), *store.arguments, "system", "reset", "--force"),
+            environment=environment,
+            timeout_seconds=300,
+            operation=OperationKind.WRITE,
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ImageBackedTool:
     """A tool executed from its pinned image through the run's Podman."""

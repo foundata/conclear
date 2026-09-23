@@ -179,7 +179,11 @@ def owned_run(workspace: RunWorkspace) -> Iterator[None]:
 def command_runtime(names: tuple[ToolName, ...]) -> Iterator[ApplicationRuntime]:
     """Create and remove a command-scoped environment with no external resources."""
     with _command_root() as root:
-        yield ApplicationRuntime.create(root, names=names)
+        runtime = ApplicationRuntime.create(root, names=names)
+        try:
+            yield runtime
+        finally:
+            runtime.release_tool_images()
 
 
 @contextmanager
@@ -188,7 +192,11 @@ def diagnostic_runtime(
 ) -> Iterator[tuple[ApplicationRuntime, tuple[ToolProblem, ...]]]:
     """Like `command_runtime`, but report every unresolved tool instead of the first."""
     with _command_root() as root:
-        yield ApplicationRuntime.diagnose(root, names=names)
+        runtime, problems = ApplicationRuntime.diagnose(root, names=names)
+        try:
+            yield runtime, problems
+        finally:
+            runtime.release_tool_images()
 
 
 @contextmanager

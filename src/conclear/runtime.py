@@ -1,6 +1,7 @@
 """Run-owned external-tool environment and adapter construction."""
 
 import os
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,10 +29,11 @@ from conclear.tool_images import (
     ToolImageResolver,
     ToolImageStore,
     bootstrap_tools,
+    reset_store,
     selected_tool_images,
 )
 from conclear.tools import ResolvedTool, ToolName, ToolResolver
-from conclear.workspace import ResourceJournal
+from conclear.workspace import ResourceJournal, ResourceKind, ResourceStatus
 
 TOOL_IMAGE_STORE = "tool-images"
 
@@ -100,6 +102,8 @@ class ApplicationRuntime:
     ) -> "ApplicationRuntime":
         """Create isolated XDG paths and resolve exactly the requested tools."""
         selection = _Selection.plan(names, images)
+        store_directory = root / TOOL_IMAGE_STORE
+        pulled = False
         try:
             environment, runner = cls._prepare(
                 root, names=selection.host, journal=journal
@@ -110,13 +114,28 @@ class ApplicationRuntime:
             )
             tools: dict[ToolName, Tool] = {item.name: item for item in resolved}
             if selection.images:
+                if journal is not None:
+                    journal.plan(
+                        resource_id=TOOL_IMAGE_STORE,
+                        kind=ResourceKind.TOOL_IMAGE_STORE,
+                        identifier=str(store_directory),
+                        ephemeral=True,
+                    )
                 image_tools = _image_resolver(
                     root, tools, runner, image_resolver, selection.images
                 )
+                pulled = True
                 for name in selection.images:
                     tools[name] = image_tools.resolve(name, environment=environment)
+                if journal is not None:
+                    journal.update(TOOL_IMAGE_STORE, ResourceStatus.CREATED)
         except BaseException:
-            if journal is None:
+            if journal is not None:
+                if pulled:
+                    journal.mark_failed(TOOL_IMAGE_STORE)
+            else:
+                if pulled:
+                    _release_store(runner, environment, tools, store_directory)
                 remove_runtime_directory(root)
             raise
         return cls(root=root, environment=environment, runner=runner, tools=tools)
@@ -197,7 +216,20 @@ class ApplicationRuntime:
 
     def close(self) -> None:
         """Remove command-scoped transient files after all child processes finish."""
+        self.release_tool_images()
         remove_runtime_directory(self.root)
+
+    def release_tool_images(self) -> None:
+        """Reset and remove the store of pulled tool images, if this runtime has one.
+
+        A run workspace keeps its store for `cleanup` like every other
+        journaled store; a command-scoped runtime has no journal and releases
+        it here, before its directory is removed.
+        """
+        if self.tool_image_store is not None:
+            _release_store(
+                self.runner, self.environment, self.tools, self.root / TOOL_IMAGE_STORE
+            )
 
     @property
     def identities(self) -> tuple[ToolIdentity, ...]:
@@ -278,6 +310,18 @@ class ApplicationRuntime:
         )
         self._adapters[name] = value
         return value
+
+
+def _release_store(
+    runner: ProcessRunner,
+    environment: Mapping[str, str],
+    tools: Mapping[ToolName, Tool],
+    directory: Path,
+) -> None:
+    podman = tools.get(ToolName.PODMAN)
+    if isinstance(podman, ResolvedTool) and directory.is_dir():
+        reset_store(runner, environment, podman, ToolImageStore.below(directory))
+    shutil.rmtree(directory, ignore_errors=True)
 
 
 def _image_resolver(
