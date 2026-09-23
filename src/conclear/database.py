@@ -80,16 +80,29 @@ def select_fresh_database(
     only way to obtain a newer one, but only the vulnerability database has to
     be fresh afterward. Java freshness is judged per subject once a scan has
     shown whether the image contains Java artifacts.
+
+    An unreachable publisher must not decide a release the installed data can
+    already support: when the refresh itself fails, a snapshot whose
+    vulnerability component is fresh is kept, and its Java component's age stays
+    visible in every record. Without such a snapshot the refresh failure stands.
     """
     if now.tzinfo is None or now.utcoffset() is None:
         raise OperationalError("Database selection time must be timezone-aware")
+    usable: DatabaseObservation | None = None
     try:
         selected = adapter.select_database(cache_root)
         freshness = database_freshness(selected.metadata, now)
+        if freshness.vulnerability:
+            usable = selected
         if not freshness.vulnerability or not freshness.java:
             raise OperationalError("Installed Trivy database is stale")
     except OperationalError:
-        selected = adapter.refresh_database(cache_root)
+        try:
+            selected = adapter.refresh_database(cache_root)
+        except OperationalError:
+            if usable is None:
+                raise
+            return usable
         if not database_freshness(selected.metadata, now).vulnerability:
             raise OperationalError(
                 "Refreshed Trivy vulnerability database is already stale"

@@ -43,7 +43,9 @@ def database_metadata(
 
 class FakeDatabase:
     def __init__(
-        self, selected: DatabaseObservation | Exception, refreshed: DatabaseObservation
+        self,
+        selected: DatabaseObservation | Exception,
+        refreshed: DatabaseObservation | Exception,
     ) -> None:
         self.selected = selected
         self.refreshed = refreshed
@@ -59,6 +61,8 @@ class FakeDatabase:
     def refresh_database(self, cache_root: Path) -> DatabaseObservation:
         del cache_root
         self.refreshes += 1
+        if isinstance(self.refreshed, Exception):
+            raise self.refreshed
         return self.refreshed
 
     def select_database_by_digest(
@@ -124,6 +128,47 @@ def test_database_accepts_stale_java_component_after_one_refresh(
 
     assert selected is stale_java
     assert adapter.refreshes == 1
+
+
+def test_database_keeps_a_usable_snapshot_when_the_refresh_is_unreachable(
+    tmp_path: Path,
+) -> None:
+    stale_java = DatabaseObservation(
+        tmp_path,
+        "sha256:" + "a" * 64,
+        database_metadata(
+            "2026-01-02T00:00:00Z", java_next_update="2025-12-31T00:00:00Z"
+        ),
+    )
+    adapter = FakeDatabase(stale_java, OperationalError("publisher unreachable"))
+
+    selected = select_fresh_database(
+        adapter, tmp_path, now=datetime(2026, 1, 1, tzinfo=UTC)
+    )
+
+    assert selected is stale_java
+    assert adapter.refreshes == 1
+
+
+def test_database_reports_a_failed_refresh_without_usable_vulnerability_data(
+    tmp_path: Path,
+) -> None:
+    stale = DatabaseObservation(
+        tmp_path,
+        "sha256:" + "a" * 64,
+        database_metadata("2025-12-31T00:00:00Z"),
+    )
+    adapter = FakeDatabase(stale, OperationalError("publisher unreachable"))
+
+    with pytest.raises(OperationalError, match="publisher unreachable"):
+        select_fresh_database(adapter, tmp_path, now=datetime(2026, 1, 1, tzinfo=UTC))
+    assert adapter.refreshes == 1
+
+    missing = FakeDatabase(
+        OperationalError("no snapshot"), OperationalError("publisher unreachable")
+    )
+    with pytest.raises(OperationalError, match="publisher unreachable"):
+        select_fresh_database(missing, tmp_path, now=datetime(2026, 1, 1, tzinfo=UTC))
 
 
 def test_database_selects_distributed_snapshot_by_exact_digest(tmp_path: Path) -> None:

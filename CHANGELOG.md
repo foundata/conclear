@@ -28,6 +28,10 @@ and the project adheres to
   inventories Java artifacts (`pkg:maven` package URLs). An expired Java
   database no longer blocks images that contain no Java. `CC0505` continues to
   require a fresh vulnerability database and now names it.
+- A database refresh that cannot reach its publisher no longer fails a run whose
+  installed snapshot already carries a fresh vulnerability database. The
+  snapshot is kept and its Java component's age stays recorded. A refresh
+  failure without such a snapshot still fails the run.
 
 
 ## [1.0.2] - 2026-09-20
