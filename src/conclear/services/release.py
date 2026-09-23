@@ -1,5 +1,6 @@
 """Complete isolated release orchestration."""
 
+import logging
 import platform as host_platform
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -80,6 +81,8 @@ from conclear.workspace import (
     RunWorkspace,
     UlidFactory,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,6 +313,7 @@ def _continue_release(
             now_factory=now_factory,
         )
     if workspace.load().state is RunState.QUALIFIED:
+        LOGGER.info("Assembling the candidate of %s", image.image_id)
         candidate = assemble_candidate(
             qualification_transports(workspace, image),
             source_time=source_time,
@@ -340,6 +344,7 @@ def _continue_release(
     )
     try:
         if workspace.load().state is RunState.ASSEMBLED:
+            LOGGER.info("Publishing the candidate of %s", image.image_id)
             publish_candidate(
                 candidate,
                 image=image,
@@ -353,6 +358,7 @@ def _continue_release(
             )
         published = load_published(workspace, candidate, image)
         if workspace.load().state is RunState.PUBLISHED:
+            LOGGER.info("Attesting %s", published.immutable_reference)
             attest_candidate(
                 published,
                 evidence,
@@ -369,6 +375,7 @@ def _continue_release(
             )
         if workspace.load().state is RunState.ATTESTED:
             mode, key_id = signer_identity(request.profile, signer)
+            LOGGER.info("Verifying %s", published.immutable_reference)
             verify_candidate(
                 published,
                 candidate,
@@ -393,6 +400,7 @@ def _continue_release(
         verification = load_verification(
             workspace, image, published.immutable_reference
         )
+        LOGGER.info("Promoting %s", published.immutable_reference)
         promotion = promote_candidate(
             published,
             verification,
@@ -493,6 +501,7 @@ def _qualify_release(
             qualification_transport(workspace, image, platform)
             continue
         runtime.assert_unchanged()
+        LOGGER.info("Qualifying %s on %s", image.image_id, platform)
         result = qualify_platform(
             QualificationInputs(
                 repository=repository,

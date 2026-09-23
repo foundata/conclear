@@ -1,5 +1,6 @@
 """Digest-bound released-image rescan workflow."""
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -54,6 +55,8 @@ from conclear.spdx import SpdxFormat
 from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceKind, ResourceStatus, RunState, RunWorkspace
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Registry(Protocol):
@@ -315,6 +318,7 @@ def rescan_release(
     anchors = {item.release_record_digest for item in remediation_history}
     if len(anchors) > 1:
         raise OperationalError("Rescan history changes its release record anchor")
+    LOGGER.info("Rescanning %s", subject)
     release = select_release_evidence(
         verified_statements(
             signer,

@@ -1,5 +1,6 @@
 """Ownership-journal-driven release-run cleanup."""
 
+import logging
 import shutil
 import stat
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from conclear.workspace import (
     RunState,
     RunWorkspace,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class BuildStorage(Protocol):
@@ -105,6 +108,7 @@ def cleanup_run(
     )
     exclusions = excluded_kinds or frozenset()
     excluded_ids = excluded_resource_ids or frozenset()
+    LOGGER.info("Removing the ephemeral resources of run %s", workspace.run_id)
     # Podman and Buildah may still need sockets and namespaces while cleaning up.
     candidates = sorted(
         workspace.journal.cleanup_candidates(),

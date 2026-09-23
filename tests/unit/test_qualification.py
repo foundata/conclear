@@ -1,6 +1,7 @@
 import gzip
 import io
 import json
+import logging
 import shutil
 import tarfile
 from dataclasses import replace
@@ -2672,3 +2673,21 @@ def test_immutable_path_probe_uses_the_portable_stat_spelling(
 
     [probe] = [item for item in runtime.exec_commands if item[0] == "stat"]
     assert probe == ("stat", "-c", "%u:%a", "--", "/usr/local/lib/app")
+
+
+def test_qualification_narrates_its_phases_in_order(
+    repository_factory: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The story is INFO logging from this module; nothing of it enters the
+    # record, whose shape the other tests pin.
+    value = inputs(repository_factory(), tmp_path)
+    caplog.set_level(logging.INFO, logger="conclear.services.qualification")
+
+    qualify_with_scanner(value, Scanner(), tmp_path)
+
+    assert [record.getMessage() for record in caplog.records] == [
+        "Building app for linux/amd64",
+        "Testing app for linux/amd64",
+        "Scanning app for linux/amd64",
+        "Recorded the accepted qualification of app for linux/amd64",
+    ]

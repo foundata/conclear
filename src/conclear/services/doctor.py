@@ -1,5 +1,6 @@
 """Read-only environment diagnostics for one command scope."""
 
+import logging
 import platform as host_platform
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from conclear.services.registry_diagnostics import (
     diagnose_registry,
 )
 from conclear.values import validate_release_version
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DoctorScope(StrEnum):
@@ -188,6 +191,7 @@ def diagnose_environment(
             image.release.render_versions(version)
     if profile is not None:
         require_profile_capabilities(profile, scope_dependencies(scope.value))
+    LOGGER.info("Checking the environment for %s", scope.value)
     native = normalize_architecture(host_platform.machine())
     emulated: tuple[str, ...] = ()
     database: DatabaseDiagnostic | None = None

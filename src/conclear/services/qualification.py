@@ -9,6 +9,7 @@ verdict follows from every collected finding, including those of the
 dependency closure.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
@@ -72,6 +73,8 @@ from conclear.workspace import (
     ResourceKind,
     ResourceStatus,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Builder(Protocol):
@@ -459,6 +462,7 @@ def qualify_platform(
     window = qualification_database_window(
         database, started_at=qualification_started_at or now, now=now
     )
+    LOGGER.info("Building %s for %s", inputs.image.image_id, inputs.platform)
     build = verify_base_annotations(
         inputs, build_platform(inputs, builder), base_resolver
     )
@@ -469,9 +473,11 @@ def qualify_platform(
         setid_inventory, inputs.image.runtime.setid_paths
     )
     dependency_builds = build_test_dependencies(inputs, builder)
+    LOGGER.info("Testing %s for %s", inputs.image.image_id, inputs.platform)
     runtime_evidence = test_platform(
         inputs, build, runtime, hooks, dependencies=dependency_builds
     )
+    LOGGER.info("Scanning %s for %s", inputs.image.image_id, inputs.platform)
     scan_evidence = generate_evidence(
         inputs,
         build,
@@ -611,6 +617,12 @@ def qualify_platform(
         / f"platform-qualification-{inputs.platform.key}.json"
     )
     record_digest = record.write(record_path)
+    LOGGER.info(
+        "Recorded the %s qualification of %s for %s",
+        verdict.value,
+        inputs.image.image_id,
+        inputs.platform,
+    )
     return QualificationResult(
         record_path=record_path,
         record_digest=record_digest,
