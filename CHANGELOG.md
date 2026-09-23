@@ -8,6 +8,11 @@ and the project adheres to
 
 ## [Unreleased]
 
+- Nothing worth mentioning right now.
+
+
+## [1.1.0] - 2026-09-24
+
 ### Added
 
 - Trivy and Hadolint can run from their publishers' images instead of host
@@ -82,7 +87,8 @@ and the project adheres to
 
 - All functionality and files.
 
-[unreleased]: https://github.com/foundata/conclear/compare/v1.0.2...HEAD
+[unreleased]: https://github.com/foundata/conclear/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/foundata/conclear/releases/tag/v1.1.0
 [1.0.2]: https://github.com/foundata/conclear/releases/tag/v1.0.2
 [1.0.1]: https://github.com/foundata/conclear/releases/tag/v1.0.1
 [1.0.0]: https://github.com/foundata/conclear/releases/tag/v1.0.0
