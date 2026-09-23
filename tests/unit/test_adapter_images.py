@@ -152,19 +152,24 @@ def test_trivy_scans_a_layout_through_mounts_and_still_names_the_subject(
 
     (request,) = runner.runs
     argv = request.argv
-    assert argv[argv.index("--input") + 1] == "/conclear/layout"
-    assert argv[argv.index("--output") + 1] == "/conclear/reports/image-scan.json"
+    # Paths below the workspace keep their workspace-relative position inside
+    # the image, so Trivy repeats the same relative paths a host run would.
+    seen_layout = "/conclear/workspace/layouts/app/linux-amd64"
+    assert argv[argv.index("--input") + 1] == seen_layout
+    assert argv[argv.index("--output") + 1] == (
+        "/conclear/workspace/reports/app/image-scan.json"
+    )
     assert argv[argv.index("--cache-dir") + 1] == "/conclear/cache"
     assert argv[argv.index("--config") + 1] == "/conclear/invocation/trivy.json"
     assert argv[argv.index("--workdir") + 1] == "/conclear/invocation"
     assert _mount_targets(argv) == {
-        "/conclear/layout": "ro",
+        seen_layout: "ro",
         "/conclear/cache": "rw",
-        "/conclear/reports": "rw",
+        "/conclear/workspace/reports/app": "rw",
         "/conclear/invocation": "ro",
     }
-    assert host_of(argv, "/conclear/layout") == layout
-    assert host_of(argv, "/conclear/reports") == report.parent
+    assert host_of(argv, seen_layout) == layout
+    assert host_of(argv, "/conclear/workspace/reports/app") == report.parent
     assert "--network" in argv
     value = cast(dict[str, Any], observation.value)
     assert value["ArtifactName"] == subject
@@ -225,7 +230,7 @@ def test_trivy_spdx_generated_from_an_image_names_the_subject(tmp_path: Path) ->
 
     (request,) = runner.runs
     assert request.argv[request.argv.index("--output") + 1] == (
-        "/conclear/exports/linux-amd64.spdx.json"
+        "/conclear/workspace/exports/sbom/linux-amd64.spdx.json"
     )
     document = cast(dict[str, Any], observation.value)
     assert document["name"] == subject
@@ -306,8 +311,8 @@ def test_trivy_rescans_a_retained_sbom_mounted_read_only(tmp_path: Path) -> None
     )
 
     (request,) = runner.runs
-    assert request.argv[-1] == "/conclear/sbom/linux-amd64.spdx.json"
-    assert _mount_targets(request.argv)["/conclear/sbom"] == "ro"
+    assert request.argv[-1] == "/conclear/workspace/sbom/linux-amd64.spdx.json"
+    assert _mount_targets(request.argv)["/conclear/workspace/sbom"] == "ro"
     value = cast(dict[str, Any], observation.value)
     assert value["Results"][0]["Target"] == subject
 
@@ -371,3 +376,57 @@ def test_hadolint_mounts_a_containerfile_outside_the_context_separately(
         "/conclear/context": "ro",
         "/conclear/mount1": "ro",
     }
+
+
+def test_trivy_filesystem_findings_from_an_image_locate_files_like_a_host_run(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "runs" / "01run"
+    source = workspace / "source" / "context"
+    source.mkdir(parents=True)
+    (source / "Containerfile").write_text("FROM scratch\n", encoding="utf-8")
+    report = workspace / "reports" / "app" / "containerfile-scan.json"
+    report.parent.mkdir(parents=True)
+    cache = tmp_path / "cache" / "snapshots" / "abc"
+    cache.mkdir(parents=True)
+    layout = workspace / "layouts" / "app" / "linux-amd64"
+    identity = ScanIdentity(
+        workspace_root=workspace,
+        subject="quay.io/example/app@sha256:" + "e" * 64,
+        artifact_path=layout,
+    )
+
+    def scan(request: CommandRequest) -> None:
+        seen = request.argv[-1]
+        report.write_text(
+            json.dumps(
+                {
+                    "ArtifactName": seen,
+                    "Results": [
+                        {
+                            "Target": f"{seen}/Containerfile",
+                            "Class": "config",
+                            "Misconfigurations": [{"ID": "DS-0002", "Status": "FAIL"}],
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    adapter, runner = _trivy(tmp_path, scan)
+    observation = adapter.scan_filesystem(
+        path=source,
+        report_path=report,
+        cache_root=cache,
+        scanners=("misconfig",),
+        identity=identity,
+    )
+
+    (request,) = runner.runs
+    assert request.argv[-1] == "/conclear/workspace/source/context"
+    value = cast(dict[str, Any], observation.value)
+    # A host run relativizes the same target to the workspace root; the report
+    # from the image must read identically.
+    assert value["Results"][0]["Target"] == "source/context/Containerfile"
+    assert value["ArtifactName"] == identity.subject

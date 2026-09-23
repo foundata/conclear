@@ -14,6 +14,7 @@ from conclear.process import (
 from conclear.tool_images import ImageBackedTool, Tool
 
 _MOUNT_ROOT = "/conclear"
+WORKSPACE_TARGET = f"{_MOUNT_ROOT}/workspace"
 
 
 def prepare_new_layout_path(layout_path: Path) -> None:
@@ -88,7 +89,12 @@ class ToolAdapter:
         self._mounts: dict[Path, _Mount] = {}
 
     def _path(
-        self, path: Path, *, writable: bool = False, name: str | None = None
+        self,
+        path: Path,
+        *,
+        writable: bool = False,
+        name: str | None = None,
+        below: Path | None = None,
     ) -> str:
         """Return ``path`` as the tool will see it.
 
@@ -96,6 +102,10 @@ class ToolAdapter:
         otherwise its parent, so an output file that does not exist yet has a
         place to appear. A path below a directory already registered reuses
         that mount; asking for write access widens an existing mount.
+
+        A path inside ``below`` is mounted at the same relative position under
+        the workspace root the tool sees, so the paths a tool repeats in its
+        output are the ones a host run would have produced.
         """
         absolute = path.absolute()
         if not isinstance(self._tool, ImageBackedTool):
@@ -106,10 +116,13 @@ class ToolAdapter:
                 continue
             if writable and not mount.writable:
                 self._mounts[source] = _Mount(source, mount.target, True)
-            below = directory.relative_to(source)
-            base = mount.target if below == Path() else f"{mount.target}/{below}"
+            relative = directory.relative_to(source)
+            base = mount.target if relative == Path() else f"{mount.target}/{relative}"
             return base if absolute.is_dir() else f"{base}/{absolute.name}"
         target = f"{_MOUNT_ROOT}/{name or f'mount{len(self._mounts)}'}"
+        if below is not None and directory.is_relative_to(below.absolute()):
+            target = f"{WORKSPACE_TARGET}/{directory.relative_to(below.absolute())}"
+            target = target.rstrip("/")
         if any(mount.target == target for mount in self._mounts.values()):
             raise OperationalError(f"Tool mount name is already taken: {target}")
         self._mounts[directory] = _Mount(directory, target, writable)

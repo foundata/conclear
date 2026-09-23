@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from conclear.adapters.base import ToolAdapter
+from conclear.adapters.base import WORKSPACE_TARGET, ToolAdapter
 from conclear.errors import OperationalError
 from conclear.fileio import create_new_file, locked_file
 from conclear.jsonutil import (
@@ -27,6 +27,7 @@ from conclear.scan_identity import (
     neutralize_spdx_document,
 )
 from conclear.spdx import SPDX_2_3, validate_spdx_document
+from conclear.tool_images import ImageBackedTool
 from conclear.values import Digest
 
 
@@ -144,11 +145,12 @@ class TrivyAdapter(ToolAdapter):
         identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Scan an explicit source tree for secrets and configuration findings."""
+        workspace = _workspace(identity)
         return self._scan(
             (
                 "filesystem",
                 "--cache-dir",
-                self._path(cache_root, writable=True, name="cache"),
+                self._path(cache_root, writable=True, name="cache", below=workspace),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -158,11 +160,11 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "json",
                 "--output",
-                self._path(report_path, writable=True, name="reports"),
-                self._path(path, name="source"),
+                self._path(report_path, writable=True, name="reports", below=workspace),
+                self._path(path, name="source", below=workspace),
             ),
             report_path,
-            identity=identity,
+            identity=self._seen(identity),
         )
 
     def scan_layout(
@@ -174,14 +176,15 @@ class TrivyAdapter(ToolAdapter):
         identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Scan one exact OCI layout using the selected immutable database cache."""
-        seen_layout = self._path(layout_path, name="layout")
+        workspace = _workspace(identity)
+        seen_layout = self._path(layout_path, name="layout", below=workspace)
         observation = self._scan(
             (
                 "image",
                 "--input",
                 seen_layout,
                 "--cache-dir",
-                self._path(cache_root, writable=True, name="cache"),
+                self._path(cache_root, writable=True, name="cache", below=workspace),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -194,10 +197,10 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "json",
                 "--output",
-                self._path(report_path, writable=True, name="reports"),
+                self._path(report_path, writable=True, name="reports", below=workspace),
             ),
             report_path,
-            identity=_as_seen(identity, layout_path, seen_layout),
+            identity=self._seen(identity, artifact=seen_layout),
         )
         _require_image_config_coverage(observation.value)
         return observation
@@ -211,14 +214,15 @@ class TrivyAdapter(ToolAdapter):
         identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Generate an SPDX JSON inventory from one exact OCI layout."""
-        seen_layout = self._path(layout_path, name="layout")
+        workspace = _workspace(identity)
+        seen_layout = self._path(layout_path, name="layout", below=workspace)
         observation = self._scan(
             (
                 "image",
                 "--input",
                 seen_layout,
                 "--cache-dir",
-                self._path(cache_root, writable=True, name="cache"),
+                self._path(cache_root, writable=True, name="cache", below=workspace),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -226,14 +230,14 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "spdx-json",
                 "--output",
-                self._path(output_path, writable=True, name="exports"),
+                self._path(output_path, writable=True, name="exports", below=workspace),
             ),
             output_path,
         )
         document = validate_spdx_document(
             observation.value, label="Trivy SPDX document", spdx_version=SPDX_2_3
         )
-        identity = _as_seen(identity, layout_path, seen_layout)
+        identity = self._seen(identity, artifact=seen_layout)
         if identity is not None:
             document = neutralize_spdx_document(document, identity)
         # Attestation envelopes preserve JSON values, not the scanner's formatting.
@@ -249,23 +253,24 @@ class TrivyAdapter(ToolAdapter):
         identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Match current vulnerability data against one retained SPDX inventory."""
-        seen_sbom = self._path(sbom_path, name="sbom")
+        workspace = _workspace(identity)
+        seen_sbom = self._path(sbom_path, name="sbom", below=workspace)
         return self._scan(
             (
                 "sbom",
                 "--cache-dir",
-                self._path(cache_root, writable=True, name="cache"),
+                self._path(cache_root, writable=True, name="cache", below=workspace),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--offline-scan",
                 "--format",
                 "json",
                 "--output",
-                self._path(report_path, writable=True, name="reports"),
+                self._path(report_path, writable=True, name="reports", below=workspace),
                 seen_sbom,
             ),
             report_path,
-            identity=_as_seen(identity, sbom_path, seen_sbom),
+            identity=self._seen(identity, artifact=seen_sbom),
         )
 
     def _scan(
@@ -321,18 +326,32 @@ class TrivyAdapter(ToolAdapter):
                 network=network,
             )
 
+    def _seen(
+        self, identity: ScanIdentity | None, *, artifact: str | None = None
+    ) -> ScanIdentity | None:
+        """Return the identity as a tool run from its image saw the paths.
 
-def _as_seen(
-    identity: ScanIdentity | None, host_path: Path, seen_path: str
-) -> ScanIdentity | None:
-    """Return the identity naming the artifact by the path the tool saw.
+        Neutralization rewrites the workspace root and the artifact path Trivy
+        repeats in its output. Inside the image both are the mounted paths, so
+        the rewritten evidence comes out exactly as a host run produces it.
+        """
+        if identity is None or not isinstance(self._tool, ImageBackedTool):
+            return identity
+        workspace = Path(WORKSPACE_TARGET)
+        artifact_path = identity.artifact_path
+        if artifact is not None:
+            artifact_path = Path(artifact)
+        elif artifact_path is not None and artifact_path.absolute().is_relative_to(
+            identity.workspace_root.absolute()
+        ):
+            artifact_path = workspace / artifact_path.absolute().relative_to(
+                identity.workspace_root.absolute()
+            )
+        return replace(identity, workspace_root=workspace, artifact_path=artifact_path)
 
-    Neutralization rewrites the artifact path Trivy repeats in its output; a
-    tool run from its image repeats the mounted path, not the host one.
-    """
-    if identity is None or str(host_path.absolute()) == seen_path:
-        return identity
-    return replace(identity, artifact_path=Path(seen_path))
+
+def _workspace(identity: ScanIdentity | None) -> Path | None:
+    return None if identity is None else identity.workspace_root
 
 
 def _require_image_config_coverage(value: object) -> None:
