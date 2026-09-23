@@ -101,7 +101,7 @@ dev = [
   "pytest-cov>=6.2.1",
   "releasing>=4,<5",
   "ruff>=0.12.11",
-  "rumdl>=0.2.66",
+  "rumdl>=0.2.72",
   "types-jsonschema>=4.25.1.20250822",
   "types-regex>=2026.9.3.20260903",
 ]

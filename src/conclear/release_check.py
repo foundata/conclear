@@ -59,7 +59,7 @@ MARKDOWN_RULE_ARGUMENTS: tuple[str, ...] = (
     "--no-config",
     "--deny-config-warnings",
     "--extend-enable",
-    "MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088",
+    "MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088,MD090",
     "--config",
     'MD003.style="atx"',
     "--config",
@@ -94,6 +94,11 @@ MARKDOWN_RULE_ARGUMENTS: tuple[str, ...] = (
     'MD060.column-align-header="center"',
     "--config",
     "MD060.loose-last-column=true",
+    "--config",
+    (
+        'MD072.key-order=["title", "name", "draft", "date", "description", '
+        '"categories", "category", "tags", "author"]'
+    ),
     "--config",
     "MD080.levels=[1,2]",
     "--config",

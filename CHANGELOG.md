@@ -26,6 +26,10 @@ and the project adheres to
   installed snapshot already carries a fresh vulnerability database. The
   snapshot is kept and its Java component's age stays recorded. A refresh
   failure without such a snapshot still fails the run.
+- The release gate runs the Markdown style guide's current invocation and needs
+  `rumdl` 0.2.72 or later, the version the guide documents. `MD090` and the
+  front-matter key order are now enforced, and `MD080` anchor collisions are
+  limited to heading levels 1 and 2.
 
 
 ## [1.0.2] - 2026-09-20
