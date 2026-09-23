@@ -1,6 +1,7 @@
 """Distribution-gate helpers refuse unsafe artifacts and destinations."""
 
 import io
+import logging
 import os
 import shlex
 import shutil
@@ -462,3 +463,29 @@ def test_the_markdown_arguments_are_what_the_guide_documents() -> None:
     assert check[2:] == fmt[2:], "the guide's check and fmt examples differ"
     assert check[-1] == ".", check[-1]
     assert list(release_check_module.MARKDOWN_RULE_ARGUMENTS) == check[2:-1]
+
+
+def test_gate_steps_are_narrated_on_stderr_and_stdout_stays_empty(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # The gate's stdout used to announce every step; the retained artifacts
+    # are the product, and the announcement belongs to the story.
+    class QuietRunner:
+        def run(self, request: CommandRequest) -> ProcessResult:
+            return ProcessResult(request.argv, 0, "", "", 0.0, 1, False, False)
+
+    runtime = GateRuntime(
+        git=tmp_path / "git",
+        uv=tmp_path / "uv",
+        pythons={},
+        environment={"PATH": "/usr/bin"},
+        runner=QuietRunner(),  # type: ignore[arg-type]
+    )
+    caplog.set_level(logging.INFO, logger="conclear.release_check")
+
+    runtime.run("lint", (str(tmp_path / "ruff"), "check"))
+
+    assert capsys.readouterr().out == ""
+    assert [record.getMessage() for record in caplog.records] == ["Running lint"]

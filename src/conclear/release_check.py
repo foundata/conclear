@@ -1,6 +1,7 @@
 """Provider-independent clean-checkout distribution release gate."""
 
 import argparse
+import logging
 import os
 import shutil
 import stat
@@ -19,6 +20,7 @@ from releasing.build import BuildError, prepare_readmes
 from releasing.config import ConfigError, ReleaseConfig, load_release_config
 from releasing.forges import forge_for
 
+from conclear import narration
 from conclear.build_identity import write_embedded_identity
 from conclear.errors import (
     CommandExecutionError,
@@ -37,6 +39,8 @@ from conclear.process import (
     ProcessRunner,
 )
 from conclear.values import validate_source_revision
+
+LOGGER = logging.getLogger(__name__)
 
 _PYTHON_VERSIONS = ("3.12", "3.13", "3.14")
 MINIMUM_BRANCH_COVERAGE = 85
@@ -162,7 +166,7 @@ class GateRuntime:
         operation: OperationKind = OperationKind.READ,
     ) -> ProcessResult:
         """Run one bounded gate step with actionable failure context."""
-        print(f"release-check: {label}", flush=True)
+        LOGGER.info("Running %s", label)
         try:
             return self.runner.run(
                 CommandRequest(
@@ -277,9 +281,9 @@ def run_release_check(
                 repository=configuration.repository,
             )
         )
-    print("release-check: all checks passed", flush=True)
+    LOGGER.info("Verified every release check")
     if retained is not None:
-        print(f"release-check: retained artifacts at {retained.directory}", flush=True)
+        LOGGER.info("Retained artifacts at %s", retained.directory)
     return retained
 
 
@@ -802,10 +806,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="retain the validated sdist and wheel in this new directory",
     )
     arguments = parser.parse_args(argv)
+    narration.install(sys.stderr)
     try:
         run_release_check(output_directory=arguments.output_directory)
     except (ConClearError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
+        LOGGER.error("%s", exc)
         return 1
     return 0
 
