@@ -445,6 +445,7 @@ def rescan_release(
                 "platform": str(platform),
                 "sbomDigest": sha256_file(sbom_path),
                 "reportDigest": sha256_file(report_path),
+                "javaArtifacts": platform_java.artifacts,
             }
         )
         evaluation = evaluate_trivy_report(

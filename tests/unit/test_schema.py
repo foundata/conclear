@@ -93,6 +93,24 @@ def test_java_database_schema_is_closed_and_complete() -> None:
         ), key
 
 
+def test_rescan_scan_results_carry_an_optional_java_artifact_count() -> None:
+    record = load_schema("record.schema.json")
+    items = record["$defs"]["rescanResult"]["properties"]["scanResults"]["items"]
+    # The entry references shared definitions, so it is validated with them.
+    validator = Draft202012Validator({**items, "$defs": record["$defs"]})
+    entry = {
+        "platform": "linux/amd64",
+        "sbomDigest": "sha256:" + "a" * 64,
+        "reportDigest": "sha256:" + "b" * 64,
+    }
+
+    validator.validate(entry)
+    validator.validate({**entry, "javaArtifacts": 0})
+    validator.validate({**entry, "javaArtifacts": 12})
+    assert list(validator.iter_errors({**entry, "javaArtifacts": -1}))
+    assert list(validator.iter_errors({**entry, "javaArtifacts": "1"}))
+
+
 def test_java_database_is_optional_on_every_record_that_carries_it() -> None:
     schema = load_schema("record.schema.json")["$defs"]
     reference = {"$ref": "#/$defs/javaDatabase"}

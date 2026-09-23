@@ -851,7 +851,7 @@
         "subject": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"},
         "releaseRecordDigest": {"$ref": "#/$defs/digest"},
         "platformManifests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
-        "scanResults": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "sbomDigest", "reportDigest"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "sbomDigest": {"$ref": "#/$defs/digest"}, "reportDigest": {"$ref": "#/$defs/digest"}, "packageAssessment": {"$ref": "#/$defs/packageAssessment"}}}},
+        "scanResults": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["platform", "sbomDigest", "reportDigest"], "properties": {"platform": {"$ref": "#/$defs/platform"}, "sbomDigest": {"$ref": "#/$defs/digest"}, "reportDigest": {"$ref": "#/$defs/digest"}, "packageAssessment": {"$ref": "#/$defs/packageAssessment"}, "javaArtifacts": {"type": "integer", "minimum": 0}}}},
         "scanner": {"type": "string"},
         "databaseDigest": {"$ref": "#/$defs/digest"},
         "databaseMetadata": {"$ref": "#/$defs/databaseMetadata"},

@@ -810,6 +810,9 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             },
         }[java]
     )
+    assert record["payload"]["scanResults"][0]["javaArtifacts"] == (
+        0 if java == "none" else 1
+    )
     if java != "none":
         java_finding = next(
             item

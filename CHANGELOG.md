@@ -19,6 +19,9 @@ and the project adheres to
   database's freshness as `database` and warn with `CC0507` when the Java
   database has expired, before any image is built. The snapshot is only read,
   never refreshed.
+- Rescan records name the Java artifacts of each platform as
+  `scanResults[].javaArtifacts`, so a multi-platform image shows which platform
+  the Java database verdict applies to.
 
 ### Changed
 
