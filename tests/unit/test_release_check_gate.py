@@ -471,7 +471,7 @@ def test_gate_steps_are_narrated_on_stderr_and_stdout_stays_empty(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # The gate's stdout used to announce every step; the retained artifacts
-    # are the product, and the announcement belongs to the story.
+    # are the result, and the announcement belongs to the narration.
     class QuietRunner:
         def run(self, request: CommandRequest) -> ProcessResult:
             return ProcessResult(request.argv, 0, "", "", 0.0, 1, False, False)

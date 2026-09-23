@@ -409,7 +409,7 @@ def test_process_runner_narrates_each_attempt_with_the_redacted_command(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # The story shows what really ran, so it must be the redacted line the
+    # The narration shows what really ran, so it must be the redacted line the
     # evidence log records, never the raw one.
     processes = iter(
         (FakeProcess(stderr=b"busy", returncode=1), FakeProcess(stdout=b"ok"))

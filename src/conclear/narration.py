@@ -104,7 +104,7 @@ def render(argv: Sequence[str]) -> str:
     return shlex.join([program(argv[0]), *(str(argument) for argument in argv[1:])])
 
 
-class StoryHandler(logging.Handler):
+class Handler(logging.Handler):
     """Renders the narration, one line per record, to one stream.
 
     INFO records are phases and are written verb first, the verb carrying the
@@ -149,7 +149,7 @@ class StoryHandler(logging.Handler):
 _previous_root_level: int | None = None
 
 
-def install(stream: TextIO | None = None, *, quiet: bool = False) -> StoryHandler:
+def install(stream: TextIO | None = None, *, quiet: bool = False) -> Handler:
     """Route the narration to ``stream`` until ``uninstall``; entry points call it.
 
     Replaces any handler a previous call installed, so a stream captured by a
@@ -160,7 +160,7 @@ def install(stream: TextIO | None = None, *, quiet: bool = False) -> StoryHandle
     """
     global _previous_root_level
     uninstall()
-    handler = StoryHandler(sys.stderr if stream is None else stream)
+    handler = Handler(sys.stderr if stream is None else stream)
     if quiet:
         handler.setLevel(logging.WARNING)
     root = logging.getLogger()
@@ -172,10 +172,10 @@ def install(stream: TextIO | None = None, *, quiet: bool = False) -> StoryHandle
 
 
 def uninstall() -> None:
-    """Remove every story handler and restore the root level; INFO falls silent."""
+    """Remove every handler and restore the root level; INFO falls silent."""
     global _previous_root_level
     root = logging.getLogger()
-    for handler in [item for item in root.handlers if isinstance(item, StoryHandler)]:
+    for handler in [item for item in root.handlers if isinstance(item, Handler)]:
         root.removeHandler(handler)
         handler.close()
     if _previous_root_level is not None:
@@ -184,7 +184,7 @@ def uninstall() -> None:
 
 
 @contextmanager
-def story(stream: TextIO | None = None, *, quiet: bool = False) -> Iterator[None]:
+def to(stream: TextIO | None = None, *, quiet: bool = False) -> Iterator[None]:
     """Narrate to ``stream`` for one command, then fall silent again.
 
     A handler left behind would write into a stream that no longer exists, so
@@ -200,7 +200,7 @@ def story(stream: TextIO | None = None, *, quiet: bool = False) -> Iterator[None
 def be_quiet() -> None:
     """Drop the narration from every installed handler; errors keep flowing."""
     for handler in logging.getLogger().handlers:
-        if isinstance(handler, StoryHandler):
+        if isinstance(handler, Handler):
             handler.setLevel(logging.WARNING)
 
 

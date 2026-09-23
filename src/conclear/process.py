@@ -242,7 +242,7 @@ class ProcessRunner:
         artifact: BinaryIO | None,
     ) -> ProcessResult:
         start = self._monotonic()
-        # The story shows what really ran, already redacted; a retry says so.
+        # The narration shows what really ran, already redacted; a retry says so.
         if attempt > 1:
             LOGGER.info(
                 "Retrying %s (attempt %d)",

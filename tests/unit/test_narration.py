@@ -1,4 +1,4 @@
-"""Stdout is the product, stderr is the story: how the story is rendered."""
+"""How the narration on standard error is rendered, line by line."""
 
 import ast
 import io
@@ -94,7 +94,7 @@ def test_every_narrated_line_starts_with_a_known_verb() -> None:
 def test_colour_follows_the_stream_and_the_conventional_variables(
     stream: io.StringIO, environ: dict[str, str], expected: bool
 ) -> None:
-    # A redirected story is the record of a run; escape sequences in it would
+    # Redirected narration is the record of a run; escape sequences in it would
     # be noise in the record.
     assert narration.wants_colour(stream, environ) is expected
 
@@ -107,7 +107,7 @@ def _record(level: int, message: str, **extra: object) -> logging.LogRecord:
 
 
 def test_a_coloured_line_paints_the_marker_the_verb_and_the_prefix_only() -> None:
-    handler = narration.StoryHandler(io.StringIO(), colour=True)
+    handler = narration.Handler(io.StringIO(), colour=True)
 
     assert handler.render(_record(logging.INFO, "Building app for linux/amd64")) == (
         "\033[2m»\033[0m \033[32mBuilding\033[0m app for linux/amd64"
@@ -129,7 +129,7 @@ def test_a_coloured_line_paints_the_marker_the_verb_and_the_prefix_only() -> Non
 def test_without_colour_the_line_is_exactly_the_plain_text() -> None:
     # Everything that reads this output through a pipe, including the whole
     # test suite, must see no escape sequence at all.
-    handler = narration.StoryHandler(io.StringIO(), colour=False)
+    handler = narration.Handler(io.StringIO(), colour=False)
 
     assert handler.render(_record(logging.INFO, "Recorded qualification")) == (
         "» Recorded qualification"
@@ -152,9 +152,9 @@ def test_a_command_line_names_the_program_and_quotes_for_the_shell() -> None:
     )
 
 
-def test_the_installed_handler_tells_the_story_and_quiet_keeps_the_errors() -> None:
+def test_the_installed_handler_narrates_and_quiet_keeps_the_errors() -> None:
     stream = io.StringIO()
-    logger = logging.getLogger("conclear.test.story")
+    logger = logging.getLogger("conclear.test.narration")
     try:
         narration.install(stream)
         logger.info("Checking %s", "pins")
@@ -194,18 +194,18 @@ def test_installing_again_replaces_the_previous_stream() -> None:
     assert not [
         item
         for item in logging.getLogger().handlers
-        if isinstance(item, narration.StoryHandler)
+        if isinstance(item, narration.Handler)
     ]
 
 
-def test_the_story_is_scoped_to_one_command_and_restores_the_root_level() -> None:
+def test_the_narration_is_scoped_to_one_command_and_restores_the_root_level() -> None:
     # A handler left behind would write into a stream that no longer exists.
     root_logger = logging.getLogger()
     before = root_logger.level
     stream = io.StringIO()
     logger = logging.getLogger("conclear.test.scoped")
 
-    with narration.story(stream):
+    with narration.to(stream):
         assert root_logger.level == logging.INFO
         logger.info("Checking %s", "inside")
     logger.info("Checking %s", "outside")
@@ -213,7 +213,5 @@ def test_the_story_is_scoped_to_one_command_and_restores_the_root_level() -> Non
     assert stream.getvalue() == "» Checking inside\n"
     assert root_logger.level == before
     assert not [
-        item
-        for item in root_logger.handlers
-        if isinstance(item, narration.StoryHandler)
+        item for item in root_logger.handlers if isinstance(item, narration.Handler)
     ]

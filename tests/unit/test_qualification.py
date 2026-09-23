@@ -2678,7 +2678,7 @@ def test_immutable_path_probe_uses_the_portable_stat_spelling(
 def test_qualification_narrates_its_phases_in_order(
     repository_factory: Any, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    # The story is INFO logging from this module; nothing of it enters the
+    # The narration is INFO logging from this module; nothing of it enters the
     # record, whose shape the other tests pin.
     value = inputs(repository_factory(), tmp_path)
     caplog.set_level(logging.INFO, logger="conclear.services.qualification")

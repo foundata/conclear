@@ -432,7 +432,7 @@ def main() -> int:
         help="requirement listing to import for the embedded guide revision",
     )
     arguments = parser.parse_args()
-    with narration.story(sys.stderr):
+    with narration.to(sys.stderr):
         return _run(arguments)
 
 

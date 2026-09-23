@@ -66,7 +66,7 @@ def _version_callback(
     "-q",
     "--quiet",
     is_flag=True,
-    help="Keep the result on stdout and drop the progress story from stderr.",
+    help="Keep the result on stdout and drop the progress from stderr.",
 )
 def root(quiet: bool) -> None:
     """Qualify and release OCI container images through verified digests.
@@ -104,7 +104,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the Click application and map public failure categories."""
     arguments = list(argv) if argv is not None else sys.argv[1:]
     wants_json = _requests_json(arguments)
-    with narration.story(sys.stderr):
+    with narration.to(sys.stderr):
         return _run(arguments, wants_json=wants_json)
 
 

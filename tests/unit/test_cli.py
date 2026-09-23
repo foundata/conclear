@@ -443,17 +443,17 @@ def test_main_renders_the_findings_behind_an_aggregate_rejection(
     assert "Repository hook failed: smoke (linux/arm64)" in captured.err
 
 
-def test_the_story_goes_to_stderr_and_quiet_drops_it_but_not_the_error(
+def test_the_narration_goes_to_stderr_and_quiet_drops_it_but_not_the_error(
     repository_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     root_path = repository_factory()
     monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
-    story = logging.getLogger("conclear.commands.local")
+    logger = logging.getLogger("conclear.commands.local")
 
     def narrating_check(image: Any, hadolint: Any) -> Any:
-        story.info("Checking %s", "the Containerfile")
+        logger.info("Checking %s", "the Containerfile")
         raise OperationalError("no such tool")
 
     monkeypatch.setattr(local_commands, "check_image", narrating_check)
@@ -469,7 +469,7 @@ def test_the_story_goes_to_stderr_and_quiet_drops_it_but_not_the_error(
 
     assert main(arguments) == 1
     loud = capsys.readouterr()
-    # The product is exactly one JSON document; the story never touches it.
+    # Stdout is exactly one JSON document; the narration never touches it.
     assert json.loads(loud.out)["status"] == "operationalFailure"
     assert loud.out.count("\n") == 1
     assert "» Checking the Containerfile\n" in loud.err
@@ -482,7 +482,7 @@ def test_the_story_goes_to_stderr_and_quiet_drops_it_but_not_the_error(
     assert quiet.err == "Error: no such tool\n"
 
 
-def test_quiet_is_a_group_option_and_the_story_is_plain_when_redirected() -> None:
+def test_quiet_is_a_group_option_and_a_library_caller_is_silent() -> None:
     result = CliRunner().invoke(root, ["--help"])
 
     assert "-q, --quiet" in result.stdout

@@ -12,7 +12,7 @@ and the project adheres to
 
 - Commands narrate what they do on stderr: the phase under way and every
   external command that ran, verb first, coloured only on a terminal. Stdout
-  stays the product. `-q`/`--quiet` before the command drops the story but
+  stays the result. `-q`/`--quiet` before the command drops the narration but
   never an error. `python -m conclear.release_check` announces its steps there
   too instead of on stdout, so its stdout is now empty.
 - The compatibility inventory lists the root group as `conclear` with its own

@@ -68,7 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--readme", type=Path, default=README_PATH)
     options = parser.parse_args(argv)
-    with narration.story(sys.stderr):
+    with narration.to(sys.stderr):
         try:
             if options.check:
                 if tool_matrix_is_current(options.readme):
