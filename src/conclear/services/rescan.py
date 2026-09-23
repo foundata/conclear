@@ -24,6 +24,7 @@ from conclear.config import (
     RuntimeConfig,
     VulnerabilityException,
 )
+from conclear.database import evaluate_java_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.parsing import object_value, string_value
@@ -41,7 +42,7 @@ from conclear.rescan_history import (
     history_from_records,
 )
 from conclear.scan_identity import ScanIdentity
-from conclear.scan_policy import evaluate_trivy_report
+from conclear.scan_policy import evaluate_trivy_report, java_artifacts
 from conclear.services.attestation_reads import verified_statements
 from conclear.services.rescan_evidence import (
     select_release_evidence,
@@ -263,6 +264,7 @@ def rescan_release(
     runtime_rules: RuntimeConfig | None = None,
     package_assessment_exception: PackageAssessmentException | None = None,
     configuration_exceptions: tuple[ConfigurationException, ...] = (),
+    accept_stale_java_database: bool = False,
 ) -> RescanResult:
     """Verify retained evidence and evaluate all platform SBOMs with current data."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -362,6 +364,7 @@ def rescan_release(
     applied_runtime_requirements: list[dict[str, object]] = []
     active_findings: set[RemediationFindingKey] = set()
     severities: dict[tuple[Platform, str, str], tuple[str, str | None]] = {}
+    java_artifact_count = 0
     evidence = object_value(payload.get("evidence"), "release evidence")
     raw_sboms = evidence.get("sboms")
     if not isinstance(raw_sboms, list) or not all(
@@ -392,6 +395,17 @@ def rescan_release(
         consumed_sboms.add(sbom_digest)
         sbom_path = report_root / f"{platform.key}.spdx.json"
         atomic_write_json(sbom_path, sbom, mode=0o644)
+        platform_java = evaluate_java_database(
+            database.metadata,
+            at=now,
+            artifacts=java_artifacts(sbom),
+            accepted_stale=accept_stale_java_database,
+        )
+        java_artifact_count += platform_java.artifacts
+        if platform_java.finding is not None:
+            findings.append(
+                {"platform": str(platform), **platform_java.finding.to_dict()}
+            )
         report_path = report_root / f"{platform.key}-scan.json"
         if scope == "full-image":
             platform_layout = workspace.root / "layouts" / image_id / platform.key
@@ -552,6 +566,12 @@ def rescan_release(
             "scanner": _scanner_identity(tools),
             "databaseDigest": database.digest,
             "databaseMetadata": database.metadata,
+            "javaDatabase": evaluate_java_database(
+                database.metadata,
+                at=now,
+                artifacts=java_artifact_count,
+                accepted_stale=accept_stale_java_database,
+            ).to_dict(),
             "scanResults": scan_results,
             **{
                 name: input_digest

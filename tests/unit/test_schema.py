@@ -69,6 +69,41 @@ def test_readiness_result_schema_requires_complete_bounded_evidence() -> None:
     )
 
 
+def test_java_database_schema_is_closed_and_complete() -> None:
+    validator = Draft202012Validator(
+        load_schema("record.schema.json")["$defs"]["javaDatabase"]
+    )
+    verdict = {
+        "fresh": False,
+        "required": True,
+        "acceptedStale": True,
+        "artifacts": 3,
+    }
+
+    validator.validate(verdict)
+    validator.validate({**verdict, "artifacts": 0})
+    assert list(validator.iter_errors({**verdict, "artifacts": -1}))
+    assert list(validator.iter_errors({**verdict, "fresh": "false"}))
+    assert list(validator.iter_errors({**verdict, "nextUpdate": "2026-01-01"}))
+    for key in verdict:
+        assert list(
+            validator.iter_errors(
+                {name: value for name, value in verdict.items() if name != key}
+            )
+        ), key
+
+
+def test_java_database_is_optional_on_every_record_that_carries_it() -> None:
+    schema = load_schema("record.schema.json")["$defs"]
+    reference = {"$ref": "#/$defs/javaDatabase"}
+    for name in ("platformQualification", "rescanResult"):
+        assert schema[name]["properties"]["javaDatabase"] == reference
+        assert "javaDatabase" not in schema[name]["required"]
+    entry = schema["releaseCandidate"]["properties"]["qualifications"]["items"]
+    assert entry["properties"]["javaDatabase"] == reference
+    assert "javaDatabase" not in entry["required"]
+
+
 def test_public_ci_context_is_provider_neutral_and_omits_server_origins() -> None:
     ci_schema = load_schema("record.schema.json")["$defs"]["ciContext"]
     validator = Draft202012Validator(ci_schema)

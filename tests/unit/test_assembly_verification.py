@@ -13,7 +13,7 @@ import conclear.records as records_module
 import conclear.services.assembly as assembly_service_module
 from conclear.artifacts import qualification_materials
 from conclear.config import load_repository_config
-from conclear.errors import InvalidInvocationError
+from conclear.errors import InvalidInvocationError, RuleRejectionError
 from conclear.identity import ApplicationIdentity
 from conclear.jsonutil import sha256_bytes, sha256_file
 from conclear.oci import validate_layout
@@ -156,6 +156,12 @@ class Scenario:
                     "downloadedAt": "2026-01-01T00:01:00Z",
                 }
                 for name, version in (("vulnerability", 2), ("java", 1))
+            },
+            "javaDatabase": {
+                "fresh": True,
+                "required": False,
+                "acceptedStale": False,
+                "artifacts": 0,
             },
             "qualificationWindow": {
                 "startedAt": "2026-01-01T00:00:00Z",
@@ -488,6 +494,113 @@ def test_assembly_requires_identical_records_across_platforms(
     )
     with pytest.raises(InvalidInvocationError, match="different normalized tool"):
         scenario.assemble(scenario.transport(), arm64_transport, image=image)
+
+
+STALE_JAVA_METADATA: dict[str, Any] = {
+    "vulnerability": {
+        "schemaVersion": 2,
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "nextUpdate": "2026-01-02T00:00:00Z",
+        "downloadedAt": "2026-01-01T00:01:00Z",
+    },
+    "java": {
+        "schemaVersion": 1,
+        "updatedAt": "2025-12-30T00:00:00Z",
+        "nextUpdate": "2025-12-31T00:00:00Z",
+        "downloadedAt": "2026-01-01T00:01:00Z",
+    },
+}
+
+
+def test_assembly_carries_the_java_database_verdict_into_the_candidate(
+    scenario: Scenario,
+) -> None:
+    candidate = scenario.assemble()
+
+    record = json.loads(candidate.record_path.read_text(encoding="utf-8"))
+    assert record["payload"]["qualifications"][0]["javaDatabase"] == {
+        "fresh": True,
+        "required": False,
+        "acceptedStale": False,
+        "artifacts": 0,
+    }
+
+
+def test_assembly_requires_a_recorded_java_database_verdict(
+    scenario: Scenario,
+) -> None:
+    payload = scenario.payload()
+    del payload["javaDatabase"]
+
+    with pytest.raises(InvalidInvocationError, match="java database"):
+        scenario.assemble(scenario.transport(payload))
+
+
+def test_assembly_recomputes_the_java_verdict_from_the_recorded_metadata(
+    scenario: Scenario,
+) -> None:
+    payload = scenario.payload(databaseMetadata=STALE_JAVA_METADATA)
+
+    with pytest.raises(InvalidInvocationError, match="differs from its recorded"):
+        scenario.assemble(scenario.transport(payload))
+
+
+def test_assembly_rejects_a_requirement_that_contradicts_the_artifact_count(
+    scenario: Scenario,
+) -> None:
+    payload = scenario.payload(
+        javaDatabase={
+            "fresh": True,
+            "required": True,
+            "acceptedStale": False,
+            "artifacts": 0,
+        }
+    )
+
+    with pytest.raises(InvalidInvocationError, match="contradicts its artifact count"):
+        scenario.assemble(scenario.transport(payload))
+
+
+def test_assembly_rejects_java_artifacts_against_a_stale_java_database(
+    scenario: Scenario,
+) -> None:
+    payload = scenario.payload(
+        databaseMetadata=STALE_JAVA_METADATA,
+        javaDatabase={
+            "fresh": False,
+            "required": True,
+            "acceptedStale": False,
+            "artifacts": 2,
+        },
+    )
+
+    with pytest.raises(RuleRejectionError, match="Java artifacts") as caught:
+        scenario.assemble(scenario.transport(payload))
+    assert caught.value.code == "CC0507"
+
+
+def test_assembly_accepts_a_stale_java_database_the_maintainer_accepted(
+    scenario: Scenario,
+) -> None:
+    payload = scenario.payload(
+        databaseMetadata=STALE_JAVA_METADATA,
+        javaDatabase={
+            "fresh": False,
+            "required": True,
+            "acceptedStale": True,
+            "artifacts": 2,
+        },
+    )
+
+    candidate = scenario.assemble(scenario.transport(payload))
+
+    record = json.loads(candidate.record_path.read_text(encoding="utf-8"))
+    assert record["payload"]["qualifications"][0]["javaDatabase"] == {
+        "fresh": False,
+        "required": True,
+        "acceptedStale": True,
+        "artifacts": 2,
+    }
 
 
 def _with_helper(repository_factory: Callable[..., Path]) -> Callable[..., Path]:

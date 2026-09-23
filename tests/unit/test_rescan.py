@@ -62,6 +62,7 @@ from conclear.triage import TriageDecision
 from conclear.values import Digest, OCIReference, Platform
 from conclear.workspace import ResourceStatus, RunState, RunWorkspace
 from tests.registry_policy_fixtures import STRICT_POLICY
+from tests.release_fakes import JAVA_PACKAGE
 
 
 class IdFactory:
@@ -77,6 +78,16 @@ DATABASE_METADATA: dict[str, object] = {
         "downloadedAt": "2026-02-01T00:01:00Z",
     }
     for name, version in (("vulnerability", 2), ("java", 1))
+}
+
+STALE_JAVA_METADATA: dict[str, object] = {
+    **DATABASE_METADATA,
+    "java": {
+        "schemaVersion": 1,
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "nextUpdate": "2026-01-15T00:00:00Z",
+        "downloadedAt": "2026-02-01T00:01:00Z",
+    },
 }
 
 
@@ -316,6 +327,7 @@ def _exception() -> VulnerabilityException:
         "triage_decision",
         "future_triage",
         "platform_mismatch",
+        "java",
     ),
     [
         (
@@ -327,6 +339,7 @@ def _exception() -> VulnerabilityException:
             "not-applicable",
             False,
             False,
+            "none",
         ),
         (
             "sbom-vulnerabilities",
@@ -337,6 +350,7 @@ def _exception() -> VulnerabilityException:
             "affected",
             False,
             False,
+            "none",
         ),
         (
             "full-image",
@@ -347,6 +361,7 @@ def _exception() -> VulnerabilityException:
             "not-applicable",
             False,
             False,
+            "none",
         ),
         (
             "sbom-vulnerabilities",
@@ -357,6 +372,7 @@ def _exception() -> VulnerabilityException:
             "not-applicable",
             False,
             False,
+            "none",
         ),
         (
             "sbom-vulnerabilities",
@@ -367,6 +383,7 @@ def _exception() -> VulnerabilityException:
             "not-applicable",
             False,
             False,
+            "none",
         ),
         (
             "sbom-vulnerabilities",
@@ -377,6 +394,7 @@ def _exception() -> VulnerabilityException:
             "not-applicable",
             False,
             False,
+            "none",
         ),
         (
             "sbom-vulnerabilities",
@@ -387,6 +405,7 @@ def _exception() -> VulnerabilityException:
             "not-applicable",
             True,
             False,
+            "none",
         ),
         (
             "sbom-vulnerabilities",
@@ -397,6 +416,29 @@ def _exception() -> VulnerabilityException:
             "not-applicable",
             False,
             True,
+            "none",
+        ),
+        (
+            "sbom-vulnerabilities",
+            False,
+            "linux/amd64",
+            False,
+            True,
+            "not-applicable",
+            False,
+            False,
+            "stale",
+        ),
+        (
+            "sbom-vulnerabilities",
+            False,
+            "linux/amd64",
+            False,
+            True,
+            "not-applicable",
+            False,
+            False,
+            "accepted",
         ),
     ],
 )
@@ -412,6 +454,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     triage_decision: str,
     future_triage: bool,
     platform_mismatch: bool,
+    java: str,
 ) -> None:
     monkeypatch.setattr(
         records_module,
@@ -461,6 +504,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             "creators": ["Tool: test"],
             "created": "2026-01-01T00:00:00Z",
         },
+        **({"packages": [JAVA_PACKAGE]} if java != "none" else {}),
     }
     release_record = RecordEnvelope(
         record_type="releaseVerification",
@@ -541,7 +585,11 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     public_key.write_text("test", encoding="utf-8")
     cache = tmp_path / "trivy-cache"
     cache.mkdir()
-    database = DatabaseObservation(cache, "sha256:" + "6" * 64, DATABASE_METADATA)
+    database = DatabaseObservation(
+        cache,
+        "sha256:" + "6" * 64,
+        DATABASE_METADATA if java == "none" else STALE_JAVA_METADATA,
+    )
 
     scanner = FakeScanner(root_check=scope == "full-image")
     runtime_rules = replace(
@@ -652,6 +700,7 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
             signing=RescanSigning("test.key", public_key, "secret"),
             now=datetime(2026, 2, 1, tzinfo=UTC),
             record_clock=lambda: datetime(2026, 2, 1, 0, 5, tzinfo=UTC),
+            accept_stale_java_database=java == "accepted",
         )
 
     if future_triage:
@@ -686,14 +735,11 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     result = run_rescan()
 
     assert result.authoritative
-    assert result.verdict is (
-        Verdict.REJECTED if triage_decision == "affected" else Verdict.ACCEPTED
-    )
+    rejected = triage_decision == "affected" or java == "stale"
+    assert result.verdict is (Verdict.REJECTED if rejected else Verdict.ACCEPTED)
     # The rescan run settles into a terminal state that mirrors its verdict, so
     # a finished rescan is never mistaken for an abandoned run.
-    assert run.load().state is (
-        RunState.REJECTED if triage_decision == "affected" else RunState.COMPLETED
-    )
+    assert run.load().state is (RunState.REJECTED if rejected else RunState.COMPLETED)
     assert result.statement_path is not None
     record = load_json(result.record_path)
     assert record["payload"]["scanResults"][0]["packageAssessment"] == {
@@ -739,8 +785,42 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     )
     expected_finding_count = (
         2 if triage_decision == "affected" and not use_exception else 0
-    )
+    ) + (0 if java == "none" else 1)
     assert len(record["payload"]["findings"]) == expected_finding_count
+    assert (
+        record["payload"]["javaDatabase"]
+        == {
+            "none": {
+                "fresh": True,
+                "required": False,
+                "acceptedStale": False,
+                "artifacts": 0,
+            },
+            "stale": {
+                "fresh": False,
+                "required": True,
+                "acceptedStale": False,
+                "artifacts": 1,
+            },
+            "accepted": {
+                "fresh": False,
+                "required": True,
+                "acceptedStale": True,
+                "artifacts": 1,
+            },
+        }[java]
+    )
+    if java != "none":
+        java_finding = next(
+            item
+            for item in record["payload"]["findings"]
+            if item["checkId"] == "CC0507"
+        )
+        assert java_finding["platform"] == "linux/amd64"
+        assert java_finding["severity"] == (
+            "warning" if java == "accepted" else "error"
+        )
+        assert "2026-01-15T00:00:00Z" in java_finding["message"]
     expected_remediation = (
         [
             {

@@ -111,6 +111,7 @@ class _Qualification:
     transport: QualificationTransport
     qualification_window: QualificationWindow
     qualified_at: datetime
+    java_database: dict[str, object]
 
 
 def assemble_candidate(
@@ -324,6 +325,7 @@ def _qualification_entry(item: _Qualification) -> dict[str, object]:
         "runId": item.run_id,
         "recordDigest": item.record_digest,
         "payloadDigests": list(item.payload_digests),
+        "javaDatabase": item.java_database,
     }
     if item.transport.transport_digest is not None:
         entry["transportDigest"] = item.transport.transport_digest
@@ -466,9 +468,12 @@ def _read_qualification(
     )
     window = evidence_window(payload)
     window.require_current(record_created_at, phase="qualification completion")
-    require_database_fresh_at(
-        _narrow.object_value(payload.get("databaseMetadata"), "database metadata"),
-        window.started_at,
+    java_database = _read_java_database(
+        payload,
+        metadata=_narrow.object_value(
+            payload.get("databaseMetadata"), "database metadata"
+        ),
+        started_at=window.started_at,
     )
     return _Qualification(
         run_id=_narrow.string_value(record.get("runId"), "qualification run id"),
@@ -498,7 +503,54 @@ def _read_qualification(
         transport=transport,
         qualification_window=window,
         qualified_at=record_created_at,
+        java_database=java_database,
     )
+
+
+def _read_java_database(
+    payload: dict[str, object], *, metadata: dict[str, object], started_at: datetime
+) -> dict[str, object]:
+    """Recompute a qualification's Java database verdict from its own metadata.
+
+    A record states the verdict, but assembly never takes its word for it: the
+    freshness follows from the recorded database metadata at the qualification
+    start, and only the artifact count and the maintainer's acceptance are
+    genuinely the worker's to report.
+    """
+    recorded = _narrow.object_value(payload.get("javaDatabase"), "java database")
+    artifacts = _narrow.integer_value(
+        recorded.get("artifacts"), "java database artifact count"
+    )
+    if artifacts < 0:
+        raise InvalidInvocationError("Java database artifact count cannot be negative")
+    fresh = _boolean_value(recorded.get("fresh"), "java database freshness")
+    required = _boolean_value(recorded.get("required"), "java database requirement")
+    accepted_stale = _boolean_value(
+        recorded.get("acceptedStale"), "java database acceptance"
+    )
+    if required != (artifacts > 0):
+        raise InvalidInvocationError(
+            "Qualification Java database requirement contradicts its artifact count"
+        )
+    freshness = require_database_fresh_at(
+        metadata, started_at, java_required=required and not accepted_stale
+    )
+    if fresh != freshness.java:
+        raise InvalidInvocationError(
+            "Qualification Java database verdict differs from its recorded metadata"
+        )
+    return {
+        "fresh": fresh,
+        "required": required,
+        "acceptedStale": accepted_stale,
+        "artifacts": artifacts,
+    }
+
+
+def _boolean_value(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise InvalidInvocationError(f"{label} must be a boolean")
+    return value
 
 
 def _expected_limits(image: ImageConfig) -> tuple[tuple[str, int], ...]:
