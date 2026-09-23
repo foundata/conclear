@@ -1,9 +1,3 @@
-<!-- MD080 (heading anchor collisions) is disabled for this file: Keep a
-Changelog repeats "Added", "Changed" and "Fixed" under every release heading by
-design, so their anchors necessarily collide. The sections are distinguished by
-their parent release, never linked by fragment. -->
-<!-- rumdl-disable MD080 -->
-
 # Changelog
 
 All notable, user-facing changes to this project are documented in this file.
