@@ -89,15 +89,15 @@ downloads. Use versions within the accepted ranges, avoiding excluded versions.
 
 <!-- supported-tools:begin -->
 
-|   Tool   |     Accepted versions      | Excluded versions | Real-tool tested versions |
-| -------- | -------------------------- | ----------------- | ------------------------- |
-| Git      | 2.43.0 <= version < 3.0.0  | none              | 2.55.0                    |
-| Buildah  | 1.40.0 <= version < 1.44.0 | none              | 1.43.2                    |
-| Podman   | 5.8.4 <= version < 6.0.0   | none              | 5.8.4                     |
-| Skopeo   | 1.14.0 <= version < 2.0.0  | none              | 1.22.2                    |
-| Hadolint | 2.12.0 <= version < 3.0.0  | none              | 2.14.0                    |
-| Trivy    | 0.74.0 <= version < 0.75.0 | none              | 0.74.0                    |
-| Cosign   | 3.1.3 <= version < 4.0.0   | none              | 3.1.3                     |
+|   Tool   |     Accepted versions      | Excluded versions | Real-tool tested versions | Pinned image |
+| -------- | -------------------------- | ----------------- | ------------------------- | ------------ |
+| Git      | 2.43.0 <= version < 3.0.0  | none              | 2.55.0                    | none         |
+| Buildah  | 1.40.0 <= version < 1.44.0 | none              | 1.43.2                    | none         |
+| Podman   | 5.8.4 <= version < 6.0.0   | none              | 5.8.4                     | none         |
+| Skopeo   | 1.14.0 <= version < 2.0.0  | none              | 1.22.2                    | none         |
+| Hadolint | 2.12.0 <= version < 3.0.0  | none              | 2.14.0                    | ghcr.io/hadolint/hadolint |
+| Trivy    | 0.74.0 <= version < 0.75.0 | none              | 0.74.0                    | ghcr.io/aquasecurity/trivy |
+| Cosign   | 3.1.3 <= version < 4.0.0   | none              | 3.1.3                     | none         |
 
 <!-- supported-tools:end -->
 

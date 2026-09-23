@@ -37,7 +37,7 @@ from conclear.pin_updates import PROPOSAL_RECORD_TYPE, PROPOSAL_SCHEMA_VERSION
 from conclear.presentation import CommandResult, ResultStatus
 from conclear.records import RECORD_SCHEMA_VERSIONS
 from conclear.schema import load_schema
-from conclear.tools import SUPPORTED_TOOLS, ToolName
+from conclear.tools import SUPPORTED_TOOLS, ToolImage, ToolName
 
 INVENTORY_SCHEMA_VERSION = 1
 INVENTORY_PATH = Path("docs/compatibility-inventory.json")
@@ -206,9 +206,24 @@ def _tools() -> list[dict[str, object]]:
             "tested": [
                 str(item) for item in sorted(SUPPORTED_TOOLS[name].policy.tested)
             ],
+            **_tool_image(SUPPORTED_TOOLS[name].image),
         }
         for name in ToolName
     ]
+
+
+def _tool_image(image: ToolImage | None) -> dict[str, object]:
+    """Declare the pinned image of one tool, which is what a consumer verifies."""
+    if image is None:
+        return {}
+    return {
+        "image": {
+            "reference": image.reference,
+            "digest": image.digest,
+            "version": str(image.version),
+            "signed": image.signer is not None,
+        }
+    }
 
 
 def _schema(name: str) -> dict[str, object]:

@@ -2696,6 +2696,12 @@
     },
     {
       "excluded": [],
+      "image": {
+        "digest": "sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e",
+        "reference": "ghcr.io/hadolint/hadolint",
+        "signed": false,
+        "version": "2.14.0"
+      },
       "maximumExclusive": "3.0.0",
       "minimum": "2.12.0",
       "name": "hadolint",
@@ -2705,6 +2711,12 @@
     },
     {
       "excluded": [],
+      "image": {
+        "digest": "sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969",
+        "reference": "ghcr.io/aquasecurity/trivy",
+        "signed": true,
+        "version": "0.74.0"
+      },
       "maximumExclusive": "0.75.0",
       "minimum": "0.74.0",
       "name": "trivy",

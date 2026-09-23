@@ -23,13 +23,17 @@ def render_tool_matrix() -> str:
     """Render the aligned table of accepted, excluded and tested versions."""
     rows = []
     for name in ToolName:
-        policy = SUPPORTED_TOOLS[name].policy
+        spec = SUPPORTED_TOOLS[name]
+        policy = spec.policy
         rows.append(
             (
                 name.value.capitalize(),
                 policy.interval,
                 ", ".join(str(item) for item in sorted(policy.excluded)) or "none",
                 ", ".join(str(item) for item in sorted(policy.tested)),
+                # The repository only: the pinned digest lives in tools.py and
+                # in every record, and would make this table unreadable.
+                "none" if spec.image is None else spec.image.reference,
             )
         )
     headers = (
@@ -37,6 +41,7 @@ def render_tool_matrix() -> str:
         "Accepted versions",
         "Excluded versions",
         "Real-tool tested versions",
+        "Pinned image",
     )
     return "\n".join(aligned_table(headers, rows)) + "\n"
 

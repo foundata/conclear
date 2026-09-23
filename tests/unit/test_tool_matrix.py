@@ -30,16 +30,23 @@ def test_rendered_table_lists_every_tool_with_interval_exclusions_and_tests() ->
         "Accepted versions",
         "Excluded versions",
         "Real-tool tested versions",
+        "Pinned image",
     ]
     assert len(lines) == 2 + len(ToolName)
     for name in ToolName:
-        policy = SUPPORTED_TOOLS[name].policy
+        spec = SUPPORTED_TOOLS[name]
+        policy = spec.policy
         [row] = [
             line for line in lines if line.startswith(f"| {name.value.capitalize()} ")
         ]
         assert policy.interval in row
         assert all(str(item) in row for item in policy.tested)
-        assert ("none" in row) is (not policy.excluded)
+        # The pinned repository, never its digest: a reader compares the
+        # publisher, and the digest would make the row unreadable.
+        image = [cell.strip() for cell in row.strip("|").split("|")][-1]
+        assert image == ("none" if spec.image is None else spec.image.reference)
+        if spec.image is not None:
+            assert spec.image.digest not in row
 
 
 def test_render_replaces_only_the_marked_block(tmp_path: Path) -> None:
