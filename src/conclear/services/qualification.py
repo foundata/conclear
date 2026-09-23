@@ -26,7 +26,11 @@ from conclear.checks import (
 from conclear.config import SYSTEMD_STOP_SIGNAL, ImageConfig
 from conclear.containerfile import Containerfile, ImageInput, load_containerfile
 from conclear.context import hash_build_context
-from conclear.database import qualification_database_window
+from conclear.database import (
+    JavaDatabaseEvidence,
+    evaluate_java_database,
+    qualification_database_window,
+)
 from conclear.errors import OperationalError
 from conclear.freshness import QualificationWindow, evidence_window
 from conclear.hooks import HookRunner
@@ -46,6 +50,7 @@ from conclear.scan_policy import (
     AppliedException,
     PackageAssessment,
     evaluate_trivy_report,
+    java_artifacts,
 )
 from conclear.services.preflight import ClosurePreflight, ImagePreflight
 from conclear.services.qualification_inputs import (
@@ -137,6 +142,7 @@ class ScanEvidence:
     scans: tuple[ScanObservation, ...]
     applied_exceptions: tuple[AppliedException, ...]
     findings: tuple[Finding, ...]
+    java_database: JavaDatabaseEvidence
     applied_runtime_requirements: tuple[dict[str, object], ...] = ()
     package_assessment: PackageAssessment | None = None
     applied_configuration_exceptions: tuple[AppliedConfigurationException, ...] = ()
@@ -336,8 +342,15 @@ def generate_evidence(
     database: DatabaseObservation,
     *,
     today: date,
+    java_database_at: datetime,
+    accept_stale_java_database: bool = False,
 ) -> ScanEvidence:
-    """Generate local scans and SPDX, then apply vulnerability policy."""
+    """Generate local scans and SPDX, then apply vulnerability policy.
+
+    The Java database is judged here rather than at selection time, because
+    only the generated inventory shows whether this platform carries the Java
+    artifacts that index identifies.
+    """
     require_source_integrity(inputs.workspace, inputs.repository.path.parent)
     report_root = (
         inputs.workspace.root / "reports" / inputs.image.image_id / inputs.platform.key
@@ -396,6 +409,12 @@ def generate_evidence(
         package_assessment_exception=inputs.image.package_assessment_exception,
         configuration_exceptions=inputs.image.configuration_exceptions,
     )
+    java_database = evaluate_java_database(
+        database.metadata,
+        at=java_database_at,
+        artifacts=java_artifacts(sbom.value),
+        accepted_stale=accept_stale_java_database,
+    )
     return ScanEvidence(
         package_assessment=image_evaluation.package_assessment,
         sbom=sbom,
@@ -408,10 +427,12 @@ def generate_evidence(
             containerfile_evaluation.applied_runtime_requirements
             + image_evaluation.applied_runtime_requirements
         ),
+        java_database=java_database,
         findings=(
             source_evaluation.findings
             + containerfile_evaluation.findings
             + image_evaluation.findings
+            + ((java_database.finding,) if java_database.finding is not None else ())
         ),
     )
 
@@ -429,6 +450,7 @@ def qualify_platform(
     now: datetime,
     record_clock: Callable[[], datetime],
     qualification_started_at: datetime | None = None,
+    accept_stale_java_database: bool = False,
 ) -> QualificationResult:
     """Execute the local platform pipeline and store one public qualification."""
     _require_closure_preflight(inputs, preflight)
@@ -451,7 +473,13 @@ def qualify_platform(
         inputs, build, runtime, hooks, dependencies=dependency_builds
     )
     scan_evidence = generate_evidence(
-        inputs, build, scanner, database, today=now.date()
+        inputs,
+        build,
+        scanner,
+        database,
+        today=now.date(),
+        java_database_at=window.started_at,
+        accept_stale_java_database=accept_stale_java_database,
     )
     require_source_integrity(inputs.workspace, inputs.repository.path.parent)
     completed_at = record_clock()
@@ -554,6 +582,7 @@ def qualify_platform(
         "payloadDigests": list(payload_digests),
         "databaseDigest": database.digest,
         "databaseMetadata": database.metadata,
+        "javaDatabase": scan_evidence.java_database.to_dict(),
         "qualificationWindow": window.to_dict(),
         "findings": [finding.to_dict() for finding in findings],
     }

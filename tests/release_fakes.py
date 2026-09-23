@@ -253,12 +253,39 @@ class FakePodman:
         del path, values
 
 
+JAVA_PACKAGE: dict[str, object] = {
+    "SPDXID": "SPDXRef-Package-library",
+    "name": "org.example:library",
+    "downloadLocation": "NOASSERTION",
+    "filesAnalyzed": False,
+    "externalRefs": [
+        {
+            "referenceCategory": "PACKAGE-MANAGER",
+            "referenceType": "purl",
+            "referenceLocator": "pkg:maven/org.example/library@1.0.0",
+        }
+    ],
+}
+"""One SPDX package Trivy identified through Trivy's Java database."""
+
+
 class FakeTrivy:
-    """Provide one immutable database and empty successful scan observations."""
+    """Provide one immutable database and empty successful scan observations.
+
+    With ``java`` the generated SPDX document inventories one Maven artifact,
+    which is what makes the Java database's freshness relevant to a subject.
+    """
+
+    def __init__(
+        self, metadata: dict[str, object] | None = None, *, java: bool = False
+    ) -> None:
+        """Bind the database metadata and Java inventory every scan reports."""
+        self.metadata = DATABASE_METADATA if metadata is None else metadata
+        self.java = java
 
     def select_database(self, cache_root: Path) -> DatabaseObservation:
         cache_root.mkdir(parents=True, exist_ok=True)
-        return DatabaseObservation(cache_root, "sha256:" + "e" * 64, DATABASE_METADATA)
+        return DatabaseObservation(cache_root, "sha256:" + "e" * 64, self.metadata)
 
     def refresh_database(self, cache_root: Path) -> DatabaseObservation:
         return self.select_database(cache_root)
@@ -295,6 +322,7 @@ class FakeTrivy:
                     "creators": ["Tool: test"],
                     "created": "2026-01-01T00:00:00Z",
                 },
+                **({"packages": [JAVA_PACKAGE]} if self.java else {}),
             },
         )
 

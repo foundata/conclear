@@ -56,7 +56,7 @@ from conclear.services.runtime_tests import test_platform as run_platform_tests
 from conclear.source_integrity import source_tree_digest
 from conclear.values import Digest, Platform
 from conclear.workspace import ResourceStatus, RunWorkspace
-from tests.release_fakes import FakeBaseResolver, base_annotations
+from tests.release_fakes import JAVA_PACKAGE, FakeBaseResolver, base_annotations
 from tests.unit.test_config import _image_text
 
 
@@ -417,11 +417,16 @@ class FakeReadinessTiming:
 
 class Scanner:
     def __init__(
-        self, *, os_family: str | None = None, package_result: bool = True
+        self,
+        *,
+        os_family: str | None = None,
+        package_result: bool = True,
+        java: bool = False,
     ) -> None:
         self.identities: list[Any] = []
         self.os_family = os_family
         self.package_result = package_result
+        self.java = java
 
     def scan_filesystem(self, **values: Any) -> ScanObservation:
         self.identities.append(values.get("identity"))
@@ -458,6 +463,7 @@ class Scanner:
                     "creators": ["Tool: test"],
                     "created": "2026-01-01T00:00:00Z",
                 },
+                **({"packages": [JAVA_PACKAGE]} if self.java else {}),
             },
         )
 
@@ -1238,8 +1244,24 @@ def test_scans_are_named_by_the_platform_subject_not_the_host(
     assert str(tmp_path) not in identity.subject
 
 
+STALE_JAVA_METADATA: dict[str, object] = {
+    **DATABASE_METADATA,
+    "java": {
+        "schemaVersion": 1,
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "nextUpdate": "2026-01-01T00:00:30Z",
+        "downloadedAt": "2026-01-01T00:01:00Z",
+    },
+}
+
+
 def qualify_with_scanner(
-    value: Any, scanner: Scanner, tmp_path: Path
+    value: Any,
+    scanner: Scanner,
+    tmp_path: Path,
+    *,
+    metadata: dict[str, object] | None = None,
+    accept_stale_java_database: bool = False,
 ) -> tuple[Any, dict[str, Any]]:
     database_path = tmp_path / "database"
     database_path.mkdir(exist_ok=True)
@@ -1251,13 +1273,121 @@ def qualify_with_scanner(
         hooks=hook_runner(value),
         scanner=scanner,
         database=DatabaseObservation(
-            database_path, "sha256:" + "e" * 64, DATABASE_METADATA
+            database_path,
+            "sha256:" + "e" * 64,
+            DATABASE_METADATA if metadata is None else metadata,
         ),
         preflight=closure_preflight(value),
         now=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
         record_clock=lambda: datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        accept_stale_java_database=accept_stale_java_database,
     )
     return result, json.loads(result.record_path.read_text(encoding="utf-8"))
+
+
+def test_qualification_records_a_fresh_java_database_without_java_artifacts(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    result, record = qualify_with_scanner(value, Scanner(), tmp_path)
+
+    assert result.verdict is Verdict.ACCEPTED
+    assert record["payload"]["javaDatabase"] == {
+        "fresh": True,
+        "required": False,
+        "acceptedStale": False,
+        "artifacts": 0,
+    }
+
+
+def test_qualification_ignores_a_stale_java_database_without_java_artifacts(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    result, record = qualify_with_scanner(
+        value, Scanner(), tmp_path, metadata=STALE_JAVA_METADATA
+    )
+
+    assert result.verdict is Verdict.ACCEPTED
+    assert [item.check_id for item in result.findings] == []
+    assert record["payload"]["javaDatabase"] == {
+        "fresh": False,
+        "required": False,
+        "acceptedStale": False,
+        "artifacts": 0,
+    }
+
+
+def test_qualification_counts_java_artifacts_against_a_fresh_java_database(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    result, record = qualify_with_scanner(value, Scanner(java=True), tmp_path)
+
+    assert result.verdict is Verdict.ACCEPTED
+    assert record["payload"]["javaDatabase"] == {
+        "fresh": True,
+        "required": True,
+        "acceptedStale": False,
+        "artifacts": 1,
+    }
+
+
+def test_qualification_rejects_java_artifacts_against_a_stale_java_database(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    result, record = qualify_with_scanner(
+        value, Scanner(java=True), tmp_path, metadata=STALE_JAVA_METADATA
+    )
+
+    assert result.verdict is Verdict.REJECTED
+    assert [item.check_id for item in result.findings] == ["CC0507"]
+    assert record["payload"]["javaDatabase"] == {
+        "fresh": False,
+        "required": True,
+        "acceptedStale": False,
+        "artifacts": 1,
+    }
+
+
+def test_qualification_accepts_a_stale_java_database_the_maintainer_accepted(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    value = inputs(repository_factory(), tmp_path)
+
+    result, record = qualify_with_scanner(
+        value,
+        Scanner(java=True),
+        tmp_path,
+        metadata=STALE_JAVA_METADATA,
+        accept_stale_java_database=True,
+    )
+
+    assert result.verdict is Verdict.ACCEPTED
+    assert [(item.check_id, item.severity) for item in result.findings] == [
+        ("CC0507", "warning")
+    ]
+    assert record["payload"]["javaDatabase"] == {
+        "fresh": False,
+        "required": True,
+        "acceptedStale": True,
+        "artifacts": 1,
+    }
+    assert record["payload"]["findings"] == [
+        {
+            "checkId": "CC0507",
+            "severity": "warning",
+            "message": (
+                "Maintainer accepted a Java database whose next update was due "
+                "2026-01-01T00:00:30Z for 1 Java artifacts"
+            ),
+        }
+    ]
 
 
 def test_qualification_records_an_assessed_package_inventory(

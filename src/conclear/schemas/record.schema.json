@@ -52,6 +52,17 @@
         "java": {"$ref": "#/$defs/databaseComponent"}
       }
     },
+    "javaDatabase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fresh", "required", "acceptedStale", "artifacts"],
+      "properties": {
+        "fresh": {"type": "boolean"},
+        "required": {"type": "boolean"},
+        "acceptedStale": {"type": "boolean"},
+        "artifacts": {"type": "integer", "minimum": 0}
+      }
+    },
     "rescanFinding": {
       "type": "object",
       "additionalProperties": false,
@@ -722,6 +733,7 @@
         "payloadDigests": {"$ref": "#/$defs/digestArray"},
         "databaseDigest": {"$ref": "#/$defs/digest"},
         "databaseMetadata": {"$ref": "#/$defs/databaseMetadata"},
+        "javaDatabase": {"$ref": "#/$defs/javaDatabase"},
         "qualificationWindow": {"$ref": "#/$defs/qualificationWindow"},
         "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
       }

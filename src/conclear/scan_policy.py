@@ -445,6 +445,33 @@ def _match_configuration_exception(
     )
 
 
+JAVA_PURL_PREFIX = "pkg:maven/"
+"""Package URL prefix Trivy gives jar, pom, Gradle and sbt artifacts alike."""
+
+
+def java_artifacts(document: object) -> int:
+    """Count the distinct Maven package URLs one SPDX document inventories.
+
+    Their presence is what makes Trivy's Java database relevant: the index
+    identifies jar artifacts that carry no embedded Maven coordinates, so an
+    image without any Java artifact is assessed no differently by a stale one.
+    """
+    spdx = object_value(document, label="SPDX document")
+    locators: set[str] = set()
+    for raw_package in _array_or_empty(spdx.get("packages"), label="SPDX packages"):
+        package = object_value(raw_package, label="SPDX package")
+        for raw_reference in _array_or_empty(
+            package.get("externalRefs"), label="SPDX external references"
+        ):
+            reference = object_value(raw_reference, label="SPDX external reference")
+            if reference.get("referenceType") != "purl":
+                continue
+            locator = reference.get("referenceLocator")
+            if isinstance(locator, str) and locator.startswith(JAVA_PURL_PREFIX):
+                locators.add(locator)
+    return len(locators)
+
+
 def _array_or_empty(value: object, *, label: str) -> list[object]:
     if value is None:
         return []

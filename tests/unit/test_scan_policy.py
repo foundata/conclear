@@ -1,12 +1,19 @@
 from dataclasses import replace
 from datetime import date
 
+import pytest
+
 from conclear.config import (
     ConfigurationException,
     PackageAssessmentException,
     VulnerabilityException,
 )
-from conclear.scan_policy import evaluate_trivy_report, path_pattern_matches
+from conclear.errors import OperationalError
+from conclear.scan_policy import (
+    evaluate_trivy_report,
+    java_artifacts,
+    path_pattern_matches,
+)
 
 
 def exception(expires: str) -> VulnerabilityException:
@@ -449,3 +456,68 @@ def test_scan_policy_records_the_severity_source_and_vendor_ratings() -> None:
     )
     assert unsourced.fixable_vulnerabilities[0].severity_source is None
     assert "(severity by" not in unsourced.findings[0].message
+
+
+def spdx(*packages: dict[str, object]) -> dict[str, object]:
+    return {
+        "spdxVersion": "SPDX-2.3",
+        "SPDXID": "SPDXRef-DOCUMENT",
+        "packages": list(packages),
+    }
+
+
+def package(identifier: str, *locators: str) -> dict[str, object]:
+    return {
+        "SPDXID": identifier,
+        "name": identifier,
+        "externalRefs": [
+            {
+                "referenceCategory": "PACKAGE-MANAGER",
+                "referenceType": "purl",
+                "referenceLocator": locator,
+            }
+            for locator in locators
+        ],
+    }
+
+
+def test_java_artifacts_counts_distinct_maven_package_urls() -> None:
+    document = spdx(
+        package("a", "pkg:maven/org.example/one@1.0.0"),
+        package("b", "pkg:maven/org.example/two@2.0.0"),
+        package("c", "pkg:maven/org.example/one@1.0.0"),
+    )
+
+    assert java_artifacts(document) == 2
+
+
+def test_java_artifacts_ignores_other_ecosystems_and_reference_types() -> None:
+    document = spdx(
+        package("rpm", "pkg:rpm/fedora/bash@5.2"),
+        package("npm", "pkg:npm/left-pad@1.3.0"),
+        {
+            "SPDXID": "advisory",
+            "name": "advisory",
+            "externalRefs": [
+                {
+                    "referenceCategory": "SECURITY",
+                    "referenceType": "advisory",
+                    "referenceLocator": "pkg:maven/org.example/decoy@1.0.0",
+                }
+            ],
+        },
+    )
+
+    assert java_artifacts(document) == 0
+
+
+def test_java_artifacts_tolerates_packages_without_external_references() -> None:
+    document = spdx({"SPDXID": "plain", "name": "plain"})
+
+    assert java_artifacts(document) == 0
+    assert java_artifacts({"spdxVersion": "SPDX-2.3"}) == 0
+
+
+def test_java_artifacts_rejects_a_document_that_is_not_an_object() -> None:
+    with pytest.raises(OperationalError, match="SPDX document"):
+        java_artifacts(["packages"])
