@@ -23,12 +23,18 @@ class IdFactory:
         return "01arz3ndektsv4rrffq69g5fav"
 
 
-def database_metadata(next_update: str) -> dict[str, object]:
+def database_metadata(
+    next_update: str, *, java_next_update: str | None = None
+) -> dict[str, object]:
     return {
         name: {
             "schemaVersion": version,
             "updatedAt": "2026-01-01T00:00:00Z",
-            "nextUpdate": next_update,
+            "nextUpdate": (
+                next_update
+                if name == "vulnerability" or java_next_update is None
+                else java_next_update
+            ),
             "downloadedAt": "2026-01-01T00:01:00Z",
         }
         for name, version in (("vulnerability", 2), ("java", 1))
@@ -86,7 +92,7 @@ def test_database_refreshes_stale_snapshot_once(tmp_path: Path) -> None:
     assert adapter.refreshes == 1
 
 
-def test_database_rejects_stale_refresh(tmp_path: Path) -> None:
+def test_database_rejects_stale_vulnerability_refresh(tmp_path: Path) -> None:
     stale = DatabaseObservation(
         tmp_path,
         "sha256:" + "a" * 64,
@@ -94,8 +100,30 @@ def test_database_rejects_stale_refresh(tmp_path: Path) -> None:
     )
     adapter = FakeDatabase(OperationalError("missing"), stale)
 
-    with pytest.raises(OperationalError, match="already stale"):
+    with pytest.raises(
+        OperationalError, match="vulnerability database is already stale"
+    ):
         select_fresh_database(adapter, tmp_path, now=datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_database_accepts_stale_java_component_after_one_refresh(
+    tmp_path: Path,
+) -> None:
+    stale_java = DatabaseObservation(
+        tmp_path,
+        "sha256:" + "a" * 64,
+        database_metadata(
+            "2026-01-02T00:00:00Z", java_next_update="2025-12-31T00:00:00Z"
+        ),
+    )
+    adapter = FakeDatabase(stale_java, stale_java)
+
+    selected = select_fresh_database(
+        adapter, tmp_path, now=datetime(2026, 1, 1, tzinfo=UTC)
+    )
+
+    assert selected is stale_java
+    assert adapter.refreshes == 1
 
 
 def test_database_selects_distributed_snapshot_by_exact_digest(tmp_path: Path) -> None:

@@ -39,7 +39,7 @@ def trivy_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
     else:
         try:
             selected = runtime.trivy().select_database(cache_root)
-            require_database_fresh_at(selected.metadata, utc_now())
+            require_database_fresh_at(selected.metadata, utc_now(), java_required=False)
         except (OperationalError, RuleRejectionError) as exc:
             pytest.skip(
                 "Trivy cache is unavailable or stale; set CONCLEAR_TEST_TRIVY_DOWNLOAD=1 "
