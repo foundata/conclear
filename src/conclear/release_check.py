@@ -55,14 +55,11 @@ _FORBIDDEN_PARTS = frozenset(
 
 MARKDOWN_RULE_ARGUMENTS: tuple[str, ...] = (
     # The Markdown style guide's exact invocation: options only, so no local
-    # configuration can alter the result. MD080 (heading anchor collisions) is
-    # not enabled: Keep a Changelog repeats "Added", "Changed" and "Fixed" under
-    # every release heading by design, so a growing CHANGELOG.md collides with
-    # itself by construction.
+    # configuration can alter the result.
     "--no-config",
     "--deny-config-warnings",
     "--extend-enable",
-    "MD060,MD070,MD072,MD073,MD082,MD083,MD084,MD085,MD087,MD088",
+    "MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088",
     "--config",
     'MD003.style="atx"',
     "--config",
@@ -97,6 +94,8 @@ MARKDOWN_RULE_ARGUMENTS: tuple[str, ...] = (
     'MD060.column-align-header="center"',
     "--config",
     "MD060.loose-last-column=true",
+    "--config",
+    "MD080.levels=[1,2]",
     "--config",
     "MD082.allow-parent-headings=true",
 )
