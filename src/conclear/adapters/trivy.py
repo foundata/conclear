@@ -4,7 +4,7 @@ import os
 import re
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -90,26 +90,18 @@ class TrivyAdapter(ToolAdapter):
         with locked_file(cache_root / ".db.lock", label="Trivy database cache"):
             temporary = Path(tempfile.mkdtemp(prefix=".db.", dir=cache_root))
             try:
-                self._execute(
-                    (
-                        "image",
-                        "--download-db-only",
-                        "--cache-dir",
-                        str(temporary.absolute()),
-                    ),
-                    timeout_seconds=900,
-                    operation=OperationKind.WRITE,
-                )
-                self._execute(
-                    (
-                        "image",
-                        "--download-java-db-only",
-                        "--cache-dir",
-                        str(temporary.absolute()),
-                    ),
-                    timeout_seconds=900,
-                    operation=OperationKind.WRITE,
-                )
+                for download in ("--download-db-only", "--download-java-db-only"):
+                    self._execute(
+                        (
+                            "image",
+                            download,
+                            "--cache-dir",
+                            self._path(temporary, writable=True, name="cache"),
+                        ),
+                        timeout_seconds=900,
+                        operation=OperationKind.WRITE,
+                        network=True,
+                    )
                 observation = _database_observation(temporary)
                 snapshot_name = observation.digest.removeprefix("sha256:")
                 snapshots = cache_root / "snapshots"
@@ -156,7 +148,7 @@ class TrivyAdapter(ToolAdapter):
             (
                 "filesystem",
                 "--cache-dir",
-                str(cache_root.absolute()),
+                self._path(cache_root, writable=True, name="cache"),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -166,8 +158,8 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "json",
                 "--output",
-                str(report_path.absolute()),
-                str(path.absolute()),
+                self._path(report_path, writable=True, name="reports"),
+                self._path(path, name="source"),
             ),
             report_path,
             identity=identity,
@@ -182,13 +174,14 @@ class TrivyAdapter(ToolAdapter):
         identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Scan one exact OCI layout using the selected immutable database cache."""
+        seen_layout = self._path(layout_path, name="layout")
         observation = self._scan(
             (
                 "image",
                 "--input",
-                str(layout_path.absolute()),
+                seen_layout,
                 "--cache-dir",
-                str(cache_root.absolute()),
+                self._path(cache_root, writable=True, name="cache"),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -201,10 +194,10 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "json",
                 "--output",
-                str(report_path.absolute()),
+                self._path(report_path, writable=True, name="reports"),
             ),
             report_path,
-            identity=identity,
+            identity=_as_seen(identity, layout_path, seen_layout),
         )
         _require_image_config_coverage(observation.value)
         return observation
@@ -218,13 +211,14 @@ class TrivyAdapter(ToolAdapter):
         identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Generate an SPDX JSON inventory from one exact OCI layout."""
+        seen_layout = self._path(layout_path, name="layout")
         observation = self._scan(
             (
                 "image",
                 "--input",
-                str(layout_path.absolute()),
+                seen_layout,
                 "--cache-dir",
-                str(cache_root.absolute()),
+                self._path(cache_root, writable=True, name="cache"),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--skip-check-update",
@@ -232,13 +226,14 @@ class TrivyAdapter(ToolAdapter):
                 "--format",
                 "spdx-json",
                 "--output",
-                str(output_path.absolute()),
+                self._path(output_path, writable=True, name="exports"),
             ),
             output_path,
         )
         document = validate_spdx_document(
             observation.value, label="Trivy SPDX document", spdx_version=SPDX_2_3
         )
+        identity = _as_seen(identity, layout_path, seen_layout)
         if identity is not None:
             document = neutralize_spdx_document(document, identity)
         # Attestation envelopes preserve JSON values, not the scanner's formatting.
@@ -254,22 +249,23 @@ class TrivyAdapter(ToolAdapter):
         identity: ScanIdentity | None = None,
     ) -> ScanObservation:
         """Match current vulnerability data against one retained SPDX inventory."""
+        seen_sbom = self._path(sbom_path, name="sbom")
         return self._scan(
             (
                 "sbom",
                 "--cache-dir",
-                str(cache_root.absolute()),
+                self._path(cache_root, writable=True, name="cache"),
                 "--skip-db-update",
                 "--skip-java-db-update",
                 "--offline-scan",
                 "--format",
                 "json",
                 "--output",
-                str(report_path.absolute()),
-                str(sbom_path.absolute()),
+                self._path(report_path, writable=True, name="reports"),
+                seen_sbom,
             ),
             report_path,
-            identity=identity,
+            identity=_as_seen(identity, sbom_path, seen_sbom),
         )
 
     def _scan(
@@ -293,6 +289,7 @@ class TrivyAdapter(ToolAdapter):
         *,
         timeout_seconds: float,
         operation: OperationKind = OperationKind.READ,
+        network: bool = False,
     ) -> None:
         """Exclude ambient and repository suppression files from every invocation."""
         root = (self._log_directory.parent / "trivy-invocations").absolute()
@@ -305,22 +302,37 @@ class TrivyAdapter(ToolAdapter):
             create_new_file(config, b"{}\n", mode=0o600)
             create_new_file(ignore, b"", mode=0o600)
             create_new_file(secret, b"{}\n", mode=0o600)
+            self._path(directory, name="invocation")
             options: tuple[str, ...] = (
                 "--config",
-                str(config),
+                self._path(config),
                 "--ignorefile",
-                str(ignore),
+                self._path(ignore),
                 "--disable-telemetry",
                 "--skip-version-check",
             )
             if arguments[0] in {"image", "filesystem"}:
-                options += ("--secret-config", str(secret))
+                options += ("--secret-config", self._path(secret))
             self._run(
                 (arguments[0], *options, *arguments[1:]),
                 cwd=directory,
                 timeout_seconds=timeout_seconds,
                 operation=operation,
+                network=network,
             )
+
+
+def _as_seen(
+    identity: ScanIdentity | None, host_path: Path, seen_path: str
+) -> ScanIdentity | None:
+    """Return the identity naming the artifact by the path the tool saw.
+
+    Neutralization rewrites the artifact path Trivy repeats in its output; a
+    tool run from its image repeats the mounted path, not the host one.
+    """
+    if identity is None or str(host_path.absolute()) == seen_path:
+        return identity
+    return replace(identity, artifact_path=Path(seen_path))
 
 
 def _require_image_config_coverage(value: object) -> None:
