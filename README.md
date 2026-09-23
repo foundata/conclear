@@ -634,12 +634,11 @@ promotion commands are listed in the
 
 #### Output, JSON and exit codes<a id="usage-json-exit-codes"></a>
 
-Stdout is the product, stderr is the story. Stdout carries what a command
-produced and nothing else: the result, or with `--format json` one
-machine-readable result document. Stderr carries what happened on the way:
-which phase is under way, and every external command that really ran, marked
-with a bold `$`. A build, qualification or release is minutes of container
-work, so the story is how you see it move.
+Stdout carries what a command produced and nothing else: the result, or with
+`--format json` one machine-readable result document. Stderr carries what
+happened on the way: which phase is under way, and every external command that
+really ran, marked with a bold `$`. A build, qualification or release is
+minutes of container work, so that narration is how you see it move.
 
 ```console
 $ conclear qualify --revision HEAD --version 1.2.3 --platform linux/amd64
@@ -652,8 +651,8 @@ $ podman --root … run --rm …
 Platform qualification is accepted
 ```
 
-`-q`/`--quiet` before the command keeps the product and drops the story; it
-never suppresses an error or a warning. `2>/dev/null` does the same, and
+`-q`/`--quiet` before the command keeps stdout and drops the narration on
+stderr; it never suppresses an error or a warning. `2>/dev/null` does the same, and
 `2>&1 | tee run.log` keeps both together. Redirected output stays plain;
 `NO_COLOR` disables colour on a terminal and `FORCE_COLOR` demands it where no
 terminal is detected. Nothing narrated ever enters a record, an archive or the

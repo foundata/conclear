@@ -5,9 +5,9 @@ consequential, so the person running one should see what is happening: which
 phase is under way, which external command really ran, and what was decided
 in between. That narration is also the audit trail when nobody watched.
 
-Standard output carries the product, standard error carries the story. The
-story is ordinary ``logging`` at INFO level from each module's logger; nothing
-here is a second channel. A command-line entry point installs the one handler
+Result data goes to standard output and this narration to standard error. It
+is ordinary ``logging`` at INFO level from each module's logger; nothing here
+is a second channel. A command-line entry point installs the one handler
 that renders those records, so library callers and evidence stay silent, and
 no narrated line can enter a record, an archive or anything that is hashed.
 """
@@ -105,7 +105,7 @@ def render(argv: Sequence[str]) -> str:
 
 
 class StoryHandler(logging.Handler):
-    """Renders the story, one line per record, to one stream.
+    """Renders the narration, one line per record, to one stream.
 
     INFO records are phases and are written verb first, the verb carrying the
     colour; a record flagged ``COMMAND`` is an echoed command line; WARNING
@@ -150,12 +150,13 @@ _previous_root_level: int | None = None
 
 
 def install(stream: TextIO | None = None, *, quiet: bool = False) -> StoryHandler:
-    """Route the story to ``stream`` until ``uninstall``; entry points call this.
+    """Route the narration to ``stream`` until ``uninstall``; entry points call it.
 
     Replaces any handler a previous call installed, so a stream captured by a
-    test or replaced by a caller is the one written to. ``quiet`` keeps the
-    product and drops the story: warnings and errors still get through. The
-    root logger is lowered to INFO so the story reaches the handler at all.
+    test or replaced by a caller is the one written to. ``quiet`` keeps
+    stdout and drops the narration: warnings and errors still get through.
+    The root logger is lowered to INFO so those records reach the handler at
+    all.
     """
     global _previous_root_level
     uninstall()
@@ -184,7 +185,7 @@ def uninstall() -> None:
 
 @contextmanager
 def story(stream: TextIO | None = None, *, quiet: bool = False) -> Iterator[None]:
-    """Tell the story to ``stream`` for one command, then fall silent again.
+    """Narrate to ``stream`` for one command, then fall silent again.
 
     A handler left behind would write into a stream that no longer exists, so
     the entry point scopes it to the command it narrates.
@@ -197,7 +198,7 @@ def story(stream: TextIO | None = None, *, quiet: bool = False) -> Iterator[None
 
 
 def be_quiet() -> None:
-    """Drop the story from every installed handler; errors keep flowing."""
+    """Drop the narration from every installed handler; errors keep flowing."""
     for handler in logging.getLogger().handlers:
         if isinstance(handler, StoryHandler):
             handler.setLevel(logging.WARNING)
