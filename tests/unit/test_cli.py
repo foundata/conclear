@@ -441,3 +441,51 @@ def test_main_renders_the_findings_behind_an_aggregate_rejection(
     assert value["message"] == "Platform qualification rejected linux/arm64"
     assert value["findings"] == [nested.to_dict()]
     assert "Repository hook failed: smoke (linux/arm64)" in captured.err
+
+
+def test_the_story_goes_to_stderr_and_quiet_drops_it_but_not_the_error(
+    repository_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root_path = repository_factory()
+    monkeypatch.setattr(local_commands, "command_runtime", fake_runtime)
+    story = logging.getLogger("conclear.commands.local")
+
+    def narrating_check(image: Any, hadolint: Any) -> Any:
+        story.info("Checking %s", "the Containerfile")
+        raise OperationalError("no such tool")
+
+    monkeypatch.setattr(local_commands, "check_image", narrating_check)
+    arguments = [
+        "check",
+        "--config",
+        str(root_path / "conclear.toml"),
+        "--image",
+        "app",
+        "--format",
+        "json",
+    ]
+
+    assert main(arguments) == 1
+    loud = capsys.readouterr()
+    # The product is exactly one JSON document; the story never touches it.
+    assert json.loads(loud.out)["status"] == "operationalFailure"
+    assert loud.out.count("\n") == 1
+    assert "» Checking the Containerfile\n" in loud.err
+    assert "Error: no such tool\n" in loud.err
+
+    assert main(["--quiet", *arguments]) == 1
+    quiet = capsys.readouterr()
+    assert json.loads(quiet.out)["status"] == "operationalFailure"
+    assert "Checking" not in quiet.err
+    assert quiet.err == "Error: no such tool\n"
+
+
+def test_quiet_is_a_group_option_and_the_story_is_plain_when_redirected() -> None:
+    result = CliRunner().invoke(root, ["--help"])
+
+    assert "-q, --quiet" in result.stdout
+    # A CliRunner drives the group without the entry point, so no handler is
+    # installed and nothing is narrated: library callers stay silent.
+    assert result.stderr == ""

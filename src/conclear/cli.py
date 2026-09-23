@@ -8,6 +8,7 @@ from typing import Any
 
 import click
 
+from conclear import narration
 from conclear.commands.adopt import adopt_command
 from conclear.commands.archive import archive_group
 from conclear.commands.configuration import config_group
@@ -60,8 +61,21 @@ def _version_callback(
     callback=_version_callback,
     help="Show version and guide identity, then exit.",
 )
-def root() -> None:
-    """Qualify and release OCI container images through verified digests."""
+@click.option(
+    "quiet",
+    "-q",
+    "--quiet",
+    is_flag=True,
+    help="Keep the result on stdout and drop the progress story from stderr.",
+)
+def root(quiet: bool) -> None:
+    """Qualify and release OCI container images through verified digests.
+
+    Standard output carries the result, standard error carries what the
+    command is doing on the way. Errors are never dropped, quiet or not.
+    """
+    if quiet:
+        narration.be_quiet()
 
 
 root.add_command(version_command)
@@ -90,7 +104,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the Click application and map public failure categories."""
     arguments = list(argv) if argv is not None else sys.argv[1:]
     wants_json = _requests_json(arguments)
-    logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+    narration.install(sys.stderr)
     try:
         result: Any = root.main(
             args=arguments,
@@ -109,7 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         return int(ExitStatus.INVALID_INVOCATION)
     except click.Abort as exc:
-        print("Aborted.", file=sys.stderr)
+        LOGGER.error("Aborted.")
         data = _failed_run_data(exc)
         if wants_json:
             _write_error_json(
@@ -124,12 +138,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if findings:
             for finding in findings:
                 where = f" ({finding.location})" if finding.location else ""
-                print(
+                narration.verbatim(
+                    LOGGER,
+                    logging.ERROR,
                     f"{finding.check_id} {finding.severity}: {finding.message}{where}",
-                    file=sys.stderr,
                 )
         else:
-            print(str(exc), file=sys.stderr)
+            LOGGER.error("%s", exc)
         data = _failed_run_data(exc)
         if wants_json:
             status = ResultStatus(exc.error_type)
@@ -152,7 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             type(exc).__name__,
             _traceback_locations(exc),
         )
-        print(f"{message} ({type(exc).__name__})", file=sys.stderr)
+        LOGGER.error("%s (%s)", message, type(exc).__name__)
         _write_error_json(
             command=_command_name(arguments),
             status=ResultStatus.OPERATIONAL_FAILURE,
@@ -177,10 +192,11 @@ def _failed_run_data(failure: BaseException) -> dict[str, object]:
     run_id = failed_run_id(failure)
     if run_id is None:
         return {}
-    print(
+    narration.verbatim(
+        LOGGER,
+        logging.ERROR,
         f"Run {run_id} keeps its journaled resources; remove them with: "
         f"conclear cleanup {run_id}",
-        file=sys.stderr,
     )
     return {"runId": run_id}
 
