@@ -949,11 +949,13 @@ duties. See [archive usage](./README.md#usage-archives).
 
 <a id="promise-ip0017"></a>
 The required core tools are Git, Buildah, Podman, Skopeo, Hadolint, Trivy and
-Cosign, executed as host executables. External updaters and Testinfra project
-tests are not hidden ConClear services: an updater such as Renovate stays
-outside ConClear as optional review delivery, while Testinfra may be invoked
-through a declared repository hook whose interpreter and dependency lock are
-recorded.
+Cosign, executed as host executables. Trivy and Hadolint may instead run from
+their publishers' images when `CONCLEAR_TOOL_IMAGES` names them; no other tool
+has an image, and the default remains the host executable. External updaters and
+Testinfra project tests are not hidden ConClear services: an updater such as
+Renovate stays outside ConClear as optional review delivery, while Testinfra may
+be invoked through a declared repository hook whose interpreter and dependency
+lock are recorded.
 
 Each ConClear release carries a tool-specific compatibility policy for every
 host tool: an inclusive minimum, an exclusive maximum and explicitly excluded
@@ -966,17 +968,31 @@ path executes and resolves only those: it resolves each executable to an
 absolute path, parses its canonical version, records that version and the
 executable digest, and rejects a version outside the accepted interval or in the
 exclusion list with a diagnostic naming the observed version, the interval, the
-exclusions and the tested versions. A run pins a tool's identity from the first
-phase that resolves it. A later phase that resolves the same tool must observe
-the identical executable, a phase that first uses a tool binds it then, and a
-promoted or rejected run records nothing further. `release` resolves the
-complete toolchain at start and holds it constant; ConClear rechecks every
-recorded identity before later use so a package upgrade during a run cannot
-silently change the toolchain, and distributed qualifications of one release
-must report identical normalized tool versions, never merely compatible ones. A
-later release run may use newer accepted tools. `doctor` validates one scope,
-`check`, `qualify` or `release`, by resolving the union of the tools those
-commands declare and reporting every failure instead of the first.
+exclusions and the tested versions. A tool that runs from an image is pinned by
+the digest of its image index, which each ConClear release carries for a tested
+version of that tool. The run's Podman pulls exactly that digest, the version
+reported inside the image must equal the pinned one, and a publisher signature
+is verified where one exists: Trivy's index against the publisher's keyless
+workflow identity, while Hadolint publishes none and is trusted on its pin
+alone, the same trust a host executable gets from its recorded digest. Records
+name the pinned index and the platform manifest that ran; the index digest takes
+the place of the executable digest in run bindings. A command that runs a tool
+from an image therefore also resolves Podman, and Cosign for a signed image, and
+reports them among the run's tools. Inside the image the tool sees a read-only
+root, no network unless the call needs one, and only the paths the adapter
+mounted, each keeping its workspace-relative position so the evidence reads as a
+host run's does. Pulled layers hold subordinate-owner files, so the run's store
+is reset through Podman before its directory is removed. A run pins a tool's
+identity from the first phase that resolves it. A later phase that resolves the
+same tool must observe the identical executable, a phase that first uses a tool
+binds it then, and a promoted or rejected run records nothing further. `release`
+resolves the complete toolchain at start and holds it constant; ConClear
+rechecks every recorded identity before later use so a package upgrade during a
+run cannot silently change the toolchain, and distributed qualifications of one
+release must report identical normalized tool versions, never merely compatible
+ones. A later release run may use newer accepted tools. `doctor` validates one
+scope, `check`, `qualify` or `release`, by resolving the union of the tools
+those commands declare and reporting every failure instead of the first.
 
 All external commands use argument arrays, sanitized environments, explicit
 timeouts, bounded retries and captured logs. Cosign machine responses use
@@ -1328,7 +1344,9 @@ qualifications and against the coordinator run; a qualification produced by
 another ConClear revision is rejected without an override. For every external
 tool used on multiple platform workers, its normalized reported version must
 match. Platform-specific executable digests may differ and remain recorded in
-each qualification. The authoritative vulnerability-database content digest, the
+each qualification; for a tool that ran from an image the pinned index digest
+must match across workers, while the platform manifest digests may differ and
+stay recorded. The authoritative vulnerability-database content digest, the
 declared pin set, the observed pin digests and the effective limits must match
 exactly across all platform qualifications. Assembly also compares OCI platform
 descriptors with image configuration, rejects missing, duplicate and unexpected

@@ -169,17 +169,20 @@
     },
     {
       "id": "IP0017",
-      "summary": "Resolve only each command's declared host tools by immutable executable identity, pin them at first use and run bounded sanitized redacted subprocesses",
-      "implementation": ["src/conclear/tools.py", "src/conclear/tool_matrix.py", "src/conclear/process.py", "src/conclear/runtime.py", "src/conclear/dependencies.py", "src/conclear/services/doctor.py"],
+      "summary": "Resolve only each command's declared tools by immutable executable or pinned-image identity, pin them at first use and run bounded sanitized redacted subprocesses",
+      "implementation": ["src/conclear/tools.py", "src/conclear/tool_images.py", "src/conclear/tool_matrix.py", "src/conclear/process.py", "src/conclear/runtime.py", "src/conclear/dependencies.py", "src/conclear/services/doctor.py"],
       "tests": [
         {"path": "tests/unit/test_tools.py", "tier": "unit"},
+        {"path": "tests/unit/test_tool_images.py", "tier": "unit"},
+        {"path": "tests/unit/test_adapter_images.py", "tier": "unit"},
         {"path": "tests/unit/test_tool_matrix.py", "tier": "unit"},
         {"path": "tests/unit/test_process.py", "tier": "unit"},
         {"path": "tests/unit/test_runtime.py", "tier": "unit"},
         {"path": "tests/unit/test_dependencies.py", "tier": "unit"},
         {"path": "tests/unit/test_doctor.py", "tier": "unit"},
         {"path": "tests/local_integration/test_adapter_failures.py", "tier": "local_integration"},
-        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"}
+        {"path": "tests/local_integration/test_tools.py", "tier": "local_integration"},
+        {"path": "tests/local_integration/test_tool_images.py", "tier": "local_integration"}
       ]
     },
     {
