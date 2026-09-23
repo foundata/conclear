@@ -38,6 +38,7 @@ without requiring you to maintain your own release scripts or CI service.
   - [Quick start: Running a release](#usage-release)
   - [Advanced](#usage-advanced)
     - [Checking locally](#usage-check)
+    - [Tools from their images](#usage-tool-images)
     - [Accepting a stale Java database](#usage-stale-java-database)
     - [Resuming an interrupted run](#usage-resume)
     - [Archives](#usage-archives)
@@ -101,6 +102,10 @@ downloads. Use versions within the accepted ranges, avoiding excluded versions.
 
 <!-- supported-tools:end -->
 
+Trivy and Hadolint need not be installed at all: name them in
+`CONCLEAR_TOOL_IMAGES` and ConClear runs them from the pinned publisher images
+above instead, in a read-only container without network unless the call needs
+one. See [Tools from their images](#usage-tool-images).
 
 Install them and other dependencies as follows:
 
@@ -430,6 +435,30 @@ conclear qualify --revision HEAD --version "${version}" --platform linux/amd64
 ```
 
 This separate qualification is optional; `release` runs its own checks.
+
+
+#### Tools from their images<a id="usage-tool-images"></a>
+
+Trivy and Hadolint can run from their publishers' images instead of host
+executables, which avoids installing them and confines Trivy while it parses
+untrusted layer content:
+
+```sh
+CONCLEAR_TOOL_IMAGES=trivy,hadolint conclear qualify --revision HEAD \
+  --version "${version}"
+```
+
+Each image is pinned by the digest of its index, which this ConClear release
+carries; the version inside the image must equal the pinned one. Trivy's index
+signature is verified against the publisher's keyless workflow identity, and
+Hadolint publishes none, so its pin is the whole trust anchor. A command using
+an image also resolves Podman, and Cosign for a signed image, and records them
+among the run's tools. Records name the pinned index and the platform manifest
+that ran, so evidence states exactly what produced it. Findings are identical to
+the host tools of the same version; the local integration tier proves that
+against the real images.
+
+No other tool has an image, and the host executable stays the default.
 
 
 #### Accepting a stale Java database<a id="usage-stale-java-database"></a>

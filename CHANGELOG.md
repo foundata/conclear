@@ -10,6 +10,11 @@ and the project adheres to
 
 ### Added
 
+- Trivy and Hadolint can run from their publishers' images instead of host
+  executables: name them in `CONCLEAR_TOOL_IMAGES`. Each image is pinned by its
+  index digest, Trivy's publisher signature is verified, and records name the
+  pinned index and the platform manifest that ran. The supported-tools table and
+  the compatibility inventory name each pinned image.
 - Commands narrate what they do on stderr: the phase under way and every
   external command that ran, verb first, coloured only on a terminal. Stdout
   stays the result. `-q`/`--quiet` before the command drops the narration but

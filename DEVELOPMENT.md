@@ -612,8 +612,8 @@ evidence that arm64 qualification works.
 ### Tools from their images<a id="tool-images"></a>
 
 Trivy and Hadolint can run from their publishers' images instead of the host
-executables. The mode carries no promise yet: it appears in no README,
-architecture text or configuration surface, and a maintainer enables it with an
+executables, which [`IP0017`](ARCHITECTURE.md#promise-ip0017) promises and the
+[README](README.md#usage-tool-images) documents. A maintainer enables it with an
 environment variable naming the tools:
 
 ```sh
