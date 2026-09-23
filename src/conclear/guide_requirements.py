@@ -11,6 +11,7 @@ does not support it.
 
 import argparse
 import json
+import logging
 import re
 import sys
 from collections.abc import Iterable, Mapping
@@ -19,6 +20,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any, cast
 
+from conclear import narration
 from conclear.errors import ConClearError, OperationalError
 from conclear.fileio import read_regular_file
 from conclear.identity import GUIDE_REVISION
@@ -26,6 +28,8 @@ from conclear.jsonutil import atomic_write_bytes, structure_depth_is_bounded
 
 INVENTORY_SCHEMA_VERSION = 1
 COVERAGE_SCHEMA_VERSION = 1
+LOGGER = logging.getLogger(__name__)
+
 INVENTORY_RESOURCE = "guide-requirements.json"
 COVERAGE_RESOURCE = "requirement-coverage.json"
 MAX_GUIDE_BYTES = 1024 * 1024
@@ -428,6 +432,7 @@ def main() -> int:
         help="requirement listing to import for the embedded guide revision",
     )
     arguments = parser.parse_args()
+    narration.install(sys.stderr)
     try:
         if arguments.diff is not None or arguments.import_path is not None:
             listing = arguments.diff or arguments.import_path
@@ -440,7 +445,9 @@ def main() -> int:
             if arguments.import_path is not None:
                 target = inventory_path()
                 atomic_write_bytes(target, render_inventory(new), mode=0o644)
-                print(f"Imported {len(new.requirements)} requirements into {target}")
+                LOGGER.info(
+                    "Imported %d requirements into %s", len(new.requirements), target
+                )
             return 0
         inventory = load_requirements()
         if arguments.guide is not None:
@@ -456,9 +463,11 @@ def main() -> int:
     counts = dict.fromkeys(COVERAGE_STATUSES, 0)
     for item in statuses:
         counts[item.status] += 1
-    print(
-        f"{len(statuses)} requirements at guide revision {GUIDE_REVISION}: "
-        + ", ".join(f"{count} {status}" for status, count in counts.items())
+    LOGGER.info(
+        "Checked %d requirements at guide revision %s: %s",
+        len(statuses),
+        GUIDE_REVISION,
+        ", ".join(f"{count} {status}" for status, count in counts.items()),
     )
     return 0
 

@@ -439,7 +439,7 @@ def test_entry_point_checks_diffs_and_imports(
 ) -> None:
     monkeypatch.setattr(sys, "argv", ["guide_requirements", "--check"])
     assert main() == 0
-    assert "requirements at guide revision" in capsys.readouterr().out
+    assert "requirements at guide revision" in capsys.readouterr().err
 
     guide = tmp_path / "guide.md"
     guide.write_text("# no anchors\n", encoding="utf-8")
@@ -484,7 +484,7 @@ def test_entry_point_checks_diffs_and_imports(
         json.loads(target.read_text(encoding="utf-8"))["guideRevision"]
         == GUIDE_REVISION
     )
-    assert "Imported 1 requirements" in capsys.readouterr().out
+    assert "Imported 1 requirements" in capsys.readouterr().err
 
     _install(monkeypatch, inventory="{broken", coverage=_coverage())
     monkeypatch.setattr(sys, "argv", ["guide_requirements", "--diff", str(listing)])

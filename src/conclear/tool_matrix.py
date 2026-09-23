@@ -1,14 +1,18 @@
 """Render the README supported-tools table from the production tool policy."""
 
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from conclear import narration
 from conclear.errors import ConClearError, OperationalError
 from conclear.implementation import aligned_table
 from conclear.jsonutil import atomic_write_bytes
 from conclear.tools import SUPPORTED_TOOLS, ToolName
+
+LOGGER = logging.getLogger(__name__)
 
 README_PATH = Path("README.md")
 BEGIN_MARKER = "<!-- supported-tools:begin -->"
@@ -64,21 +68,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--readme", type=Path, default=README_PATH)
     options = parser.parse_args(argv)
+    narration.install(sys.stderr)
     try:
         if options.check:
             if tool_matrix_is_current(options.readme):
-                print("tool matrix: current")
+                LOGGER.info("Checked the tool matrix in %s", options.readme)
                 return 0
-            print(
-                f"tool matrix: {options.readme} is stale; run python -m conclear.tool_matrix",
-                file=sys.stderr,
+            LOGGER.error(
+                "%s is stale; run python -m conclear.tool_matrix", options.readme
             )
             return 1
         write_tool_matrix(options.readme)
     except ConClearError as exc:
-        print(f"tool matrix: {exc}", file=sys.stderr)
+        LOGGER.error("%s", exc)
         return int(exc.exit_status)
-    print(f"tool matrix: wrote {options.readme}")
+    LOGGER.info("Wrote the tool matrix into %s", options.readme)
     return 0
 
 
