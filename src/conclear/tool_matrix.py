@@ -68,21 +68,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--readme", type=Path, default=README_PATH)
     options = parser.parse_args(argv)
-    narration.install(sys.stderr)
-    try:
-        if options.check:
-            if tool_matrix_is_current(options.readme):
-                LOGGER.info("Checked the tool matrix in %s", options.readme)
-                return 0
-            LOGGER.error(
-                "%s is stale; run python -m conclear.tool_matrix", options.readme
-            )
-            return 1
-        write_tool_matrix(options.readme)
-    except ConClearError as exc:
-        LOGGER.error("%s", exc)
-        return int(exc.exit_status)
-    LOGGER.info("Wrote the tool matrix into %s", options.readme)
+    with narration.story(sys.stderr):
+        try:
+            if options.check:
+                if tool_matrix_is_current(options.readme):
+                    LOGGER.info("Checked the tool matrix in %s", options.readme)
+                    return 0
+                LOGGER.error(
+                    "%s is stale; run python -m conclear.tool_matrix", options.readme
+                )
+                return 1
+            write_tool_matrix(options.readme)
+        except ConClearError as exc:
+            LOGGER.error("%s", exc)
+            return int(exc.exit_status)
+        LOGGER.info("Wrote the tool matrix into %s", options.readme)
     return 0
 
 

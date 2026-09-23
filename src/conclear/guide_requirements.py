@@ -432,7 +432,11 @@ def main() -> int:
         help="requirement listing to import for the embedded guide revision",
     )
     arguments = parser.parse_args()
-    narration.install(sys.stderr)
+    with narration.story(sys.stderr):
+        return _run(arguments)
+
+
+def _run(arguments: argparse.Namespace) -> int:
     try:
         if arguments.diff is not None or arguments.import_path is not None:
             listing = arguments.diff or arguments.import_path

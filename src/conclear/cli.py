@@ -104,7 +104,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the Click application and map public failure categories."""
     arguments = list(argv) if argv is not None else sys.argv[1:]
     wants_json = _requests_json(arguments)
-    narration.install(sys.stderr)
+    with narration.story(sys.stderr):
+        return _run(arguments, wants_json=wants_json)
+
+
+def _run(arguments: list[str], *, wants_json: bool) -> int:
     try:
         result: Any = root.main(
             args=arguments,

@@ -16,7 +16,8 @@ import logging
 import os
 import shlex
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TextIO, override
 
@@ -145,13 +146,18 @@ class StoryHandler(logging.Handler):
         return f"{style}{text}{_RESET}" if self._colour else text
 
 
+_previous_root_level: int | None = None
+
+
 def install(stream: TextIO | None = None, *, quiet: bool = False) -> StoryHandler:
-    """Route the story to ``stream`` for this process; the entry point calls this.
+    """Route the story to ``stream`` until ``uninstall``; entry points call this.
 
     Replaces any handler a previous call installed, so a stream captured by a
     test or replaced by a caller is the one written to. ``quiet`` keeps the
-    product and drops the story: warnings and errors still get through.
+    product and drops the story: warnings and errors still get through. The
+    root logger is lowered to INFO so the story reaches the handler at all.
     """
+    global _previous_root_level
     uninstall()
     handler = StoryHandler(sys.stderr if stream is None else stream)
     if quiet:
@@ -159,16 +165,35 @@ def install(stream: TextIO | None = None, *, quiet: bool = False) -> StoryHandle
     root = logging.getLogger()
     root.addHandler(handler)
     if root.level == logging.NOTSET or root.level > logging.INFO:
+        _previous_root_level = root.level
         root.setLevel(logging.INFO)
     return handler
 
 
 def uninstall() -> None:
-    """Remove every story handler; INFO records fall silent again."""
+    """Remove every story handler and restore the root level; INFO falls silent."""
+    global _previous_root_level
     root = logging.getLogger()
     for handler in [item for item in root.handlers if isinstance(item, StoryHandler)]:
         root.removeHandler(handler)
         handler.close()
+    if _previous_root_level is not None:
+        root.setLevel(_previous_root_level)
+        _previous_root_level = None
+
+
+@contextmanager
+def story(stream: TextIO | None = None, *, quiet: bool = False) -> Iterator[None]:
+    """Tell the story to ``stream`` for one command, then fall silent again.
+
+    A handler left behind would write into a stream that no longer exists, so
+    the entry point scopes it to the command it narrates.
+    """
+    install(stream, quiet=quiet)
+    try:
+        yield
+    finally:
+        uninstall()
 
 
 def be_quiet() -> None:

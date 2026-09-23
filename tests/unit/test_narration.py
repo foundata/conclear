@@ -196,3 +196,24 @@ def test_installing_again_replaces_the_previous_stream() -> None:
         for item in logging.getLogger().handlers
         if isinstance(item, narration.StoryHandler)
     ]
+
+
+def test_the_story_is_scoped_to_one_command_and_restores_the_root_level() -> None:
+    # A handler left behind would write into a stream that no longer exists.
+    root_logger = logging.getLogger()
+    before = root_logger.level
+    stream = io.StringIO()
+    logger = logging.getLogger("conclear.test.scoped")
+
+    with narration.story(stream):
+        assert root_logger.level == logging.INFO
+        logger.info("Checking %s", "inside")
+    logger.info("Checking %s", "outside")
+
+    assert stream.getvalue() == "» Checking inside\n"
+    assert root_logger.level == before
+    assert not [
+        item
+        for item in root_logger.handlers
+        if isinstance(item, narration.StoryHandler)
+    ]

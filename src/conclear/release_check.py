@@ -806,12 +806,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="retain the validated sdist and wheel in this new directory",
     )
     arguments = parser.parse_args(argv)
-    narration.install(sys.stderr)
-    try:
-        run_release_check(output_directory=arguments.output_directory)
-    except (ConClearError, ValueError) as exc:
-        LOGGER.error("%s", exc)
-        return 1
+    with narration.story(sys.stderr):
+        try:
+            run_release_check(output_directory=arguments.output_directory)
+        except (ConClearError, ValueError) as exc:
+            LOGGER.error("%s", exc)
+            return 1
     return 0
 
 
