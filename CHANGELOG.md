@@ -48,6 +48,9 @@ and the project adheres to
 
 ### Changed
 
+- The real-tool tested versions are Buildah 1.43.4, Podman 5.8.7 and Skopeo
+  1.22.3, the versions this release's real-tool tier ran against. The accepted
+  ranges are unchanged.
 - The Java database's freshness gates a qualification only when the SBOM
   inventories Java artifacts (`pkg:maven` package URLs). An expired Java
   database no longer blocks images that contain no Java. `CC0505` continues to

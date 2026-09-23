@@ -200,7 +200,7 @@ SUPPORTED_TOOLS: Mapping[ToolName, ToolSpec] = {
         ("--version",),
         _pattern(r"buildah version "),
         VersionPolicy(
-            _version("1.40.0"), _version("1.44.0"), frozenset({_version("1.43.2")})
+            _version("1.40.0"), _version("1.44.0"), frozenset({_version("1.43.4")})
         ),
     ),
     # Podman: `podman run` below 5.8.4 can leak host environment variables to a
@@ -210,7 +210,7 @@ SUPPORTED_TOOLS: Mapping[ToolName, ToolSpec] = {
         ("--version",),
         _pattern(r"podman version "),
         VersionPolicy(
-            _version("5.8.4"), _version("6.0.0"), frozenset({_version("5.8.4")})
+            _version("5.8.4"), _version("6.0.0"), frozenset({_version("5.8.7")})
         ),
     ),
     # Skopeo: `copy --all --preserve-digests` with auth files and raw inspect
@@ -219,7 +219,7 @@ SUPPORTED_TOOLS: Mapping[ToolName, ToolSpec] = {
         ("--version",),
         _pattern(r"skopeo version "),
         VersionPolicy(
-            _version("1.14.0"), _version("2.0.0"), frozenset({_version("1.22.2")})
+            _version("1.14.0"), _version("2.0.0"), frozenset({_version("1.22.3")})
         ),
     ),
     # Hadolint: `--format json` with the code, level, message, line and column
