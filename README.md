@@ -47,7 +47,7 @@ without requiring you to maintain your own release scripts or CI service.
     - [Retiring a published tag](#usage-retire-tag)
     - [Distributed qualification](#usage-distributed)
     - [Command help](#usage-commands)
-    - [JSON output and exit codes](#usage-json-exit-codes)
+    - [Output, JSON and exit codes](#usage-json-exit-codes)
 - [Records and schemas](#records-schemas)
 - [Backup](#backup)
 - [Conformance](#conformance)
@@ -632,10 +632,32 @@ promotion commands are listed in the
 [command reference](./ARCHITECTURE.md#command-model).
 
 
-#### JSON output and exit codes<a id="usage-json-exit-codes"></a>
+#### Output, JSON and exit codes<a id="usage-json-exit-codes"></a>
 
-Add `--format json` for machine-readable results on stdout. Diagnostics go to
-stderr.
+Stdout is the product, stderr is the story. Stdout carries what a command
+produced and nothing else: the result, or with `--format json` one
+machine-readable result document. Stderr carries what happened on the way:
+which phase is under way, and every external command that really ran, marked
+with a bold `$`. A build, qualification or release is minutes of container
+work, so the story is how you see it move.
+
+```console
+$ conclear qualify --revision HEAD --version 1.2.3 --platform linux/amd64
+» Building app for linux/amd64
+$ buildah --root … build --platform linux/amd64 …
+» Testing app for linux/amd64
+$ podman --root … run --rm …
+» Scanning app for linux/amd64
+» Recorded the accepted qualification of app for linux/amd64
+Platform qualification is accepted
+```
+
+`-q`/`--quiet` before the command keeps the product and drops the story; it
+never suppresses an error or a warning. `2>/dev/null` does the same, and
+`2>&1 | tee run.log` keeps both together. Redirected output stays plain;
+`NO_COLOR` disables colour on a terminal and `FORCE_COLOR` demands it where no
+terminal is detected. Nothing narrated ever enters a record, an archive or the
+release-gate artifacts.
 
 | Exit code | Meaning |
 | --------: | ------- |

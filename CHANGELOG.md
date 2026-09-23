@@ -10,6 +10,11 @@ and the project adheres to
 
 ### Added
 
+- Commands narrate what they do on stderr: the phase under way and every
+  external command that ran, verb first, coloured only on a terminal. Stdout
+  stays the product. `-q`/`--quiet` before the command drops the story but
+  never an error. `python -m conclear.release_check` announces its steps there
+  too instead of on stdout, so its stdout is now empty.
 - `CC0507` rejects Java artifacts assessed against an expired Trivy Java
   database, and `--accept-stale-java-database` on `qualify`, `release` and
   `rescan` accepts that risk for one invocation. Qualification,
