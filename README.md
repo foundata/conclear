@@ -652,8 +652,8 @@ Platform qualification is accepted
 ```
 
 `-q`/`--quiet` before the command keeps stdout and drops the narration on
-stderr; it never suppresses an error or a warning. `2>/dev/null` does the same, and
-`2>&1 | tee run.log` keeps both together. Redirected output stays plain;
+stderr; it never suppresses an error or a warning. `2>/dev/null` does the same,
+and `2>&1 | tee run.log` keeps both together. Redirected output stays plain;
 `NO_COLOR` disables colour on a terminal and `FORCE_COLOR` demands it where no
 terminal is detected. Nothing narrated ever enters a record, an archive or the
 release-gate artifacts.
