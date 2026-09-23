@@ -1,5 +1,6 @@
 import platform
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast, override
@@ -7,13 +8,19 @@ from typing import Any, cast, override
 import pytest
 
 import conclear.services.doctor as doctor_module
+from conclear.adapters.trivy import DatabaseObservation
 from conclear.config import load_repository_config
 from conclear.dependencies import DOCTOR_SCOPES
 from conclear.errors import ExitStatus, InvalidInvocationError, OperationalError
-from conclear.services.doctor import DoctorScope, diagnose_environment
+from conclear.services.doctor import (
+    DoctorScope,
+    diagnose_database,
+    diagnose_environment,
+)
 from conclear.values import Platform
 from tests.registry_policy_fixtures import STRICT_POLICY
 from tests.release_fakes import FakeRegistryControl
+from tests.unit.test_runtime_inputs import database_metadata
 
 
 class _FakeTool:
@@ -30,11 +37,43 @@ class _FakeTool:
         self.calls.append(f"{self.name}.initialize")
 
 
+class _FakeDatabase:
+    """Installed snapshot that must only ever be selected, never refreshed."""
+
+    def __init__(self, calls: list[str], selected: DatabaseObservation | Exception):
+        self.calls = calls
+        self.selected = selected
+
+    def select_database(self, cache_root: Path) -> DatabaseObservation:
+        del cache_root
+        self.calls.append("trivy.select_database")
+        if isinstance(self.selected, Exception):
+            raise self.selected
+        return self.selected
+
+    def refresh_database(self, cache_root: Path) -> DatabaseObservation:
+        del cache_root
+        pytest.fail("doctor must never refresh the scanner database")
+
+    def select_database_by_digest(
+        self, cache_root: Path, expected_digest: object
+    ) -> DatabaseObservation:
+        del cache_root, expected_digest
+        pytest.fail("doctor selects the installed snapshot, not one by digest")
+
+
 class _FakeRuntime:
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self, root: Path, database: DatabaseObservation | Exception | None = None
+    ) -> None:
         self.root = root
         self.calls: list[str] = []
         self.identities: tuple[object, ...] = ()
+        self.database = database
+
+    def trivy(self) -> _FakeDatabase:
+        assert self.database is not None, "no database was prepared for this test"
+        return _FakeDatabase(self.calls, self.database)
 
     def buildah(self) -> _FakeTool:
         return _FakeTool(self.calls, "buildah")
@@ -305,3 +344,144 @@ def test_escalation_under_emulation_needs_a_handler_with_the_credentials_flag(
         profile=None,
     )
     assert observation.emulated_architectures == ("arm64",)
+
+
+NOW = datetime(2026, 1, 1, 12, tzinfo=UTC)
+
+
+def _snapshot(tmp_path: Path, *, java_next_update: str) -> DatabaseObservation:
+    return DatabaseObservation(
+        tmp_path / "snapshot",
+        "sha256:" + "e" * 64,
+        database_metadata("2026-01-02T00:00:00Z", java_next_update=java_next_update),
+    )
+
+
+def test_database_diagnosis_reports_a_fresh_snapshot_without_a_finding(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    adapter = cast(
+        Any,
+        _FakeDatabase(
+            calls, _snapshot(tmp_path, java_next_update="2026-01-02T00:00:00Z")
+        ),
+    )
+
+    diagnostic = diagnose_database(adapter, tmp_path, now=NOW)
+
+    assert diagnostic.finding is None
+    assert diagnostic.to_dict() == {
+        "digest": "sha256:" + "e" * 64,
+        "vulnerabilityFresh": True,
+        "javaFresh": True,
+        "javaNextUpdate": "2026-01-02T00:00:00Z",
+        "note": (
+            "Trivy database snapshot is fresh; Java database next update "
+            "2026-01-02T00:00:00Z"
+        ),
+    }
+    assert calls == ["trivy.select_database"]
+
+
+def test_database_diagnosis_warns_about_an_expired_java_database(
+    tmp_path: Path,
+) -> None:
+    adapter = cast(
+        Any,
+        _FakeDatabase([], _snapshot(tmp_path, java_next_update="2025-12-30T00:00:00Z")),
+    )
+
+    diagnostic = diagnose_database(adapter, tmp_path, now=NOW)
+
+    assert diagnostic.java_fresh is False
+    assert diagnostic.vulnerability_fresh is True
+    assert diagnostic.finding is not None
+    assert (diagnostic.finding.check_id, diagnostic.finding.severity) == (
+        "CC0507",
+        "warning",
+    )
+    assert "2025-12-30T00:00:00Z (60h ago)" in diagnostic.note
+    assert "--accept-stale-java-database" in diagnostic.note
+    assert diagnostic.finding.message == diagnostic.note
+
+
+def test_database_diagnosis_notes_a_stale_vulnerability_database_without_warning(
+    tmp_path: Path,
+) -> None:
+    snapshot = DatabaseObservation(
+        tmp_path / "snapshot",
+        "sha256:" + "e" * 64,
+        database_metadata(
+            "2025-12-31T00:00:00Z", java_next_update="2026-01-02T00:00:00Z"
+        ),
+    )
+
+    diagnostic = diagnose_database(
+        cast(Any, _FakeDatabase([], snapshot)), tmp_path, now=NOW
+    )
+
+    assert diagnostic.vulnerability_fresh is False
+    assert diagnostic.finding is None
+    assert "qualification refreshes it" in diagnostic.note
+
+
+def test_database_diagnosis_tolerates_a_missing_snapshot(tmp_path: Path) -> None:
+    adapter = cast(Any, _FakeDatabase([], OperationalError("no snapshot pointer")))
+
+    diagnostic = diagnose_database(adapter, tmp_path, now=NOW)
+
+    assert diagnostic.finding is None
+    assert diagnostic.to_dict() == {
+        "digest": None,
+        "vulnerabilityFresh": None,
+        "javaFresh": None,
+        "javaNextUpdate": None,
+        "note": (
+            "No usable Trivy database snapshot is installed (no snapshot pointer); "
+            "qualification downloads one"
+        ),
+    }
+
+
+def test_qualify_scope_diagnoses_the_database_only_when_a_cache_is_given(
+    repository_factory: Any, tmp_path: Path
+) -> None:
+    repository = load_repository_config(repository_factory() / "conclear.toml")
+    runtime = _FakeRuntime(
+        tmp_path, _snapshot(tmp_path, java_next_update="2025-12-30T00:00:00Z")
+    )
+
+    without = diagnose_environment(
+        repository, cast(Any, runtime), scope=DoctorScope.QUALIFY
+    )
+    assert without.database is None
+    assert "trivy.select_database" not in runtime.calls
+
+    observation = diagnose_environment(
+        repository,
+        cast(Any, runtime),
+        scope=DoctorScope.QUALIFY,
+        database_cache=tmp_path / "cache",
+        now=NOW,
+    )
+
+    assert observation.database is not None
+    assert observation.database.java_fresh is False
+    assert observation.database.finding is not None
+    assert runtime.calls.count("trivy.select_database") == 1
+
+
+def test_check_scope_never_touches_the_database(tmp_path: Path) -> None:
+    runtime = _FakeRuntime(tmp_path)
+
+    observation = diagnose_environment(
+        None,
+        cast(Any, runtime),
+        scope=DoctorScope.CHECK,
+        database_cache=tmp_path / "cache",
+        now=NOW,
+    )
+
+    assert observation.database is None
+    assert "trivy.select_database" not in runtime.calls

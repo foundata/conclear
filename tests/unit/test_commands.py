@@ -45,7 +45,7 @@ from conclear.release_profile import (
     ReleaseProfile,
 )
 from conclear.runtime import ToolProblem
-from conclear.services.doctor import DoctorScope
+from conclear.services.doctor import DatabaseDiagnostic, DoctorScope
 from conclear.services.registry_diagnostics import DiagnosticStatus, RegistryCheck
 from conclear.tools import ToolName
 from conclear.values import Digest
@@ -1132,6 +1132,7 @@ def test_doctor_reports_environment_observations(
             registry_access=True,
             sigstore_access=True,
             registry_checks=(check,),
+            database=None,
         )
 
     monkeypatch.setattr(maintenance_commands, "diagnose_environment", diagnose)
@@ -1221,6 +1222,15 @@ def test_doctor_qualify_scope_needs_no_profile_registry_or_signing(
     )
     seen: dict[str, Any] = {}
 
+    database = DatabaseDiagnostic(
+        digest=DIGEST,
+        vulnerability_fresh=True,
+        java_fresh=False,
+        java_next_update="2026-09-22T01:01:52Z",
+        note="Trivy Java database next update was due 2026-09-22T01:01:52Z (39h ago)",
+        finding=Finding("CC0507", "warning", "Java database expired"),
+    )
+
     def diagnose(*args: Any, **kwargs: Any) -> SimpleNamespace:
         seen.update(kwargs)
         return SimpleNamespace(
@@ -1230,6 +1240,7 @@ def test_doctor_qualify_scope_needs_no_profile_registry_or_signing(
             registry_provider=None,
             registry_access=False,
             sigstore_access=False,
+            database=database,
         )
 
     monkeypatch.setattr(maintenance_commands, "diagnose_environment", diagnose)
@@ -1245,9 +1256,15 @@ def test_doctor_qualify_scope_needs_no_profile_registry_or_signing(
         "tools": [{"name": "buildah", "version": "1.43.2"}],
         "nativeArchitecture": "amd64",
         "emulatedArchitectures": ["arm64"],
+        "database": database.to_dict(),
     }
+    # A stale Java database warns without making the environment not ready.
+    assert value["findings"] == [
+        {"checkId": "CC0507", "severity": "warning", "message": "Java database expired"}
+    ]
     assert seen["scope"] is DoctorScope.QUALIFY
     assert seen["profile"] is None and seen["registry_control"] is None
+    assert seen["database_cache"].name == "trivy"
     assert requested == [scope_dependencies("qualify").tools]
     assert ToolName.COSIGN not in requested[0]
 
@@ -1990,6 +2007,7 @@ def test_doctor_qualify_scope_accepts_a_read_only_profile(
             registry_provider=None,
             registry_access=False,
             sigstore_access=False,
+            database=None,
         ),
     )
     monkeypatch.setattr(maintenance_commands, "ci_context", lambda selected: None)

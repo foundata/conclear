@@ -550,6 +550,9 @@
               },
               "ciProvider": {
                 "$ref": "#/$defs/text"
+              },
+              "database": {
+                "$ref": "#/$defs/doctor-database"
               }
             }
           }
@@ -1974,6 +1977,9 @@
         },
         "ciProvider": {
           "$ref": "#/$defs/text"
+        },
+        "database": {
+          "$ref": "#/$defs/doctor-database"
         }
       },
       "required": [
@@ -1982,6 +1988,18 @@
         "scope",
         "tools"
       ]
+    },
+    "doctor-database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "vulnerabilityFresh", "javaFresh", "javaNextUpdate", "note"],
+      "properties": {
+        "digest": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "vulnerabilityFresh": {"type": ["boolean", "null"]},
+        "javaFresh": {"type": ["boolean", "null"]},
+        "javaNextUpdate": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+        "note": {"$ref": "#/$defs/text"}
+      }
     },
     "pins-check-data": {
       "type": "object",

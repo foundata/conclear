@@ -15,6 +15,10 @@ and the project adheres to
   `rescan` accepts that risk for one invocation. Qualification,
   release-candidate and rescan records carry the verdict as `javaDatabase`
   beside the artifact count.
+- `doctor --scope qualify` and `--scope release` report the installed Trivy
+  database's freshness as `database` and warn with `CC0507` when the Java
+  database has expired, before any image is built. The snapshot is only read,
+  never refreshed.
 
 ### Changed
 

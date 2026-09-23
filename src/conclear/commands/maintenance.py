@@ -152,6 +152,7 @@ def doctor_command(
                 profile=selected,
                 registry_control=registry_control,
                 version=version,
+                database_cache=trivy_cache_root(cache_home()),
             )
     finally:
         if registry_control is not None:
@@ -170,6 +171,8 @@ def doctor_command(
         data["ciContextObserved"] = isinstance(observed_ci, ObservedCIContext)
         if isinstance(observed_ci, ObservedCIContext):
             data["ciProvider"] = observed_ci.provider
+    if observation.database is not None:
+        data["database"] = observation.database.to_dict()
     if scope is DoctorScope.RELEASE:
         if version is not None:
             data["version"] = version
@@ -187,6 +190,8 @@ def doctor_command(
         for item in failed
         if item.code is not None
     )
+    if observation.database is not None and observation.database.finding is not None:
+        findings += (observation.database.finding,)
     emit(
         CommandResult(
             "doctor",
@@ -198,9 +203,19 @@ def doctor_command(
             else f"Environment is ready for {scope.value}",
             findings=findings,
             data=data,
-            details=tuple(
-                f"{item.repository} {item.name}: {item.status.value}: {item.message}"
-                for item in checks
+            details=(
+                # The note repeats as a finding when the Java database has
+                # expired, so it is a detail only when nothing warns.
+                *(
+                    (observation.database.note,)
+                    if observation.database is not None
+                    and observation.database.finding is None
+                    else ()
+                ),
+                *(
+                    f"{item.repository} {item.name}: {item.status.value}: {item.message}"
+                    for item in checks
+                ),
             ),
         ),
         output_format,

@@ -451,6 +451,9 @@ The option also exists on `qualify` and `rescan`. Every affected record keeps
 becomes a `CC0507` warning, so the decision stays visible in the evidence. A
 resumed release reuses the decision the run recorded.
 
+`conclear doctor --scope qualify` reports the installed database's freshness and
+warns about an expired Java database before any image is built.
+
 
 #### Resuming an interrupted run<a id="usage-resume"></a>
 
