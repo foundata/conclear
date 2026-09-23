@@ -1,3 +1,9 @@
+<!-- MD080 (heading anchor collisions) is disabled for this file: Keep a
+Changelog repeats "Added", "Changed" and "Fixed" under every release heading by
+design, so their anchors necessarily collide. The sections are distinguished by
+their parent release, never linked by fragment. -->
+<!-- rumdl-disable MD080 -->
+
 # Changelog
 
 All notable, user-facing changes to this project are documented in this file.
@@ -8,7 +14,20 @@ and the project adheres to
 
 ## [Unreleased]
 
-- Nothing worth mentioning right now.
+### Added
+
+- `CC0507` rejects Java artifacts assessed against an expired Trivy Java
+  database, and `--accept-stale-java-database` on `qualify`, `release` and
+  `rescan` accepts that risk for one invocation. Qualification,
+  release-candidate and rescan records carry the verdict as `javaDatabase`
+  beside the artifact count.
+
+### Changed
+
+- The Java database's freshness gates a qualification only when the SBOM
+  inventories Java artifacts (`pkg:maven` package URLs). An expired Java
+  database no longer blocks images that contain no Java. `CC0505` continues to
+  require a fresh vulnerability database and now names it.
 
 
 ## [1.0.2] - 2026-09-20

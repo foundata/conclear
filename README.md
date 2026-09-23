@@ -38,6 +38,7 @@ without requiring you to maintain your own release scripts or CI service.
   - [Quick start: Running a release](#usage-release)
   - [Advanced](#usage-advanced)
     - [Checking locally](#usage-check)
+    - [Accepting a stale Java database](#usage-stale-java-database)
     - [Resuming an interrupted run](#usage-resume)
     - [Archives](#usage-archives)
     - [Verifying a release without ConClear](#usage-independent-verification)
@@ -429,6 +430,26 @@ conclear qualify --revision HEAD --version "${version}" --platform linux/amd64
 ```
 
 This separate qualification is optional; `release` runs its own checks.
+
+
+#### Accepting a stale Java database<a id="usage-stale-java-database"></a>
+
+Trivy keeps a second index, the Java database, that identifies jar artifacts by
+content when they carry no Maven coordinates. Its publisher sometimes lets it
+expire for days. `CC0507` rejects a qualification only when the image's SBOM
+actually inventories Java artifacts and that index has passed its next-update
+time; images without Java are never affected. When it blocks a release you need,
+record the risk and continue:
+
+```sh
+conclear release --revision HEAD --version "${version}" --profile foundata \
+  --accept-stale-java-database
+```
+
+The option also exists on `qualify` and `rescan`. Every affected record keeps
+`javaDatabase` with the acceptance and the artifact count, and the rejection
+becomes a `CC0507` warning, so the decision stays visible in the evidence. A
+resumed release reuses the decision the run recorded.
 
 
 #### Resuming an interrupted run<a id="usage-resume"></a>
