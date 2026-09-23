@@ -23,6 +23,12 @@ and the project adheres to
   `scanResults[].javaArtifacts`, so a multi-platform image shows which platform
   the Java database verdict applies to.
 
+### Fixed
+
+- `rescan` reports the record's findings in its command result, located by
+  platform. A rejected rescan previously returned the rejection status with an
+  empty findings list, so the reason was only in the record.
+
 ### Changed
 
 - The Java database's freshness gates a qualification only when the SBOM

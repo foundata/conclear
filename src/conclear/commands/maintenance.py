@@ -844,6 +844,7 @@ def _execute_rescan(
                     else ResultStatus.RULE_REJECTION
                 ),
                 "Released subject rescan completed",
+                findings=result.findings,
                 details=archive_details(archive),
                 data={
                     "archive": archive.to_dict(),

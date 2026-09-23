@@ -28,6 +28,7 @@ from conclear.database import evaluate_java_database
 from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.jsonutil import atomic_write_json, sha256_file
 from conclear.parsing import object_value, string_value
+from conclear.presentation import Finding
 from conclear.records import (
     RecordEnvelope,
     SourceIdentity,
@@ -180,6 +181,31 @@ class RescanResult:
     verified_at: str | None
     active_findings: tuple[RemediationFindingKey, ...]
     release_record_digest: str
+    findings: tuple[Finding, ...] = ()
+
+
+def _public_findings(items: list[dict[str, object]]) -> tuple[Finding, ...]:
+    """Lift the record's per-platform findings into the command result.
+
+    The record keeps the platform as its own key; the result names it in the
+    location so a rejected rescan says why on the command line, not only in
+    the record.
+    """
+    findings: list[Finding] = []
+    for item in items:
+        platform = str(item.get("platform", ""))
+        location = item.get("location")
+        findings.append(
+            Finding(
+                str(item["checkId"]),
+                str(item["severity"]),
+                str(item["message"]),
+                location=" ".join(
+                    part for part in (platform, str(location or "")) if part
+                ),
+            )
+        )
+    return tuple(findings)
 
 
 def verified_rescan_history(
@@ -607,6 +633,7 @@ def rescan_release(
             None,
             tuple(sorted(active_findings)),
             release.digest,
+            findings=_public_findings(findings),
         )
     statement_path = workspace.root / "records" / "rescan-statement.json"
     statement_digest = write_statement(
@@ -672,6 +699,7 @@ def rescan_release(
         verified_at,
         tuple(sorted(active_findings)),
         release.digest,
+        findings=_public_findings(findings),
     )
 
 

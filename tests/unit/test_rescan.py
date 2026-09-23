@@ -813,6 +813,15 @@ def test_authoritative_rescan_verifies_complete_retained_inventory(
     assert record["payload"]["scanResults"][0]["javaArtifacts"] == (
         0 if java == "none" else 1
     )
+    # The command result carries the record's findings, located by platform, so
+    # a rejected rescan explains itself without opening the record.
+    assert [(item.check_id, item.severity) for item in result.findings] == [
+        (item["checkId"], item["severity"]) for item in record["payload"]["findings"]
+    ]
+    assert all(
+        item.location and item.location.startswith("linux/amd64")
+        for item in result.findings
+    )
     if java != "none":
         java_finding = next(
             item
