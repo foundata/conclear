@@ -53,7 +53,7 @@
       "summary": "Scanner stacks other than Trivy",
       "requirements": ["IG0304", "IG0307", "IG0308"],
       "status": "unsupported",
-      "rationale": "One Trivy result and its validated database snapshot are the authoritative release gate in 1.0.0.",
+      "rationale": "One Trivy result and its validated database snapshot are the authoritative release gate.",
       "reconsiderWhen": "Add a scanner only after defining equivalent findings, database identity, SBOM and rescan semantics.",
       "checks": ["CC0501", "CC0505"]
     },
@@ -62,7 +62,7 @@
       "summary": "Finalized SPDX versions newer than SPDX 2.3",
       "requirements": ["IG0324", "IG0334"],
       "status": "unsupported",
-      "rationale": "ConClear 1.0.0 generates, validates, records, rescans and attests SPDX 2.3 JSON only.",
+      "rationale": "ConClear generates, validates, records, rescans and attests SPDX 2.3 JSON only.",
       "reconsiderWhen": "Add a version after every producer, validator, consumer, attestation and rescan path supports it without conversion.",
       "checks": ["CC0504"]
     },
@@ -71,7 +71,7 @@
       "summary": "KMS or HSM signing keys",
       "requirements": ["IG0363", "IG0367"],
       "status": "unsupported",
-      "rationale": "The 1.0.0 release profile supports an approved encrypted Cosign key pair and public-key verification, not managed-key URIs.",
+      "rationale": "The release profile supports an approved encrypted Cosign key pair and public-key verification, not managed-key URIs.",
       "reconsiderWhen": "Add a mode after its non-exportable key identity, authentication, signing and verification behavior is implemented and tested end to end.",
       "checks": []
     },
