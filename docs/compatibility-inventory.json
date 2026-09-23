@@ -1917,6 +1917,17 @@
           "type": "text"
         },
         {
+          "declarations": [
+            "--accept-stale-java-database"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "accept_stale_java_database",
+          "required": false,
+          "type": "boolean"
+        },
+        {
           "choices": [
             "human",
             "json"
@@ -2035,6 +2046,17 @@
           "name": "resume_id",
           "required": false,
           "type": "text"
+        },
+        {
+          "declarations": [
+            "--accept-stale-java-database"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "accept_stale_java_database",
+          "required": false,
+          "type": "boolean"
         },
         {
           "declarations": [
@@ -2174,6 +2196,17 @@
           "kind": "option",
           "multiple": false,
           "name": "authoritative",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "declarations": [
+            "--accept-stale-java-database"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "accept_stale_java_database",
           "required": false,
           "type": "boolean"
         },

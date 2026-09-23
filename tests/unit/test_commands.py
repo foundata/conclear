@@ -1063,10 +1063,38 @@ def test_release_command_validates_selection_and_reports_promotion(
     assert executed[0].passphrase == "secret"
 
     code, value, _ = invoke(
+        [
+            "release",
+            "--profile",
+            "production",
+            "--resume",
+            run.workspace.run_id,
+            "--accept-stale-java-database",
+        ]
+    )
+    assert code == 64
+    assert "recorded Java database acceptance" in value["message"]
+
+    code, value, _ = invoke(
         ["release", "--profile", "production", "--resume", run.workspace.run_id]
     )
     assert code == 0
     assert resumed == [run.workspace.run_id]
+
+    code, value, _ = invoke(
+        [
+            "release",
+            "--profile",
+            "production",
+            "--revision",
+            "v1",
+            "--image",
+            "app",
+            "--accept-stale-java-database",
+        ]
+    )
+    assert code == 0, value
+    assert executed[-1].accept_stale_java_database is True
 
 
 @pytest.mark.parametrize("status", list(DiagnosticStatus))
@@ -2087,6 +2115,67 @@ def test_release_without_an_archive_directory_anywhere_is_an_invalid_invocation(
 
     assert code == 64
     assert "archive_dir" in value["message"]
+
+
+def test_qualify_records_and_passes_an_accepted_stale_java_database(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[..., tuple[int, Any, str]],
+) -> None:
+    run = FakeSourceRun(repository_factory(), tmp_path)
+    accepted: list[bool] = []
+
+    def qualify(inputs: Any, *args: Any, **kwargs: Any) -> SimpleNamespace:
+        del inputs, args
+        accepted.append(kwargs["accept_stale_java_database"])
+        return SimpleNamespace(
+            verdict=Verdict.ACCEPTED,
+            findings=(),
+            record_path=Path("/record.json"),
+            record_digest=DIGEST,
+            layout_path=Path("/layout"),
+            qualification_window=QualificationWindow.start(
+                datetime(2026, 1, 1, tzinfo=UTC)
+            ),
+            test_results=(),
+        )
+
+    bound: list[dict[str, str] | None] = []
+
+    def create(**kwargs: Any) -> FakeSourceRun:
+        bound.append(kwargs["additional_inputs"])
+        return run
+
+    monkeypatch.setattr(
+        preflight_module,
+        "check_image",
+        lambda image, hadolint: SimpleNamespace(accepted=True, findings=()),
+    )
+    _local(
+        monkeypatch,
+        run,
+        PinStore=lambda home: _PinStore(accepted=True),
+        select_fresh_database=lambda *args, **kwargs: SimpleNamespace(digest=DIGEST),
+        hook_runner=lambda *args, **kwargs: object(),
+        qualify_platform=qualify,
+        create_source_run=create,
+    )
+
+    code, value, _ = invoke(
+        [
+            "qualify",
+            "--revision",
+            "v1",
+            "--image",
+            "app",
+            "--accept-stale-java-database",
+        ]
+    )
+
+    assert code == 0, value
+    assert accepted == [True]
+    assert bound == [{"acceptStaleJavaDatabase": "true"}]
 
 
 def test_qualify_defaults_to_the_single_declared_platform(

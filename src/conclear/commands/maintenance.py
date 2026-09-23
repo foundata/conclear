@@ -66,6 +66,7 @@ from conclear.workspace import (
 
 from .archive import archive_completed_run, archive_details
 from .common import (
+    accept_stale_java_database_option,
     archive_options,
     cache_home,
     ci_context,
@@ -569,6 +570,7 @@ def cleanup_command(
 @required_profile_option
 @archive_options
 @click.option("authoritative", "--authoritative", is_flag=True)
+@accept_stale_java_database_option
 @passphrase_option
 @click.option("previous_result", "--previous-result")
 @click.option("triage_path", "--triage-file", type=click.Path(path_type=Path))
@@ -579,6 +581,7 @@ def rescan_command(
     image_id: str | None,
     profile_name: str,
     authoritative: bool,
+    accept_stale_java_database: bool,
     passphrase_fd: int | None,
     previous_result: str | None,
     triage_path: Path | None,
@@ -617,6 +620,7 @@ def rescan_command(
                     image_id=archived.image_id,
                     selected=selected,
                     authoritative=authoritative,
+                    accept_stale_java_database=accept_stale_java_database,
                     passphrase_fd=passphrase_fd,
                     previous_result=previous_result,
                     triage_path=triage_path,
@@ -634,6 +638,7 @@ def rescan_command(
         image_id=image_id,
         selected=selected,
         authoritative=authoritative,
+        accept_stale_java_database=accept_stale_java_database,
         passphrase_fd=passphrase_fd,
         previous_result=previous_result,
         triage_path=triage_path,
@@ -650,6 +655,7 @@ def _execute_rescan(
     image_id: str | None,
     selected: ReleaseProfile,
     authoritative: bool,
+    accept_stale_java_database: bool,
     passphrase_fd: int | None,
     previous_result: str | None,
     triage_path: Path | None,
@@ -789,6 +795,7 @@ def _execute_rescan(
             now=utc_now(),
             record_clock=utc_now,
             runtime_rules=image.runtime,
+            accept_stale_java_database=accept_stale_java_database,
         )
         if result.authoritative:
             if result.verified_at is None:

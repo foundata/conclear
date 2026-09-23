@@ -42,6 +42,7 @@ from conclear.workspace import RunState
 
 from .archive import archive_completed_run, archive_details
 from .common import (
+    accept_stale_java_database_option,
     archive_options,
     cache_home,
     ci_context,
@@ -339,6 +340,7 @@ def promote_command(
 @required_profile_option
 @archive_options
 @click.option("resume_id", "--resume")
+@accept_stale_java_database_option
 @passphrase_option
 @format_option
 def release_command(
@@ -348,6 +350,7 @@ def release_command(
     release_version: str | None,
     profile_name: str,
     resume_id: str | None,
+    accept_stale_java_database: bool,
     passphrase_fd: int | None,
     output_format: str,
     archive_directory: Path | None,
@@ -372,6 +375,10 @@ def release_command(
             raise click.UsageError(
                 "--resume uses recorded revision, image and version inputs"
             )
+        if accept_stale_java_database:
+            raise click.UsageError(
+                "--resume reuses the run's recorded Java database acceptance"
+            )
         result = resume_release(
             resume_id,
             repository=source_root,
@@ -395,6 +402,7 @@ def release_command(
                 cache_home=cache_home(),
                 passphrase=passphrase,
                 ci_context=observed_ci,
+                accept_stale_java_database=accept_stale_java_database,
             )
         )
     archive = archive_completed_run(

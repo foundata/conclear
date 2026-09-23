@@ -115,6 +115,19 @@ def archive_options[FC: Callable[..., Any]](function: FC) -> FC:
     )(function)
 
 
+def accept_stale_java_database_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Let a maintainer accept an expired Java database for one invocation."""
+    return click.option(
+        "accept_stale_java_database",
+        "--accept-stale-java-database",
+        is_flag=True,
+        help=(
+            "Record and accept the risk that Java artifacts were assessed against "
+            "an expired Trivy Java database (CC0507)."
+        ),
+    )(function)
+
+
 def platform_option[FC: Callable[..., Any]](function: FC) -> FC:
     """Add the target platform selector; optional when the image declares one."""
     return click.option(

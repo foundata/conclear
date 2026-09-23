@@ -560,6 +560,79 @@ def test_qualification_phase_rejects_before_later_state_changes(
     assert harness.workspace.load().state is RunState.QUALIFIED
 
 
+def test_release_binds_an_accepted_stale_java_database_only_when_given(
+    harness: Harness,
+) -> None:
+    plain = release._release_inputs(harness.request())
+    accepting = release._release_inputs(
+        harness.request(accept_stale_java_database=True)
+    )
+
+    assert "acceptStaleJavaDatabase" not in plain
+    assert accepting["acceptStaleJavaDatabase"] == "true"
+    assert {key: accepting[key] for key in plain} == plain
+
+
+def test_qualification_passes_the_maintainer_java_acceptance_to_every_platform(
+    harness: Harness,
+) -> None:
+    accepted: list[bool] = []
+
+    class Store:
+        def __init__(self, home: Path) -> None:
+            pass
+
+        def check(self, pin: Any, **kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(accepted=True, findings=())
+
+    def qualify(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        accepted.append(kwargs["accept_stale_java_database"])
+        return SimpleNamespace(verdict=Verdict.ACCEPTED, findings=())
+
+    monkeypatch = harness.monkeypatch
+    monkeypatch.setattr(
+        preflight_module,
+        "check_image",
+        lambda *a, **k: SimpleNamespace(accepted=True, findings=()),
+    )
+    monkeypatch.setattr(release, "PinStore", Store)
+    monkeypatch.setattr(
+        release,
+        "select_fresh_database",
+        lambda *a, **k: SimpleNamespace(digest="sha256:" + "e" * 64),
+    )
+    monkeypatch.setattr(release, "hook_runner", lambda *a, **k: object())
+    monkeypatch.setattr(release, "qualify_platform", qualify)
+    monkeypatch.setattr(release, "qualification_transport", lambda *a: None)
+
+    release._qualify_release(
+        harness.request(accept_stale_java_database=True),
+        repository=harness.repository,
+        workspace=harness.workspace,
+        runtime=cast(Any, harness.runtime),
+        source=harness.source_run.source,
+        source_time=NOW,
+        now_factory=lambda: NOW,
+    )
+
+    assert accepted == [True]
+
+
+def test_resume_reuses_the_recorded_java_acceptance(harness: Harness) -> None:
+    harness.workspace.bind_immutable_inputs({"acceptStaleJavaDatabase": "true"})
+    requests: list[ReleaseRequest] = []
+
+    def continued(request: ReleaseRequest, **_kwargs: Any) -> SimpleNamespace:
+        requests.append(request)
+        return SimpleNamespace()
+
+    harness.monkeypatch.setattr(release, "_continue_release", continued)
+
+    harness.resume()
+
+    assert requests[0].accept_stale_java_database is True
+
+
 def test_signer_modes_timestamps_and_failure_summaries(
     harness: Harness, tmp_path: Path
 ) -> None:

@@ -50,6 +50,7 @@ from conclear.values import Digest, Platform
 from conclear.workspace import RunState
 
 from .common import (
+    accept_stale_java_database_option,
     cache_home,
     command_runtime,
     config_option,
@@ -253,6 +254,7 @@ def test_command(run_id: str, platform_text: str, output_format: str) -> None:
     "--qualification-started-at",
     help="Original UTC qualification start shared with a pinned database snapshot.",
 )
+@accept_stale_java_database_option
 @format_option
 def qualify_command(
     source_root: Path,
@@ -263,6 +265,7 @@ def qualify_command(
     profile_name: str | None,
     database_digest: str | None,
     qualification_start: str | None,
+    accept_stale_java_database: bool,
     output_format: str,
 ) -> None:
     """Run all local gates and emit one platform qualification."""
@@ -284,6 +287,8 @@ def qualify_command(
         additional_inputs["databaseDigest"] = str(expected_database)
     if started_at is not None:
         additional_inputs["qualificationStartedAt"] = format_timestamp(started_at)
+    if accept_stale_java_database:
+        additional_inputs["acceptStaleJavaDatabase"] = "true"
     source_run = create_source_run(
         source_root=source_root,
         selector=selector,
@@ -361,6 +366,7 @@ def qualify_command(
             now=utc_now(),
             qualification_started_at=started_at,
             record_clock=utc_now,
+            accept_stale_java_database=accept_stale_java_database,
         )
         target = {
             "accepted": RunState.QUALIFIED,

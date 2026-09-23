@@ -95,6 +95,7 @@ class ReleaseRequest:
     cache_home: Path
     passphrase: str | None
     ci_context: CIContextObservation | None
+    accept_stale_java_database: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,7 +149,7 @@ def execute_release(
         state_home=request.state_home,
         names=command_tools("release"),
         profile_name=request.profile.name,
-        additional_inputs=_profile_inputs(request.profile),
+        additional_inputs=_release_inputs(request),
         allowed_origins=request.profile.allowed_source_origins,
         id_factory=id_factory or UlidFactory(),
         now=now_factory(),
@@ -257,6 +258,7 @@ def resume_release(
         cache_home=cache_home,
         passphrase=passphrase,
         ci_context=ci_context,
+        accept_stale_java_database=expected.get("acceptStaleJavaDatabase") == "true",
     )
     try:
         return _continue_release(
@@ -514,6 +516,7 @@ def _qualify_release(
             now=now_factory(),
             qualification_started_at=qualification_started_at,
             record_clock=now_factory,
+            accept_stale_java_database=request.accept_stale_java_database,
         )
         if result.verdict is Verdict.REJECTED:
             errors = tuple(
@@ -582,6 +585,23 @@ def generate_release_provenance(
 def profile_inputs(profile: ReleaseProfile) -> dict[str, str]:
     """Return non-secret immutable inputs for one release trust profile."""
     return _profile_inputs(profile)
+
+
+def _release_inputs(request: ReleaseRequest) -> dict[str, str]:
+    """Bind the trust profile and the maintainer's recorded Java acceptance.
+
+    The acceptance is bound at run creation rather than beside the database
+    selection, so a resume carries the same decision no matter where the
+    original attempt stopped.
+    """
+    return {
+        **_profile_inputs(request.profile),
+        **(
+            {"acceptStaleJavaDatabase": "true"}
+            if request.accept_stale_java_database
+            else {}
+        ),
+    }
 
 
 def _profile_inputs(profile: ReleaseProfile) -> dict[str, str]:
