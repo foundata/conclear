@@ -64,6 +64,10 @@ EXIT_STATUS_MEANINGS = {
 }
 
 
+PROGRAM = "conclear"
+"""Inventory name of the root group, whose own options have no path."""
+
+
 def render_inventory() -> dict[str, object]:
     """Return the deterministic internal compatibility inventory."""
     catalog = load_catalog()
@@ -123,19 +127,18 @@ def write_inventory(path: Path) -> None:
 
 
 def _commands(command: click.Command, path: tuple[str, ...]) -> list[dict[str, object]]:
-    entries: list[dict[str, object]] = []
-    if path:
-        entry: dict[str, object] = {
-            "name": " ".join(path),
-            "group": isinstance(command, click.Group),
-            "help": (command.help or "").strip().splitlines()[0]
-            if command.help
-            else "",
-            "parameters": [_parameter(item) for item in command.params],
-        }
-        if not isinstance(command, click.Group):
-            entry["dependencies"] = _dependencies(" ".join(path))
-        entries.append(entry)
+    # The root group is a command too: its own options, such as --quiet, are
+    # part of the surface a script depends on, so it is listed under the
+    # program's name.
+    entry: dict[str, object] = {
+        "name": " ".join(path) or PROGRAM,
+        "group": isinstance(command, click.Group),
+        "help": (command.help or "").strip().splitlines()[0] if command.help else "",
+        "parameters": [_parameter(item) for item in command.params],
+    }
+    if not isinstance(command, click.Group):
+        entry["dependencies"] = _dependencies(" ".join(path))
+    entries: list[dict[str, object]] = [entry]
     if isinstance(command, click.Group):
         for name in sorted(command.commands):
             entries.extend(_commands(command.commands[name], (*path, name)))

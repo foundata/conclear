@@ -48,31 +48,41 @@ def test_inventory_covers_every_command_option_and_argument() -> None:
     runner = CliRunner()
 
     def walk(command: Any, path: tuple[str, ...]) -> None:
-        if path:
-            name = " ".join(path)
-            assert name in inventory, name
-            entry = inventory[name]
-            declared = {
-                (item["name"], tuple(item["declarations"]), item["required"])
-                for item in entry["parameters"]
-            }
-            actual = {
-                (parameter.name, tuple(parameter.opts), bool(parameter.required))
-                for parameter in command.params
-            }
-            assert declared == actual, name
-            help_result = runner.invoke(root, [*path, "--help"])
-            assert help_result.exit_code == 0, name
-            assert help_result.stderr == ""
+        # The root group is walked like every other node; its own options are
+        # surface too.
+        name = " ".join(path) or "conclear"
+        assert name in inventory, name
+        entry = inventory[name]
+        declared = {
+            (item["name"], tuple(item["declarations"]), item["required"])
+            for item in entry["parameters"]
+        }
+        actual = {
+            (parameter.name, tuple(parameter.opts), bool(parameter.required))
+            for parameter in command.params
+        }
+        assert declared == actual, name
+        help_result = runner.invoke(root, [*path, "--help"])
+        assert help_result.exit_code == 0, name
+        assert help_result.stderr == ""
         if hasattr(command, "commands"):
             for child_name, child in command.commands.items():
                 walk(child, (*path, child_name))
 
     walk(root, ())
     assert {entry["name"] for entry in committed()["commands"]} == set(inventory)
-    assert {"release", "pins check", "pins propose", "pins apply", "rescan"} <= set(
-        inventory
-    )
+    assert {
+        "conclear",
+        "release",
+        "pins check",
+        "pins propose",
+        "pins apply",
+        "rescan",
+    } <= set(inventory)
+    assert {item["name"] for item in inventory["conclear"]["parameters"]} == {
+        "version",
+        "quiet",
+    }
 
 
 def test_inventory_records_versions_exit_statuses_schemas_and_identifiers() -> None:

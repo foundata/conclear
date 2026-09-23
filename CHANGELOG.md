@@ -15,6 +15,8 @@ and the project adheres to
   stays the product. `-q`/`--quiet` before the command drops the story but
   never an error. `python -m conclear.release_check` announces its steps there
   too instead of on stdout, so its stdout is now empty.
+- The compatibility inventory lists the root group as `conclear` with its own
+  options, `--version` and `--quiet`, which it had left out.
 - `CC0507` rejects Java artifacts assessed against an expired Trivy Java
   database, and `--accept-stale-java-database` on `qualify`, `release` and
   `rescan` accepts that risk for one invocation. Qualification,

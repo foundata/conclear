@@ -674,6 +674,36 @@
   "commandResultSchemaVersion": 1,
   "commands": [
     {
+      "group": true,
+      "help": "Qualify and release OCI container images through verified digests.",
+      "name": "conclear",
+      "parameters": [
+        {
+          "declarations": [
+            "--version"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "version",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "declarations": [
+            "-q",
+            "--quiet"
+          ],
+          "flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "quiet",
+          "required": false,
+          "type": "boolean"
+        }
+      ]
+    },
+    {
       "dependencies": {
         "profile": "none",
         "registryAccess": "none",
