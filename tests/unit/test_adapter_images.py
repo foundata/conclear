@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+from conclear.adapters.hadolint import HadolintAdapter
 from conclear.adapters.trivy import TrivyAdapter
 from conclear.jsonutil import sha256_file
 from conclear.process import CommandRequest, ProcessResult
@@ -25,9 +26,12 @@ def _result(stdout: str = "") -> ProcessResult:
 class ImageRunner:
     """Answer the image recheck and let a test react to every tool run."""
 
-    def __init__(self, digest: str, react: Reaction | None = None) -> None:
+    def __init__(
+        self, digest: str, react: Reaction | None = None, *, stdout: str = ""
+    ) -> None:
         self.digest = digest
         self.react = react
+        self.stdout = stdout
         self.runs: list[CommandRequest] = []
 
     def run(self, request: CommandRequest) -> ProcessResult:
@@ -36,7 +40,7 @@ class ImageRunner:
         self.runs.append(request)
         if self.react is not None:
             self.react(request)
-        return _result()
+        return _result(self.stdout)
 
 
 def host_of(argv: tuple[str, ...], target: str) -> Path:
@@ -306,3 +310,64 @@ def test_trivy_rescans_a_retained_sbom_mounted_read_only(tmp_path: Path) -> None
     assert _mount_targets(request.argv)["/conclear/sbom"] == "ro"
     value = cast(dict[str, Any], observation.value)
     assert value["Results"][0]["Target"] == subject
+
+
+def _hadolint(tmp_path: Path, stdout: str) -> tuple[HadolintAdapter, ImageRunner]:
+    image = SUPPORTED_TOOLS[ToolName.HADOLINT].image
+    assert image is not None
+    runner = ImageRunner(image.digest, stdout=stdout)
+    adapter = HadolintAdapter(
+        tool=image_tool(tmp_path, ToolName.HADOLINT, runner),
+        runner=runner,
+        environment=ENVIRONMENT,
+        log_directory=tmp_path / "environment" / "logs",
+    )
+    return adapter, runner
+
+
+def test_hadolint_lints_the_context_through_one_read_only_mount(tmp_path: Path) -> None:
+    context = tmp_path / "source" / "context"
+    context.mkdir(parents=True)
+    (context / ".hadolint.yaml").write_text("ignored:\n  - DL3008\n", encoding="utf-8")
+    (context / "Containerfile").write_text("FROM scratch\n", encoding="utf-8")
+    finding = {
+        "code": "DL3000",
+        "level": "error",
+        "message": "m",
+        "line": 1,
+        "column": 1,
+    }
+    adapter, runner = _hadolint(tmp_path, json.dumps([finding]))
+
+    findings = adapter.check(context / "Containerfile", config_directory=context)
+
+    assert [item.code for item in findings] == ["DL3000"]
+    (request,) = runner.runs
+    argv = request.argv
+    assert argv[argv.index("--config") + 1] == "/conclear/context/.hadolint.yaml"
+    assert argv[-1] == "/conclear/context/Containerfile"
+    assert argv[argv.index("--workdir") + 1] == "/conclear/context"
+    assert _mount_targets(argv) == {"/conclear/context": "ro"}
+    assert host_of(argv, "/conclear/context") == context
+    assert argv[argv.index("--network") + 1] == "none"
+    assert request.cwd is None
+
+
+def test_hadolint_mounts_a_containerfile_outside_the_context_separately(
+    tmp_path: Path,
+) -> None:
+    context = tmp_path / "context"
+    context.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "Containerfile").write_text("FROM scratch\n", encoding="utf-8")
+    adapter, runner = _hadolint(tmp_path, "[]")
+
+    assert adapter.check(elsewhere / "Containerfile", config_directory=context) == ()
+
+    (request,) = runner.runs
+    assert request.argv[-1] == "/conclear/mount1/Containerfile"
+    assert _mount_targets(request.argv) == {
+        "/conclear/context": "ro",
+        "/conclear/mount1": "ro",
+    }

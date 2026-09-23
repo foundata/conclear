@@ -36,10 +36,12 @@ class HadolintAdapter(ToolAdapter):
     ) -> tuple[HadolintFinding, ...]:
         """Return findings while preserving malformed output as an operation failure."""
         config = _committed_config(config_directory)
-        arguments = () if config is None else ("--config", str(config))
+        # Name the context mount first so the files below it resolve under it.
+        self._path(config_directory, name="context")
+        arguments = () if config is None else ("--config", self._path(config))
         try:
             result = self._run(
-                (*arguments, "--format", "json", str(containerfile)),
+                (*arguments, "--format", "json", self._path(containerfile)),
                 timeout_seconds=120,
                 cwd=config_directory,
             )
