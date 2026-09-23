@@ -992,7 +992,11 @@ content digest constant across every platform scan in the release. That digest
 binds both database files and their normalized schema versions, update times
 and next-update times. Local download timestamps are recorded but do not change
 snapshot identity. A stale or corrupt cache triggers one bounded refresh and
-never falls back silently to unvalidated data.
+never falls back silently to unvalidated data. When that refresh cannot reach
+its publisher, an installed snapshot whose vulnerability component is fresh is
+kept rather than discarded, because an unreachable publisher must not decide a
+release the installed data already supports; a refresh failure without such a
+snapshot fails the run.
 
 `freshness.QUALIFICATION_WINDOW` defines a 24-hour maximum from the original
 fresh snapshot selection. The vulnerability database must have been updated by
