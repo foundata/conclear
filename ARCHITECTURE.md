@@ -995,8 +995,20 @@ snapshot identity. A stale or corrupt cache triggers one bounded refresh and
 never falls back silently to unvalidated data.
 
 `freshness.QUALIFICATION_WINDOW` defines a 24-hour maximum from the original
-fresh snapshot selection. Both database components must have been updated by
-that start time and must not yet have reached their next-update time. The
+fresh snapshot selection. The vulnerability database must have been updated by
+that start time and must not yet have reached its next-update time. The Java
+database, Trivy's index for identifying jar artifacts, is recorded from the same
+metadata but held to that rule only when the platform's SBOM inventories Java
+artifacts, which `pkg:maven` package URLs identify. Java artifacts assessed
+against an expired Java database reject with `CC0507`; a maintainer may accept
+that for one invocation with `--accept-stale-java-database`, which turns the
+rejection into a recorded `CC0507` warning. Every qualification,
+release-candidate and rescan record carries `javaDatabase` with that acceptance
+beside the artifact count, and assembly recomputes the verdict from each
+record's own metadata rather than trusting its claim. The narrower rule reflects
+what the index does: Trivy itself scans with an expired Java database without
+objection, and upstream has let it lapse for days at a time, which would
+otherwise block releases of images that contain no Java at all. The
 orchestrated release records its start and database digest before qualification;
 resume reuses them. Distributed workers pin the same snapshot and pass the
 original `--qualification-started-at` value when joining an existing window.

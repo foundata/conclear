@@ -185,8 +185,9 @@
     {
       "id": "IP0018",
       "summary": "Hold a fresh immutable database snapshot across workers within the recorded qualification window",
-      "implementation": ["src/conclear/database.py", "src/conclear/freshness.py", "src/conclear/adapters/trivy.py"],
+      "implementation": ["src/conclear/database.py", "src/conclear/freshness.py", "src/conclear/adapters/trivy.py", "src/conclear/scan_policy.py"],
       "tests": [
+        {"path": "tests/unit/test_database.py", "tier": "unit"},
         {"path": "tests/unit/test_freshness.py", "tier": "unit"},
         {"path": "tests/unit/test_runtime_inputs.py", "tier": "unit"},
         {"path": "tests/unit/test_scan_policy.py", "tier": "unit"},
