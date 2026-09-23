@@ -162,7 +162,7 @@ def _prepare_repository(
     (repository / "conclear.toml").write_text(
         _configuration(platforms), encoding="utf-8"
     )
-    git = str(runtime.tools[ToolName.GIT].path)
+    git = str(runtime.executable(ToolName.GIT).path)
 
     def run_git(*arguments: str) -> None:
         runtime.runner.run(

@@ -409,6 +409,7 @@ def _rescan_cli(
                 name=ToolName.COSIGN,
                 version="3.1.3",
                 executable_digest="sha256:" + "a" * 64,
+                binding_digest="sha256:" + "a" * 64,
             ),
         },
         raising=False,

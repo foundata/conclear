@@ -1,5 +1,7 @@
 """Run-owned external-tool environment and adapter construction."""
 
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,8 +21,19 @@ from conclear.runtime_directory import (
     remove_runtime_directory,
     session_bus_environment,
 )
+from conclear.tool_images import (
+    ImageResolver,
+    ImageResolverFactory,
+    Tool,
+    ToolImageResolver,
+    ToolImageStore,
+    bootstrap_tools,
+    selected_tool_images,
+)
 from conclear.tools import ResolvedTool, ToolName, ToolResolver
 from conclear.workspace import ResourceJournal
+
+TOOL_IMAGE_STORE = "tool-images"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,17 +50,36 @@ class ToolProblem:
 
 
 @dataclass(frozen=True, slots=True)
+class _Selection:
+    """Which declared tools run from images and which host executables that takes."""
+
+    host: tuple[ToolName, ...]
+    images: tuple[ToolName, ...]
+
+    @classmethod
+    def plan(
+        cls, names: tuple[ToolName, ...], images: frozenset[ToolName] | None
+    ) -> "_Selection":
+        selected = selected_tool_images(os.environ) if images is None else images
+        from_images = tuple(name for name in dict.fromkeys(names) if name in selected)
+        host = [name for name in dict.fromkeys(names) if name not in selected]
+        host.extend(name for name in bootstrap_tools(from_images) if name not in host)
+        return cls(host=tuple(host), images=from_images)
+
+
+@dataclass(frozen=True, slots=True)
 class ApplicationRuntime:
     """Resolved tools and adapters held immutable for one command or release run.
 
     A runtime resolves only the tools its command executes; the identities it
-    records are exactly those tools.
+    records are exactly those tools. A tool selected to run from its pinned
+    image adds the host executables that pull, verify and run it.
     """
 
     root: Path
     environment: dict[str, str]
     runner: ProcessRunner
-    tools: dict[ToolName, ResolvedTool]
+    tools: dict[ToolName, Tool]
     _adapters: dict[ToolName, ToolAdapter] = field(
         default_factory=dict,
         init=False,
@@ -63,24 +95,31 @@ class ApplicationRuntime:
         names: tuple[ToolName, ...] = tuple(ToolName),
         resolver: ToolResolver | None = None,
         journal: ResourceJournal | None = None,
+        images: frozenset[ToolName] | None = None,
+        image_resolver: ImageResolverFactory | None = None,
     ) -> "ApplicationRuntime":
         """Create isolated XDG paths and resolve exactly the requested tools."""
+        selection = _Selection.plan(names, images)
         try:
-            environment, runner = cls._prepare(root, names=names, journal=journal)
+            environment, runner = cls._prepare(
+                root, names=selection.host, journal=journal
+            )
             resolved = (resolver or ToolResolver(runner=runner)).resolve_all(
                 environment=environment,
-                names=names,
+                names=selection.host,
             )
+            tools: dict[ToolName, Tool] = {item.name: item for item in resolved}
+            if selection.images:
+                image_tools = _image_resolver(
+                    root, tools, runner, image_resolver, selection.images
+                )
+                for name in selection.images:
+                    tools[name] = image_tools.resolve(name, environment=environment)
         except BaseException:
             if journal is None:
                 remove_runtime_directory(root)
             raise
-        return cls(
-            root=root,
-            environment=environment,
-            runner=runner,
-            tools={item.name: item for item in resolved},
-        )
+        return cls(root=root, environment=environment, runner=runner, tools=tools)
 
     @classmethod
     def diagnose(
@@ -89,21 +128,37 @@ class ApplicationRuntime:
         *,
         names: tuple[ToolName, ...],
         resolver: ToolResolver | None = None,
+        images: frozenset[ToolName] | None = None,
+        image_resolver: ImageResolverFactory | None = None,
     ) -> tuple["ApplicationRuntime", tuple[ToolProblem, ...]]:
         """Resolve every requested tool and report each failure instead of the first.
 
         The returned runtime holds only the tools that resolved; a diagnosis
         must not proceed to use it while problems remain.
         """
-        environment, runner = cls._prepare(root, names=names)
+        selection = _Selection.plan(names, images)
+        environment, runner = cls._prepare(root, names=selection.host)
         selected = resolver or ToolResolver(runner=runner)
-        tools: dict[ToolName, ResolvedTool] = {}
+        tools: dict[ToolName, Tool] = {}
         problems: list[ToolProblem] = []
-        for name in dict.fromkeys(names):
+        for name in selection.host:
             try:
                 tools[name] = selected.resolve(name, environment=environment)
             except ConClearError as exc:
                 problems.append(ToolProblem(name, exc))
+        if selection.images:
+            try:
+                image_tools = _image_resolver(
+                    root, tools, runner, image_resolver, selection.images
+                )
+            except ConClearError as exc:
+                problems.extend(ToolProblem(name, exc) for name in selection.images)
+            else:
+                for name in selection.images:
+                    try:
+                        tools[name] = image_tools.resolve(name, environment=environment)
+                    except ConClearError as exc:
+                        problems.append(ToolProblem(name, exc))
         return (
             cls(root=root, environment=environment, runner=runner, tools=tools),
             tuple(problems),
@@ -146,13 +201,34 @@ class ApplicationRuntime:
 
     @property
     def identities(self) -> tuple[ToolIdentity, ...]:
-        """Return sorted public identities for every selected executable."""
+        """Return sorted public identities for every selected tool."""
         return tuple(self.tools[name].record_identity() for name in sorted(self.tools))
 
+    @property
+    def tool_image_store(self) -> ToolImageStore | None:
+        """Return the store holding this runtime's tool images, if any were pulled."""
+        stores = {
+            tool.store
+            for tool in self.tools.values()
+            if not isinstance(tool, ResolvedTool)
+        }
+        if len(stores) > 1:  # pragma: no cover - one runtime owns one store
+            raise OperationalError("Runtime tool images live in several stores")
+        return next(iter(stores), None)
+
     def assert_unchanged(self) -> None:
-        """Recheck every selected executable before a later phase uses it."""
+        """Recheck every selected tool before a later phase uses it."""
         for tool in self.tools.values():
             tool.assert_unchanged()
+
+    def executable(self, name: ToolName) -> ResolvedTool:
+        """Return one tool that runs as a host executable, never from an image."""
+        tool = self.tools.get(name)
+        if tool is None:
+            raise OperationalError(f"Runtime did not resolve {name.value}")
+        if not isinstance(tool, ResolvedTool):
+            raise OperationalError(f"{name.value} runs from its image, not the host")
+        return tool
 
     def git(self) -> GitAdapter:
         """Return the resolved Git adapter."""
@@ -202,3 +278,26 @@ class ApplicationRuntime:
         )
         self._adapters[name] = value
         return value
+
+
+def _image_resolver(
+    root: Path,
+    tools: Mapping[ToolName, Tool],
+    runner: ProcessRunner,
+    factory: ImageResolverFactory | None,
+    images: tuple[ToolName, ...],
+) -> ImageResolver:
+    podman = tools.get(ToolName.PODMAN)
+    if not isinstance(podman, ResolvedTool):
+        raise OperationalError(
+            "Running "
+            + ", ".join(name.value for name in images)
+            + " from an image requires the podman executable"
+        )
+    cosign = tools.get(ToolName.COSIGN)
+    if cosign is not None and not isinstance(cosign, ResolvedTool):
+        raise OperationalError("Cosign cannot verify tool images from an image")
+    store = ToolImageStore.below(root / TOOL_IMAGE_STORE)
+    return (factory or ToolImageResolver)(
+        runner=runner, store=store, podman=podman, cosign=cosign
+    )

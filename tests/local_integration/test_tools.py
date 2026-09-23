@@ -59,7 +59,7 @@ def test_supported_real_tool_matrix_and_read_only_interfaces(tmp_path: Path) -> 
     repository = tmp_path / "repository"
     repository.mkdir(mode=0o700)
     (repository / "tracked.txt").write_text("test\n", encoding="utf-8")
-    git = runtime.tools[ToolName.GIT].path
+    git = runtime.executable(ToolName.GIT).path
     for arguments in (
         ("init",),
         ("add", "tracked.txt"),
@@ -94,7 +94,7 @@ def test_supported_real_tool_matrix_and_read_only_interfaces(tmp_path: Path) -> 
         )
     observation = runtime.git().observe(repository, "HEAD")
     assert len(observation.revision) in {40, 64}
-    cosign = runtime.tools[ToolName.COSIGN].path
+    cosign = runtime.executable(ToolName.COSIGN).path
     help_text: dict[str, str] = {}
     for command in ("sign", "sign-blob", "verify-blob"):
         help_text[command] = runtime.runner.run(
@@ -240,7 +240,7 @@ def test_real_scratch_runtime_modes_and_multi_platform_assembly(
         runtime.runner.run(
             CommandRequest(
                 argv=(
-                    str(runtime.tools[ToolName.SKOPEO].path),
+                    str(runtime.executable(ToolName.SKOPEO).path),
                     "copy",
                     "--all",
                     "--preserve-digests",
@@ -514,7 +514,7 @@ def test_manual_cosign_no_service_blob_signing(
     runtime = ApplicationRuntime.create(
         root / "environment", names=(ToolName.COSIGN,), resolver=tool_resolver()
     )
-    cosign = runtime.tools[ToolName.COSIGN].path
+    cosign = runtime.executable(ToolName.COSIGN).path
     signing_root = root / "manual-signing"
     signing_root.mkdir(mode=0o700, parents=True)
     artifact = signing_root / "artifact.txt"

@@ -53,7 +53,7 @@ def test_native_cosign_retained_bundle_verification(tmp_path: Path) -> None:
     def run(*arguments: str) -> None:
         runtime.runner.run(
             CommandRequest(
-                argv=(str(runtime.tools[ToolName.COSIGN].path), *arguments),
+                argv=(str(runtime.executable(ToolName.COSIGN).path), *arguments),
                 environment={**runtime.environment, "COSIGN_PASSWORD": ""},
                 timeout_seconds=180,
                 operation=OperationKind.WRITE,

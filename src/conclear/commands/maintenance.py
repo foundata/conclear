@@ -721,7 +721,7 @@ def _execute_rescan(
         )
         workspace.bind_immutable_inputs(
             {
-                f"tool.{tool.name.value}": f"{tool.version}@{tool.executable_digest}"
+                f"tool.{tool.name.value}": f"{tool.version}@{tool.binding_digest}"
                 for tool in runtime.tools.values()
             }
         )

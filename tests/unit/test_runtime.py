@@ -1,5 +1,6 @@
 import hashlib
 import socket
+from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -8,7 +9,14 @@ import pytest
 from conclear.errors import OperationalError, RuleRejectionError
 from conclear.process import CommandRequest, ProcessResult, ProcessRunner
 from conclear.runtime import ApplicationRuntime
-from conclear.tools import ResolvedTool, ToolName, ToolResolver
+from conclear.tool_images import ImageBackedTool, ToolImageStore
+from conclear.tools import (
+    SUPPORTED_TOOLS,
+    ResolvedTool,
+    Runner,
+    ToolName,
+    ToolResolver,
+)
 
 
 @pytest.mark.parametrize("order", [("local", "system"), ("system", "local")])
@@ -34,7 +42,7 @@ def test_runtime_discovers_tools_in_caller_path_order_and_passes_it_to_children(
     monkeypatch.setattr(ProcessRunner, "run", observe)
     runtime = ApplicationRuntime.create(tmp_path / "environment", names=(ToolName.GIT,))
 
-    assert runtime.tools[ToolName.GIT].path == directories[0] / "git"
+    assert runtime.executable(ToolName.GIT).path == directories[0] / "git"
     assert runtime.environment["PATH"] == search_path
     assert len(requests) == 1
     assert requests[0].argv == (str(directories[0] / "git"), "--version")
@@ -212,3 +220,190 @@ def test_tool_resolution_failure_removes_command_runtime_files(
             ),
         )
     assert not tuple(login_runtime.iterdir())
+
+
+class _InspectRunner:
+    """Answer the image recheck with the pinned digest; nothing else runs."""
+
+    def __init__(self, digest: str) -> None:
+        self.digest = digest
+
+    def run(self, request: CommandRequest) -> ProcessResult:
+        assert "inspect" in request.argv, request.argv
+        return ProcessResult(
+            request.argv, 0, self.digest + "\n", "", 0.0, 1, False, False
+        )
+
+
+class _ImageFactory:
+    """Stand in for the image resolver and record what the runtime handed over."""
+
+    def __init__(self, broken: dict[ToolName, Exception] | None = None) -> None:
+        self.broken = broken or {}
+        self.calls: list[dict[str, object]] = []
+        self.resolved: list[ToolName] = []
+
+    def __call__(
+        self,
+        *,
+        runner: Runner,
+        store: ToolImageStore,
+        podman: ResolvedTool,
+        cosign: ResolvedTool | None,
+    ) -> "_ImageFactory":
+        self.calls.append({"store": store, "podman": podman, "cosign": cosign})
+        self.store = store
+        self.podman = podman
+        return self
+
+    def resolve(
+        self, name: ToolName, *, environment: Mapping[str, str]
+    ) -> ImageBackedTool:
+        self.resolved.append(name)
+        failure = self.broken.get(name)
+        if failure is not None:
+            raise failure
+        image = SUPPORTED_TOOLS[name].image
+        assert image is not None
+        return ImageBackedTool(
+            name=name,
+            image=image,
+            version=str(image.version),
+            reported_version="test",
+            manifest_digest="sha256:" + "2" * 64,
+            executor=self.podman,
+            store=self.store,
+            runner=_InspectRunner(image.digest),
+            environment=environment,
+        )
+
+
+def test_a_tool_selected_to_run_from_its_image_adds_podman_to_the_host_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "login-runtime"))
+    (tmp_path / "login-runtime").mkdir(mode=0o700)
+    resolver = _Resolver({}, tmp_path)
+    factory = _ImageFactory()
+
+    runtime = ApplicationRuntime.create(
+        tmp_path / "environment",
+        names=(ToolName.GIT, ToolName.HADOLINT),
+        resolver=cast(ToolResolver, resolver),
+        images=frozenset({ToolName.HADOLINT}),
+        image_resolver=factory,
+    )
+
+    assert resolver.requested == [ToolName.GIT, ToolName.PODMAN]
+    assert tuple(runtime.tools) == (ToolName.GIT, ToolName.PODMAN, ToolName.HADOLINT)
+    assert isinstance(runtime.tools[ToolName.HADOLINT], ImageBackedTool)
+    assert factory.resolved == [ToolName.HADOLINT]
+    (call,) = factory.calls
+    assert call["podman"] is runtime.tools[ToolName.PODMAN]
+    assert call["cosign"] is None
+    store = cast(ToolImageStore, call["store"])
+    assert store.root == tmp_path / "environment" / "tool-images" / "root"
+    assert runtime.tool_image_store == store
+    assert [item.name for item in runtime.identities] == ["git", "hadolint", "podman"]
+    assert runtime.identities[1].to_dict()["imageDigest"]
+    runtime.assert_unchanged()
+    runtime.close()
+
+
+def test_a_signed_image_adds_cosign_and_an_unused_selection_adds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "login-runtime"))
+    (tmp_path / "login-runtime").mkdir(mode=0o700)
+    resolver = _Resolver({}, tmp_path)
+    factory = _ImageFactory()
+
+    runtime = ApplicationRuntime.create(
+        tmp_path / "environment",
+        names=(ToolName.TRIVY,),
+        resolver=cast(ToolResolver, resolver),
+        images=frozenset({ToolName.TRIVY, ToolName.HADOLINT}),
+        image_resolver=factory,
+    )
+
+    assert resolver.requested == [ToolName.PODMAN, ToolName.COSIGN]
+    assert tuple(runtime.tools) == (ToolName.PODMAN, ToolName.COSIGN, ToolName.TRIVY)
+    assert factory.calls[0]["cosign"] is runtime.tools[ToolName.COSIGN]
+    assert factory.resolved == [ToolName.TRIVY]
+
+    plain = _Resolver({}, tmp_path / "plain")
+    (tmp_path / "plain").mkdir()
+    unaffected = ApplicationRuntime.create(
+        tmp_path / "plain-environment",
+        names=(ToolName.GIT,),
+        resolver=cast(ToolResolver, plain),
+        images=frozenset({ToolName.TRIVY}),
+        image_resolver=_ImageFactory(),
+    )
+    assert plain.requested == [ToolName.GIT]
+    assert unaffected.tool_image_store is None
+
+
+def test_the_selection_defaults_to_the_environment_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "login-runtime"))
+    (tmp_path / "login-runtime").mkdir(mode=0o700)
+    monkeypatch.setenv("CONCLEAR_TOOL_IMAGES", "hadolint")
+
+    runtime = ApplicationRuntime.create(
+        tmp_path / "environment",
+        names=(ToolName.HADOLINT,),
+        resolver=cast(ToolResolver, _Resolver({}, tmp_path)),
+        image_resolver=_ImageFactory(),
+    )
+
+    assert isinstance(runtime.tools[ToolName.HADOLINT], ImageBackedTool)
+
+
+def test_diagnose_reports_image_failures_beside_host_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "login-runtime"))
+    (tmp_path / "login-runtime").mkdir(mode=0o700)
+    factory = _ImageFactory({ToolName.HADOLINT: OperationalError("pull failed")})
+
+    runtime, problems = ApplicationRuntime.diagnose(
+        tmp_path / "environment",
+        names=(ToolName.GIT, ToolName.HADOLINT, ToolName.TRIVY),
+        resolver=cast(ToolResolver, _Resolver({}, tmp_path)),
+        images=frozenset({ToolName.HADOLINT, ToolName.TRIVY}),
+        image_resolver=factory,
+    )
+
+    assert tuple(runtime.tools) == (
+        ToolName.GIT,
+        ToolName.PODMAN,
+        ToolName.COSIGN,
+        ToolName.TRIVY,
+    )
+    assert [problem.message for problem in problems] == ["hadolint: pull failed"]
+
+
+def test_diagnose_blames_every_image_when_podman_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "login-runtime"))
+    (tmp_path / "login-runtime").mkdir(mode=0o700)
+
+    runtime, problems = ApplicationRuntime.diagnose(
+        tmp_path / "environment",
+        names=(ToolName.HADOLINT,),
+        resolver=cast(
+            ToolResolver,
+            _Resolver({ToolName.PODMAN: OperationalError("unavailable")}, tmp_path),
+        ),
+        images=frozenset({ToolName.HADOLINT}),
+        image_resolver=_ImageFactory(),
+    )
+
+    assert tuple(runtime.tools) == ()
+    assert [problem.message for problem in problems] == [
+        "podman: unavailable",
+        "hadolint: Running hadolint from an image requires the podman executable",
+    ]

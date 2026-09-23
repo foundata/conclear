@@ -39,6 +39,10 @@ class FakeTool:
     version: str
     executable_digest: str
 
+    @property
+    def binding_digest(self) -> str:
+        return self.executable_digest
+
 
 class FakeGit:
     def __init__(self, source_root: Path) -> None:

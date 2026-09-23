@@ -6,9 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from conclear.errors import OperationalError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.process import CommandRequest, ProcessResult
-from conclear.tool_images import ImageBackedTool, ToolImageResolver, ToolImageStore
+from conclear.tool_images import (
+    TOOL_IMAGES_VARIABLE,
+    ImageBackedTool,
+    ToolImageResolver,
+    ToolImageStore,
+    bootstrap_tools,
+    selected_tool_images,
+)
 from conclear.tools import SUPPORTED_TOOLS, ResolvedTool, ToolName
 
 INDEX = "sha256:" + "1" * 64
@@ -281,3 +288,48 @@ def test_the_store_is_created_below_the_run_directory(tmp_path: Path) -> None:
         "--runroot",
         str(store.runroot),
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("", frozenset()),
+        ("trivy", frozenset({ToolName.TRIVY})),
+        (" hadolint , trivy,, ", frozenset({ToolName.HADOLINT, ToolName.TRIVY})),
+    ],
+)
+def test_the_switch_names_tools_that_have_pinned_images(
+    value: str, expected: frozenset[ToolName]
+) -> None:
+    assert selected_tool_images({TOOL_IMAGES_VARIABLE: value}) == expected
+    assert selected_tool_images({}) == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("nope", "unknown tool"),
+        ("git", "has no pinned image"),
+        ("trivy,skopeo", "no pinned"),
+    ],
+)
+def test_the_switch_refuses_unknown_tools_and_tools_without_an_image(
+    value: str, message: str
+) -> None:
+    with pytest.raises(InvalidInvocationError, match=message):
+        selected_tool_images({TOOL_IMAGES_VARIABLE: value})
+
+
+@pytest.mark.parametrize(
+    ("images", "expected"),
+    [
+        ((), ()),
+        ((ToolName.HADOLINT,), (ToolName.PODMAN,)),
+        ((ToolName.TRIVY,), (ToolName.PODMAN, ToolName.COSIGN)),
+        ((ToolName.HADOLINT, ToolName.TRIVY), (ToolName.PODMAN, ToolName.COSIGN)),
+    ],
+)
+def test_bootstrapping_needs_podman_and_cosign_only_for_a_signed_image(
+    images: tuple[ToolName, ...], expected: tuple[ToolName, ...]
+) -> None:
+    assert bootstrap_tools(images) == expected

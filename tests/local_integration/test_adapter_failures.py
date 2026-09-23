@@ -48,7 +48,7 @@ def _git(
     return runtime.runner.run(
         CommandRequest(
             argv=(
-                str(runtime.tools[ToolName.GIT].path),
+                str(runtime.executable(ToolName.GIT).path),
                 "-c",
                 "user.name=ConClear Integration",
                 "-c",

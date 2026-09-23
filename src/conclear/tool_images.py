@@ -8,11 +8,12 @@ because the index is what ConClear pins while the manifest differs per
 architecture.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
-from conclear.errors import OperationalError
+from conclear.errors import InvalidInvocationError, OperationalError
 from conclear.parsing import array_value, json_value, string_value
 from conclear.process import CommandRequest, OperationKind, ProcessResult
 from conclear.records import ToolIdentity
@@ -25,6 +26,44 @@ from conclear.tools import (
     ToolVersion,
 )
 from conclear.values import Digest
+
+TOOL_IMAGES_VARIABLE = "CONCLEAR_TOOL_IMAGES"
+
+
+def selected_tool_images(environ: Mapping[str, str]) -> frozenset[ToolName]:
+    """Return the tools a maintainer asked to run from their pinned images.
+
+    While the mode carries no promise the switch is an environment variable, a
+    comma-separated list of tool names, and appears in no profile, repository
+    configuration or record.
+    """
+    selected: set[ToolName] = set()
+    for item in environ.get(TOOL_IMAGES_VARIABLE, "").split(","):
+        text = item.strip()
+        if not text:
+            continue
+        try:
+            name = ToolName(text)
+        except ValueError:
+            raise InvalidInvocationError(
+                f"{TOOL_IMAGES_VARIABLE} names an unknown tool: {text}"
+            ) from None
+        if SUPPORTED_TOOLS[name].image is None:
+            raise InvalidInvocationError(
+                f"{TOOL_IMAGES_VARIABLE}: {name.value} has no pinned image"
+            )
+        selected.add(name)
+    return frozenset(selected)
+
+
+def bootstrap_tools(images: Iterable[ToolName]) -> tuple[ToolName, ...]:
+    """Return the host executables that pull, verify and run the selected images."""
+    specs = [SUPPORTED_TOOLS[name] for name in images]
+    if not specs:
+        return ()
+    if any(spec.image is not None and spec.image.signer is not None for spec in specs):
+        return (ToolName.PODMAN, ToolName.COSIGN)
+    return (ToolName.PODMAN,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +138,31 @@ class ImageBackedTool:
 
 
 type Tool = ResolvedTool | ImageBackedTool
+
+
+class ImageResolver(Protocol):
+    """Resolve one tool from its pinned image."""
+
+    def resolve(
+        self, name: ToolName, *, environment: Mapping[str, str]
+    ) -> ImageBackedTool:
+        """Return the image-backed tool, pulled, verified and probed."""
+        ...
+
+
+class ImageResolverFactory(Protocol):
+    """Build an image resolver once the bootstrapping executables are known."""
+
+    def __call__(
+        self,
+        *,
+        runner: Runner,
+        store: ToolImageStore,
+        podman: ResolvedTool,
+        cosign: ResolvedTool | None,
+    ) -> ImageResolver:
+        """Return a resolver bound to the run's store and host tools."""
+        ...
 
 
 class ToolImageResolver:

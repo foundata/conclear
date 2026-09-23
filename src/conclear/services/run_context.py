@@ -335,6 +335,6 @@ def _with_git(names: tuple[ToolName, ...]) -> tuple[ToolName, ...]:
 
 def _tool_inputs(runtime: ApplicationRuntime) -> dict[str, str]:
     return {
-        f"tool.{tool.name.value}": f"{tool.version}@{tool.executable_digest}"
+        f"tool.{tool.name.value}": f"{tool.version}@{tool.binding_digest}"
         for tool in runtime.tools.values()
     }
