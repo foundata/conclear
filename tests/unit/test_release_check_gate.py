@@ -273,15 +273,23 @@ def test_source_gates_check_the_generated_inventories(
     release_check_module._run_source_gates(cast(GateRuntime, recorder), tmp_path)
 
     assert (
-        "check the dependency lockfile",
-        (str(recorder.uv), "lock", "--check"),
+        "synchronize Python 3.12 development environment",
+        (
+            str(recorder.uv),
+            "sync",
+            "--locked",
+            "--all-groups",
+            "--python",
+            str(recorder.pythons["3.12"]),
+        ),
     ) in recorder.calls
+    assert not any("lock" in argv[1:2] for _, argv in recorder.calls)
     assert (
         "check internal compatibility inventory",
         (
             str(recorder.uv),
             "run",
-            "--frozen",
+            "--locked",
             "python",
             "-m",
             "conclear.compatibility_inventory",
@@ -293,7 +301,7 @@ def test_source_gates_check_the_generated_inventories(
         (
             str(recorder.uv),
             "run",
-            "--frozen",
+            "--locked",
             "python",
             "-m",
             "conclear.implementation",
@@ -305,7 +313,7 @@ def test_source_gates_check_the_generated_inventories(
         (
             str(recorder.uv),
             "run",
-            "--frozen",
+            "--locked",
             "python",
             "-m",
             "conclear.tool_matrix",
@@ -317,7 +325,7 @@ def test_source_gates_check_the_generated_inventories(
         (
             str(recorder.uv),
             "run",
-            "--frozen",
+            "--locked",
             "rumdl",
             "check",
             *release_check_module.MARKDOWN_ARGUMENTS,

@@ -363,21 +363,15 @@ def validate_index_page(path: Path) -> None:
 
 def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
     python_312 = runtime.pythons["3.12"]
-    # Every later step runs --frozen, which uses uv.lock without questioning it.
-    # This asserts the committed lock still resolves pyproject.toml, so a changed
+    # Every sync and run below passes --locked, so the first of them refuses a
+    # committed lock that no longer resolves pyproject.toml; a changed
     # dependency cannot be validated against a stale lock.
-    runtime.run(
-        "check the dependency lockfile",
-        (str(runtime.uv), "lock", "--check"),
-        cwd=staged,
-        timeout_seconds=120,
-    )
     runtime.run(
         "synchronize Python 3.12 development environment",
         (
             str(runtime.uv),
             "sync",
-            "--frozen",
+            "--locked",
             "--all-groups",
             "--python",
             str(python_312),
@@ -417,7 +411,7 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
     ):
         runtime.run(
             label,
-            (str(runtime.uv), "run", "--frozen", *arguments),
+            (str(runtime.uv), "run", "--locked", *arguments),
             cwd=staged,
             timeout_seconds=600,
         )
@@ -427,7 +421,7 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
             (
                 str(runtime.uv),
                 "sync",
-                "--frozen",
+                "--locked",
                 "--all-groups",
                 "--python",
                 str(runtime.pythons[version]),
@@ -451,7 +445,7 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
             (
                 str(runtime.uv),
                 "run",
-                "--frozen",
+                "--locked",
                 "pytest",
                 "-m",
                 "unit",

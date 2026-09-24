@@ -69,7 +69,7 @@ Hermetic unit tests need no container tools, credentials or network access.
 
    ```sh
    # Install all dependencies including development dependencies
-   uv sync --frozen --all-groups
+   uv sync --locked --all-groups
    ```
 
 3. Test that the installation works:
@@ -1316,7 +1316,7 @@ Keep validation and test isolation intact when resolving the following failures.
 ### Common issues<a id="common-issues"></a>
 
 - **Import errors**: Ensure the environment is installed with
-  `uv sync --frozen --all-groups`.
+  `uv sync --locked --all-groups`.
 - **`uv run conclear version` reports `development-source-tree`**: Expected in a
   source checkout. Only a distribution build embeds a real revision, and only
   such a build can emit records.
