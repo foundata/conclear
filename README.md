@@ -216,8 +216,21 @@ podman login --authfile "${HOME}/.config/conclear/auth.json" quay.io
 cosign generate-key-pair --output-key-prefix "${HOME}/.config/conclear/cosign"
 ```
 
-Obtain a Quay API token with tag read, write and delete access and store it in
-`~/.config/conclear/quay.token`. Create `~/.config/conclear/foundata.toml` (or
+Obtain a [Quay API](https://docs.quay.io/api/) token with tag read, write and
+delete access and store it in `~/.config/conclear/quay.token`. Quay issues such
+tokens only through an OAuth 2 application: create one under your organization's
+*Applications* tab, then generate an access token for it.
+
+**Quay creates the token on behalf of the user who generates it, not the
+organization whose application it belongs to.** Its scopes limit which endpoints
+the token may call, but within those scopes it reaches every repository that
+user can reach. Create a dedicated Red Hat account for releasing, generate the
+token as that account, and add the account to a team whose permissions cover
+only the repositories it maintains. As of 2026-Q4 a robot account cannot stand
+in for it: robot tokens authenticate against the registry endpoints, while the
+API accepts only application tokens.
+
+Create `~/.config/conclear/foundata.toml` (or
 `$XDG_CONFIG_HOME/conclear/foundata.toml` if set; adapt the name to fit your
 organization if not working for foundata), adjusting paths, ownership and policy
 choices:
