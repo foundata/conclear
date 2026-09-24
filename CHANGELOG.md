@@ -24,6 +24,12 @@ and the project adheres to
   `~/.config/conclear/<profile>.toml` and set `schema_version = 2`; a profile
   still declaring version 1 is rejected and names the edit it needs.
 
+### Fixed
+
+- Reading a published image graph back from the registry retries a transient
+  transport error like every other registry read. A single interrupted download
+  no longer fails a release whose candidate was already published.
+
 
 ## [1.1.0] - 2026-09-24
 

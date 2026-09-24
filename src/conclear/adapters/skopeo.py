@@ -169,6 +169,7 @@ class SkopeoAdapter(ToolAdapter):
             self._run(
                 arguments,
                 timeout_seconds=1800,
+                retries=2,
                 secret_paths=(() if auth_file is None else (auth_file,)),
             )
         except CommandExecutionError:

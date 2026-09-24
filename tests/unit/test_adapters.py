@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -1832,6 +1833,31 @@ def test_skopeo_registry_copy_requires_an_absent_layout_destination(
             auth_file=None,
         )
     assert runner.requests == []
+
+
+def test_skopeo_graph_read_retries_like_every_other_registry_read(
+    tmp_path: Path,
+) -> None:
+    """The largest read is the one most exposed to a transient transport error."""
+    runner = FakeRunner(result())
+    adapter = adapter_arguments(tmp_path, ToolName.SKOPEO, runner).create(SkopeoAdapter)
+    subject = OCIReference.parse("quay.io/foundata/example@sha256:" + "7" * 64)
+    layout = tmp_path / "layouts" / "published"
+
+    # The fake writes no layout, so the call cannot get past validation; the
+    # request it recorded first is what this test is about.
+    with contextlib.suppress(Exception):
+        adapter.copy_registry_to_layout(
+            source=subject,
+            layout_path=layout,
+            layout_reference="published",
+            auth_file=None,
+        )
+
+    request = runner.requests[0]
+    assert request.argv[1:4] == ("copy", "--all", "--preserve-digests")
+    assert request.retries == 2
+    assert request.operation is OperationKind.READ
 
 
 def test_skopeo_deletion_requires_a_tag_reference_before_running(
