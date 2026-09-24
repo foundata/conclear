@@ -406,6 +406,15 @@ def validate_index_page(path: Path) -> None:
 
 def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
     python_312 = runtime.pythons["3.12"]
+    # Every later step runs --frozen, which uses uv.lock without questioning it.
+    # This asserts the committed lock still resolves pyproject.toml, so a changed
+    # dependency cannot be validated against a stale lock.
+    runtime.run(
+        "check the dependency lockfile",
+        (str(runtime.uv), "lock", "--check"),
+        cwd=staged,
+        timeout_seconds=120,
+    )
     runtime.run(
         "synchronize Python 3.12 development environment",
         (

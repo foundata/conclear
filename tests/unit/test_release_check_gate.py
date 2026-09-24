@@ -274,6 +274,10 @@ def test_source_gates_check_the_generated_inventories(
     release_check_module._run_source_gates(cast(GateRuntime, recorder), tmp_path)
 
     assert (
+        "check the dependency lockfile",
+        (str(recorder.uv), "lock", "--check"),
+    ) in recorder.calls
+    assert (
         "check internal compatibility inventory",
         (
             str(recorder.uv),
