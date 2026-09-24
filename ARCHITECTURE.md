@@ -548,7 +548,10 @@ terminal. Automation may provide a read-once file descriptor or mounted secret.
 If Cosign requires a child-process environment variable, ConClear creates it
 only for that Cosign process from the protected source and removes it from all
 logs and evidence. Secret values are never inherited from ordinary project
-environment configuration.
+environment configuration. Each passphrase input names the key it unlocks, as
+`<owner>_passphrase_file` in the profile and `--<owner>-passphrase-fd` on the
+command line, so a further passphrase can be added without renaming an existing
+one; an option names a descriptor and never carries the passphrase itself.
 
 
 ## Built-in limits<a id="built-in-limits"></a>
