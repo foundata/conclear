@@ -3,7 +3,6 @@
 import io
 import logging
 import os
-import shlex
 import shutil
 import stat
 import tarfile
@@ -321,7 +320,7 @@ def test_source_gates_check_the_generated_inventories(
             "--frozen",
             "rumdl",
             "check",
-            *release_check_module.MARKDOWN_RULE_ARGUMENTS,
+            *release_check_module.MARKDOWN_ARGUMENTS,
             "--no-cache",
             ".",
         ),
@@ -378,7 +377,8 @@ def test_development_guide_delegates_the_markdown_policy() -> None:
         "https://github.com/foundata/guidelines/blob/main/"
         "markdown-style-guide.md#linting-and-automatic-formatting"
     ) in section
-    assert "arguments are deliberately not duplicated here" in normalized
+    assert "verbatim copy of the guide" in normalized
+    assert ".rumdl.toml" in section
     assert "uv run rumdl" not in section
 
 
@@ -439,34 +439,22 @@ def _guide() -> Path | None:
     return guide if guide.is_file() else None
 
 
-def _invocation(text: str, verb: str) -> list[str]:
-    """The arguments of the guide's ``rumdl <verb>`` example, path included."""
-    start = text.index(f"rumdl {verb} \\\n")
-    lines: list[str] = []
-    for line in text[start:].splitlines():
-        lines.append(line)
-        if not line.rstrip().endswith("\\"):
-            break
-    joined = " ".join(line.rstrip().rstrip("\\").strip() for line in lines)
-    return shlex.split(joined)
+def _documented_config(text: str) -> str:
+    """The ``.rumdl.toml`` the guide's linting section shows."""
+    section = text.index("## Linting and automatic formatting")
+    start = text.index("```toml\n", section) + len("```toml\n")
+    return text[start : text.index("```\n", start)]
 
 
-def test_the_markdown_arguments_are_what_the_guide_documents() -> None:
-    # The gate carries a copy of the guide's invocation, which goes stale
-    # without a word when the guide moves: an argument an older rumdl does not
-    # know is refused by --deny-config-warnings rather than skipped.
+def test_the_markdown_config_is_the_guides() -> None:
+    # .rumdl.toml is a copy of the guide's file, which goes stale without a word
+    # when the guide moves. Compare byte for byte where the guide is checked out.
     guide = _guide()
     if guide is None:
         pytest.skip(f"no {GUIDE} beside this repository or in FOUNDATA_GUIDELINES")
-    documented = guide.read_text(encoding="utf-8")
-    check = _invocation(documented, "check")
-    fmt = _invocation(documented, "fmt")
-
-    # The gate runs check only; it may share one copy while the guide keeps
-    # both examples equal.
-    assert check[2:] == fmt[2:], "the guide's check and fmt examples differ"
-    assert check[-1] == ".", check[-1]
-    assert list(release_check_module.MARKDOWN_RULE_ARGUMENTS) == check[2:-1]
+    documented = _documented_config(guide.read_text(encoding="utf-8"))
+    committed = Path(".rumdl.toml").read_text(encoding="utf-8")
+    assert committed == documented
 
 
 def test_gate_steps_are_narrated_on_stderr_and_stdout_stays_empty(

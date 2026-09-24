@@ -57,56 +57,13 @@ _FORBIDDEN_PARTS = frozenset(
 )
 
 
-MARKDOWN_RULE_ARGUMENTS: tuple[str, ...] = (
-    # The Markdown style guide's exact invocation: options only, so no local
-    # configuration can alter the result.
-    "--no-config",
+MARKDOWN_ARGUMENTS: tuple[str, ...] = (
+    # .rumdl.toml is a verbatim copy of the Markdown style guide's file. Naming
+    # it explicitly makes rumdl ignore any other configuration it would
+    # discover, so the committed file is the whole policy.
+    "--config",
+    ".rumdl.toml",
     "--deny-config-warnings",
-    "--extend-enable",
-    "MD060,MD070,MD072,MD073,MD080,MD082,MD083,MD084,MD085,MD087,MD088,MD090",
-    "--config",
-    'MD003.style="atx"',
-    "--config",
-    'MD004.style="dash"',
-    "--config",
-    "MD007.indent=2",
-    "--config",
-    "MD012.maximum=3",
-    "--config",
-    "MD013.line-length=80",
-    "--config",
-    "MD013.reflow=true",
-    "--config",
-    'MD013.reflow-mode="default"',
-    "--config",
-    "MD013.code-blocks=false",
-    "--config",
-    "MD013.code-spans=false",
-    "--config",
-    "MD013.tables=false",
-    "--config",
-    "MD024.siblings-only=true",
-    "--config",
-    'MD029.style="ordered"',
-    "--config",
-    'MD033.allowed-elements=["a","br"]',
-    "--config",
-    'MD046.style="fenced"',
-    "--config",
-    'MD060.style="aligned"',
-    "--config",
-    'MD060.column-align-header="center"',
-    "--config",
-    "MD060.loose-last-column=true",
-    "--config",
-    (
-        'MD072.key-order=["title", "name", "draft", "date", "description", '
-        '"categories", "category", "tags", "author"]'
-    ),
-    "--config",
-    "MD080.levels=[1,2]",
-    "--config",
-    "MD082.allow-parent-headings=true",
 )
 
 
@@ -434,7 +391,7 @@ def _run_source_gates(runtime: GateRuntime, staged: Path) -> None:
         ("lint", ("ruff", "check", ".")),
         (
             "check Markdown",
-            ("rumdl", "check", *MARKDOWN_RULE_ARGUMENTS, "--no-cache", "."),
+            ("rumdl", "check", *MARKDOWN_ARGUMENTS, "--no-cache", "."),
         ),
         ("strict type check", ("mypy", "--strict", "src", "tests")),
         (

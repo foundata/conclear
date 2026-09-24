@@ -210,11 +210,19 @@ uv run mypy --strict src tests
 
 ```
 
-Markdown follows the foundata Markdown style guide's canonical
-[`fmt` and `check` invocations](https://github.com/foundata/guidelines/blob/main/markdown-style-guide.md#linting-and-automatic-formatting).
-Run those commands from this repository. Their arguments are deliberately not
-duplicated here; the release gate applies the same `check` policy together with
-`git diff --check` over the committed tree.
+Markdown follows the
+[foundata Markdown style guide](https://github.com/foundata/guidelines/blob/main/markdown-style-guide.md#linting-and-automatic-formatting).
+[`.rumdl.toml`](./.rumdl.toml) is a verbatim copy of the guide's file, compared
+with the guide by `tests/unit/test_release_check_gate.py`; naming it explicitly
+makes `rumdl` ignore any other configuration. Run from this repository:
+
+```sh
+rumdl check --config .rumdl.toml --deny-config-warnings .
+rumdl fmt --config .rumdl.toml --deny-config-warnings .
+```
+
+The release gate applies the same `check` together with `git diff --check` over
+the committed tree.
 
 
 ### Commit messages and scopes<a id="commit-scopes"></a>
