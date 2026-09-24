@@ -72,11 +72,11 @@ from .common import (
     ci_context,
     command_runtime,
     config_option,
+    cosign_passphrase_option,
     diagnostic_runtime,
     emit,
     format_option,
     owned_run,
-    passphrase_option,
     profile,
     profile_option,
     required_profile_option,
@@ -586,7 +586,7 @@ def cleanup_command(
 @archive_options
 @click.option("authoritative", "--authoritative", is_flag=True)
 @accept_stale_java_database_option
-@passphrase_option
+@cosign_passphrase_option
 @click.option("previous_result", "--previous-result")
 @click.option("triage_path", "--triage-file", type=click.Path(path_type=Path))
 @format_option
@@ -597,7 +597,7 @@ def rescan_command(
     profile_name: str,
     authoritative: bool,
     accept_stale_java_database: bool,
-    passphrase_fd: int | None,
+    cosign_passphrase_fd: int | None,
     previous_result: str | None,
     triage_path: Path | None,
     output_format: str,
@@ -636,7 +636,7 @@ def rescan_command(
                     selected=selected,
                     authoritative=authoritative,
                     accept_stale_java_database=accept_stale_java_database,
-                    passphrase_fd=passphrase_fd,
+                    cosign_passphrase_fd=cosign_passphrase_fd,
                     previous_result=previous_result,
                     triage_path=triage_path,
                     output_format=output_format,
@@ -654,7 +654,7 @@ def rescan_command(
         selected=selected,
         authoritative=authoritative,
         accept_stale_java_database=accept_stale_java_database,
-        passphrase_fd=passphrase_fd,
+        cosign_passphrase_fd=cosign_passphrase_fd,
         previous_result=previous_result,
         triage_path=triage_path,
         output_format=output_format,
@@ -671,7 +671,7 @@ def _execute_rescan(
     selected: ReleaseProfile,
     authoritative: bool,
     accept_stale_java_database: bool,
-    passphrase_fd: int | None,
+    cosign_passphrase_fd: int | None,
     previous_result: str | None,
     triage_path: Path | None,
     output_format: str,
@@ -699,7 +699,9 @@ def _execute_rescan(
         "rescan", *(("--authoritative",) if authoritative else ())
     )
     require_profile_capabilities(selected, dependencies)
-    passphrase = signing_passphrase(selected, passphrase_fd, required=authoritative)
+    passphrase = signing_passphrase(
+        selected, cosign_passphrase_fd, required=authoritative
+    )
     workspace = RunWorkspace.create(
         state_home=state_home(),
         immutable_inputs={
@@ -781,7 +783,7 @@ def _execute_rescan(
                 selected.cosign_private_key or "",
                 selected.cosign_public_key,
                 passphrase,
-                selected.passphrase_file,
+                selected.cosign_passphrase_file,
             )
             if authoritative
             else None

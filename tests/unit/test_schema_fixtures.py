@@ -246,7 +246,7 @@ def test_configuration_profile_result_and_triage_fixtures(
     assert _errors("config.schema.json", {**configuration, "images": [unreleased]})
 
     profile = {
-        "schema_version": 1,
+        "schema_version": 2,
         "ci_context": "observe",
         "allowed_source_origins": ["https://github.com/example/"],
         "builder": {
@@ -260,6 +260,13 @@ def test_configuration_profile_result_and_triage_fixtures(
         },
     }
     assert _errors("profile.schema.json", profile) == []
+    assert (
+        _errors(
+            "profile.schema.json",
+            {**profile, "cosign_passphrase_file": "/run/secrets/cosign.passphrase"},
+        )
+        == []
+    )
     assert _errors("profile.schema.json", {**profile, "cosign_passphrase": "secret"})
     for origins in ([], ["https://github.com/example"], ["git@github.com:example/"]):
         assert _errors(
@@ -278,7 +285,7 @@ def test_configuration_profile_result_and_triage_fixtures(
         "profile.schema.json",
         {k: v for k, v in profile.items() if k != "schema_version"},
     )
-    assert _errors("profile.schema.json", {**profile, "schema_version": 2})
+    assert _errors("profile.schema.json", {**profile, "schema_version": 1})
 
     result = CommandResult(
         "build",

@@ -42,7 +42,7 @@ def _profile(tmp_path: Path, policy: CIContextPolicy) -> ReleaseProfile:
         ),
         cosign_private_key=None,
         cosign_public_key=tmp_path / "cosign.pub",
-        passphrase_file=None,
+        cosign_passphrase_file=None,
         configuration_digest="sha256:" + "1" * 64,
         public_key_digest="sha256:" + "2" * 64,
         allowed_source_origins=("https://forge.internal.example/foundata/",),

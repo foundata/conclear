@@ -104,7 +104,7 @@ def test_effective_view_covers_all_images_and_keeps_profile_secrets_out(
     repository = load_repository_config(path)
     profile = replace(
         release_profile(tmp_path, token="quay-secret-token"),
-        passphrase_file=tmp_path / "signing-passphrase",
+        cosign_passphrase_file=tmp_path / "signing-passphrase",
     )
     result = configuration_view(
         repository, image_id=None, version=None, profile=profile
@@ -117,7 +117,7 @@ def test_effective_view_covers_all_images_and_keeps_profile_secrets_out(
     for secret_path in (
         profile.auth_file,
         profile.cosign_private_key,
-        profile.passphrase_file,
+        profile.cosign_passphrase_file,
         profile.registry.token_file,
     ):
         assert secret_path is not None

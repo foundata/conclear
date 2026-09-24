@@ -33,6 +33,16 @@ from conclear.schema import validate_external
 from conclear.secrets import MAX_PROFILE_BYTES, read_protected_file
 from conclear.values import HOST_PATTERN, URL_PATH_COMPONENT_PATTERN
 
+PROFILE_SCHEMA_VERSION = 2
+"""Schema version this ConClear reads; a superseded profile names its migration."""
+
+_SCHEMA_MIGRATIONS = {
+    1: (
+        "Rename passphrase_file to cosign_passphrase_file and set "
+        f"schema_version = {PROFILE_SCHEMA_VERSION}."
+    ),
+}
+
 
 class CIContextPolicy(StrEnum):
     """Protected policy for optional CI correlation observations."""
@@ -80,11 +90,11 @@ class ReleaseProfile:
     registry: RegistryConfig
     cosign_private_key: str | None
     cosign_public_key: Path
-    passphrase_file: Path | None
+    cosign_passphrase_file: Path | None
     configuration_digest: str
     public_key_digest: str
     allowed_source_origins: tuple[str, ...]
-    schema_version: int = 1
+    schema_version: int = PROFILE_SCHEMA_VERSION
     archive_dir: Path | None = None
 
 
@@ -103,6 +113,7 @@ def load_release_profile(
         value: Any = tomllib.loads(profile_bytes.decode("utf-8"))
     except (UnicodeError, tomllib.TOMLDecodeError, RecursionError) as exc:
         raise InvalidInvocationError(f"Unable to read release profile {path}") from exc
+    _require_current_schema_version(value, path)
     validate_external(value, "profile.schema.json", label="release profile")
     profile = toml_table(value)
     auth_file = _optional_private_path(profile.get("auth_file"))
@@ -116,7 +127,9 @@ def load_release_profile(
         maximum_bytes=MAX_PROFILE_BYTES,
         allow_group_read=True,
     )
-    passphrase_file = _optional_private_path(profile.get("passphrase_file"))
+    cosign_passphrase_file = _optional_private_path(
+        profile.get("cosign_passphrase_file")
+    )
     archive_value = profile.get("archive_dir")
     archive_dir = None
     if archive_value is not None:
@@ -139,7 +152,7 @@ def load_release_profile(
         registry=registry,
         cosign_private_key=private_key,
         cosign_public_key=public_key,
-        passphrase_file=passphrase_file,
+        cosign_passphrase_file=cosign_passphrase_file,
         configuration_digest=sha256_bytes(profile_bytes),
         public_key_digest=sha256_bytes(public_key_bytes),
         allowed_source_origins=_allowed_source_origins(
@@ -191,6 +204,21 @@ def origin_is_allowed(origin: str, prefixes: tuple[str, ...]) -> bool:
     """Return whether a normalized HTTPS Git origin falls under an allowed prefix."""
     return any(
         origin == prefix.rstrip("/") or origin.startswith(prefix) for prefix in prefixes
+    )
+
+
+def _require_current_schema_version(value: object, path: Path) -> None:
+    """Reject a superseded profile with the edit that brings it forward."""
+    declared = value.get("schema_version") if isinstance(value, dict) else None
+    if not isinstance(declared, int) or isinstance(declared, bool):
+        return
+    if declared == PROFILE_SCHEMA_VERSION:
+        return
+    migration = _SCHEMA_MIGRATIONS.get(declared)
+    raise InvalidInvocationError(
+        f"Release profile {path} declares schema_version = {declared} but this "
+        f"ConClear requires {PROFILE_SCHEMA_VERSION}."
+        + ("" if migration is None else f" {migration}")
     )
 
 

@@ -334,7 +334,7 @@ def verify_candidate(
             statement=statement_path,
             private_key=private_key,
             passphrase=passphrase,
-            passphrase_path=profile.passphrase_file,
+            passphrase_path=profile.cosign_passphrase_file,
         )
         require_verified_statement(
             signer,

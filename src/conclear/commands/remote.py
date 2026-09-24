@@ -46,9 +46,9 @@ from .common import (
     archive_options,
     cache_home,
     ci_context,
+    cosign_passphrase_option,
     emit,
     format_option,
-    passphrase_option,
     profile,
     required_profile_option,
     resolve_archive_directory,
@@ -139,18 +139,18 @@ def publish_command(run_id: str, profile_name: str, output_format: str) -> None:
 @click.command("attest")
 @click.argument("run_id")
 @required_profile_option
-@passphrase_option
+@cosign_passphrase_option
 @format_option
 def attest_command(
     run_id: str,
     profile_name: str,
-    passphrase_fd: int | None,
+    cosign_passphrase_fd: int | None,
     output_format: str,
 ) -> None:
     """Attach SPDX and provenance and sign every unique subject digest."""
     source_run, selected = _remote_run(run_id, profile_name, "attest")
     key = _private_key(selected)
-    passphrase = signing_passphrase(selected, passphrase_fd, required=True)
+    passphrase = signing_passphrase(selected, cosign_passphrase_fd, required=True)
     image = _image(source_run)
     candidate = load_candidate(source_run.workspace, image)
     published = load_published(source_run.workspace, candidate, image)
@@ -164,7 +164,7 @@ def attest_command(
         private_key=key,
         public_key=selected.cosign_public_key,
         passphrase=passphrase,
-        passphrase_path=selected.passphrase_file,
+        passphrase_path=selected.cosign_passphrase_file,
         registry=source_run.runtime.skopeo(),
         auth_file=selected.auth_file,
         now=utc_now(),
@@ -183,18 +183,18 @@ def attest_command(
 @click.command("verify")
 @click.argument("run_id")
 @required_profile_option
-@passphrase_option
+@cosign_passphrase_option
 @format_option
 def verify_command(
     run_id: str,
     profile_name: str,
-    passphrase_fd: int | None,
+    cosign_passphrase_fd: int | None,
     output_format: str,
 ) -> None:
     """Verify remote evidence and attach signed release verification."""
     source_run, selected = _remote_run(run_id, profile_name, "verify")
     key = _private_key(selected)
-    passphrase = signing_passphrase(selected, passphrase_fd, required=True)
+    passphrase = signing_passphrase(selected, cosign_passphrase_fd, required=True)
     image = _image(source_run)
     candidate = load_candidate(source_run.workspace, image)
     published = load_published(source_run.workspace, candidate, image)
@@ -341,7 +341,7 @@ def promote_command(
 @archive_options
 @click.option("resume_id", "--resume")
 @accept_stale_java_database_option
-@passphrase_option
+@cosign_passphrase_option
 @format_option
 def release_command(
     source_root: Path,
@@ -351,7 +351,7 @@ def release_command(
     profile_name: str,
     resume_id: str | None,
     accept_stale_java_database: bool,
-    passphrase_fd: int | None,
+    cosign_passphrase_fd: int | None,
     output_format: str,
     archive_directory: Path | None,
     include_image_layers: bool,
@@ -368,7 +368,7 @@ def release_command(
     )
     require_profile_capabilities(selected, COMMAND_DEPENDENCIES["release"])
     _private_key(selected)
-    passphrase = signing_passphrase(selected, passphrase_fd, required=True)
+    passphrase = signing_passphrase(selected, cosign_passphrase_fd, required=True)
     observed_ci = ci_context(selected)
     if resume_id is not None:
         if selector is not None or image_id is not None or release_version is not None:

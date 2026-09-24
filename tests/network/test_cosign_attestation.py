@@ -28,7 +28,7 @@ def test_real_cosign_spdx_attestation_round_trip(tmp_path: Path) -> None:
             "docker_config": "CONCLEAR_TEST_DOCKER_CONFIG",
             "private_key": "CONCLEAR_TEST_COSIGN_PRIVATE_KEY",
             "public_key": "CONCLEAR_TEST_COSIGN_PUBLIC_KEY",
-            "passphrase_file": "CONCLEAR_TEST_COSIGN_PASSPHRASE_FILE",
+            "cosign_passphrase_file": "CONCLEAR_TEST_COSIGN_PASSPHRASE_FILE",
         }
     )
     subject = OCIReference.parse(values["subject"])
@@ -78,7 +78,7 @@ def test_real_cosign_spdx_attestation_round_trip(tmp_path: Path) -> None:
         predicate=predicate,
         predicate_type="spdxjson",
         private_key=str(private_key),
-        passphrase=read_secret_file(Path(values["passphrase_file"])),
+        passphrase=read_secret_file(Path(values["cosign_passphrase_file"])),
     )
     verified = signer.verify_attestation(
         subject=subject,

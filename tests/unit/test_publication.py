@@ -677,7 +677,7 @@ def test_remote_workflow_binds_evidence_and_promotes_verified_digest(
         ),
         cosign_private_key="test.key",
         cosign_public_key=public_key,
-        passphrase_file=None,
+        cosign_passphrase_file=None,
         configuration_digest="sha256:" + "4" * 64,
         public_key_digest="sha256:" + "5" * 64,
         allowed_source_origins=("https://github.com/example/",),

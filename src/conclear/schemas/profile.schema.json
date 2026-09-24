@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/foundata/conclear/schemas/profile-v1.json",
+  "$id": "https://github.com/foundata/conclear/schemas/profile-v2.json",
   "title": "ConClear maintainer release profile",
   "type": "object",
   "additionalProperties": false,
@@ -14,7 +14,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "allowed_source_origins": {
       "type": "array",
@@ -51,7 +51,7 @@
       "minLength": 1
     },
     "archive_dir": {"type": "string", "minLength": 1},
-    "passphrase_file": {
+    "cosign_passphrase_file": {
       "type": "string",
       "minLength": 1
     }

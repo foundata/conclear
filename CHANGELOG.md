@@ -8,7 +8,16 @@ and the project adheres to
 
 ## [Unreleased]
 
-- Nothing worth mentioning right now.
+### Changed
+
+- The release profile names the signing passphrase file `cosign_passphrase_file`
+  instead of `passphrase_file`, and the option supplying it on the command line
+  is `--cosign-passphrase-fd` instead of `--passphrase-fd`. Both now say which
+  key they unlock, so a further passphrase can be added later without renaming
+  this one.
+- The release profile schema is version 2. Rename the key in
+  `~/.config/conclear/<profile>.toml` and set `schema_version = 2`; a profile
+  still declaring version 1 is rejected and names the edit it needs.
 
 
 ## [1.1.0] - 2026-09-24

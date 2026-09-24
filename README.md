@@ -223,13 +223,16 @@ organization if not working for foundata), adjusting paths, ownership and policy
 choices:
 
 ```toml
-schema_version = 1
+schema_version = 2
 ci_context = "observe"
 # Git origins your release checkouts may have; the list never leaves this file.
 allowed_source_origins = ["https://github.com/foundata/"]
 auth_file = "~/.config/conclear/auth.json"
 cosign_private_key = "~/.config/conclear/cosign.key"
 cosign_public_key = "~/.config/conclear/cosign.pub"
+# Protected file holding the signing key's passphrase; --cosign-passphrase-fd
+# supplies it instead.
+# cosign_passphrase_file = "~/.config/conclear/cosign.passphrase"
 # Durable, backed-up directory for release and rescan archives; --archive-dir overrides it.
 archive_dir = "/srv/archives/conclear"
 
@@ -265,9 +268,9 @@ policy-read access. Cleanup can use `manual` or `auto-prune` instead of
 [registry options](./ARCHITECTURE.md#publication-and-promotion).
 
 ConClear prompts for the signing passphrase. For automation, configure a
-protected `passphrase_file` or use `--passphrase-fd`. **Never put secrets in
-command-line values, ordinary environment variables or repository files.
-Policy descriptions appear in public release evidence.**
+protected `cosign_passphrase_file` or use `--cosign-passphrase-fd`. **Never put
+secrets in command-line values, ordinary environment variables or repository
+files. Policy descriptions appear in public release evidence.**
 
 Create an archive directory on durable, backed-up storage writable by your
 release user, outside source repositories and ConClear working directories:

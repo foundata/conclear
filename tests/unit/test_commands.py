@@ -6,6 +6,7 @@ exercised without container tools, registries or credentials.
 """
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -23,6 +24,7 @@ import conclear.services.preflight as preflight_module
 import conclear.services.release as release_module
 from conclear.archive import ArchiveResult
 from conclear.cli import main
+from conclear.commands.common import signing_passphrase
 from conclear.config import load_repository_config
 from conclear.dependencies import (
     command_dependencies,
@@ -86,7 +88,7 @@ def release_profile(
         ),
         cosign_private_key=None if key is None else str(tmp_path / key),
         cosign_public_key=public_key,
-        passphrase_file=None,
+        cosign_passphrase_file=None,
         configuration_digest="sha256:" + "b" * 64,
         public_key_digest="sha256:" + "c" * 64,
         allowed_source_origins=("https://github.com/example/",),
@@ -1002,6 +1004,69 @@ def test_attest_and_release_require_a_signing_key(
         code, value, _ = invoke(arguments)
         assert code == 64, arguments
         assert "no Cosign signing key" in value["message"]
+
+
+def test_attest_takes_the_signing_passphrase_from_the_named_descriptor(
+    repository_factory: Callable[..., Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invoke: Callable[..., tuple[int, Any, str]],
+) -> None:
+    profile = release_profile(tmp_path)
+    root = repository_factory()
+    run = FakeSourceRun(root, tmp_path, state=RunState.PUBLISHED, profile=profile)
+    published = _published(run)
+    attested: dict[str, Any] = {}
+    reader, writer = os.pipe()
+    os.write(writer, b"descriptor-passphrase\n")
+    os.close(writer)
+    _remote(
+        monkeypatch,
+        run,
+        profile,
+        load_candidate=lambda workspace, image: _candidate(),
+        load_published=lambda workspace, candidate, image: published,
+        load_release_evidence=lambda workspace, image: SimpleNamespace(
+            source=run.source
+        ),
+        attest_candidate=lambda *args, **kwargs: attested.update(kwargs),
+        # Exercise the real reader instead of the harness stand-in.
+        signing_passphrase=signing_passphrase,
+    )
+
+    code, value, _ = invoke(
+        [
+            "attest",
+            run.workspace.run_id,
+            "--profile",
+            "production",
+            "--cosign-passphrase-fd",
+            str(reader),
+        ]
+    )
+
+    assert code == 0, value
+    assert attested["passphrase"] == "descriptor-passphrase"
+
+    # A key the signer unlocks itself takes no passphrase from anywhere.
+    managed = replace(profile, cosign_private_key="hashivault://release")
+    run = FakeSourceRun(
+        root, tmp_path / "managed", state=RunState.PUBLISHED, profile=managed
+    )
+    _remote(monkeypatch, run, managed, signing_passphrase=signing_passphrase)
+    code, value, _ = invoke(
+        [
+            "attest",
+            run.workspace.run_id,
+            "--profile",
+            "production",
+            "--cosign-passphrase-fd",
+            str(reader),
+        ]
+    )
+
+    assert code == 64
+    assert "--cosign-passphrase-fd is not used" in value["message"]
 
 
 def test_release_command_validates_selection_and_reports_promotion(

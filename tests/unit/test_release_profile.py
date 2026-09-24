@@ -40,7 +40,7 @@ def test_release_profile_import_does_not_load_repository_configuration(
 
 
 def _profile_text(*root_lines: str, api_url: str | None = None) -> str:
-    root_lines = ("schema_version = 1", *root_lines)
+    root_lines = ("schema_version = 2", *root_lines)
     if not any(line.startswith("allowed_source_origins") for line in root_lines):
         root_lines = (
             *root_lines,
@@ -226,12 +226,16 @@ def test_release_profile_resolves_file_signing_key(tmp_path: Path) -> None:
     private_key = tmp_path / "cosign.key"
     private_key.write_text("private", encoding="utf-8")
     private_key.chmod(0o600)
+    passphrase = tmp_path / "cosign.passphrase"
+    passphrase.write_text("secret", encoding="utf-8")
+    passphrase.chmod(0o600)
     profile = profile_directory / "release.toml"
     profile.write_text(
         _profile_text(
             'ci_context = "omit"',
             f'cosign_public_key = "{public_key}"',
             f'cosign_private_key = "{private_key}"',
+            f'cosign_passphrase_file = "{passphrase}"',
         ),
         encoding="utf-8",
     )
@@ -240,6 +244,7 @@ def test_release_profile_resolves_file_signing_key(tmp_path: Path) -> None:
     selected = load_release_profile("release", config_home=config_home)
 
     assert selected.cosign_private_key == str(private_key.resolve())
+    assert selected.cosign_passphrase_file == passphrase
 
 
 def test_release_profile_rejects_ambiguous_registry_api_url(tmp_path: Path) -> None:
@@ -272,7 +277,7 @@ def test_release_profile_requires_its_schema_version(tmp_path: Path) -> None:
     public_key.chmod(0o600)
     unversioned = _profile_text(
         'ci_context = "omit"', f'cosign_public_key = "{public_key}"'
-    ).replace("schema_version = 1\n", "")
+    ).replace("schema_version = 2\n", "")
     path = profile_directory / "release.toml"
     path.write_text(unversioned, encoding="utf-8")
     path.chmod(0o600)
@@ -281,10 +286,56 @@ def test_release_profile_requires_its_schema_version(tmp_path: Path) -> None:
         load_release_profile("release", config_home=tmp_path)
 
     path.write_text(
-        unversioned.replace("[builder]", "schema_version = 1\n[builder]"),
+        unversioned.replace("[builder]", "schema_version = 2\n[builder]"),
         encoding="utf-8",
     )
-    assert load_release_profile("release", config_home=tmp_path).schema_version == 1
+    assert load_release_profile("release", config_home=tmp_path).schema_version == 2
+
+
+def test_release_profile_explains_the_migration_from_a_superseded_schema(
+    tmp_path: Path,
+) -> None:
+    config_home = tmp_path / "config"
+    profile_directory = config_home / "conclear"
+    profile_directory.mkdir(parents=True)
+    public_key = tmp_path / "cosign.pub"
+    public_key.write_text("public", encoding="utf-8")
+    public_key.chmod(0o600)
+    current = _profile_text(
+        'ci_context = "omit"', f'cosign_public_key = "{public_key}"'
+    )
+    profile = profile_directory / "release.toml"
+    # The shape a 1.x profile has: the superseded version and the old key name.
+    profile.write_text(
+        current.replace("schema_version = 2", "schema_version = 1").replace(
+            f'cosign_public_key = "{public_key}"',
+            f'cosign_public_key = "{public_key}"\n'
+            'passphrase_file = "~/.config/conclear/cosign.passphrase"',
+        ),
+        encoding="utf-8",
+    )
+    profile.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError) as caught:
+        load_release_profile("release", config_home=config_home)
+
+    message = str(caught.value)
+    # The migration is reported instead of the unexpected key the old name is.
+    assert "unexpected key(s)" not in message
+    assert "schema_version = 1" in message
+    assert "passphrase_file to cosign_passphrase_file" in message
+    assert "schema_version = 2" in message
+
+    profile.write_text(
+        current.replace("schema_version = 2", "schema_version = 3"), encoding="utf-8"
+    )
+    profile.chmod(0o600)
+
+    with pytest.raises(InvalidInvocationError) as unknown:
+        load_release_profile("release", config_home=config_home)
+
+    assert "requires 2" in str(unknown.value)
+    assert "Rename" not in str(unknown.value)
 
 
 def test_release_profile_requires_and_normalizes_allowed_source_origins(
@@ -373,7 +424,7 @@ def test_release_profile_names_a_misplaced_key_instead_of_dumping_the_table(
     # A key appended after the last table header lands inside that table, the
     # way it happens when someone appends to the end of the file by hand.
     profile.write_text(
-        f"""schema_version = 1
+        f"""schema_version = 2
 ci_context = "omit"
 allowed_source_origins = ["https://github.com/example/"]
 cosign_public_key = "{public_key}"
@@ -394,7 +445,7 @@ owner = "Release maintainer"
 mode = "tag-expiration"
 owner = "Release maintainer"
 procedure = "Review abandoned runs."
-passphrase_file = "~/.config/conclear/release.passphrase"
+cosign_passphrase_file = "~/.config/conclear/release.passphrase"
 """,
         encoding="utf-8",
     )
@@ -405,7 +456,7 @@ passphrase_file = "~/.config/conclear/release.passphrase"
 
     message = str(caught.value)
     assert "at registry.candidate_cleanup:" in message
-    assert "unexpected key(s): passphrase_file" in message
+    assert "unexpected key(s): cosign_passphrase_file" in message
     assert "{" not in message
 
 

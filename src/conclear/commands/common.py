@@ -60,9 +60,11 @@ def signing_passphrase(
     external_key = "://" in key or key.startswith("pkcs11:")
     if not required or external_key:
         if descriptor is not None:
-            raise click.UsageError("--passphrase-fd is not used by this operation")
+            raise click.UsageError(
+                "--cosign-passphrase-fd is not used by this operation"
+            )
         return None
-    return read_passphrase(file=selected.passphrase_file, descriptor=descriptor)
+    return read_passphrase(file=selected.cosign_passphrase_file, descriptor=descriptor)
 
 
 def format_option[FC: Callable[..., Any]](function: FC) -> FC:
@@ -151,11 +153,14 @@ def resolve_archive_directory(
     )
 
 
-def passphrase_option[FC: Callable[..., Any]](function: FC) -> FC:
-    """Add the inherited file descriptor that supplies a signing passphrase."""
-    return click.option("passphrase_fd", "--passphrase-fd", type=click.IntRange(min=3))(
-        function
-    )
+def cosign_passphrase_option[FC: Callable[..., Any]](function: FC) -> FC:
+    """Add the inherited file descriptor that supplies the signing passphrase."""
+    return click.option(
+        "cosign_passphrase_fd",
+        "--cosign-passphrase-fd",
+        type=click.IntRange(min=3),
+        help="Inherited descriptor supplying the signing passphrase.",
+    )(function)
 
 
 def emit(result: CommandResult, output_format: str) -> None:

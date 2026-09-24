@@ -118,7 +118,7 @@ def test_retained_cli_repeat_release_rescan_and_publication_recovery() -> None:
         profile.registry.token_file,
         profile.cosign_private_key,
         profile.cosign_public_key,
-        profile.passphrase_file,
+        profile.cosign_passphrase_file,
     ):
         assert secret is not None
         assert external_path(str(secret)).is_relative_to(workspace), (

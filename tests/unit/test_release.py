@@ -58,7 +58,7 @@ def profile(tmp_path: Path) -> ReleaseProfile:
         ),
         cosign_private_key=str(tmp_path / "cosign.key"),
         cosign_public_key=tmp_path / "cosign.pub",
-        passphrase_file=None,
+        cosign_passphrase_file=None,
         configuration_digest="sha256:" + "a" * 64,
         public_key_digest="sha256:" + "b" * 64,
         allowed_source_origins=("https://github.com/example/",),

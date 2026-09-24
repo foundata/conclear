@@ -1029,11 +1029,11 @@
         },
         {
           "declarations": [
-            "--passphrase-fd"
+            "--cosign-passphrase-fd"
           ],
           "kind": "option",
           "multiple": false,
-          "name": "passphrase_fd",
+          "name": "cosign_passphrase_fd",
           "required": false,
           "type": "integer range"
         },
@@ -2090,11 +2090,11 @@
         },
         {
           "declarations": [
-            "--passphrase-fd"
+            "--cosign-passphrase-fd"
           ],
           "kind": "option",
           "multiple": false,
-          "name": "passphrase_fd",
+          "name": "cosign_passphrase_fd",
           "required": false,
           "type": "integer range"
         },
@@ -2242,11 +2242,11 @@
         },
         {
           "declarations": [
-            "--passphrase-fd"
+            "--cosign-passphrase-fd"
           ],
           "kind": "option",
           "multiple": false,
-          "name": "passphrase_fd",
+          "name": "cosign_passphrase_fd",
           "required": false,
           "type": "integer range"
         },
@@ -2462,11 +2462,11 @@
         },
         {
           "declarations": [
-            "--passphrase-fd"
+            "--cosign-passphrase-fd"
           ],
           "kind": "option",
           "multiple": false,
-          "name": "passphrase_fd",
+          "name": "cosign_passphrase_fd",
           "required": false,
           "type": "integer range"
         },
@@ -2617,8 +2617,8 @@
     {
       "dialect": "https://json-schema.org/draft/2020-12/schema",
       "file": "profile.schema.json",
-      "id": "https://github.com/foundata/conclear/schemas/profile-v1.json",
-      "schemaVersion": 1,
+      "id": "https://github.com/foundata/conclear/schemas/profile-v2.json",
+      "schemaVersion": 2,
       "title": "ConClear maintainer release profile"
     },
     {
