@@ -14,6 +14,9 @@ the contribution workflow. Summary:
 > requirements but pull requests to adapt ConClear to different release policies
 > are out of scope.
 
+Report security vulnerabilities privately as described in
+[`SECURITY.md`](./SECURITY.md).
+
 
 ## Issues
 
