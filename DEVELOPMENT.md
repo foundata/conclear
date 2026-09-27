@@ -419,9 +419,8 @@ deciding verdicts from typed observations.
 
 ### Local integration tests<a id="local-integration-tests"></a>
 
-Read the local testing instructions before running opt-in tests. Use a unique
-run ID, run-owned rootless storage and a resource manifest outside the
-repository. Never reuse or clean up unrecorded Buildah, Podman, registry or
+Use a unique run ID, run-owned rootless storage and a resource manifest outside
+the repository. Never reuse or clean up unrecorded Buildah, Podman, registry or
 virtual-machine resources.
 
 The run ID becomes part of an OCI repository name, so it must be lowercase. Use
