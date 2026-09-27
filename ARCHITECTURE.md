@@ -18,7 +18,7 @@ Current implementation promises are marked with stable implementation promise
 its production code and verification tests for this ConClear version.
 
 The
-[foundata OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
+[foundata OCI container image build and release guide](https://foundata.com/en/guidelines/oci-container-image-guide/)
 is normative. This document explains how ConClear implements that guide's
 automatable rules. Each ConClear release selects and embeds an exact guide
 revision; when the documents conflict, that selected guide revision takes

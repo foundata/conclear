@@ -56,7 +56,9 @@ Hermetic unit tests need no container tools, credentials or network access.
 
 ## Getting started<a id="getting-started"></a>
 
-1. Clone the repository:
+1. Clone a repository listed on the
+   [source page](https://foundata.com/en/projects/conclear/#source); the
+   commands below use GitHub as an example.
 
    ```sh
    git clone https://github.com/foundata/conclear.git
@@ -209,7 +211,7 @@ uv run mypy --strict src tests
 ```
 
 Markdown follows the
-[foundata Markdown style guide](https://github.com/foundata/guidelines/blob/main/markdown-style-guide.md#linting-and-automatic-formatting).
+[foundata Markdown style guide](https://foundata.com/en/guidelines/markdown-style-guide/#linting-and-automatic-formatting).
 [`.rumdl.toml`](./.rumdl.toml) is a verbatim copy of the guide's file, compared
 with the guide by `tests/unit/test_release_check_gate.py`; naming it explicitly
 makes `rumdl` ignore any other configuration. Run from this repository:
@@ -226,7 +228,7 @@ the committed tree.
 ### Commit messages and scopes<a id="commit-scopes"></a>
 
 Commit messages follow the
-[foundata guideline (`guidelines/git-commits.md`)](https://github.com/foundata/guidelines/blob/main/git-commits.md):
+[foundata guideline (`guidelines/git-commits.md`)](https://foundata.com/en/guidelines/git-commits/):
 `<scope>: <description>`, imperative, lowercase description, body only for
 context the diff cannot preserve. Choose the narrowest stable project area
 affected by the commit. ConClear uses these recurring scopes:
@@ -289,11 +291,11 @@ fold one into a commit that also changes code. Give the reason in the commit
 body when the diff does not carry it.
 
 Keep planned behavior in a
-[GitHub issue](https://github.com/foundata/conclear/issues) until its code,
-tests and contract text can land together. Do not silently amend the contract to
-normalize an implementation defect. Decide whether the implementation or the
-promise is wrong, then either fix the code or make an explicit contract
-correction whose rationale is reviewable.
+[issue](https://foundata.com/en/projects/conclear/#issues) until its
+code, tests and contract text can land together. Do not silently amend the
+contract to normalize an implementation defect. Decide whether the
+implementation or the promise is wrong, then either fix the code or make an
+explicit contract correction whose rationale is reviewable.
 
 Every contract change has to be reported. A summary that lists
 implemented behavior but omits an edit to `ARCHITECTURE.md`, an `IPnnnn`
@@ -1038,10 +1040,10 @@ The maintainer performing a release also needs:
 - an authorized PyPI publishing identity
 - the container registry (currently: Quay.io only) and Sigstore test inputs
   described below.
-- [our `release` tool](https://github.com/foundata/releasing/), which reads the
-  `[tool.releasing]` declaration in [`pyproject.toml`](./pyproject.toml). That
-  declaration names the repository, the changelog and every file carrying the
-  version, so no step repeats those paths.
+- [our `release` tool](https://foundata.com/en/projects/releasing/), which reads
+  the `[tool.releasing]` declaration in [`pyproject.toml`](./pyproject.toml).
+  That declaration names the repository, the changelog and every file carrying
+  the version, so no step repeats those paths.
 
 Release only a clean, committed revision. Test results and retained artifacts
 belong to that exact revision and cannot be carried over after another commit.

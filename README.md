@@ -2,7 +2,7 @@
 
 ConClear builds, tests and scans OCI container images, then signs and releases
 the digest that passed its checks. It applies the technical requirements of
-[foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
+[foundata's OCI container image build and release guide](https://foundata.com/en/guidelines/oci-container-image-guide/)
 without requiring you to maintain your own release scripts or CI service.
 
 > **Important:** ConClear is built for foundata's own release processes. You are
@@ -362,7 +362,7 @@ Prepare the build inputs:
 - Pin external images in the Containerfile as `image:tag@sha256:<digest>` and
   declare each tag and its intent under `[[images.pins]]`.
 - Supply the
-  [required OCI labels](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md#image-metadata).
+  [required OCI labels](https://foundata.com/en/guidelines/oci-container-image-guide/#image-metadata).
   Declare and use the `IMAGE_CREATED`, `IMAGE_REVISION` and `IMAGE_VERSION`
   build arguments for their corresponding labels.
 - Match the numeric `USER` to `images.runtime.user`. Declare writable paths
@@ -757,8 +757,10 @@ and the clean-checkout release gate.
 ## Licensing, copyright<a id="licensing-copyright"></a>
 
 <!--REUSE-IgnoreStart-->
-<!-- rumdl-disable-next-line MD034 --><!-- should match SPDX-PackageSupplier -->
-Copyright (c) 2026, foundata GmbH (https://foundata.com)
+<!-- rumdl-disable MD034 --><!-- should match SPDX-PackageSupplier -->
+Copyright (c) 2026, [foundata GmbH](https://foundata.com/)
+(https://foundata.com)
+<!-- rumdl-enable MD034 -->
 
 This project is licensed under the GNU General Public License v3.0 or later
 (SPDX-License-Identifier: `GPL-3.0-or-later`), see
