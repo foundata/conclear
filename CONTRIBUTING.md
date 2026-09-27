@@ -9,10 +9,10 @@ the contribution workflow. Summary:
   requests).
 
 > **Important:** ConClear is built for foundata's release process. You are
-> welcome to use it if you adopt the
-> [foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md)
-> requirements but pull requests to adapt ConClear to different release policies
-> are out of scope.
+> welcome to use it if you adopt the requirements of
+> [foundata's OCI container image build and release guide](https://github.com/foundata/guidelines/blob/main/oci-container-image-guide.md),
+> but pull requests to adapt ConClear to different release policies are out of
+> scope.
 
 Report security vulnerabilities privately as described in
 [`SECURITY.md`](./SECURITY.md).
