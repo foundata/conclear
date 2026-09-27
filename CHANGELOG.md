@@ -42,7 +42,7 @@ and the project adheres to
   pinned index and the platform manifest that ran. The supported-tools table and
   the compatibility inventory name each pinned image.
 - Commands narrate what they do on stderr: the phase under way and every
-  external command that ran, verb first, coloured only on a terminal. Stdout
+  external command that ran, verb first, colored only on a terminal. Stdout
   stays the result. `-q`/`--quiet` before the command drops the narration but
   never an error. `python -m conclear.release_check` announces its steps there
   too instead of on stdout, so its stdout is now empty.
