@@ -690,8 +690,8 @@ promotion commands are listed in the
 
 Stdout carries what a command produced and nothing else: the result, or with
 `--format json` one machine-readable result document. Stderr carries what
-happened on the way: which phase is under way, and every external command that
-really ran, marked with a bold `$`. A build, qualification or release is
+happened on the way: a dim `»` opens each phase under way, and a bold `$` marks
+every external command that really ran. A build, qualification or release is
 minutes of container work, so that narration is how you see it move.
 
 ```console
