@@ -21,8 +21,7 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Local integration tests](#local-integration-tests)
   - [Tools from their images](#tool-images)
   - [Network tests](#network-tests)
-- [Generated conformance catalog](#conformance-catalog)
-- [Generated guide-option support inventory](#guide-option-inventory)
+- [Generated conformance document](#conformance-catalog)
 - [Generated guide requirement inventory](#guide-requirement-inventory)
 - [Generated compatibility inventory](#compatibility-inventory)
 - [Generated supported-tools table](#supported-tools-table)
@@ -734,19 +733,27 @@ leave additional journaled resources; reconcile the dedicated state directory
 before declaring cleanup complete. No result report belongs in this checkout.
 
 
-## Generated conformance catalog<a id="conformance-catalog"></a>
+## Generated conformance document<a id="conformance-catalog"></a><a id="guide-option-inventory"></a>
 
-`docs/conformance.md` is generated from `src/conclear/data/checks.json`, the
-guide requirement inventory, the requirement coverage file and the embedded
-guide identity. Never edit it by hand. Every check names the `IGnnnn` guide
-requirements it covers, and the document ends with the status of every
-requirement of the embedded revision.
+`docs/conformance.md` is generated from `src/conclear/data/checks.json`,
+`src/conclear/data/guide-options.json`, the guide requirement inventory, the
+requirement coverage file and the embedded guide identity. Never edit it by
+hand. Every check names the `IGnnnn` guide requirements it covers, the
+guide-option section states a disposition for the choices the catalog cannot
+show, and the document ends with the status of every requirement of the embedded
+revision.
+
+A guide-option entry records a choice whose support cannot be inferred from the
+check catalog, including a supported exception and deliberately unsupported or
+out-of-scope behavior. It names the guide requirements it concerns, its
+rationale, related checks and condition for reconsideration. Both parts of the
+document are generated and verified together:
 
 ```sh
-# Regenerate the catalog
+# Regenerate the document, including the guide options
 uv run python -m conclear.conformance
 
-# Verify the committed catalog is current
+# Verify the committed document is current
 uv run python -m conclear.conformance --check
 
 # Also verify every requirement and section anchor against the guide checkout
@@ -754,39 +761,15 @@ uv run python -m conclear.conformance --check \
   --guide ../guidelines/oci-container-image-guide.md
 ```
 
-Commit a catalog change together with the check definition, implementation,
-tests and affected documentation. Continuous integration verifies that
-identifiers are unique and well formed, that every referenced requirement exists
-in the inventory, that every requirement has exactly one status and that the
-committed document matches the generator.
-
-
-## Generated guide-option support inventory<a id="guide-option-inventory"></a>
-
-The guide-option section of `docs/conformance.md` is generated from
-`src/conclear/data/guide-options.json`. It records guide choices whose support
-cannot be inferred from the check catalog, including supported exceptions and
-deliberately unsupported or out-of-scope behavior. Every entry names the guide
-requirements it concerns, its rationale, related checks and condition for
-reconsideration. Both parts of the document are generated and verified together:
-
-```sh
-# Regenerate the conformance document, including the guide options
-uv run python -m conclear.conformance
-
-# Verify the committed document is current
-uv run python -m conclear.conformance --check
-
-# Verify anchors against the exact implemented guide checkout
-uv run python -m conclear.conformance --check \
-  --guide ../guidelines/oci-container-image-guide.md
-```
-
-Update an entry when implementation changes its status or when a guide revision
-changes the option. The loader rejects stale product or guide versions,
-malformed or duplicate identifiers, unknown check references and unsupported
-status values. The release gate verifies the generated document and its
-distribution contents.
+Commit a catalog or option change together with the check definition,
+implementation, tests and affected documentation. Update an option entry when
+implementation changes its status or when a guide revision changes the option.
+The loader rejects stale product or guide versions, malformed or duplicate
+identifiers, unknown check references and unsupported status values. Continuous
+integration verifies that identifiers are unique and well formed, that every
+referenced requirement exists in the inventory, that every requirement has
+exactly one status and that the committed document matches the generator. The
+release gate verifies the generated document and its distribution contents.
 
 
 ## Generated guide requirement inventory<a id="guide-requirement-inventory"></a>
