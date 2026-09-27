@@ -33,7 +33,6 @@ This file provides information for maintainers and contributors to `conclear`.
   - [Before committing](#before-committing)
 - [Releases](#releases)
 - [Troubleshooting](#troubleshooting)
-  - [Common issues](#common-issues)
 
 
 ## Prerequisites<a id="prerequisites"></a>
@@ -1319,11 +1318,9 @@ against the exact embedded guide revision instead of redefining the project
 gates.
 
 
-## Troubleshooting<a id="troubleshooting"></a>
+## Troubleshooting<a id="troubleshooting"></a><a id="common-issues"></a>
 
 Keep validation and test isolation intact when resolving the following failures.
-
-### Common issues<a id="common-issues"></a>
 
 - **Import errors**: Ensure the environment is installed with
   `uv sync --locked --all-groups`.
