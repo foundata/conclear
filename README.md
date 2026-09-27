@@ -530,9 +530,11 @@ and SHA-256 digest. Release archives contain exact source
 and configuration, SBOMs, scan and test reports, image metadata and signed
 attestations. Add `--include-image-layers` to retain image layers too.
 
-Signing keys, credentials, protected profiles, raw logs, private test outputs
-and scanner database caches are excluded. Source and reports may still be
-sensitive; review archives before sharing them.
+Nothing else travels: the
+[archive contract](./ARCHITECTURE.md#records-and-workspaces) lists the members
+and names what stays out, among them signing keys, credentials, protected
+profiles, raw logs, private test outputs and the scanner database cache. Source
+and reports may still be sensitive; review archives before sharing them.
 
 Keep archives while the release is supported and for your chosen review period
 afterward. Keep referenced source archives beside their rescans. See

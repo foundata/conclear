@@ -5,8 +5,10 @@ releases are supported and for your chosen review period afterward. Keep
 referenced source archives beside their rescans and test retrieval with
 `conclear archive verify`. See [archive usage](../README.md#usage-archives).
 
-Release/rescan archives exclude signing keys, credentials and raw logs. Source
-and reports may still be sensitive. Back up keys and durable state separately:
+Release and rescan archives carry only the allowlisted release evidence; the
+[archive contract](../ARCHITECTURE.md#records-and-workspaces) names what stays
+out, including signing keys and credentials. Source and reports may still be
+sensitive. Back up keys and durable state separately:
 
 |          What           |                        What to preserve                        |              Needed for               |           Criticality           | When to clean up / what gets lost |
 | ----------------------- | -------------------------------------------------------------- | ------------------------------------- | ------------------------------- | --------------------------------- |
