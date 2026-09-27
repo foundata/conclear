@@ -727,7 +727,7 @@ lost provider acknowledgements.
 
 The fixture is a committed repository with exactly one release image, the
 manifest-owned Quay destination and `latest` as a moving tag; the
-[drill project](https://github.com/foundata/oci-conclear-drill/blob/master/README.md)
+[drill project](https://github.com/foundata/oci-conclear-drill/blob/main/README.md)
 creates one with `drill/lifecycle-fixture.sh`. Use an unused version and
 repository. Put the installed wheel, the fixture, dedicated file-based signing
 credentials and the XDG directories under the manifest's `workspace`. Keep the
@@ -1197,7 +1197,7 @@ performs no step and writes nothing.
 
    From the retained wheel, run `conclear check` and `conclear pins check` for
    every image of the
-   [drill project](https://github.com/foundata/oci-conclear-drill/blob/master/README.md).
+   [drill project](https://github.com/foundata/oci-conclear-drill/blob/main/README.md).
    Record every `CCnnnn` finding verbatim and do not add an exception to obtain
    an accepted result. Also complete one `conclear qualify` of its `service`
    image with Cosign absent from the executable search path; qualification must
@@ -1226,7 +1226,7 @@ performs no step and writes nothing.
    ```
 
    Then run the release drill of the
-   [drill project](https://github.com/foundata/oci-conclear-drill/blob/master/README.md)
+   [drill project](https://github.com/foundata/oci-conclear-drill/blob/main/README.md)
    against the retained wheel:
 
    ```sh
