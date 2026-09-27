@@ -188,6 +188,10 @@ The examples use a release profile named `foundata`. Run repository commands
 from the image repository's root; add `--image <id>` when it has multiple
 release images.
 
+`conclear adopt`, `conclear check` and `conclear doctor --scope check` work
+before any credentials exist: they need no release profile and no registry
+access. Use them to assess a repository first, then set up the host below.
+
 
 ### Configuration (Host)<a id="usage-host-config"></a>
 
@@ -443,6 +447,10 @@ conclear check
 conclear pins check
 conclear doctor --scope qualify
 ```
+
+`config show` and `check` stay local. `pins check` reads the registry to compare
+the declared base digests, and `doctor --scope qualify` reads it too and expects
+the build and scan tools to be installed.
 
 Fix errors and commit changes. To build, test and scan one platform without
 publishing:
