@@ -28,7 +28,7 @@ without requiring you to maintain your own release scripts or CI service.
 
 - [Features](#features)
 - [Installation](#installation)
-  - [Fedora](#installation-fedora)
+  - [Fedora (x86_64)](#installation-fedora)
   - [Updating](#installation-update)
   - [Next steps](#installation-misc)
 - [Usage](#usage)
