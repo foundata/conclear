@@ -536,9 +536,8 @@ and names what stays out, among them signing keys, credentials, protected
 profiles, raw logs, private test outputs and the scanner database cache. Source
 and reports may still be sensitive; review archives before sharing them.
 
-Keep archives while the release is supported and for your chosen review period
-afterward. Keep referenced source archives beside their rescans. See
-[backup](./docs/backup.md) for retention and separate key backups.
+How long to keep an archive, what to keep beside it and how to back up keys are
+covered in [backup](./docs/backup.md).
 
 Verify an archive against your trusted profile key:
 
