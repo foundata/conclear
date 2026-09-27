@@ -743,9 +743,8 @@ It also identifies guide requirements that need manual review or external
 controls. The [guide options](./docs/conformance.md#guide-options) section lists
 supported and unsupported choices.
 
-For implementation details, see [ARCHITECTURE.md](./ARCHITECTURE.md), the
-[implementation matrix](./docs/implementation.md) and the
-[compatibility inventory](./docs/compatibility-inventory.json).
+For implementation details, see [ARCHITECTURE.md](./ARCHITECTURE.md) and the
+[implementation matrix](./docs/implementation.md).
 
 
 ## Contributing<a id="contributing"></a>
