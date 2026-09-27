@@ -30,7 +30,7 @@ without requiring you to maintain your own release scripts or CI service.
 - [Installation](#installation)
   - [Fedora](#installation-fedora)
   - [Updating](#installation-update)
-  - [Miscellaneous notes](#installation-misc)
+  - [Next steps](#installation-misc)
 - [Usage](#usage)
   - [Configuration (Host)](#usage-host-config)
   - [Configuration (Container repos)](#usage-repo-config)
@@ -73,9 +73,10 @@ without requiring you to maintain your own release scripts or CI service.
 
 ## Installation<a id="installation"></a>
 
-ConClear is published on PyPI as
-[`conclear`](https://pypi.org/project/conclear/) and requires Python 3.12 or
-newer. Install it as a tool with [uv](https://docs.astral.sh/uv/):
+ConClear runs on a native Linux host with rootless Podman and Buildah. It is
+published on PyPI as [`conclear`](https://pypi.org/project/conclear/) and
+requires Python 3.12 or newer. Install it as a tool with
+[uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv tool install conclear
@@ -175,10 +176,10 @@ which trivy && trivy --version
 Update ConClear with `uv tool upgrade conclear`. For host tools, repeat the
 installation steps with supported versions. Finish active runs before updating.
 
-### Miscellaneous notes<a id="installation-misc"></a>
+### Next steps<a id="installation-misc"></a>
 
-ConClear runs on a native Linux host with rootless Podman and Buildah. Continue
-with [host configuration](#usage-host-config) before your first release.
+Continue with [host configuration](#usage-host-config) before your first
+release.
 
 
 ## Usage<a id="usage"></a>
