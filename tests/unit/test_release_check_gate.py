@@ -382,8 +382,8 @@ def test_development_guide_delegates_the_markdown_policy() -> None:
     normalized = " ".join(section.split())
 
     assert (
-        "https://github.com/foundata/guidelines/blob/main/"
-        "markdown-style-guide.md#linting-and-automatic-formatting"
+        "https://foundata.com/en/guidelines/"
+        "markdown-style-guide/#linting-and-automatic-formatting"
     ) in section
     assert "verbatim copy of the guide" in normalized
     assert ".rumdl.toml" in section
