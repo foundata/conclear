@@ -34,6 +34,9 @@ precedence and this document must be corrected.
 - [Invariants](#invariants)
 - [Guide identity and conformance](#guide-identity-and-conformance)
 - [Configuration and trust inputs](#configuration-and-trust-inputs)
+  - [Repository configuration](#configuration-repository)
+  - [Test inputs, dependencies and exceptions](#configuration-test-inputs)
+  - [Release profile and CI context](#configuration-release-profile)
 - [Built-in limits](#built-in-limits)
 - [Supported Containerfile syntax](#supported-containerfile-syntax)
 - [Pin updates](#pin-updates)
@@ -41,6 +44,11 @@ precedence and this document must be corrected.
 - [Records and workspaces](#records-and-workspaces)
 - [Tool execution](#tool-execution)
 - [Build and qualification](#build-and-qualification)
+  - [Source isolation and build](#build-source-isolation)
+  - [Platform execution and layout import](#build-platforms)
+  - [Runtime tests and hooks](#build-runtime-tests)
+  - [Scanning and SBOM](#build-scanning)
+  - [Transport and assembly](#build-assembly)
 - [Publication and promotion](#publication-and-promotion)
 - [Provenance, signing and verification](#provenance-signing-and-verification)
 - [Rescans](#rescans)
@@ -251,6 +259,8 @@ completely identifies the rules it applies.
 
 ## Configuration and trust inputs<a id="configuration-and-trust-inputs"></a>
 
+### Repository configuration<a id="configuration-repository"></a>
+
 <a id="promise-ip0008"></a>
 ConClear has one repository-owned configuration file: `conclear.toml`. Its
 schema is versioned and validated before any build or network operation. Unknown
@@ -415,6 +425,9 @@ limited to the scratch directory, refuses to run while anything is mounted
 below it and uses a throwaway Podman storage location that is removed
 afterwards.
 
+
+### Test inputs, dependencies and exceptions<a id="configuration-test-inputs"></a>
+
 <a id="promise-ip0009"></a>
 An image may declare a `test` table containing repository fixture handles,
 run-owned output handles, ordered preparation steps, launch inputs and
@@ -503,6 +516,9 @@ segments), optionally the check identifiers it covers, and rationale, owner,
 expiry and review trigger. ConClear applies it only to failed checks on matching
 paths, rejects it when expired, records target, check and declaration with every
 applied exception and never lets it suppress secret or vulnerability findings.
+
+
+### Release profile and CI context<a id="configuration-release-profile"></a>
 
 <a id="promise-ip0010"></a>
 Maintainer-controlled release configuration is separate from the application
@@ -1064,6 +1080,8 @@ that historical evidence.
 
 ## Build and qualification<a id="build-and-qualification"></a>
 
+### Source isolation and build<a id="build-source-isolation"></a>
+
 <a id="promise-ip0019"></a>
 `release` holds the selected commit twice. It creates an isolated detached
 worktree under `checkout/` and exports that worktree's index, which is exactly
@@ -1116,6 +1134,9 @@ not declare, and verifies the `base.name` and `base.digest` manifest
 annotations Buildah writes against the declared pin and the platform manifest
 that pin resolves to, rejecting any other manifest annotation.
 
+
+### Platform execution and layout import<a id="build-platforms"></a>
+
 <a id="promise-ip0021"></a>
 Every release includes `linux/amd64`. `linux/arm64` is optional and required
 only when declared; omitting it needs no reason and leaves no trace in
@@ -1159,6 +1180,9 @@ destinations outside the selected image's declared runtime mounts. Preparation
 containers run sequentially from exact imported images. After each step ConClear
 verifies its exit status and the ownership, type and mode of every generated
 output before a later step may consume it.
+
+
+### Runtime tests and hooks<a id="build-runtime-tests"></a>
 
 <a id="promise-ip0023"></a>
 Built-in runtime checks cover the configured user, root filesystem mode,
@@ -1290,6 +1314,9 @@ journal entries and identify retained resources; they do not authorize deletion
 of an unjournaled path. ConClear does not provide a success-retention mode for
 test secrets.
 
+
+### Scanning and SBOM<a id="build-scanning"></a>
+
 <a id="promise-ip0025"></a>
 Trivy is the authoritative scanner for packages, vulnerabilities, secrets and
 configuration. It scans the build context for secrets, the Containerfile and
@@ -1323,6 +1350,9 @@ its exact specification version and exports the raw JSON. Scan reports, SBOMs
 and finding locations name the scanned subject by its repository and manifest
 digest or a path relative to the build context; the release host's directory
 layout never enters evidence.
+
+
+### Transport and assembly<a id="build-assembly"></a>
 
 <a id="promise-ip0026"></a>
 A qualification is validated in one of two ways and never by rewriting it. A
