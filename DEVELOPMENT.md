@@ -437,16 +437,40 @@ uv run python -c \
 CONCLEAR_TEST_RUN_ID=<manifest-owned-run-id> uv run pytest -m local_integration
 ```
 
+On SELinux hosts, label the manifest-owned parent of `--basetemp` as
+`container_file_t` before creating test storage. Keep SELinux enforcing and use
+the normal login runtime directory; do not put `XDG_RUNTIME_DIR` under the
+checkout or a home-directory test workspace.
+
+The local suite compiles network-free `scratch` fixtures with Go, uses isolated
+Buildah and Podman storage, copies only between local OCI layouts with Skopeo
+and creates disposable Cosign key material under the run workspace. Its manual
+no-log Cosign check stays outside the production adapter and follows the guide's
+no-service signing configuration, bundle and verification flags. Record the
+workspace and all created resources in the external run manifest before invoking
+it, then record the observed assertions and cleanup result.
+
+|                          Scenario                           | Beyond `CONCLEAR_TEST_RUN_ID` it needs |
+| ----------------------------------------------------------- | -------------------------------------- |
+| [Public transparency-log signature](#local-public-sigstore) | `CONCLEAR_TEST_PUBLIC_SIGSTORE=1`      |
+| [Sudo tests](#local-sudo-tests)                             | a built fixture layout in `CONCLEAR_TEST_SUDO_LAYOUT` |
+| [Exact runtime inputs](#local-runtime-inputs)               | `CONCLEAR_TEST_SERVICE_ULID` and `CONCLEAR_TEST_ONE_SHOT_ULID` |
+| [CLI transport](#local-transport-cli)                       | `CONCLEAR_TEST_CLI` and `CONCLEAR_TEST_TRIVY_CACHE` |
+| [Trivy database](#local-trivy-database)                     | `CONCLEAR_TEST_TRIVY_CACHE`, and `CONCLEAR_TEST_QUALIFICATION_ULID` for the real-Trivy qualification |
+| [Emulation](#local-emulation)                               | an enabled arm64 `binfmt_misc` handler |
+
+Every case skips when its inputs are absent, so a bare tier run reports what it
+could not exercise.
+
+#### Public transparency-log signature<a id="local-public-sigstore"></a>
+
 The native archive-signature test also requires
 `CONCLEAR_TEST_PUBLIC_SIGSTORE=1`. It generates a disposable key, writes
 synthetic non-secret statements to the public transparency log and verifies
 saved bundles without registry access. The test removes its private key;
 [transparency entries are permanent](https://search.sigstore.dev/).
 
-On SELinux hosts, label the manifest-owned parent of `--basetemp` as
-`container_file_t` before creating test storage. Keep SELinux enforcing and use
-the normal login runtime directory; do not put `XDG_RUNTIME_DIR` under the
-checkout or a home-directory test workspace.
+#### Sudo tests<a id="local-sudo-tests"></a>
 
 The sudo tests need a separate Linux amd64 fixture containing real sudo,
 visudo, UID 10001 and the denied account `nobody`. After recording an absolute
@@ -492,13 +516,7 @@ escalation under restrictive controls. Without `CONCLEAR_TEST_SUDO_LAYOUT`
 they skip. Use an unused `--basetemp` directory for each run and record cleanup
 in the manifest, including after a failed build or test.
 
-The local suite compiles network-free `scratch` fixtures with Go, uses isolated
-Buildah and Podman storage, copies only between local OCI layouts with Skopeo
-and creates disposable Cosign key material under the run workspace. Its manual
-no-log Cosign check stays outside the production adapter and follows the guide's
-no-service signing configuration, bundle and verification flags. Record the
-workspace and all created resources in the external run manifest before invoking
-it, then record the observed assertions and cleanup result.
+#### Exact runtime inputs<a id="local-runtime-inputs"></a>
 
 The exact runtime-input integration case needs two additional manifest-owned
 lowercase ULIDs because its service and one-shot parameterizations create
@@ -528,6 +546,8 @@ mounts, non-secret launch environment, service health and TERM behavior,
 one-shot exit behavior, and journal-owned cleanup without using the
 workstation's existing container storage.
 
+#### CLI transport<a id="local-transport-cli"></a>
+
 `tests/local_integration/test_transport_cli.py` runs the distributed workflow
 through the public CLI only: two `qualify` worker runs, two `transport export`
 invocations and one `assemble` coordinator run, followed by an inspection of the
@@ -552,6 +572,8 @@ uv run pytest -m local_integration tests/local_integration/test_transport_cli.py
   --basetemp <external-run-workspace>/tmp/pytest
 ```
 
+#### The complete tier<a id="local-complete-tier"></a>
+
 The complete local tier, including the emulation case, is one invocation with
 the same manifest-owned identifiers:
 
@@ -565,6 +587,8 @@ uv run pytest -m "local_integration or emulation" \
   --basetemp <external-run-workspace>/tmp/pytest
 ```
 
+#### Adapter failures<a id="local-adapter-failures"></a>
+
 `tests/local_integration/test_adapter_failures.py` drives the installed Git,
 Buildah, Podman, Skopeo and Hadolint binaries into the failures that the adapter
 fakes can only imitate: refused connections, missing objects, failed builds,
@@ -573,6 +597,8 @@ reporting. Skopeo cases target the closed local port `localhost:1` only; nothing
 listens, nothing is pulled and nothing is published. When a real tool
 contradicts a fake, fix the adapter and the fake together and keep the real
 case.
+
+#### Trivy database and cache<a id="local-trivy-database"></a>
 
 `tests/local_integration/test_trivy_database.py` exercises the real
 vulnerability-database snapshot, layout scan, SPDX generation and SBOM rescan
@@ -605,6 +631,8 @@ transport scenario needs an accepted Trivy available to the installed
 `CONCLEAR_TEST_QUALIFICATION_ULID` supplies the
 manifest-owned lowercase ULID of the workspace that the real-Trivy qualification
 case creates.
+
+#### Emulation<a id="local-emulation"></a>
 
 The emulation case builds the shared `linux/arm64` fixture with Buildah, imports
 it into run-owned Podman storage and runs its architecture self-check through
