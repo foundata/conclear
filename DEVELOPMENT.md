@@ -646,9 +646,9 @@ evidence that arm64 qualification works.
 ### Tools from their images<a id="tool-images"></a>
 
 Trivy and Hadolint can run from their publishers' images instead of the host
-executables, which [`IP0017`](ARCHITECTURE.md#promise-ip0017) promises and the
-[README](README.md#usage-tool-images) documents. A maintainer enables it with an
-environment variable naming the tools:
+executables, which [`IP0017`](./ARCHITECTURE.md#promise-ip0017) promises and the
+[README](./README.md#usage-tool-images) documents. A maintainer enables it with
+an environment variable naming the tools:
 
 ```sh
 CONCLEAR_TOOL_IMAGES=trivy,hadolint uv run conclear check --image <id>
@@ -879,7 +879,7 @@ gate fail while the committed inventory is stale.
 
 ## Generated supported-tools table<a id="supported-tools-table"></a>
 
-The table under [Installation](README.md#installation) in the README is
+The table under [Installation](./README.md#installation) in the README is
 rendered from the tool policies in `src/conclear/tools.py` between two HTML
 comment markers. Never edit it by hand; change the policy and regenerate. An
 accepted interval and its exclusions come from the flags and output fields the
