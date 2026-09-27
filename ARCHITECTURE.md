@@ -1783,8 +1783,8 @@ verification, tag races, promotion and candidate deletion. Destructive tests
 never target a shared production repository or use a release signing key.
 
 The dedicated drill project
-[oci-conclear-drill](https://github.com/foundata/oci-conclear-drill) serves as
-the continuing end-to-end check. Its synthetic images exercise every runtime
+[oci-conclear-drill](https://github.com/foundata/oci-conclear-drill) is the
+continuing end-to-end check. Its synthetic images exercise every runtime
 profile, the documented supervisor contract, root-owned immutable runtime
 files, health checks, measured resource limits, hooks, exceptions and the
 negative cases a real project must never carry. Compatibility with real
