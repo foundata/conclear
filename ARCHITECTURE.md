@@ -944,8 +944,9 @@ the option is omitted; one of the two must name an existing durable directory.
 The allowlisted members include records, reports, OCI metadata and retained
 Sigstore bundles; releases also include exact source. Non-secret test outputs
 travel as a digest-bound qualification payload. Image layers are opt-in.
-Profiles, credentials, keys, raw logs and private test outputs are excluded, but
-source and reports still require disclosure review.
+Membership follows from that allowlist: profiles, credentials, keys, raw logs,
+private test outputs and the scanner database cache are excluded. Source and
+reports still require disclosure review.
 
 Archive writes are checked before atomic, non-overwriting publication. Failure
 preserves the run and does not undo registry publication; `archive create`
