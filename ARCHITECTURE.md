@@ -46,6 +46,7 @@ precedence and this document must be corrected.
 - [Rescans](#rescans)
 - [Implementation structure](#implementation-structure)
 - [Testing](#testing)
+- [Adopting an existing repository](#adopting-an-existing-repository)
 - [Maintaining this document](#maintaining-this-document)
 
 
