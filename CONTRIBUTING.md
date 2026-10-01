@@ -14,7 +14,7 @@ and follow up on the platform where you contributed.
 
 > **Important:** ConClear is built for foundata's release process. You are
 > welcome to use it if you adopt the requirements of
-> [foundata's OCI container image build and release guide](https://foundata.com/en/guidelines/oci-container-image-guide/),
+> [foundata's OCI container image build and release guide](https://foundata.com/en/guidelines/oci-images/),
 > but submissions to adapt ConClear to different release policies are out of
 > scope.
 

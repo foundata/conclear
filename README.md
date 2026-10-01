@@ -2,7 +2,7 @@
 
 ConClear builds, tests and scans OCI container images, then signs and releases
 the digest that passed its checks. It applies the technical requirements of
-[foundata's OCI container image build and release guide](https://foundata.com/en/guidelines/oci-container-image-guide/)
+[foundata's OCI container image build and release guide](https://foundata.com/en/guidelines/oci-images/)
 without requiring you to maintain your own release scripts or CI service.
 
 > **Important:** ConClear is built for foundata's own release processes. You are
@@ -362,7 +362,7 @@ Prepare the build inputs:
 - Pin external images in the Containerfile as `image:tag@sha256:<digest>` and
   declare each tag and its intent under `[[images.pins]]`.
 - Supply the
-  [required OCI labels](https://foundata.com/en/guidelines/oci-container-image-guide/#image-metadata).
+  [required OCI labels](https://foundata.com/en/guidelines/oci-images/#image-metadata).
   Declare and use the `IMAGE_CREATED`, `IMAGE_REVISION` and `IMAGE_VERSION`
   build arguments for their corresponding labels.
 - Match the numeric `USER` to `images.runtime.user`. Declare writable paths

@@ -211,7 +211,7 @@ uv run mypy --strict src tests
 ```
 
 Markdown follows the
-[foundata Markdown style guide](https://foundata.com/en/guidelines/markdown-style-guide/#linting-and-automatic-formatting).
+[foundata Markdown style guide](https://foundata.com/en/guidelines/markdown/#linting-and-automatic-formatting).
 [`.rumdl.toml`](./.rumdl.toml) is a verbatim copy of the guide's file, compared
 with the guide by `tests/unit/test_release_check_gate.py`; naming it explicitly
 makes `rumdl` ignore any other configuration. Run from this repository:
@@ -787,7 +787,7 @@ uv run python -m conclear.conformance --check
 
 # Also verify every requirement and section anchor against the guide checkout
 uv run python -m conclear.conformance --check \
-  --guide ../guidelines/oci-container-image-guide.md
+  --guide ../guidelines/oci-images.md
 ```
 
 Commit a catalog or option change together with the check definition,
@@ -820,7 +820,7 @@ uv run python -m conclear.guide_requirements --check
 
 # Also verify every requirement and section anchor against the guide checkout
 uv run python -m conclear.guide_requirements --check \
-  --guide ../guidelines/oci-container-image-guide.md
+  --guide ../guidelines/oci-images.md
 ```
 
 Moving to a newer guide revision:

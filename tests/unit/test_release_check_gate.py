@@ -28,7 +28,7 @@ from conclear.release_check import (
 )
 
 REVISION = "a" * 40
-GUIDE = "markdown-style-guide.md"
+GUIDE = "markdown.md"
 
 
 def _artifacts(tmp_path: Path) -> tuple[Path, Path]:
@@ -382,8 +382,7 @@ def test_development_guide_delegates_the_markdown_policy() -> None:
     normalized = " ".join(section.split())
 
     assert (
-        "https://foundata.com/en/guidelines/"
-        "markdown-style-guide/#linting-and-automatic-formatting"
+        "https://foundata.com/en/guidelines/markdown/#linting-and-automatic-formatting"
     ) in section
     assert "verbatim copy of the guide" in normalized
     assert ".rumdl.toml" in section
